@@ -1,0 +1,73 @@
+export const HELP_TYPES = ['Alimentos', 'Higiene', 'Ropa', 'Ayuda economica', 'Otra ayuda'];
+export const BENEFICIARY_SITUATIONS = ['Activa', 'Urgente', 'Seguimiento', 'Inactiva'];
+export const MODULES = [
+  { id: 'dashboard', label: 'Panel' },
+  { id: 'settings', label: 'Entidad' },
+  { id: 'beneficiaries', label: 'Beneficiarios' },
+  { id: 'families', label: 'Familias' },
+  { id: 'deliveries', label: 'Entregas' },
+  { id: 'receipts', label: 'Justificantes' },
+  { id: 'inventory', label: 'Inventario' },
+  { id: 'donations', label: 'Donaciones' },
+  { id: 'treasury', label: 'TESORERIA' },
+  { id: 'volunteers', label: 'Voluntarios' },
+  { id: 'reports', label: 'Informes' },
+  { id: 'backup', label: 'Copias' }
+];
+
+export const DOCUMENT_TYPES = ['DNI/NIE', 'Empadronamiento', 'Familia numerosa', 'Discapacidad', 'Otros documentos'];
+export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario'];
+
+export const PERMISSION_MODULES = [
+  { id: 'beneficiaries', label: 'Beneficiarios' },
+  { id: 'families', label: 'Familias' },
+  { id: 'deliveries', label: 'Entregas' },
+  { id: 'receipts', label: 'Justificantes' },
+  { id: 'inventory', label: 'Inventario' },
+  { id: 'donations', label: 'Donaciones' },
+  { id: 'treasury', label: 'Tesoreria' },
+  { id: 'reports', label: 'Informes' },
+  { id: 'users', label: 'Usuarios' },
+  { id: 'settings', label: 'Configuracion' }
+];
+
+export const PERMISSION_ACTIONS = [
+  { id: 'view', label: 'Ver' },
+  { id: 'create', label: 'Crear' },
+  { id: 'edit', label: 'Editar' },
+  { id: 'delete', label: 'Eliminar' }
+];
+
+export function buildPermissionMatrix(modules = [], actions = ['view']) {
+  return Object.fromEntries(PERMISSION_MODULES.map((module) => [
+    module.id,
+    Object.fromEntries(PERMISSION_ACTIONS.map((action) => [action.id, modules.includes('*') || modules.includes(module.id) ? actions.includes('*') || actions.includes(action.id) : false]))
+  ]));
+}
+
+export const ROLE_PERMISSIONS = {
+  Superadministrador: ['*'],
+  Presidenta: ['beneficiaries', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
+  Secretaria: ['beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'],
+  Tesorera: ['donations', 'treasury', 'reports', 'receipts'],
+  Coordinadora: ['beneficiaries', 'families', 'deliveries', 'receipts', 'inventory', 'reports'],
+  Voluntario: ['beneficiaries', 'deliveries', 'inventory', 'treasury']
+};
+
+export const LEGACY_ROLE_PERMISSIONS = {
+  Presidente: ROLE_PERMISSIONS.Presidenta,
+  Secretario: ROLE_PERMISSIONS.Secretaria,
+  Tesorero: ROLE_PERMISSIONS.Tesorera,
+  Administrador: ROLE_PERMISSIONS.Presidenta,
+  Coordinador: ROLE_PERMISSIONS.Coordinadora,
+  Consulta: ['reports']
+};
+
+export const ROLE_PERMISSION_MATRIX = {
+  Superadministrador: buildPermissionMatrix(['*'], ['*']),
+  Presidenta: buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['view', 'create', 'edit', 'delete']),
+  Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit']),
+  Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['view', 'create', 'edit', 'delete']),
+  Coordinadora: buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
+  Voluntario: buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view'])
+};
