@@ -167,41 +167,48 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
     }
   }
 
-  return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
-      <FormField label="Codigo beneficiario">
-        <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} value={form.code} readOnly />
-        {fieldErrors.code && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.code}</p>}
-      </FormField>
-      <FormField label="Fecha de alta"><input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} /></FormField>
-      <FormField label="Nombre y apellidos"><input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} /></FormField>
-      <FormField label="DNI/NIE">
-        <input ref={documentInputRef} className={`${inputClass}${errorClass('document_id')}`} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} />
-        {fieldErrors.document_id && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.document_id}</p>}
-      </FormField>
-      <FormField label="Direccion completa"><input className={inputClass} value={form.address_full} onChange={(event) => update('address_full', event.target.value)} /></FormField>
-      <FormField label="Codigo postal"><input className={inputClass} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></FormField>
-      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
-      <FormField label="Email"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <FormField label="Familia">
-        <select className={inputClass} value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
-          <option value="">Sin familia</option>
-          {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
-        </select>
-      </FormField>
-      <FormField label="Fecha nacimiento"><input className={inputClass} type="date" value={form.birth_date || ''} onChange={(event) => update('birth_date', event.target.value)} /></FormField>
-      <FormField label="Sexo"><input className={inputClass} value={form.sex || ''} onChange={(event) => update('sex', event.target.value)} /></FormField>
-      <FormField label="Nacionalidad"><input className={inputClass} value={form.nationality || ''} onChange={(event) => update('nationality', event.target.value)} /></FormField>
-      <FormField label="Estado civil"><input className={inputClass} value={form.marital_status || ''} onChange={(event) => update('marital_status', event.target.value)} /></FormField>
-      <FormField label="Fecha primera atencion"><input className={inputClass} type="date" value={form.first_attention_at || ''} onChange={(event) => update('first_attention_at', event.target.value)} /></FormField>
-      <FormField label="Miembros unidad familiar"><input className={inputClass} type="number" min="1" value={form.family_members} onChange={(event) => update('family_members', Number(event.target.value))} /></FormField>
-      <FormField label="Numero de menores"><input className={inputClass} type="number" min="0" value={form.minors_count} onChange={(event) => update('minors_count', Number(event.target.value))} /></FormField>
-      <FormField label="Situacion"><select className={inputClass} value={form.situation} onChange={(event) => update('situation', event.target.value)}>{BENEFICIARY_SITUATIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-      <FormField label="Tipo de ayuda solicitada"><select className={inputClass} value={form.requested_help} onChange={(event) => update('requested_help', event.target.value)}>{HELP_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-      <FormField label="Estado"><select className={inputClass} value={form.is_active ? 'true' : 'false'} onChange={(event) => update('is_active', event.target.value === 'true')}><option value="true">Activo</option><option value="false">Inactivo</option></select></FormField>
-      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="4" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
-      <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar</Button></div>
-    </form>
+    return (
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+            <FormField label="Codigo beneficiario">
+                <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} value={form.code} onChange={(event) => update('code', event.target.value)} />
+                {fieldErrors.code && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.code}</p>}
+            </FormField>
+
+            <FormField label="Fecha de alta">
+                <input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} />
+            </FormField>
+
+            <FormField label="Nombre y apellidos" required>
+                <input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} />
+            </FormField>
+
+            <FormField label="DNI/NIE" required>
+                <input ref={documentInputRef} className={`${inputClass}${errorClass('document_id')}`} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} />
+                {fieldErrors.document_id && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.document_id}</p>}
+            </FormField>
+
+            <FormField label="Direccion completa" required>
+                <input className={inputClass} value={form.address_full} onChange={(event) => update('address_full', event.target.value)} />
+            </FormField>
+
+            <FormField label="Codigo postal">
+                <input className={inputClass} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} />
+            </FormField>
+
+            <FormField label="Telefono" required>
+                <input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} />
+            </FormField>
+
+            <FormField label="Email">
+                <input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} />
+            </FormField>
+
+            <FormField label="Familia" required>
+                <select className={inputClass} value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
+                    <option value="">Sin familia</option>
+                    {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
+                </select>
+            </FormField>    </form>
   );
 }
 
