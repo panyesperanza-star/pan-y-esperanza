@@ -26,20 +26,31 @@ export function useAppData(enabled = true, currentUser = null) {
   }, [enabled, reload]);
 
   async function audit(action) {
-    await dataStore.create('audit_logs', {
-      user_name: currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'Sistema',
-      user_email: currentUser?.email || '',
-      action,
-      happened_at: new Date().toISOString()
-    });
+    try {
+      await dataStore.create('audit_logs', {
+        user_name: currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'Sistema',
+        user_email: currentUser?.email || '',
+        action,
+        happened_at: new Date().toISOString()
+      });
+    } catch (error) {
+      console.warn('[Pan y Esperanza] No se pudo registrar auditoria:', error);
+    }
+  }
+
+  function sanitizeBeneficiaryPayload(payload) {
+    return {
+      ...payload,
+      document_id: normalizeDocument(payload.document_id),
+      family_id: payload.family_id || null
+    };
   }
 
   const actions = useMemo(() => ({
     createBeneficiary: async (payload) => {
       dataStore.assertUniqueDocument(data.beneficiaries, payload);
       await dataStore.create('beneficiaries', {
-        ...payload,
-        document_id: normalizeDocument(payload.document_id),
+        ...sanitizeBeneficiaryPayload(payload),
         code: payload.code || nextBeneficiaryCode(data.beneficiaries)
       });
       await audit(`Creo beneficiario ${payload.full_name || ''}`.trim());
@@ -67,7 +78,7 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     updateBeneficiary: async (id, payload) => {
       dataStore.assertUniqueDocument(data.beneficiaries, payload, id);
-      await dataStore.update('beneficiaries', id, { ...payload, document_id: normalizeDocument(payload.document_id) });
+      await dataStore.update('beneficiaries', id, sanitizeBeneficiaryPayload(payload));
       await audit(`Edito beneficiario ${payload.full_name || ''}`.trim());
       await reload();
     },
@@ -85,7 +96,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...payload,
         receipt_number: payload.receipt_number || nextReceiptNumber(data.deliveries, payload.delivered_at),
         beneficiary_name: beneficiary?.full_name || '',
-        family_id: family?.id || '',
+        family_id: family?.id || null,
         family_name: family?.family_code || '',
         inventory_item_name: item?.name || ''
       });

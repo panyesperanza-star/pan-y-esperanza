@@ -104,10 +104,12 @@ export function Beneficiaries({ data, actions }) {
 function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState('');
   const documentInputRef = useRef(null);
   const codeInputRef = useRef(null);
 
   const update = (field, value) => {
+    setFormError('');
     setForm((current) => ({ ...current, [field]: value }));
     setFieldErrors((current) => {
       if (!current[field]) return current;
@@ -147,6 +149,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
 
   async function submit(event) {
     event.preventDefault();
+    setFormError('');
     if (!validateUniqueFields()) return;
 
     try {
@@ -163,12 +166,18 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
         codeInputRef.current?.focus();
         return;
       }
-      throw error;
+      setFormError(message || 'No se pudo guardar el beneficiario. Revise los datos e intentelo de nuevo.');
     }
   }
 
   return (
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      {formError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 sm:col-span-2">
+          {formError}
+        </div>
+      )}
+
       <FormField label="Codigo beneficiario">
         <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} value={form.code} onChange={(event) => update('code', event.target.value)} />
         {fieldErrors.code && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.code}</p>}
