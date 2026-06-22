@@ -4,6 +4,7 @@ export const MODULES = [
   { id: 'dashboard', label: 'Panel' },
   { id: 'settings', label: 'Entidad' },
   { id: 'beneficiaries', label: 'Beneficiarios' },
+  { id: 'communications', label: 'Comunicaciones' },
   { id: 'families', label: 'Familias' },
   { id: 'deliveries', label: 'Entregas' },
   { id: 'receipts', label: 'Justificantes' },
@@ -20,6 +21,7 @@ export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorer
 
 export const PERMISSION_MODULES = [
   { id: 'beneficiaries', label: 'Beneficiarios' },
+  { id: 'communications', label: 'Comunicaciones' },
   { id: 'families', label: 'Familias' },
   { id: 'deliveries', label: 'Entregas' },
   { id: 'receipts', label: 'Justificantes' },
@@ -47,10 +49,10 @@ export function buildPermissionMatrix(modules = [], actions = ['view']) {
 
 export const ROLE_PERMISSIONS = {
   Superadministrador: ['*'],
-  Presidenta: ['beneficiaries', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
-  Secretaria: ['beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'],
-  Tesorera: ['donations', 'treasury', 'reports', 'receipts'],
-  Voluntario: ['beneficiaries', 'deliveries', 'inventory', 'treasury']
+  Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
+  Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
+  Tesorera: ['donations', 'treasury', 'reports', 'receipts', 'communications'],
+  Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory', 'treasury']
 };
 
 export const LEGACY_ROLE_PERMISSIONS = {
@@ -58,7 +60,7 @@ export const LEGACY_ROLE_PERMISSIONS = {
   Secretario: ROLE_PERMISSIONS.Secretaria,
   Tesorero: ROLE_PERMISSIONS.Tesorera,
   Administrador: ROLE_PERMISSIONS.Presidenta,
-  Coordinador: ['beneficiaries', 'families', 'deliveries', 'receipts', 'inventory', 'treasury', 'reports'],
+  Coordinador: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'treasury', 'reports'],
   Consulta: ['reports']
 };
 

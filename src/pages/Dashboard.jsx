@@ -6,6 +6,7 @@ import { formatDate } from '../lib/formatters';
 export function Dashboard({ data }) {
   const activeBeneficiaries = data.beneficiaries.filter((item) => item.is_active).length;
   const activeFamilies = data.families.length;
+  const minors = data.beneficiaries.reduce((total, item) => total + Number(item.minors_count || 0), 0);
   const lowStock = data.inventory_items.filter((item) => Number(item.stock) <= Number(item.low_stock_threshold));
   const month = new Date().toISOString().slice(0, 7);
   const deliveriesThisMonth = data.deliveries.filter((item) => String(item.delivered_at || '').startsWith(month)).length;
@@ -31,6 +32,8 @@ export function Dashboard({ data }) {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Beneficiarios activos" value={activeBeneficiaries} icon={HandHeart} />
         <StatCard label="Familias activas" value={activeFamilies} icon={Users} />
+        <StatCard label="Menores atendidos" value={minors} icon={Users} />
+        <StatCard label="Entregas realizadas" value={data.deliveries.length} icon={PackageCheck} />
         <StatCard label="Entregas del mes" value={deliveriesThisMonth} icon={PackageCheck} />
         <StatCard label="Inventario bajo minimo" value={lowStock.length} icon={AlertTriangle} />
         <StatCard label="Ingresos del mes" value={`${monthlyIncome.toFixed(2)} EUR`} icon={HandCoins} />

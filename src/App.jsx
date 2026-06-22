@@ -6,6 +6,7 @@ import { canAccess, getStoredUser, signIn, signOut } from './lib/auth';
 import { hasSupabaseConfig } from './lib/supabase';
 import { Beneficiaries } from './pages/Beneficiaries';
 import { Backup } from './pages/Backup';
+import { Communications } from './pages/Communications';
 import { Dashboard } from './pages/Dashboard';
 import { Deliveries } from './pages/Deliveries';
 import { Donations } from './pages/Donations';
@@ -52,7 +53,8 @@ export default function App() {
   const pages = {
     dashboard: <Dashboard data={sorted} />,
     settings: <Settings data={sorted} actions={actions} currentUser={currentUser} />,
-    beneficiaries: <Beneficiaries data={sorted} actions={actions} />,
+    beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} />,
+    communications: <Communications data={sorted} actions={actions} currentUser={currentUser} />,
     families: <Families data={sorted} actions={actions} />,
     deliveries: <Deliveries data={sorted} actions={actions} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} />,

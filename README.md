@@ -16,8 +16,10 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 - Justificantes profesionales con logo, numero unico `PE-AAAA-000001`, fecha/hora de generacion, sello visual y codigo QR.
 - Boton `Imprimir justificante de entrega` con PDF que incluye datos, productos, cantidades, responsable, receptor, firma del receptor y firma del responsable.
 - Seccion `Justificantes` con filtros, seleccion multiple, `Generar ZIP`, `Generar ZIP mensual`, envio real de PDFs individuales, envio directo al beneficiario, historial de envios y reenvio.
+- Nueva seccion `Comunicaciones` con envio de emails por Resend, plantillas reutilizables, adjunto PDF opcional, historial y estructura preparada para WhatsApp.
 - Cada ZIP incluye todos los justificantes seleccionados y un PDF resumen de entregas.
 - Beneficiarios con campo email para enviar el PDF individual al correo registrado.
+- Boton `Enviar email` dentro de la ficha del beneficiario con plantillas de justificante, aviso de recogida, solicitud de documentacion y agradecimiento.
 - Configuracion editable de identidad corporativa: entidad, CIF, direccion, telefono, correo, web y logo.
 - Configuracion `Entidad > Correo` con remitente y prueba de envio mediante API serverless segura con Resend.
 - Beneficiarios ampliados con nacimiento, sexo, nacionalidad, estado civil, primera/ultima atencion, documentos e historial social.
@@ -164,7 +166,7 @@ Cada usuario tiene nombre, apellidos, email, telefono, cargo, contrasena tempora
 
 `Entidad > Usuarios` incluye listado de usuarios activos y bloqueados, edicion de datos personales, foto de perfil opcional, desactivacion sin borrar historial y restablecimiento de contrasena temporal. La aplicacion impide desactivar al ultimo Superadministrador.
 
-`Usuarios > Permisos` permite marcar `Ver`, `Crear`, `Editar` y `Eliminar` para Beneficiarios, Familias, Entregas, Justificantes, Inventario, Donaciones, Tesoreria, Informes, Usuarios y Configuracion.
+`Usuarios > Permisos` permite marcar `Ver`, `Crear`, `Editar` y `Eliminar` para Beneficiarios, Comunicaciones, Familias, Entregas, Justificantes, Inventario, Donaciones, Tesoreria, Informes, Usuarios y Configuracion.
 
 La pestana `Auditoria` registra usuario, fecha y accion realizada, por ejemplo creacion de beneficiarios, entregas, movimientos de inventario, cambios de tesoreria y cambios de usuarios.
 
@@ -223,6 +225,8 @@ La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener 
 27. Comprueba que se guardan ultimo acceso, fecha de creacion y creado por.
 28. En `Usuarios > Permisos`, modifica permisos Ver/Crear/Editar/Eliminar por modulo.
 29. Revisa `Auditoria` tras crear beneficiarios, registrar entregas o modificar tesoreria.
+30. Entra en `Comunicaciones`, elige una plantilla, selecciona un beneficiario y prueba el envio de email con o sin justificante PDF.
+31. Abre la ficha de un beneficiario y comprueba la pestaña `Emails` para ver el historial de comunicaciones registradas.
 
 ## Tesoreria
 
@@ -293,6 +297,19 @@ Todos los correos HTML incluyen logo, nombre de entidad, fecha, texto personaliz
 Si los beneficiarios seleccionados tienen email registrado, el campo de destinatarios de `Enviar justificantes` se rellena automaticamente como punto de partida. Esto deja preparada la evolucion hacia envios completamente automaticos al email del beneficiario.
 
 El boton `Generar informe de entregas` crea solo el PDF resumen, sin ZIP.
+
+## Comunicaciones
+
+La seccion `Comunicaciones` centraliza emails y deja preparada la integracion futura con WhatsApp Business API. Incluye:
+
+- Plantillas reutilizables: justificante de ayuda recibida, aviso de recogida, solicitud de documentacion y agradecimiento.
+- Envio por Resend mediante la funcion serverless `api/send-justificantes.js`.
+- Adjuntar automaticamente el justificante PDF de la ultima entrega del beneficiario.
+- Descargar ese PDF antes de enviarlo.
+- Historial con fecha, destinatario, asunto, usuario, adjuntos y resultado.
+- Panel estadistico con beneficiarios activos, familias atendidas, menores atendidos, entregas realizadas y correos enviados.
+
+La ficha individual del beneficiario tambien incluye `Enviar email` y una pestaña `Emails` con el historial asociado al correo registrado del beneficiario.
 
 ## Verificacion
 

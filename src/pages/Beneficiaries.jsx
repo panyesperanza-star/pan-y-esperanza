@@ -1,12 +1,13 @@
-import { Edit, FileText, Plus, Printer, Search, Trash2 } from 'lucide-react';
+import { Edit, FileText, Mail, Plus, Printer, Search, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
+import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { formatDate, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
-import { printBeneficiaryPdf } from '../lib/exporters';
+import { createReceiptEmailAttachments, printBeneficiaryPdf } from '../lib/exporters';
 
 const emptyBeneficiary = {
   code: '',
@@ -33,7 +34,7 @@ const emptyBeneficiary = {
   last_help_at: null
 };
 
-export function Beneficiaries({ data, actions }) {
+export function Beneficiaries({ data, actions, currentUser }) {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -96,7 +97,7 @@ export function Beneficiaries({ data, actions }) {
         </table>
       </div>
       {editing && <Modal title={editing.id ? 'Editar beneficiario' : 'Nuevo beneficiario'} onClose={() => setEditing(null)}><BeneficiaryForm families={data.families} beneficiaries={data.beneficiaries} initial={editing} onSubmit={save} /></Modal>}
-      {profile && <Modal wide title={`Ficha de ${profile.full_name}`} onClose={() => setProfile(null)}><BeneficiaryProfile data={data} actions={actions} beneficiary={profile} deliveries={data.deliveries.filter((item) => item.beneficiary_id === profile.id)} /></Modal>}
+      {profile && <Modal wide title={`Ficha de ${profile.full_name}`} onClose={() => setProfile(null)}><BeneficiaryProfile data={data} actions={actions} currentUser={currentUser} beneficiary={profile} deliveries={data.deliveries.filter((item) => item.beneficiary_id === profile.id)} /></Modal>}
     </>
   );
 }
@@ -230,11 +231,14 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
   );
 }
 
-function BeneficiaryProfile({ data, actions, beneficiary, deliveries }) {
+function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries }) {
   const [tab, setTab] = useState('social');
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [notice, setNotice] = useState('');
   const family = data.families.find((item) => item.id === beneficiary.family_id);
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
+  const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   async function uploadDocument(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -255,7 +259,11 @@ function BeneficiaryProfile({ data, actions, beneficiary, deliveries }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-md border border-slate-200 p-4">
-        <h4 className="font-bold text-ink">Datos personales</h4>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="font-bold text-ink">Datos personales</h4>
+          <Button type="button" onClick={() => { setNotice(''); setEmailOpen(true); }}><Mail size={16} /> Enviar email</Button>
+        </div>
+        {notice && <p className="mt-3 rounded-md border border-brand-100 bg-brand-50 p-2 text-sm font-semibold text-brand-700">{notice}</p>}
         <dl className="mt-3 grid gap-2 text-sm">
           {[
             ['Codigo', beneficiary.code],
@@ -283,6 +291,7 @@ function BeneficiaryProfile({ data, actions, beneficiary, deliveries }) {
           <Button type="button" variant={tab === 'social' ? 'primary' : 'secondary'} onClick={() => setTab('social')}>Historial social</Button>
           <Button type="button" variant={tab === 'deliveries' ? 'primary' : 'secondary'} onClick={() => setTab('deliveries')}>Entregas</Button>
           <Button type="button" variant={tab === 'documents' ? 'primary' : 'secondary'} onClick={() => setTab('documents')}>Documentos</Button>
+          <Button type="button" variant={tab === 'emails' ? 'primary' : 'secondary'} onClick={() => setTab('emails')}>Emails</Button>
         </div>
         {tab === 'social' && <SocialHistory history={history} beneficiary={beneficiary} actions={actions} />}
         {tab === 'deliveries' && <>
@@ -307,8 +316,101 @@ function BeneficiaryProfile({ data, actions, beneficiary, deliveries }) {
           </label>
           <div className="mt-3 space-y-2">{documents.map((doc) => <div key={doc.id} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-sm"><span>{doc.document_type} - {doc.file_name}</span>{doc.file_data_url && <a className="font-semibold text-brand-700" href={doc.file_data_url} download={doc.file_name}>Descargar</a>}</div>)}{!documents.length && <p className="text-sm text-slate-500">Sin documentos subidos.</p>}</div>
         </div>}
+        {tab === 'emails' && <div>
+          <h4 className="font-bold text-ink">Historial de emails</h4>
+          <div className="mt-3 space-y-2">{emailLogs.map((log) => <div key={log.id} className="rounded-md bg-slate-50 p-3 text-sm"><strong>{formatDate(log.sent_at)} - {log.subject || 'Sin asunto'}</strong><p>Destinatario: {log.recipient}</p><p>Resultado: {log.result || '-'}</p></div>)}{!emailLogs.length && <p className="text-sm text-slate-500">Sin emails registrados para este beneficiario.</p>}</div>
+        </div>}
       </section>
+      {emailOpen && (
+        <Modal title="Enviar email al beneficiario" onClose={() => setEmailOpen(false)}>
+          <BeneficiaryEmailForm
+            beneficiary={beneficiary}
+            deliveries={deliveries}
+            allDeliveries={data.deliveries}
+            organization={data.organization_settings?.[0]}
+            actions={actions}
+            currentUser={currentUser}
+            onSent={(message) => { setNotice(message); setEmailOpen(false); }}
+          />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function BeneficiaryEmailForm({ beneficiary, deliveries, allDeliveries, organization, actions, currentUser, onSent }) {
+  const latestDelivery = [...deliveries].sort((a, b) => String(b.delivered_at || '').localeCompare(String(a.delivered_at || '')))[0];
+  const [form, setForm] = useState({
+    template: 'receipt',
+    recipients: beneficiary.email || '',
+    subject: EMAIL_TEMPLATES[0].subject,
+    message: EMAIL_TEMPLATES[0].message,
+    attachReceipt: Boolean(latestDelivery)
+  });
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+
+  function chooseTemplate(id) {
+    const template = EMAIL_TEMPLATES.find((item) => item.id === id) || EMAIL_TEMPLATES[0];
+    setForm((current) => ({ ...current, template: id, subject: template.subject, message: template.message, attachReceipt: id === 'receipt' && Boolean(latestDelivery) }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setStatus('Generando PDF y enviando correo...');
+    setError('');
+    if (!form.recipients) {
+      setStatus('');
+      setError('Este beneficiario no tiene correo electronico registrado.');
+      return;
+    }
+    if (form.attachReceipt && !latestDelivery) {
+      setStatus('');
+      setError('No hay entregas registradas para adjuntar justificante PDF.');
+      return;
+    }
+
+    let attachments = [];
+    try {
+      if (form.attachReceipt) {
+        attachments = await createReceiptEmailAttachments([{ delivery: latestDelivery, beneficiary }], allDeliveries, { organization });
+      }
+      const payload = await sendEmailViaApi({ to: form.recipients, subject: form.subject, message: form.message, attachments, organization });
+      await saveEmailLog(actions, currentUser, form, attachments.length, payload.message || 'Correo enviado correctamente.', attachments);
+      onSent('Correo enviado correctamente.');
+    } catch (err) {
+      const message = normalizeEmailError(err);
+      await saveEmailLog(actions, currentUser, form, attachments.length, message, attachments);
+      setStatus('');
+      setError(message);
+    }
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={submit}>
+      <FormField label="Plantilla">
+        <select className={inputClass} value={form.template} onChange={(event) => chooseTemplate(event.target.value)}>
+          {EMAIL_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+        </select>
+      </FormField>
+      <FormField label="Destinatario">
+        <input className={inputClass} type="email" required value={form.recipients} onChange={(event) => update('recipients', event.target.value)} />
+      </FormField>
+      <FormField label="Asunto">
+        <input className={inputClass} value={form.subject} onChange={(event) => update('subject', event.target.value)} />
+      </FormField>
+      <FormField label="Mensaje">
+        <textarea className={inputClass} rows="5" value={form.message} onChange={(event) => update('message', event.target.value)} />
+      </FormField>
+      <label className="flex items-center gap-2 rounded-md border border-slate-200 p-3 text-sm text-slate-700">
+        <input type="checkbox" disabled={!latestDelivery} checked={form.attachReceipt} onChange={(event) => update('attachReceipt', event.target.checked)} />
+        Adjuntar justificante PDF de la ultima entrega
+      </label>
+      {status && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{status}</p>}
+      {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
+      <div className="flex justify-end"><Button type="submit"><Mail size={18} /> Enviar email</Button></div>
+    </form>
   );
 }
 

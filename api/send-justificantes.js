@@ -39,10 +39,6 @@ export default async function handler(request, response) {
       return sendJson(response, 400, { ok: false, code: 'NO_RECIPIENTS', error: 'Debes indicar al menos un destinatario.' });
     }
 
-    if (!isTest && !attachments.length) {
-      return sendJson(response, 400, { ok: false, code: 'NO_ATTACHMENTS', error: 'No hay justificantes adjuntos.' });
-    }
-
     const invalidAttachment = attachments.find((attachment) => !attachment?.filename || !attachment?.content);
     if (invalidAttachment) {
       console.error('[send-justificantes] Adjunto invalido', { requestId, invalidAttachment });
