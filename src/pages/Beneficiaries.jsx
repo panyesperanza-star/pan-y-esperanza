@@ -146,13 +146,6 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
   }
 
   async function submit(event) {
-  console.log('BOTON GUARDAR PULSADO');
-
-  event.preventDefault();
-
-  if (!validateUniqueFields()) return;
-
-  try {
     event.preventDefault();
     if (!validateUniqueFields()) return;
 
@@ -174,57 +167,57 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
     }
   }
 
-    return (
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
-            <FormField label="Codigo beneficiario">
-                <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} value={form.code} onChange={(event) => update('code', event.target.value)} />
-                {fieldErrors.code && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.code}</p>}
-            </FormField>
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      <FormField label="Codigo beneficiario">
+        <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} value={form.code} onChange={(event) => update('code', event.target.value)} />
+        {fieldErrors.code && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.code}</p>}
+      </FormField>
 
-            <FormField label="Fecha de alta">
-                <input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} />
-            </FormField>
+      <FormField label="Fecha de alta">
+        <input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} />
+      </FormField>
 
-            <FormField label="Nombre y apellidos" required>
-                <input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} />
-            </FormField>
+      <FormField label="Nombre y apellidos" required>
+        <input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} />
+      </FormField>
 
-            <FormField label="DNI/NIE" required>
-                <input ref={documentInputRef} className={`${inputClass}${errorClass('document_id')}`} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} />
-                {fieldErrors.document_id && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.document_id}</p>}
-            </FormField>
+      <FormField label="DNI/NIE" required>
+        <input ref={documentInputRef} className={`${inputClass}${errorClass('document_id')}`} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} />
+        {fieldErrors.document_id && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.document_id}</p>}
+      </FormField>
 
-            <FormField label="Direccion completa" required>
-                <input className={inputClass} value={form.address_full} onChange={(event) => update('address_full', event.target.value)} />
-            </FormField>
+      <FormField label="Direccion completa" required>
+        <input className={inputClass} value={form.address_full} onChange={(event) => update('address_full', event.target.value)} />
+      </FormField>
 
-            <FormField label="Codigo postal">
-                <input className={inputClass} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} />
-            </FormField>
+      <FormField label="Codigo postal">
+        <input className={inputClass} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} />
+      </FormField>
 
-            <FormField label="Telefono" required>
-                <input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} />
-            </FormField>
+      <FormField label="Telefono" required>
+        <input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} />
+      </FormField>
 
-            <FormField label="Email">
-                <input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} />
-            </FormField>
+      <FormField label="Email">
+        <input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} />
+      </FormField>
 
-            <FormField label="Familia" required>
-                <select className={inputClass} value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
-                    <option value="">Sin familia</option>
-                    {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
-                </select>
-            </FormField> 
-          
-          <div className="col-span-2 flex justify-end mt-4">
-  <button
-    type="submit"
-    className="rounded-md bg-green-600 px-4 py-2 text-white"
-  >
-    Guardar
-  </button>
-</div>  </form>
+      <FormField label="Familia" required>
+        <select className={inputClass} value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
+          <option value="">Sin familia</option>
+          {families.map((family) => (
+            <option key={family.id} value={family.id}>
+              {family.family_code} - {family.responsible_name}
+            </option>
+          ))}
+        </select>
+      </FormField>
+
+      <div className="col-span-2 flex justify-end mt-4">
+        <Button type="submit">Guardar</Button>
+      </div>
+    </form>
   );
 }
 
