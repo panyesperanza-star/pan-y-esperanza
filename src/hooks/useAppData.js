@@ -46,6 +46,21 @@ export function useAppData(enabled = true, currentUser = null) {
     };
   }
 
+  function isLastActiveSuperadmin(userId) {
+    const existing = data.app_users.find((user) => user.id === userId);
+    return existing?.role === 'Superadministrador'
+      && data.app_users.filter((user) => user.role === 'Superadministrador' && user.is_active && (user.status || 'Activo') === 'Activo' && user.id !== userId).length === 0;
+  }
+
+  function sanitizeUserPayload(payload) {
+    const status = payload.status || (payload.is_active === false ? 'Inactivo' : 'Activo');
+    return {
+      ...payload,
+      status,
+      is_active: status === 'Activo'
+    };
+  }
+
   const actions = useMemo(() => ({
     createBeneficiary: async (payload) => {
       dataStore.assertUniqueDocument(data.beneficiaries, payload);
@@ -221,26 +236,41 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createUser: async (payload) => {
-      await dataStore.create('app_users', payload);
+      await dataStore.create('app_users', sanitizeUserPayload(payload));
       await audit(`Creo usuario ${payload.email || ''}`.trim());
       await reload();
     },
     updateUser: async (id, payload) => {
-      const existing = data.app_users.find((user) => user.id === id);
-      if (existing?.role === 'Superadministrador' && payload.is_active === false && data.app_users.filter((user) => user.role === 'Superadministrador' && user.is_active && user.id !== id).length === 0) {
+      const cleanPayload = sanitizeUserPayload(payload);
+      if (cleanPayload.is_active === false && isLastActiveSuperadmin(id)) {
         throw new Error('No se puede desactivar al ultimo Superadministrador.');
       }
-      await dataStore.update('app_users', id, payload);
-      await audit(`Edito usuario ${payload.email || ''}`.trim());
+      await dataStore.update('app_users', id, cleanPayload);
+      await audit(`Edito usuario ${cleanPayload.email || ''}`.trim());
       await reload();
     },
     deactivateUser: async (id) => {
       const existing = data.app_users.find((user) => user.id === id);
-      if (existing?.role === 'Superadministrador' && data.app_users.filter((user) => user.role === 'Superadministrador' && user.is_active && user.id !== id).length === 0) {
+      if (isLastActiveSuperadmin(id)) {
         throw new Error('No se puede desactivar al ultimo Superadministrador.');
       }
-      await dataStore.update('app_users', id, { is_active: false });
-      await audit(`Desactivo usuario ${existing?.email || ''}`.trim());
+      await dataStore.update('app_users', id, { is_active: false, status: 'Inactivo' });
+      await audit(`Usuario desactivado: ${existing?.email || ''}`.trim());
+      await reload();
+    },
+    reactivateUser: async (id) => {
+      const existing = data.app_users.find((user) => user.id === id);
+      await dataStore.update('app_users', id, { is_active: true, status: 'Activo' });
+      await audit(`Usuario reactivado: ${existing?.email || ''}`.trim());
+      await reload();
+    },
+    deleteUser: async (id) => {
+      const existing = data.app_users.find((user) => user.id === id);
+      if (isLastActiveSuperadmin(id)) {
+        throw new Error('No se puede eliminar al ultimo Superadministrador activo.');
+      }
+      await dataStore.remove('app_users', id);
+      await audit(`Usuario eliminado: ${existing?.email || ''}`.trim());
       await reload();
     },
     resetUserPassword: async (id, password) => {

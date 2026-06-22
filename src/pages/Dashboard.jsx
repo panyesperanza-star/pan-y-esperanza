@@ -1,6 +1,7 @@
 import { AlertTriangle, Banknote, Boxes, HandCoins, HandHeart, Mail, PackageCheck, UserCheck, UserX, Users } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
+import { getUserStatus } from '../lib/auth';
 import { formatDate } from '../lib/formatters';
 
 export function Dashboard({ data }) {
@@ -13,8 +14,8 @@ export function Dashboard({ data }) {
   const monthlyIncome = (data.treasury_incomes || []).filter((item) => String(item.income_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const monthlyExpenses = (data.treasury_expenses || []).filter((item) => String(item.expense_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const pendingLoans = (data.treasury_loans || []).filter((item) => ['Pendiente', 'Pendiente de devolver', 'Parcialmente devuelto'].includes(item.status)).reduce((total, item) => total + Number(item.amount || 0), 0);
-  const activeUsers = (data.app_users || []).filter((user) => user.is_active).length;
-  const blockedUsers = (data.app_users || []).filter((user) => !user.is_active).length;
+  const activeUsers = (data.app_users || []).filter((user) => getUserStatus(user) === 'Activo').length;
+  const blockedUsers = (data.app_users || []).filter((user) => getUserStatus(user) !== 'Activo').length;
   const lastAccesses = [...(data.app_users || [])].filter((user) => user.last_access_at).sort((a, b) => String(b.last_access_at).localeCompare(String(a.last_access_at))).slice(0, 3);
   const monthlyDeliveries = data.deliveries.reduce((acc, item) => {
     const key = String(item.delivered_at || '').slice(0, 7) || 'Sin fecha';

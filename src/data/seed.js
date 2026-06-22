@@ -139,6 +139,7 @@ export const seedData = {
       phone: '',
       role: 'Superadministrador',
       position: 'Superadministrador',
+      status: 'Activo',
       is_active: true,
       permissions: ['*'],
       permission_matrix: ROLE_PERMISSION_MATRIX.Superadministrador,

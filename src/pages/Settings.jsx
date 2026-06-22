@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
+import { getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
 
 export function Settings({ data, actions, currentUser }) {
@@ -149,8 +150,9 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
   const [editing, setEditing] = useState(null);
   const [section, setSection] = useState('users');
   const [message, setMessage] = useState('');
-  const activeUsers = users.filter((user) => user.is_active);
-  const blockedUsers = users.filter((user) => !user.is_active);
+  const activeUsers = users.filter((user) => getUserStatus(user) === 'Activo');
+  const inactiveUsers = users.filter((user) => getUserStatus(user) === 'Inactivo');
+  const blockedUsers = users.filter((user) => getUserStatus(user) === 'Bloqueado');
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -162,6 +164,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       </div>
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <MiniStat label="Usuarios activos" value={activeUsers.length} />
+        <MiniStat label="Usuarios inactivos" value={inactiveUsers.length} />
         <MiniStat label="Usuarios bloqueados" value={blockedUsers.length} />
         <MiniStat label="Ultimos accesos" value={users.filter((user) => user.last_access_at).length} />
       </div>
@@ -180,7 +183,87 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
 }
 
 function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Email</th><th>Telefono</th><th>Cargo</th><th>Estado</th><th>Ultimo acceso</th><th>Creado</th><th>Creado por</th><th className="text-right pr-4">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{users.map((user) => <tr key={user.id}><td className="px-4 py-3"><div className="flex items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 rounded-full object-cover" />}<span className="font-semibold">{user.first_name} {user.last_name}</span></div></td><td>{user.email}</td><td>{user.phone || '-'}</td><td>{user.position || user.role}</td><td>{user.is_active ? 'Activo' : 'Bloqueado'}</td><td>{formatDateTime(user.last_access_at)}</td><td>{formatDateTime(user.created_at)}</td><td>{user.created_by || '-'}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button><Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contrasena temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contrasena temporal actualizada.'); } }}>Restablecer contrasena</Button><Button variant="danger" disabled={user.id === currentUser?.id} onClick={async () => { try { await actions.deactivateUser(user.id); setMessage('Usuario desactivado sin borrar historial.'); } catch (error) { setMessage(error.message); } }}>Desactivar usuario</Button></div></td></tr>)}</tbody></table></div>;
+  const [filter, setFilter] = useState('active');
+  const filtered = users.filter((user) => {
+    const status = getUserStatus(user);
+    if (filter === 'active') return status === 'Activo';
+    if (filter === 'inactive') return status !== 'Activo';
+    return true;
+  });
+
+  async function deleteUser(user) {
+    const confirmed = window.confirm('Esta acción eliminará definitivamente el usuario y no podrá recuperarse.\n\nSe recomienda desactivar en lugar de eliminar.\n\n¿Desea eliminarlo definitivamente?');
+    if (!confirmed) return;
+    try {
+      await actions.deleteUser(user.id);
+      setMessage('Usuario eliminado definitivamente. La accion ha quedado registrada en auditoria.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function deactivateUser(user) {
+    try {
+      await actions.deactivateUser(user.id);
+      setMessage('Usuario desactivado sin borrar historial, permisos ni datos.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function reactivateUser(user) {
+    try {
+      await actions.reactivateUser(user.id);
+      setMessage('Usuario reactivado. Recupera automaticamente su acceso anterior.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Button variant={filter === 'active' ? 'primary' : 'secondary'} onClick={() => setFilter('active')}>Ver usuarios activos</Button>
+        <Button variant={filter === 'inactive' ? 'primary' : 'secondary'} onClick={() => setFilter('inactive')}>Ver usuarios inactivos</Button>
+        <Button variant={filter === 'all' ? 'primary' : 'secondary'} onClick={() => setFilter('all')}>Ver todos los usuarios</Button>
+      </div>
+      <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1240px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Email</th><th>Telefono</th><th>Cargo</th><th>Estado</th><th>Ultimo acceso</th><th>Creado</th><th>Creado por</th><th className="text-right pr-4">Acciones</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {filtered.map((user) => {
+              const status = getUserStatus(user);
+              const isCurrentUser = user.id === currentUser?.id;
+              return (
+                <tr key={user.id}>
+                  <td className="px-4 py-3"><div className="flex items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 rounded-full object-cover" />}<span className="font-semibold">{user.first_name} {user.last_name}</span></div></td>
+                  <td>{user.email}</td>
+                  <td>{user.phone || '-'}</td>
+                  <td>{user.position || user.role}</td>
+                  <td><span className={`rounded-md px-2 py-1 text-xs font-bold ${status === 'Activo' ? 'bg-brand-50 text-brand-700' : status === 'Bloqueado' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{status}</span></td>
+                  <td>{formatDateTime(user.last_access_at)}</td>
+                  <td>{formatDateTime(user.created_at)}</td>
+                  <td>{user.created_by || '-'}</td>
+                  <td className="pr-4">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button>
+                      <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contrasena temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contrasena temporal actualizada.'); } }}>Restablecer contrasena</Button>
+                      {status === 'Activo'
+                        ? <Button variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
+                        : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>}
+                      <Button variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {!filtered.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="9">No hay usuarios para el filtro seleccionado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function MiniStat({ label, value }) {
@@ -188,7 +271,7 @@ function MiniStat({ label, value }) {
 }
 
 function emptyUser(currentUser) {
-  return { first_name: '', last_name: '', email: '', password: 'Temporal2026!', phone: '', role: 'Voluntario', position: 'Voluntario', is_active: true, permissions: ROLE_PERMISSIONS.Voluntario, permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario, profile_photo: '', last_access_at: '', created_by: currentUser?.email || 'Sistema', created_at: new Date().toISOString() };
+  return { first_name: '', last_name: '', email: '', password: 'Temporal2026!', phone: '', role: 'Voluntario', position: 'Voluntario', status: 'Activo', is_active: true, permissions: ROLE_PERMISSIONS.Voluntario, permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario, profile_photo: '', last_access_at: '', created_by: currentUser?.email || 'Sistema', created_at: new Date().toISOString() };
 }
 
 function UserForm({ initial, organization, onSubmit }) {
@@ -212,7 +295,7 @@ function UserForm({ initial, organization, onSubmit }) {
       <FormField label="Cargo"><input className={inputClass} value={form.position || ''} onChange={(event) => update('position', event.target.value)} /></FormField>
       <FormField label="Contrasena temporal"><input className={inputClass} type="password" value={form.password || ''} onChange={(event) => update('password', event.target.value)} /></FormField>
       <FormField label="Rol"><select className={inputClass} value={form.role || 'Voluntario'} onChange={(event) => updateRole(event.target.value)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField>
-      <FormField label="Estado"><select className={inputClass} value={form.is_active ? 'true' : 'false'} onChange={(event) => update('is_active', event.target.value === 'true')}><option value="true">Activo</option><option value="false">Bloqueado</option></select></FormField>
+      <FormField label="Estado"><select className={inputClass} value={form.status || (form.is_active ? 'Activo' : 'Inactivo')} onChange={(event) => { update('status', event.target.value); update('is_active', event.target.value === 'Activo'); }}><option>Activo</option><option>Inactivo</option><option>Bloqueado</option></select></FormField>
       <FormField label="Foto de perfil opcional"><input className={inputClass} type="file" accept="image/*" onChange={(event) => updatePhoto(event.target.files?.[0])} /></FormField>
       <FormField label="Creado por"><input className={inputClass} value={form.created_by || ''} onChange={(event) => update('created_by', event.target.value)} /></FormField>
       {form.profile_photo && <div className="sm:col-span-2"><img src={form.profile_photo} alt="" className="h-16 w-16 rounded-full object-cover" /></div>}

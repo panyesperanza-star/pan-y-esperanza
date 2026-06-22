@@ -284,6 +284,7 @@ create table public.app_users (
   phone text,
   role text not null check (role in ('Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
   position text,
+  status text not null default 'Activo' check (status in ('Activo', 'Inactivo', 'Bloqueado')),
   is_active boolean not null default true,
   permissions jsonb not null default '[]'::jsonb,
   permission_matrix jsonb not null default '{}'::jsonb,

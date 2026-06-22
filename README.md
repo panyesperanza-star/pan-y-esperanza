@@ -34,7 +34,7 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 - Copias de seguridad con exportacion completa, importacion y restauracion local.
 - Roles base preparados: Superadministrador, Presidenta, Secretaria, Tesorera y Voluntario.
 - Login real con email y contrasena.
-- Gestion de usuarios en `Entidad > Usuarios`: crear, editar, desactivar sin borrar historial y restablecer contrasena.
+- Gestion avanzada de usuarios en `Entidad > Usuarios`: crear, editar, desactivar, reactivar, bloquear, eliminar con advertencia y restablecer contrasena.
 - Pantalla `Usuarios > Permisos` con permisos por modulo y accion: Ver, Crear, Editar y Eliminar.
 - Auditoria de acciones: usuario, fecha y accion realizada.
 - Bienvenida automatica por correo al crear usuario.
@@ -164,7 +164,13 @@ Roles disponibles:
 
 Cada usuario tiene nombre, apellidos, email, telefono, cargo, contrasena temporal, rol, estado activo/inactivo, foto opcional, ultimo acceso, fecha de creacion y creado por.
 
-`Entidad > Usuarios` incluye listado de usuarios activos y bloqueados, edicion de datos personales, foto de perfil opcional, desactivacion sin borrar historial y restablecimiento de contrasena temporal. La aplicacion impide desactivar al ultimo Superadministrador.
+`Entidad > Usuarios` incluye filtros para ver usuarios activos, inactivos o todos. Cada usuario puede estar en estado `Activo`, `Inactivo` o `Bloqueado`.
+
+Un usuario `Inactivo` o `Bloqueado` no puede iniciar sesion, pero conserva historial, permisos y datos. Puede reactivarse en cualquier momento con el boton `Reactivar usuario`, recuperando automaticamente su acceso anterior.
+
+Antes de eliminar un usuario se muestra la advertencia: `Esta acción eliminará definitivamente el usuario y no podrá recuperarse.` La aplicacion recomienda desactivar en lugar de eliminar e impide desactivar o eliminar al ultimo Superadministrador activo.
+
+La auditoria registra usuario desactivado, usuario reactivado y usuario eliminado, incluyendo fecha y responsable de la accion.
 
 `Usuarios > Permisos` permite marcar `Ver`, `Crear`, `Editar` y `Eliminar` para Beneficiarios, Comunicaciones, Familias, Entregas, Justificantes, Inventario, Donaciones, Tesoreria, Informes, Usuarios y Configuracion.
 
@@ -181,6 +187,7 @@ En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. E
 1. Crea el usuario en Supabase Auth con email y contrasena.
 2. Crea o actualiza su fila en `public.app_users` con el mismo email.
 3. Asigna rol, estado y permisos.
+4. Si la base ya existia antes de esta version, ejecuta `supabase/migrations/20260622_user_status_management.sql` para anadir el campo `status`.
 
 La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener el perfil de aplicacion. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando la configuracion de `Entidad > Correo`. Para alta real en Supabase Auth desde panel administrativo se recomienda una funcion serverless con Service Role Key, ya que esa clave no debe exponerse en el navegador.
 
@@ -224,9 +231,11 @@ La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener 
 26. En `Entidad > Usuarios`, crea un usuario con cargo, contrasena temporal y foto opcional.
 27. Comprueba que se guardan ultimo acceso, fecha de creacion y creado por.
 28. En `Usuarios > Permisos`, modifica permisos Ver/Crear/Editar/Eliminar por modulo.
-29. Revisa `Auditoria` tras crear beneficiarios, registrar entregas o modificar tesoreria.
-30. Entra en `Comunicaciones`, elige una plantilla, selecciona un beneficiario y prueba el envio de email con o sin justificante PDF.
-31. Abre la ficha de un beneficiario y comprueba la pestaña `Emails` para ver el historial de comunicaciones registradas.
+29. Desactiva un usuario, comprueba que aparece en `Ver usuarios inactivos`, y pulsa `Reactivar usuario`.
+30. Intenta eliminar un usuario y confirma que aparece la advertencia de eliminacion definitiva.
+31. Revisa `Auditoria` tras crear beneficiarios, registrar entregas, modificar tesoreria, desactivar, reactivar o eliminar usuarios.
+32. Entra en `Comunicaciones`, elige una plantilla, selecciona un beneficiario y prueba el envio de email con o sin justificante PDF.
+33. Abre la ficha de un beneficiario y comprueba la pestaña `Emails` para ver el historial de comunicaciones registradas.
 
 ## Tesoreria
 

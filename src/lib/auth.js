@@ -26,7 +26,7 @@ export async function signIn({ email, password }, users = []) {
       .eq('email', data.user.email)
       .single();
     if (profileError) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
-    if (!profile || !profile.is_active) throw new Error('Usuario sin perfil activo en Pan y Esperanza.');
+    if (!isUserActive(profile)) throw new Error('Usuario sin perfil activo en Pan y Esperanza.');
     await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', profile.id);
     const current = withPermissions(profile);
     storeUser(current);
@@ -34,7 +34,7 @@ export async function signIn({ email, password }, users = []) {
   }
 
   const user = users.find((item) => item.email?.toLowerCase() === email.toLowerCase());
-  if (!user || user.password !== password || !user.is_active) {
+  if (!user || user.password !== password || !isUserActive(user)) {
     throw new Error('Email o contrasena no validos.');
   }
   const current = withPermissions(user);
@@ -54,6 +54,14 @@ export function withPermissions(user) {
     permissions,
     permission_matrix: user.permission_matrix || ROLE_PERMISSION_MATRIX[user.role]
   };
+}
+
+export function getUserStatus(user) {
+  return user?.status || (user?.is_active ? 'Activo' : 'Inactivo');
+}
+
+export function isUserActive(user) {
+  return Boolean(user && user.is_active !== false && getUserStatus(user) === 'Activo');
 }
 
 export function canAccess(user, moduleId) {
