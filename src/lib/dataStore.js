@@ -139,7 +139,7 @@ function assertUniqueDocument(beneficiaries, payload, currentId) {
   const documentId = normalizeDocument(payload.document_id);
   if (!documentId) return;
   const duplicate = beneficiaries.find((item) => normalizeDocument(item.document_id) === documentId && item.id !== currentId);
-  if (duplicate) throw new Error(`Ya existe un beneficiario con DNI/NIE ${documentId}: ${duplicate.full_name}.`);
+  if (duplicate) throw new Error(`Ya existe un beneficiario con DNI/NIE / NIE O PASAPORTE ${documentId}: ${duplicate.full_name}.`);
 }
 
 function resetLocalDemo() {

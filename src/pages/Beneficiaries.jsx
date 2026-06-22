@@ -59,13 +59,13 @@ export function Beneficiaries({ data, actions }) {
       />
       <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-panel">
         <Search size={18} className="text-slate-400" />
-        <input className="w-full bg-transparent text-sm outline-none" placeholder="Buscar por nombre, DNI/NIE o codigo" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <input className="w-full bg-transparent text-sm outline-none" placeholder="Buscar por nombre, DNI/NIE / NIE O PASAPORTE o codigo" value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[980px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-4 py-3">Codigo</th><th>Nombre</th><th>DNI/NIE</th><th>CP</th><th>Familia</th><th>Situacion</th><th>Estado</th><th>Ultima ayuda</th><th className="text-right pr-4">Acciones</th>
+              <th className="px-4 py-3">Codigo</th><th>Nombre</th><th>DNI/NIE / NIE O PASAPORTE</th><th>CP</th><th>Familia</th><th>Situacion</th><th>Estado</th><th>Ultima ayuda</th><th className="text-right pr-4">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -128,7 +128,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
       : null;
 
     if (duplicateDocument) {
-      setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese DNI/NIE.' });
+      setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese DNI/NIE / NIE O PASAPORTE.' });
       documentInputRef.current?.focus();
       return false;
     }
@@ -157,7 +157,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
     } catch (error) {
       const message = error.message || '';
       if (message.includes('DNI/NIE') || message.includes('document_id')) {
-        setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese DNI/NIE.' });
+        setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese DNI/NIE / NIE O PASAPORTE.' });
         documentInputRef.current?.focus();
         return;
       }
@@ -191,7 +191,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
         <input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} />
       </FormField>
 
-      <FormField label="DNI/NIE" required>
+      <FormField label="DNI/NIE / NIE O PASAPORTE" required>
         <input ref={documentInputRef} className={`${inputClass}${errorClass('document_id')}`} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} />
         {fieldErrors.document_id && <p className="mt-1 text-sm font-medium text-red-600">{fieldErrors.document_id}</p>}
       </FormField>
@@ -259,7 +259,7 @@ function BeneficiaryProfile({ data, actions, beneficiary, deliveries }) {
         <dl className="mt-3 grid gap-2 text-sm">
           {[
             ['Codigo', beneficiary.code],
-            ['DNI/NIE', beneficiary.document_id],
+            ['DNI/NIE / NIE O PASAPORTE', beneficiary.document_id],
             ['Direccion', beneficiary.address_full],
             ['Codigo postal', beneficiary.postal_code],
             ['Telefono', beneficiary.phone],

@@ -6,13 +6,13 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 
 - Beneficiarios con direccion completa, codigo postal, unidad familiar, menores, situacion, ayuda solicitada, fecha de alta, estado activo/inactivo y ultima ayuda.
 - Codigo automatico `PYE-00001`, `PYE-00002`, etc.
-- Validacion para impedir DNI/NIE duplicados.
+- Validacion para impedir DNI/NIE / NIE O PASAPORTE duplicados.
 - Contador de beneficiarios activos en listado y panel.
 - Boton `Ver ficha` con pantalla individual y historial.
 - Boton para imprimir la ficha en PDF.
 - Entregas vinculadas a beneficiarios con fecha, responsable, tipo de ayuda, cantidad y observaciones.
 - Firma de recepcion en cada entrega con raton, dedo o lapiz tactil.
-- Datos del receptor: nombre, DNI/NIE y fecha/hora de recepcion.
+- Datos del receptor: nombre, DNI/NIE / NIE O PASAPORTE y fecha/hora de recepcion.
 - Justificantes profesionales con logo, numero unico `PE-AAAA-000001`, fecha/hora de generacion, sello visual y codigo QR.
 - Boton `Imprimir justificante de entrega` con PDF que incluye datos, productos, cantidades, responsable, receptor, firma del receptor y firma del responsable.
 - Seccion `Justificantes` con filtros, seleccion multiple, `Generar ZIP`, `Generar ZIP mensual`, envio real de PDFs individuales, envio directo al beneficiario, historial de envios y reenvio.
@@ -28,7 +28,7 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 - Indicadores automaticos de tesoreria: saldo actual, total ingresos, total gastos, pendiente de devolver y balance mensual.
 - Tesoreria avanzada con categorias de ingresos, categorias de gastos, prestamos parcialmente devueltos y movimientos de caja/bancos.
 - Informes de tesoreria en PDF y Excel.
-- Voluntarios ampliados con DNI, formacion, documentacion e historial preparado.
+- Voluntarios ampliados con DNI/NIE / NIE O PASAPORTE, formacion, documentacion e historial preparado.
 - Copias de seguridad con exportacion completa, importacion y restauracion local.
 - Roles base preparados: Superadministrador, Presidenta, Secretaria, Tesorera y Voluntario.
 - Login real con email y contrasena.
@@ -195,12 +195,12 @@ La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener 
 ## Como probar las nuevas funciones
 
 1. Entra en Beneficiarios y crea una persona nueva.
-2. Intenta crear otra con el mismo DNI/NIE: la app debe bloquearlo.
+2. Intenta crear otra con el mismo DNI/NIE / NIE O PASAPORTE: la app debe bloquearlo.
 3. Pulsa `Ver ficha` para revisar datos e historial.
 4. Pulsa el boton de impresora para generar el PDF de ficha.
 5. Ve a Inventario y comprueba el stock de un producto.
 6. Ve a Entregas, registra una entrega usando ese producto y una cantidad.
-7. Escribe nombre y DNI/NIE del receptor, dibuja la firma y pulsa `Guardar firma`.
+7. Escribe nombre y DNI/NIE / NIE O PASAPORTE del receptor, dibuja la firma y pulsa `Guardar firma`.
 8. Dibuja tambien la firma del responsable.
 9. Vuelve a Inventario: el stock debe bajar y debe aparecer un movimiento de salida.
 10. Vuelve a la ficha del beneficiario: debe aparecer la entrega en historial, actualizarse la ultima ayuda y mostrar `Firma disponible`.
@@ -268,7 +268,7 @@ Cada entrega genera un numero de justificante con formato `PE-AAAA-000001`. El P
 - Fecha y hora de generacion.
 - Datos completos del beneficiario.
 - Producto, cantidad, fecha, responsable y observaciones.
-- Nombre y DNI/NIE del receptor.
+- Nombre y DNI/NIE / NIE O PASAPORTE del receptor.
 - Declaracion de recepcion de ayuda.
 - Firma del receptor y firma del responsable.
 - Sello visual de Pan y Esperanza.

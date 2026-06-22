@@ -85,7 +85,7 @@ export const seedData = {
     {
       id: crypto.randomUUID(),
       beneficiary_id: '',
-      document_type: 'DNI/NIE',
+      document_type: 'DNI/NIE / NIE O PASAPORTE',
       file_name: 'pendiente.pdf',
       file_data_url: '',
       uploaded_at: todayISO(),

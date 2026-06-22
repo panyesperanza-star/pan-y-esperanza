@@ -15,7 +15,7 @@ export const MODULES = [
   { id: 'backup', label: 'Copias' }
 ];
 
-export const DOCUMENT_TYPES = ['DNI/NIE', 'Empadronamiento', 'Familia numerosa', 'Discapacidad', 'Otros documentos'];
+export const DOCUMENT_TYPES = ['DNI/NIE / NIE O PASAPORTE', 'Empadronamiento', 'Familia numerosa', 'Discapacidad', 'Otros documentos'];
 export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Voluntario'];
 
 export const PERMISSION_MODULES = [

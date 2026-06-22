@@ -21,7 +21,7 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   const fields = [
     ['Codigo', beneficiary.code],
     ['Nombre', beneficiary.full_name],
-    ['DNI/NIE', beneficiary.document_id || '-'],
+    ['DNI/NIE / NIE O PASAPORTE', beneficiary.document_id || '-'],
     ['Direccion completa', beneficiary.address_full || '-'],
     ['Codigo postal', beneficiary.postal_code || '-'],
     ['Telefono', beneficiary.phone || '-'],
@@ -68,7 +68,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Numero de justificante', receiptNumber],
       ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
       ['Codigo beneficiario', beneficiary?.code || '-'],
-      ['DNI/NIE beneficiario', beneficiary?.document_id || '-'],
+      ['DNI/NIE / NIE O PASAPORTE beneficiario', beneficiary?.document_id || '-'],
       ['Direccion', beneficiary?.address_full || '-'],
       ['Familia', delivery.family_name || '-'],
       ['Fecha de entrega', formatDate(delivery.delivered_at)],
@@ -78,7 +78,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Producto entregado', delivery.inventory_item_name || '-'],
       ['Cantidad', delivery.quantity || '-'],
       ['Nombre del receptor', delivery.receiver_name || '-'],
-      ['DNI/NIE del receptor', delivery.receiver_document_id || '-'],
+      ['DNI/NIE / NIE O PASAPORTE del receptor', delivery.receiver_document_id || '-'],
       ['Observaciones', delivery.notes || '-']
     ],
     styles: { fontSize: 9 },

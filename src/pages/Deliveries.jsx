@@ -126,7 +126,7 @@ function DeliveryForm({ data, onSubmit }) {
       <FormField label="Nombre del receptor">
         <input className={inputClass} value={form.receiver_name} onChange={(event) => update('receiver_name', event.target.value)} />
       </FormField>
-      <FormField label="DNI/NIE del receptor">
+      <FormField label="DNI/NIE / NIE O PASAPORTE del receptor">
         <input className={inputClass} value={form.receiver_document_id} onChange={(event) => update('receiver_document_id', event.target.value)} />
       </FormField>
       <FormField label="Fecha y hora de recepcion">
