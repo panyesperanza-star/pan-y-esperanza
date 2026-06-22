@@ -24,6 +24,28 @@ const TABLES = [
   'app_users'
 ];
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
+const DATE_FIELDS = new Set([
+  'birth_date',
+  'first_attention_at',
+  'joined_at',
+  'last_help_at',
+  'date',
+  'uploaded_at',
+  'expires_at',
+  'delivered_at',
+  'reception_at',
+  'sent_at',
+  'donated_at',
+  'income_at',
+  'expense_at',
+  'loan_at',
+  'returned_at',
+  'moved_at',
+  'happened_at',
+  'last_access_at',
+  'created_at',
+  'updated_at'
+]);
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -51,6 +73,15 @@ function writeLocal(db) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
 }
 
+function sanitizePayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload || {}).map(([key, value]) => [
+      key,
+      DATE_FIELDS.has(key) && value === '' ? null : value
+    ])
+  );
+}
+
 async function list(table) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: false });
@@ -61,26 +92,28 @@ async function list(table) {
 }
 
 async function create(table, payload) {
+  const cleanPayload = sanitizePayload(payload);
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from(table).insert(payload).select().single();
+    const { data, error } = await supabase.from(table).insert(cleanPayload).select().single();
     if (error) throw error;
     return data;
   }
   const db = readLocal();
-  const row = { id: payload.id || crypto.randomUUID(), ...payload };
+  const row = { id: cleanPayload.id || crypto.randomUUID(), ...cleanPayload };
   db[table] = [row, ...(db[table] || [])];
   writeLocal(db);
   return row;
 }
 
 async function update(table, id, payload) {
+  const cleanPayload = sanitizePayload(payload);
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+    const { data, error } = await supabase.from(table).update(cleanPayload).eq('id', id).select().single();
     if (error) throw error;
     return data;
   }
   const db = readLocal();
-  db[table] = (db[table] || []).map((item) => (item.id === id ? { ...item, ...payload } : item));
+  db[table] = (db[table] || []).map((item) => (item.id === id ? { ...item, ...cleanPayload } : item));
   writeLocal(db);
   return db[table].find((item) => item.id === id);
 }
