@@ -208,7 +208,16 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
                     <option value="">Sin familia</option>
                     {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
                 </select>
-            </FormField>    </form>
+            </FormField> 
+          
+          <div className="col-span-2 flex justify-end mt-4">
+  <button
+    type="submit"
+    className="rounded-md bg-green-600 px-4 py-2 text-white"
+  >
+    Guardar
+  </button>
+</div>  </form>
   );
 }
 
