@@ -95,6 +95,12 @@ async function create(table, payload) {
   const cleanPayload = sanitizePayload(payload);
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from(table).insert(cleanPayload).select().single();
+    if (error && shouldRetryWithoutUserStatus(table, error, cleanPayload)) {
+      const fallbackPayload = withoutStatus(cleanPayload);
+      const retry = await supabase.from(table).insert(fallbackPayload).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
     if (error) throw error;
     return data;
   }
@@ -109,6 +115,12 @@ async function update(table, id, payload) {
   const cleanPayload = sanitizePayload(payload);
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from(table).update(cleanPayload).eq('id', id).select().single();
+    if (error && shouldRetryWithoutUserStatus(table, error, cleanPayload)) {
+      const fallbackPayload = withoutStatus(cleanPayload);
+      const retry = await supabase.from(table).update(fallbackPayload).eq('id', id).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
     if (error) throw error;
     return data;
   }
@@ -148,6 +160,16 @@ function resetLocalDemo() {
 
 function replaceLocalData(nextData) {
   writeLocal(nextData);
+}
+
+function shouldRetryWithoutUserStatus(table, error, payload) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return table === 'app_users' && Object.hasOwn(payload, 'status') && (error?.code === 'PGRST204' || message.includes('status'));
+}
+
+function withoutStatus(payload) {
+  const { status, ...rest } = payload;
+  return rest;
 }
 
 export const dataStore = { list, create, update, remove, loadAll, assertUniqueDocument, resetLocalDemo, replaceLocalData };

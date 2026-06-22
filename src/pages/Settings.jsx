@@ -8,6 +8,7 @@ import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PE
 import { formatDateTime } from '../lib/formatters';
 import { getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
+import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
 export function Settings({ data, actions, currentUser }) {
   const current = data.organization_settings?.[0] || {};
@@ -177,7 +178,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       {section === 'users' && <UsersTable users={users} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} />}
       {section === 'permissions' && <PermissionsMatrix users={users} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
-      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) await actions.updateUser(payload.id, payload); else { await actions.createUser(payload); await sendWelcomeEmail(payload, organization); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
+      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await sendWelcomeEmail(payload, organization); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
@@ -276,6 +277,7 @@ function emptyUser(currentUser) {
 
 function UserForm({ initial, organization, onSubmit }) {
   const [form, setForm] = useState(initial);
+  const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
   function updateRole(role) {
     setForm((state) => ({ ...state, role, position: state.position || role, permissions: ROLE_PERMISSIONS[role] || [], permission_matrix: ROLE_PERMISSION_MATRIX[role] || {} }));
@@ -287,7 +289,16 @@ function UserForm({ initial, organization, onSubmit }) {
     reader.readAsDataURL(file);
   }
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
+      event.preventDefault();
+      setError('');
+      try {
+        await onSubmit(form);
+      } catch (err) {
+        setError(normalizeUserError(err));
+      }
+    }}>
+      {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>
       <FormField label="Apellidos"><input className={inputClass} value={form.last_name || ''} onChange={(event) => update('last_name', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" required value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
@@ -323,6 +334,7 @@ function AuditTable({ logs }) {
 
 async function sendWelcomeEmail(user, organization) {
   try {
+    const logoUrl = typeof window !== 'undefined' ? new URL(officialLogoUrl, window.location.origin).toString() : undefined;
     await fetch('/api/send-justificantes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -331,10 +343,18 @@ async function sendWelcomeEmail(user, organization) {
         to: user.email,
         subject: 'Bienvenida a Pan y Esperanza',
         message: `Hola ${user.first_name}, tu usuario se ha creado correctamente. Contrasena temporal: ${user.password}`,
+        logoUrl,
         organization
       })
     });
   } catch (error) {
     console.warn('[usuarios] No se pudo enviar bienvenida', error);
   }
+}
+
+function normalizeUserError(error) {
+  const message = error?.message || '';
+  if (message.includes('duplicate key') || message.includes('app_users_email_key')) return 'Ya existe un usuario registrado con ese email.';
+  if (message.includes('status')) return 'No se pudo guardar el estado del usuario. Ejecute la migracion 20260622_user_status_management.sql en Supabase.';
+  return message || 'No se pudo registrar el usuario. Revise los datos e intentelo de nuevo.';
 }

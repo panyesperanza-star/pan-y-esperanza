@@ -13,8 +13,8 @@ export default async function handler(request, response) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.FROM_EMAIL;
-    const logoUrl = process.env.PUBLIC_LOGO_URL;
     const body = parseBody(request.body);
+    const logoUrl = process.env.PUBLIC_LOGO_URL || body.logoUrl;
     const recipients = normalizeRecipients(body.to);
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
     const organization = body.organization || {};
@@ -32,7 +32,7 @@ export default async function handler(request, response) {
 
     if (!apiKey || !from) {
       console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
-      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.' });
+      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.' });
     }
 
     if (!recipients.length) {
@@ -91,7 +91,7 @@ function parseBody(body) {
 function buildHtml(message, logoUrl, organization = {}) {
   const name = organization.name || 'Pan y Esperanza';
   const date = new Date().toLocaleDateString('es-ES');
-  const footer = [organization.cif, organization.address, organization.phone, organization.email].filter(Boolean).join(' · ');
+  const footer = [organization.cif, organization.address, organization.phone, organization.email].filter(Boolean).join(' Â· ');
   return `
     <div style="margin:0;padding:24px;background:#f7faf6;font-family:Arial,sans-serif;color:#17211b;line-height:1.5">
       <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dbe5dc;border-radius:8px;overflow:hidden">

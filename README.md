@@ -189,7 +189,7 @@ En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. E
 3. Asigna rol, estado y permisos.
 4. Si la base ya existia antes de esta version, ejecuta `supabase/migrations/20260622_user_status_management.sql` para anadir el campo `status`.
 
-La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener el perfil de aplicacion. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando la configuracion de `Entidad > Correo`. Para alta real en Supabase Auth desde panel administrativo se recomienda una funcion serverless con Service Role Key, ya que esa clave no debe exponerse en el navegador.
+La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener el perfil de aplicacion. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando la configuracion de `Entidad > Correo`. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion. Para alta real en Supabase Auth desde panel administrativo se recomienda una funcion serverless con Service Role Key, ya que esa clave no debe exponerse en el navegador.
 
 ## Desplegar en Vercel
 
