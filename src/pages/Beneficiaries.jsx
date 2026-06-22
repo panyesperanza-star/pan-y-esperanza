@@ -146,6 +146,13 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit }) {
   }
 
   async function submit(event) {
+  console.log('BOTON GUARDAR PULSADO');
+
+  event.preventDefault();
+
+  if (!validateUniqueFields()) return;
+
+  try {
     event.preventDefault();
     if (!validateUniqueFields()) return;
 
