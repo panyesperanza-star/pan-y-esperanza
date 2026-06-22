@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { dataStore } from '../lib/dataStore';
 import { nextBeneficiaryCode, nextReceiptNumber, normalizeDocument } from '../lib/formatters';
-import { hasSupabaseConfig } from '../lib/supabase';
+import { hasSupabaseConfig, supabase } from '../lib/supabase';
 
 export function useAppData(enabled = true, currentUser = null) {
   const [data, setData] = useState(null);
@@ -59,6 +59,36 @@ export function useAppData(enabled = true, currentUser = null) {
       status,
       is_active: status === 'Activo'
     };
+  }
+
+  async function getAuthHeaders() {
+    if (!hasSupabaseConfig || !supabase) return { 'Content-Type': 'application/json' };
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+  }
+
+  async function readApiJson(response) {
+    const text = await response.text();
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      return { error: 'Respuesta no valida del servidor.' };
+    }
+  }
+
+  async function adminUserRequest(action, payload = {}) {
+    const response = await fetch('/api/admin-user', {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ action, ...payload })
+    });
+    const result = await readApiJson(response);
+    if (!response.ok) throw new Error(result.error || 'No se pudo completar la operacion de usuarios.');
+    return result;
   }
 
   const actions = useMemo(() => ({
@@ -240,11 +270,10 @@ export function useAppData(enabled = true, currentUser = null) {
       if (hasSupabaseConfig) {
         const response = await fetch('/api/create-user', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthHeaders(),
           body: JSON.stringify({ user: cleanPayload })
         });
-        const text = await response.text();
-        const result = text ? JSON.parse(text) : {};
+        const result = await readApiJson(response);
         if (!response.ok) {
           if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
             throw new Error(result.error || 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.');
@@ -262,7 +291,8 @@ export function useAppData(enabled = true, currentUser = null) {
       if (cleanPayload.is_active === false && isLastActiveSuperadmin(id)) {
         throw new Error('No se puede desactivar al ultimo Superadministrador.');
       }
-      await dataStore.update('app_users', id, cleanPayload);
+      if (hasSupabaseConfig) await adminUserRequest('update', { id, user: cleanPayload });
+      else await dataStore.update('app_users', id, cleanPayload);
       await audit(`Edito usuario ${cleanPayload.email || ''}`.trim());
       await reload();
     },
@@ -271,14 +301,26 @@ export function useAppData(enabled = true, currentUser = null) {
       if (isLastActiveSuperadmin(id)) {
         throw new Error('No se puede desactivar al ultimo Superadministrador.');
       }
-      await dataStore.update('app_users', id, { is_active: false, status: 'Inactivo' });
+      if (hasSupabaseConfig) await adminUserRequest('deactivate', { id });
+      else await dataStore.update('app_users', id, { is_active: false, status: 'Inactivo' });
       await audit(`Usuario desactivado: ${existing?.email || ''}`.trim());
       await reload();
     },
     reactivateUser: async (id) => {
       const existing = data.app_users.find((user) => user.id === id);
-      await dataStore.update('app_users', id, { is_active: true, status: 'Activo' });
+      if (hasSupabaseConfig) await adminUserRequest('reactivate', { id });
+      else await dataStore.update('app_users', id, { is_active: true, status: 'Activo' });
       await audit(`Usuario reactivado: ${existing?.email || ''}`.trim());
+      await reload();
+    },
+    blockUser: async (id) => {
+      const existing = data.app_users.find((user) => user.id === id);
+      if (isLastActiveSuperadmin(id)) {
+        throw new Error('No se puede bloquear al ultimo Superadministrador.');
+      }
+      if (hasSupabaseConfig) await adminUserRequest('block', { id });
+      else await dataStore.update('app_users', id, { is_active: false, status: 'Bloqueado' });
+      await audit(`Usuario bloqueado: ${existing?.email || ''}`.trim());
       await reload();
     },
     deleteUser: async (id) => {
@@ -286,12 +328,14 @@ export function useAppData(enabled = true, currentUser = null) {
       if (isLastActiveSuperadmin(id)) {
         throw new Error('No se puede eliminar al ultimo Superadministrador activo.');
       }
-      await dataStore.remove('app_users', id);
+      if (hasSupabaseConfig) await adminUserRequest('delete', { id });
+      else await dataStore.remove('app_users', id);
       await audit(`Usuario eliminado: ${existing?.email || ''}`.trim());
       await reload();
     },
     resetUserPassword: async (id, password) => {
-      await dataStore.update('app_users', id, { password });
+      if (hasSupabaseConfig) await adminUserRequest('reset-password', { id, password });
+      else await dataStore.update('app_users', id, { password });
       await audit('Restablecio contrasena de usuario');
       await reload();
     },

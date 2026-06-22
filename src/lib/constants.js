@@ -17,7 +17,7 @@ export const MODULES = [
 ];
 
 export const DOCUMENT_TYPES = ['DNI/NIE / NIE O PASAPORTE', 'Empadronamiento', 'Familia numerosa', 'Discapacidad', 'Otros documentos'];
-export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Voluntario'];
+export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario'];
 
 export const PERMISSION_MODULES = [
   { id: 'beneficiaries', label: 'Beneficiarios' },
@@ -52,6 +52,7 @@ export const ROLE_PERMISSIONS = {
   Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
   Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
   Tesorera: ['donations', 'treasury', 'reports', 'receipts', 'communications'],
+  Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'reports'],
   Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory', 'treasury']
 };
 
@@ -69,5 +70,6 @@ export const ROLE_PERMISSION_MATRIX = {
   Presidenta: buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['view', 'create', 'edit', 'delete']),
   Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit']),
   Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['view', 'create', 'edit', 'delete']),
+  Coordinadora: buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
   Voluntario: buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view'])
 };

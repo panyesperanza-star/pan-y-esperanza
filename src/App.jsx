@@ -20,8 +20,9 @@ import { Treasury } from './pages/Treasury';
 import { Volunteers } from './pages/Volunteers';
 
 export default function App() {
+  const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
   const [active, setActive] = useState('dashboard');
-  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+  const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
 
   const sorted = useMemo(() => {
@@ -35,6 +36,10 @@ export default function App() {
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
     };
   }, [data]);
+
+  if (hasResetToken) {
+    return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
+  }
 
   if (!currentUser && hasSupabaseConfig) {
     return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;

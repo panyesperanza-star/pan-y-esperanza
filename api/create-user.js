@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
+const ADMIN_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Administrador'];
+
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
@@ -35,6 +37,11 @@ export default async function handler(request, response) {
         persistSession: false
       }
     });
+
+    const requester = await requireAdmin(request, admin);
+    if (!requester.ok) {
+      return sendJson(response, requester.status, { ok: false, code: requester.code, error: requester.error });
+    }
 
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
       email: user.email,
@@ -146,4 +153,49 @@ function normalizeSupabaseAuthError(message) {
     return 'Ya existe un usuario registrado con ese email.';
   }
   return message;
+}
+
+async function requireAdmin(request, admin) {
+  const token = getBearerToken(request);
+  if (!token) {
+    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion de administrador requerida.' };
+  }
+
+  const { data: authData, error: authError } = await admin.auth.getUser(token);
+  if (authError || !authData?.user?.email) {
+    return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
+  }
+
+  const { data: profile, error: profileError } = await admin
+    .from('app_users')
+    .select('id,email,role,is_active,status,permissions,permission_matrix')
+    .eq('email', authData.user.email)
+    .single();
+
+  if (profileError || !profile) {
+    return { ok: false, status: 403, code: 'PROFILE_NOT_FOUND', error: 'Usuario sin perfil administrativo.' };
+  }
+
+  if (!isActive(profile) || !canManageUsers(profile)) {
+    return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para administrar usuarios.' };
+  }
+
+  return { ok: true, profile };
+}
+
+function getBearerToken(request) {
+  const header = request.headers.authorization || request.headers.Authorization || '';
+  const match = String(header).match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || '';
+}
+
+function isActive(user) {
+  return user?.is_active !== false && (user?.status || 'Activo') === 'Activo';
+}
+
+function canManageUsers(user) {
+  if (ADMIN_ROLES.includes(user.role)) return true;
+  if (Array.isArray(user.permissions) && (user.permissions.includes('*') || user.permissions.includes('users'))) return true;
+  const matrix = user.permission_matrix || {};
+  return Boolean(matrix.users?.create || matrix.users?.edit || matrix.users?.delete);
 }

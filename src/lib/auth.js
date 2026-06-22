@@ -26,7 +26,10 @@ export async function signIn({ email, password }, users = []) {
       .eq('email', data.user.email)
       .single();
     if (profileError) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
-    if (!isUserActive(profile)) throw new Error('Usuario sin perfil activo en Pan y Esperanza.');
+    if (!isUserActive(profile)) {
+      await supabase.auth.signOut();
+      throw new Error('Usuario inactivo o bloqueado. Contacte con administracion.');
+    }
     await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', profile.id);
     const current = withPermissions(profile);
     storeUser(current);

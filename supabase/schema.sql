@@ -282,7 +282,7 @@ create table public.app_users (
   email text not null unique,
   password text,
   phone text,
-  role text not null check (role in ('Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
+  role text not null check (role in ('Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
   position text,
   status text not null default 'Activo' check (status in ('Activo', 'Inactivo', 'Bloqueado')),
   is_active boolean not null default true,
@@ -293,6 +293,20 @@ create table public.app_users (
   created_by text,
   created_at timestamptz not null default now()
 );
+
+create table public.password_reset_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.app_users(id) on delete cascade,
+  auth_user_id uuid references auth.users(id) on delete cascade,
+  email text not null,
+  token_hash text not null unique,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create index password_reset_tokens_email_idx on public.password_reset_tokens (lower(email));
+create index password_reset_tokens_expires_idx on public.password_reset_tokens (expires_at);
 
 create or replace function public.can_write_treasury()
 returns boolean
@@ -371,6 +385,7 @@ alter table public.volunteer_history enable row level security;
 alter table public.roles enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.app_users enable row level security;
+alter table public.password_reset_tokens enable row level security;
 
 create policy "authenticated_read_beneficiaries" on public.beneficiaries for select to authenticated using (true);
 create policy "authenticated_write_beneficiaries" on public.beneficiaries for all to authenticated using (true) with check (true);
@@ -408,6 +423,7 @@ create policy "authenticated_read_roles" on public.roles for select to authentic
 create policy "authenticated_write_roles" on public.roles for all to authenticated using (true) with check (true);
 create policy "authenticated_read_audit_logs" on public.audit_logs for select to authenticated using (true);
 create policy "authenticated_write_audit_logs" on public.audit_logs for all to authenticated using (true) with check (true);
+create policy "password_reset_tokens_no_client_access" on public.password_reset_tokens for all to authenticated using (false) with check (false);
 
 create or replace function public.current_app_user()
 returns public.app_users

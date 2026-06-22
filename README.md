@@ -162,11 +162,12 @@ Roles disponibles:
 - Presidenta
 - Secretaria
 - Tesorera
+- Coordinadora
 - Voluntario
 
 Cada usuario tiene nombre, apellidos, email, telefono, cargo, contrasena temporal, rol, estado activo/inactivo, foto opcional, ultimo acceso, fecha de creacion y creado por.
 
-`Entidad > Usuarios` incluye filtros para ver usuarios activos, inactivos o todos. Cada usuario puede estar en estado `Activo`, `Inactivo` o `Bloqueado`.
+`Entidad > Usuarios` incluye filtros para ver usuarios activos, inactivos, bloqueados o todos. Cada usuario puede estar en estado `Activo`, `Inactivo` o `Bloqueado`.
 
 Un usuario `Inactivo` o `Bloqueado` no puede iniciar sesion, pero conserva historial, permisos y datos. Puede reactivarse en cualquier momento con el boton `Reactivar usuario`, recuperando automaticamente su acceso anterior.
 
@@ -184,16 +185,40 @@ Permisos especiales de tesoreria:
 - Voluntario puede acceder en modo lectura si tiene el permiso `treasury`.
 - Los modulos sin permiso se ocultan automaticamente en el menu lateral.
 
-En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. En produccion:
+En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. En produccion todas las operaciones administrativas de usuarios se ejecutan desde funciones serverless con `SUPABASE_SERVICE_ROLE_KEY`; la service role nunca se importa ni se expone en React.
 
 1. Configura `SUPABASE_SERVICE_ROLE_KEY` solo en Vercel, nunca en variables `VITE_*`.
-2. Ejecuta `supabase/migrations/20260622_app_users_admin_rls.sql`.
+2. Ejecuta `supabase/migrations/20260622_users_production_fix.sql`.
 3. Al crear usuario desde `Entidad > Usuarios`, la app llama a `api/create-user.js`.
 4. El backend crea primero el usuario en `auth.users`.
 5. Despues inserta el perfil en `public.app_users` con `auth_user_id`, rol, estado y permisos.
-6. Si la base ya existia antes de esta version, ejecuta tambien `supabase/migrations/20260622_user_status_management.sql` para anadir el campo `status`.
+6. Al editar, bloquear, desactivar, reactivar, eliminar o restablecer contrasena, la app llama a `api/admin-user.js`.
+7. El backend verifica el token Supabase del usuario actual y comprueba que tenga permisos de administracion de usuarios.
+8. Si la base ya existia antes de esta version, la migracion acumulada tambien anade `status`, `Coordinadora`, tokens de recuperacion y politicas RLS corregidas.
 
-La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener el perfil de aplicacion. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando la configuracion de `Entidad > Correo`. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion. Para alta real en Supabase Auth desde panel administrativo se recomienda una funcion serverless con Service Role Key, ya que esa clave no debe exponerse en el navegador.
+La pantalla `Entidad > Usuarios` permite crear usuarios reales, editar permisos por modulo, desactivar, bloquear, reactivar, eliminar y restablecer contrasenas. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando Resend. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion.
+
+### Recuperacion de contrasena
+
+La pantalla de acceso incluye `Olvide mi contrasena`.
+
+1. El usuario introduce su email.
+2. El frontend llama a `api/request-password-reset.js`.
+3. El servidor comprueba `app_users`, crea un token temporal en `password_reset_tokens` y envia el correo con Resend.
+4. El correo contiene un enlace `/?reset_token=...`.
+5. La pantalla de acceso permite establecer una nueva contrasena.
+6. `api/reset-password.js` actualiza la contrasena en Supabase Auth usando `SUPABASE_SERVICE_ROLE_KEY`.
+
+Variables necesarias para usuarios y recuperacion:
+
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+RESEND_API_KEY=
+FROM_EMAIL=
+PUBLIC_LOGO_URL=
+```
 
 ## Desplegar en Vercel
 
@@ -202,7 +227,7 @@ La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener 
 3. Framework: Vite.
 4. Build command: `npm run build`.
 5. Output directory: `dist`.
-6. Anade las variables `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `RESEND_API_KEY`, `FROM_EMAIL` y `PUBLIC_LOGO_URL`.
+6. Anade las variables `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `FROM_EMAIL` y `PUBLIC_LOGO_URL`.
 7. Pulsa Deploy.
 
 ## Como probar las nuevas funciones

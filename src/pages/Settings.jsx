@@ -188,7 +188,8 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
   const filtered = users.filter((user) => {
     const status = getUserStatus(user);
     if (filter === 'active') return status === 'Activo';
-    if (filter === 'inactive') return status !== 'Activo';
+    if (filter === 'inactive') return status === 'Inactivo';
+    if (filter === 'blocked') return status === 'Bloqueado';
     return true;
   });
 
@@ -221,11 +222,21 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
     }
   }
 
+  async function blockUser(user) {
+    try {
+      await actions.blockUser(user.id);
+      setMessage('Usuario bloqueado. No podra iniciar sesion hasta ser reactivado.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant={filter === 'active' ? 'primary' : 'secondary'} onClick={() => setFilter('active')}>Ver usuarios activos</Button>
         <Button variant={filter === 'inactive' ? 'primary' : 'secondary'} onClick={() => setFilter('inactive')}>Ver usuarios inactivos</Button>
+        <Button variant={filter === 'blocked' ? 'primary' : 'secondary'} onClick={() => setFilter('blocked')}>Ver usuarios bloqueados</Button>
         <Button variant={filter === 'all' ? 'primary' : 'secondary'} onClick={() => setFilter('all')}>Ver todos los usuarios</Button>
       </div>
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
@@ -253,6 +264,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
                       {status === 'Activo'
                         ? <Button variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
                         : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>}
+                      {status !== 'Bloqueado' && <Button variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
                       <Button variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>
                     </div>
                   </td>
@@ -356,5 +368,8 @@ function normalizeUserError(error) {
   const message = error?.message || '';
   if (message.includes('duplicate key') || message.includes('app_users_email_key')) return 'Ya existe un usuario registrado con ese email.';
   if (message.includes('status')) return 'No se pudo guardar el estado del usuario. Ejecute la migracion 20260622_user_status_management.sql en Supabase.';
+  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel y redepliegue.';
+  if (message.includes('Sesion de administrador requerida') || message.includes('Sesion no valida')) return 'Sesion de administrador no valida. Cierre sesion y vuelva a entrar.';
+  if (message.includes('No tiene permisos')) return 'No tiene permisos para administrar usuarios.';
   return message || 'No se pudo registrar el usuario. Revise los datos e intentelo de nuevo.';
 }
