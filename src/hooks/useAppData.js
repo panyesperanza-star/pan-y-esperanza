@@ -236,7 +236,24 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createUser: async (payload) => {
-      await dataStore.create('app_users', sanitizeUserPayload(payload));
+      const cleanPayload = sanitizeUserPayload(payload);
+      if (hasSupabaseConfig) {
+        const response = await fetch('/api/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: cleanPayload })
+        });
+        const text = await response.text();
+        const result = text ? JSON.parse(text) : {};
+        if (!response.ok) {
+          if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
+            throw new Error(result.error || 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.');
+          }
+          throw new Error(result.error || 'No se pudo crear el usuario.');
+        }
+      } else {
+        await dataStore.create('app_users', cleanPayload);
+      }
       await audit(`Creo usuario ${payload.email || ''}`.trim());
       await reload();
     },

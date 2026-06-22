@@ -79,6 +79,7 @@ Usuario inicial en modo demo:
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu_clave_anon_publica
 VITE_SUPABASE_STORAGE_BUCKET=documentos
+SUPABASE_SERVICE_ROLE_KEY=solo_en_backend_vercel
 RESEND_API_KEY=re_xxxxxxxxx
 FROM_EMAIL=panyesperanza@gmail.com
 PUBLIC_LOGO_URL=https://tu-dominio.org/logo-pan-y-esperanza.png
@@ -103,7 +104,8 @@ Checklist recomendado antes de usar la aplicacion con datos reales:
 3. Crear usuarios en Supabase Auth y vincularlos por email con `public.app_users`.
 4. Revisar permisos por modulo en `Entidad > Usuarios > Usuarios > Permisos`.
 5. Configurar Resend con `RESEND_API_KEY` y `FROM_EMAIL`.
-6. Crear/verificar el bucket `documentos` en Supabase Storage.
+6. Configurar `SUPABASE_SERVICE_ROLE_KEY` en Vercel para que `api/create-user.js` cree primero el usuario en `auth.users` y despues el perfil en `app_users`.
+7. Crear/verificar el bucket `documentos` en Supabase Storage.
 7. Abrir `Configuracion > Estado del sistema` y comprobar base de datos, correo, almacenamiento y ultima copia.
 8. Crear una copia manual desde `Copias > Crear copia manual`.
 9. Probar restauracion desde `Copias > Restaurar copia` con un JSON exportado.
@@ -184,10 +186,12 @@ Permisos especiales de tesoreria:
 
 En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. En produccion:
 
-1. Crea el usuario en Supabase Auth con email y contrasena.
-2. Crea o actualiza su fila en `public.app_users` con el mismo email.
-3. Asigna rol, estado y permisos.
-4. Si la base ya existia antes de esta version, ejecuta `supabase/migrations/20260622_user_status_management.sql` para anadir el campo `status`.
+1. Configura `SUPABASE_SERVICE_ROLE_KEY` solo en Vercel, nunca en variables `VITE_*`.
+2. Ejecuta `supabase/migrations/20260622_app_users_admin_rls.sql`.
+3. Al crear usuario desde `Entidad > Usuarios`, la app llama a `api/create-user.js`.
+4. El backend crea primero el usuario en `auth.users`.
+5. Despues inserta el perfil en `public.app_users` con `auth_user_id`, rol, estado y permisos.
+6. Si la base ya existia antes de esta version, ejecuta tambien `supabase/migrations/20260622_user_status_management.sql` para anadir el campo `status`.
 
 La pantalla `Entidad > Usuarios` permite crear usuarios locales/demo y mantener el perfil de aplicacion. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando la configuracion de `Entidad > Correo`. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion. Para alta real en Supabase Auth desde panel administrativo se recomienda una funcion serverless con Service Role Key, ya que esa clave no debe exponerse en el navegador.
 
