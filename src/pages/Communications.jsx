@@ -30,6 +30,7 @@ export function Communications({ data, actions, currentUser }) {
     beneficiary_id: data.beneficiaries[0]?.id || '',
     template: 'receipt',
     recipients: data.beneficiaries[0]?.email || '',
+    whatsappPhone: data.beneficiaries[0]?.phone || '',
     subject: EMAIL_TEMPLATES[0].subject,
     message: EMAIL_TEMPLATES[0].message,
     attachReceipt: true
@@ -46,7 +47,7 @@ export function Communications({ data, actions, currentUser }) {
 
   function chooseBeneficiary(id) {
     const nextBeneficiary = data.beneficiaries.find((item) => item.id === id);
-    setForm((current) => ({ ...current, beneficiary_id: id, recipients: nextBeneficiary?.email || '' }));
+    setForm((current) => ({ ...current, beneficiary_id: id, recipients: nextBeneficiary?.email || '', whatsappPhone: nextBeneficiary?.phone || '' }));
   }
 
   function chooseTemplate(id) {
@@ -92,6 +93,34 @@ export function Communications({ data, actions, currentUser }) {
 
   async function downloadLatestReceipt() {
     if (beneficiary && latestDelivery) await printDeliveryReceiptPdf(latestDelivery, beneficiary, data.deliveries);
+  }
+
+  async function sendWhatsApp(event) {
+    event.preventDefault();
+    if (!beneficiary) {
+      setNotice('Seleccione un beneficiario antes de enviar WhatsApp.');
+      return;
+    }
+    const phone = normalizeWhatsAppPhone(form.whatsappPhone || beneficiary.phone);
+    if (!phone) {
+      setNotice('Este beneficiario no tiene un telefono valido para WhatsApp.');
+      return;
+    }
+    const url = buildWhatsAppUrl(phone, form.message);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setNotice('WhatsApp abierto correctamente. Revise el mensaje antes de enviarlo.');
+    try {
+      await actions.createEmailLog({
+        recipient: `WhatsApp ${phone}`,
+        subject: `WhatsApp - ${form.subject || 'Comunicacion'}`,
+        sent_by: currentUser?.email || currentUser?.first_name || 'Sistema',
+        sent_at: new Date().toISOString(),
+        attachments: [],
+        result: 'WhatsApp abierto correctamente'
+      });
+    } catch (error) {
+      console.warn('[Comunicaciones] No se pudo registrar WhatsApp:', error);
+    }
   }
 
   return (
@@ -143,12 +172,26 @@ export function Communications({ data, actions, currentUser }) {
         </section>
 
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-          <h3 className="font-bold text-ink">WhatsApp preparado</h3>
-          <div className="mt-4 grid gap-3">
-            <WhatsAppCard title="Envio individual" description="Estructura lista para conectar WhatsApp Business API con la ficha del beneficiario." />
-            <WhatsAppCard title="Envio masivo" description="Base preparada para campanas por familias, beneficiarios activos o entregas pendientes." />
-            <WhatsAppCard title="Plantillas reutilizables" description="Aviso de recogida, solicitud de documentacion, agradecimiento y recordatorios." />
-          </div>
+          <h3 className="font-bold text-ink">Enviar WhatsApp</h3>
+          <form className="mt-4 grid gap-4" onSubmit={sendWhatsApp}>
+            <FormField label="Beneficiario">
+              <select className={inputClass} value={form.beneficiary_id} onChange={(event) => chooseBeneficiary(event.target.value)}>
+                {data.beneficiaries.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Telefono WhatsApp">
+              <input className={inputClass} value={form.whatsappPhone || ''} onChange={(event) => update('whatsappPhone', event.target.value)} placeholder="+34 600 000 000" />
+            </FormField>
+            <FormField label="Mensaje">
+              <textarea className={inputClass} rows="5" value={form.message} onChange={(event) => update('message', event.target.value)} />
+            </FormField>
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              El boton abre WhatsApp Web o la aplicacion del movil con el mensaje preparado. El envio final lo confirma la persona usuaria desde WhatsApp.
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit"><MessageCircle size={18} /> Enviar WhatsApp</Button>
+            </div>
+          </form>
         </section>
       </div>
 
@@ -183,11 +226,14 @@ function Metric({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-white p-4 shadow-panel"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-ink">{value}</p></div>;
 }
 
-function WhatsAppCard({ title, description }) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center gap-2 font-semibold text-ink"><MessageCircle size={18} /> {title}</div>
-      <p className="mt-2 text-sm text-slate-600">{description}</p>
-    </div>
-  );
+export function normalizeWhatsAppPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 9) return `34${digits}`;
+  if (digits.startsWith('00')) return digits.slice(2);
+  return digits.length >= 10 ? digits : '';
+}
+
+export function buildWhatsAppUrl(phone, message) {
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message || '')}`;
 }

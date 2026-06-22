@@ -1,4 +1,4 @@
-import { Edit, FileText, Mail, Plus, Printer, Search, Trash2 } from 'lucide-react';
+import { Edit, FileText, Mail, MessageCircle, Plus, Printer, Search, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -8,6 +8,7 @@ import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/const
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { formatDate, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { createReceiptEmailAttachments, printBeneficiaryPdf } from '../lib/exporters';
+import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
 const emptyBeneficiary = {
   code: '',
@@ -239,6 +240,28 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
+  async function openWhatsApp() {
+    const phone = normalizeWhatsAppPhone(beneficiary.phone);
+    if (!phone) {
+      setNotice('Este beneficiario no tiene un telefono valido para WhatsApp.');
+      return;
+    }
+    const message = `Hola ${beneficiary.full_name}, le contactamos desde Pan y Esperanza.`;
+    window.open(buildWhatsAppUrl(phone, message), '_blank', 'noopener,noreferrer');
+    setNotice('WhatsApp abierto correctamente. Revise el mensaje antes de enviarlo.');
+    try {
+      await actions.createEmailLog({
+        recipient: `WhatsApp ${phone}`,
+        subject: `WhatsApp - ${beneficiary.full_name}`,
+        sent_by: currentUser?.email || currentUser?.first_name || 'Sistema',
+        sent_at: new Date().toISOString(),
+        attachments: [],
+        result: 'WhatsApp abierto correctamente'
+      });
+    } catch (error) {
+      console.warn('[Beneficiarios] No se pudo registrar WhatsApp:', error);
+    }
+  }
   async function uploadDocument(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -261,7 +284,10 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       <section className="rounded-md border border-slate-200 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h4 className="font-bold text-ink">Datos personales</h4>
-          <Button type="button" onClick={() => { setNotice(''); setEmailOpen(true); }}><Mail size={16} /> Enviar email</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={openWhatsApp}><MessageCircle size={16} /> WhatsApp</Button>
+            <Button type="button" onClick={() => { setNotice(''); setEmailOpen(true); }}><Mail size={16} /> Enviar email</Button>
+          </div>
         </div>
         {notice && <p className="mt-3 rounded-md border border-brand-100 bg-brand-50 p-2 text-sm font-semibold text-brand-700">{notice}</p>}
         <dl className="mt-3 grid gap-2 text-sm">

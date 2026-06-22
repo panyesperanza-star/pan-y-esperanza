@@ -91,7 +91,7 @@ function parseBody(body) {
 function buildHtml(message, logoUrl, organization = {}) {
   const name = organization.name || 'Pan y Esperanza';
   const date = new Date().toLocaleDateString('es-ES');
-  const footer = [organization.cif, organization.address, organization.phone, organization.email].filter(Boolean).join(' Â· ');
+  const footer = [organization.cif, organization.address, organization.phone, organization.email].filter(Boolean).join(' - ');
   return `
     <div style="margin:0;padding:24px;background:#f7faf6;font-family:Arial,sans-serif;color:#17211b;line-height:1.5">
       <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dbe5dc;border-radius:8px;overflow:hidden">

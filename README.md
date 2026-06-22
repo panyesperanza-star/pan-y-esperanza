@@ -338,16 +338,17 @@ El boton `Generar informe de entregas` crea solo el PDF resumen, sin ZIP.
 
 ## Comunicaciones
 
-La seccion `Comunicaciones` centraliza emails y deja preparada la integracion futura con WhatsApp Business API. Incluye:
+La seccion `Comunicaciones` centraliza emails y WhatsApp. WhatsApp funciona mediante enlace directo `wa.me`, abriendo WhatsApp Web o la aplicacion del movil con el mensaje preparado. Incluye:
 
 - Plantillas reutilizables: justificante de ayuda recibida, aviso de recogida, solicitud de documentacion y agradecimiento.
 - Envio por Resend mediante la funcion serverless `api/send-justificantes.js`.
 - Adjuntar automaticamente el justificante PDF de la ultima entrega del beneficiario.
 - Descargar ese PDF antes de enviarlo.
 - Historial con fecha, destinatario, asunto, usuario, adjuntos y resultado.
+- Boton `Enviar WhatsApp` con telefono del beneficiario, mensaje editable y registro del intento en historial.
 - Panel estadistico con beneficiarios activos, familias atendidas, menores atendidos, entregas realizadas y correos enviados.
 
-La ficha individual del beneficiario tambien incluye `Enviar email` y una pestaña `Emails` con el historial asociado al correo registrado del beneficiario.
+La ficha individual del beneficiario tambien incluye `Enviar email`, boton `WhatsApp` y una pestana `Emails` con el historial asociado al correo registrado del beneficiario.
 
 ## Verificacion
 
@@ -357,4 +358,4 @@ Para comprobar produccion:
 npm run build
 ```
 
-En este entorno de Codex no hay `node` ni `npm` disponibles, por lo que la build debe ejecutarse en una maquina con Node.js 18 o superior instalado.
+En este proyecto la verificacion final se realiza con `npm run build`. Si se trabaja en local, usa Node.js 18 o superior.
