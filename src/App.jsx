@@ -8,6 +8,7 @@ import { Beneficiaries } from './pages/Beneficiaries';
 import { Backup } from './pages/Backup';
 import { Communications } from './pages/Communications';
 import { Dashboard } from './pages/Dashboard';
+import { DebugAdmin } from './pages/DebugAdmin';
 import { Deliveries } from './pages/Deliveries';
 import { Donations } from './pages/Donations';
 import { Families } from './pages/Families';
@@ -21,6 +22,7 @@ import { Volunteers } from './pages/Volunteers';
 
 export default function App() {
   const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
+  const isDebugAdminRoute = window.location.pathname === '/debug/admin';
   const [active, setActive] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
@@ -96,12 +98,13 @@ export default function App() {
 
   const visiblePages = Object.fromEntries(Object.entries(pages).filter(([moduleId]) => moduleId === 'dashboard' || canAccess(currentUser, moduleId)));
   const selectedPage = visiblePages[active] ? active : 'dashboard';
+  const pageContent = isDebugAdminRoute ? <DebugAdmin currentUser={currentUser} /> : visiblePages[selectedPage];
 
   return (
     <Layout active={selectedPage} setActive={setActive} onReset={actions.resetDemo} currentUser={currentUser} onLogout={async () => { await signOut(); setCurrentUser(null); }}>
       {!hasSupabaseConfig && <div className="mb-5 flex gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><Database size={18} /> Modo demo local activo. Configura Supabase para usar PostgreSQL.</div>}
       {error && <div className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={18} /> {error}</div>}
-      {visiblePages[selectedPage]}
+      {pageContent}
     </Layout>
   );
 }

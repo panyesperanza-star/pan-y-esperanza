@@ -15,11 +15,15 @@ export default async function handler(request, response) {
   const logPrefix = '[emergency-admin-repair]';
   console.info(`${logPrefix} inicio`, { requestId, method: request.method });
 
-  if (request.method !== 'POST') {
+  if (request.method !== 'POST' && request.method !== 'GET') {
     return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
   }
 
-  const secret = requireRepairSecret(request, requestId, logPrefix);
+  // Soporte GET temporal para ejecutar la reparacion desde navegador:
+  // /api/emergency-admin-repair?secret=VALOR
+  // Eliminar este soporte cuando Elizabeth quede reparada.
+  const secretRequest = request.method === 'GET' ? withQuerySecretHeader(request) : request;
+  const secret = requireRepairSecret(secretRequest, requestId, logPrefix);
   if (!secret.ok) return sendJson(response, secret.status, secret.payload);
 
   const adminConfig = getEmergencyAdmin(requestId, logPrefix);
@@ -27,7 +31,7 @@ export default async function handler(request, response) {
   const { admin } = adminConfig;
 
   try {
-    const body = parseBody(request.body);
+    const body = request.method === 'GET' ? {} : parseBody(request.body);
     const email = String(body.email || ELIZABETH_EMAIL).toLowerCase();
     if (email !== ELIZABETH_EMAIL) {
       return sendJson(response, 400, {
@@ -109,4 +113,21 @@ export default async function handler(request, response) {
       error: error.message || 'No se pudo reparar el administrador.'
     });
   }
+}
+
+function withQuerySecretHeader(request) {
+  const querySecret = getQuerySecret(request);
+  return {
+    ...request,
+    headers: {
+      ...request.headers,
+      'x-repair-secret': querySecret
+    }
+  };
+}
+
+function getQuerySecret(request) {
+  const host = request.headers?.host || 'localhost';
+  const url = new URL(request.url || '', `https://${host}`);
+  return url.searchParams.get('secret') || '';
 }
