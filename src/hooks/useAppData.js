@@ -64,15 +64,34 @@ export function useAppData(enabled = true, currentUser = null) {
   async function getAuthHeaders() {
     if (!hasSupabaseConfig || !supabase) return { 'Content-Type': 'application/json' };
     const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData?.session?.access_token;
+    const token = typeof sessionData?.session?.access_token === 'string' ? sessionData.session.access_token.trim() : '';
+    const tokenHasNonAscii = /[^\x00-\x7F]/.test(token);
+    console.info('[usuarios] Token Supabase para API', {
+      hasToken: Boolean(token),
+      tokenLength: token.length,
+      tokenPrefix: token.slice(0, 20),
+      tokenHasNonAscii
+    });
     if (!token) {
       console.error('[usuarios] No hay token activo de Supabase Auth. localStorage puede estar obsoleto.');
+      throw new Error('Sesion de administrador no valida. Cierre sesion y vuelva a entrar.');
+    }
+    if (tokenHasNonAscii || !isJwtLike(token)) {
+      console.error('[usuarios] Token Supabase invalido antes de enviar al backend', {
+        tokenLength: token.length,
+        tokenPrefix: token.slice(0, 20),
+        tokenHasNonAscii
+      });
       throw new Error('Sesion de administrador no valida. Cierre sesion y vuelva a entrar.');
     }
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     };
+  }
+
+  function isJwtLike(token) {
+    return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
   }
 
   async function readApiJson(response) {

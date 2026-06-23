@@ -156,15 +156,34 @@ function normalizeSupabaseAuthError(message) {
 }
 
 async function requireAdmin(request, admin, requestId) {
-  const token = getBearerToken(request);
+  const { token, diagnostics } = getBearerToken(request);
+  console.info('[create-user] Authorization recibida', { requestId, ...diagnostics });
   if (!token) {
     console.error('[create-user] Validacion admin fallida: falta Authorization Bearer', { requestId });
     return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion de administrador requerida.' };
   }
 
-  const { data: authData, error: authError } = await admin.auth.getUser(token);
+  if (diagnostics.tokenHasNonAscii || !isJwtLike(token)) {
+    console.error('[create-user] Validacion admin fallida: token no es JWT ASCII valido', { requestId, ...diagnostics });
+    return { ok: false, status: 401, code: 'INVALID_TOKEN_FORMAT', error: 'Sesion no valida o caducada.' };
+  }
+
+  let authData;
+  let authError;
+  try {
+    const result = await admin.auth.getUser(token);
+    authData = result.data;
+    authError = result.error;
+  } catch (error) {
+    console.error('[create-user] Validacion admin fallida: excepcion en supabase.auth.getUser', {
+      requestId,
+      message: error.message,
+      ...diagnostics
+    });
+    return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
+  }
   if (authError || !authData?.user?.email) {
-    console.error('[create-user] Validacion admin fallida: token invalido', { requestId, error: authError?.message, hasUser: Boolean(authData?.user) });
+    console.error('[create-user] Validacion admin fallida: token invalido', { requestId, error: authError?.message, hasUser: Boolean(authData?.user), ...diagnostics });
     return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
   }
 
@@ -246,9 +265,25 @@ async function requireAdmin(request, admin, requestId) {
 }
 
 function getBearerToken(request) {
-  const header = request.headers.authorization || request.headers.Authorization || '';
-  const match = String(header).match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || '';
+  const rawHeaderValue = request.headers.authorization || request.headers.Authorization || '';
+  const rawHeader = Array.isArray(rawHeaderValue) ? rawHeaderValue[0] || '' : String(rawHeaderValue || '');
+  const match = rawHeader.match(/^Bearer\s+(.+)$/i);
+  const token = typeof match?.[1] === 'string' ? match[1].trim() : '';
+  return {
+    token,
+    diagnostics: {
+      authorizationHeaderReceived: rawHeader ? `${rawHeader.slice(0, 28)}...` : '',
+      authorizationHeaderLength: rawHeader.length,
+      tokenLength: token.length,
+      tokenPrefix: token.slice(0, 20),
+      tokenHasNonAscii: /[^\x00-\x7F]/.test(token),
+      headerHasNonAscii: /[^\x00-\x7F]/.test(rawHeader)
+    }
+  };
+}
+
+function isJwtLike(token) {
+  return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
 }
 
 function isActive(user) {
