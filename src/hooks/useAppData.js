@@ -71,6 +71,13 @@ export function useAppData(enabled = true, currentUser = null) {
     }
   }
 
+  function formatApiError(result, fallback) {
+    const base = result.error || fallback;
+    if (!result.step) return base;
+    const details = result.details ? ` Detalles: ${JSON.stringify(result.details)}` : '';
+    return `${base} Paso: ${result.step}.${details}`;
+  }
+
   async function adminUserRequest(action, payload = {}) {
     const response = await fetch('/api/admin-user', {
       method: 'POST',
@@ -78,7 +85,7 @@ export function useAppData(enabled = true, currentUser = null) {
       body: JSON.stringify({ action, ...payload })
     });
     const result = await readApiJson(response);
-    if (!response.ok) throw new Error(result.error || 'No se pudo completar la operacion de usuarios.');
+    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operacion de usuarios.'));
     return result;
   }
 
@@ -267,9 +274,9 @@ export function useAppData(enabled = true, currentUser = null) {
         const result = await readApiJson(response);
         if (!response.ok) {
           if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
-            throw new Error(result.error || 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.');
+            throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.'));
           }
-          throw new Error(result.error || 'No se pudo crear el usuario.');
+          throw new Error(formatApiError(result, 'No se pudo crear el usuario.'));
         }
       } else {
         await dataStore.create('app_users', cleanPayload);

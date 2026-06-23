@@ -199,6 +199,34 @@ En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. E
 
 La pantalla `Entidad > Usuarios` permite crear usuarios reales, editar permisos por modulo, desactivar, bloquear, reactivar, eliminar y restablecer contrasenas. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando Resend. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion.
 
+### Modo reparacion admin temporal
+
+Se incluyen dos endpoints temporales para reparar el acceso inicial si `elizabeth@panyesperanza.org` no queda reconocida como `Superadministrador`:
+
+- `POST /api/emergency-admin-repair`: busca Elizabeth en Supabase Auth y crea/actualiza `public.app_users` con rol `Superadministrador`, estado `Activo`, `auth_user_id` real y permisos completos.
+- `POST /api/emergency-create-user`: crea usuarios con `SUPABASE_SERVICE_ROLE_KEY` sin depender de la validacion administrativa normal.
+
+Ambos endpoints exigen la cabecera `x-repair-secret` con el valor de `EMERGENCY_REPAIR_SECRET`. Esta variable debe existir solo mientras dure la reparacion.
+
+Ejemplo de reparacion:
+
+```bash
+curl -X POST https://TU_DOMINIO/api/emergency-admin-repair \
+  -H "Content-Type: application/json" \
+  -H "x-repair-secret: TU_SECRETO"
+```
+
+Ejemplo de creacion temporal:
+
+```bash
+curl -X POST https://TU_DOMINIO/api/emergency-create-user \
+  -H "Content-Type: application/json" \
+  -H "x-repair-secret: TU_SECRETO" \
+  -d "{\"email\":\"usuario@dominio.org\",\"password\":\"Temporal2026!\",\"first_name\":\"Nombre\",\"last_name\":\"Apellidos\",\"role\":\"Voluntario\",\"position\":\"Voluntario\"}"
+```
+
+Importante: elimina los archivos `api/emergency-admin-repair.js`, `api/emergency-create-user.js` y `api/_emergencyRepair.js`, y retira `EMERGENCY_REPAIR_SECRET`, antes de cerrar la produccion final.
+
 ### Recuperacion de contrasena
 
 La pantalla de acceso incluye `Olvide mi contrasena`.

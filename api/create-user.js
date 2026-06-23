@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-
-const ADMIN_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Administrador'];
+import { getServerConfig, requireAdmin } from './_adminAuth.js';
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -13,17 +12,29 @@ export default async function handler(request, response) {
   console.info('[create-user] Inicio', { requestId });
 
   try {
-    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const { url, serviceRoleKey, diagnostics: serverDiagnostics } = getServerConfig();
     const body = parseBody(request.body);
     const user = body.user || body;
 
     if (!url || !serviceRoleKey) {
-      console.error('[create-user] Servicio no configurado', { requestId, hasUrl: Boolean(url), hasServiceRoleKey: Boolean(serviceRoleKey) });
+      console.error('[create-user] Servicio no configurado', { requestId, ...serverDiagnostics });
       return sendJson(response, 503, {
         ok: false,
         code: 'SUPABASE_ADMIN_NOT_CONFIGURED',
-        error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.'
+        step: 'server_config_missing',
+        error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
+        details: serverDiagnostics
+      });
+    }
+
+    if (serverDiagnostics.serviceRoleKeyHasNonAscii || !serverDiagnostics.serviceRoleKeyLooksJwt) {
+      console.error('[create-user] SUPABASE_SERVICE_ROLE_KEY invalida para cabeceras HTTP', { requestId, ...serverDiagnostics });
+      return sendJson(response, 503, {
+        ok: false,
+        code: 'SUPABASE_SERVICE_ROLE_INVALID',
+        step: 'server_config_service_role_format',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato valido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
+        details: serverDiagnostics
       });
     }
 
@@ -38,9 +49,15 @@ export default async function handler(request, response) {
       }
     });
 
-    const requester = await requireAdmin(request, admin, requestId);
+    const requester = await requireAdmin(request, admin, requestId, '[create-user]');
     if (!requester.ok) {
-      return sendJson(response, requester.status, { ok: false, code: requester.code, error: requester.error });
+      return sendJson(response, requester.status, {
+        ok: false,
+        code: requester.code,
+        error: requester.error,
+        step: requester.step,
+        details: requester.details
+      });
     }
 
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -152,134 +169,4 @@ function normalizeSupabaseAuthError(message) {
     return 'Ya existe un usuario registrado con ese email.';
   }
   return message;
-}
-
-async function requireAdmin(request, admin, requestId) {
-  const { token, diagnostics } = getBearerToken(request);
-  if (!token) {
-    console.error('[create-user] Validacion admin fallida: falta Authorization Bearer', { requestId });
-    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion de administrador requerida.' };
-  }
-
-  if (diagnostics.tokenHasNonAscii || !isJwtLike(token)) {
-    console.error('[create-user] Validacion admin fallida: token no es JWT ASCII valido', { requestId, ...diagnostics });
-    return { ok: false, status: 401, code: 'INVALID_TOKEN_FORMAT', error: 'Sesion no valida o caducada.' };
-  }
-
-  let authData;
-  let authError;
-  try {
-    const result = await admin.auth.getUser(token);
-    authData = result.data;
-    authError = result.error;
-  } catch (error) {
-    console.error('[create-user] Validacion admin fallida: excepcion en supabase.auth.getUser', {
-      requestId,
-      message: error.message,
-      ...diagnostics
-    });
-    return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
-  }
-  if (authError || !authData?.user?.email) {
-    console.error('[create-user] Validacion admin fallida: token invalido', { requestId, error: authError?.message, hasUser: Boolean(authData?.user), ...diagnostics });
-    return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
-  }
-
-  const authUser = authData.user;
-  const authEmail = authUser.email.toLowerCase();
-
-  let { data: profile, error: profileError } = await admin
-    .from('app_users')
-    .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
-    .eq('auth_user_id', authUser.id)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error('[create-user] Validacion admin fallida: error buscando por auth_user_id', { requestId, error: profileError });
-    return { ok: false, status: 403, code: 'PROFILE_LOOKUP_FAILED', error: 'No se pudo validar el perfil administrador.' };
-  }
-
-  if (!profile) {
-    const byEmail = await admin
-      .from('app_users')
-      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
-      .ilike('email', authEmail)
-      .maybeSingle();
-    if (byEmail.error) {
-      console.error('[create-user] Validacion admin fallida: error buscando por email', { requestId, authEmail, error: byEmail.error });
-      return { ok: false, status: 403, code: 'PROFILE_LOOKUP_FAILED', error: 'No se pudo validar el perfil administrador.' };
-    }
-    profile = byEmail.data;
-  }
-
-  if (!profile) {
-    console.error('[create-user] Validacion admin fallida: no existe perfil app_users', { requestId, authUserId: authUser.id, authEmail });
-    return { ok: false, status: 403, code: 'PROFILE_NOT_FOUND', error: 'Usuario sin perfil administrativo.' };
-  }
-
-  if (!profile.auth_user_id || profile.auth_user_id !== authUser.id) {
-    console.warn('[create-user] Perfil administrador con auth_user_id desincronizado. Sincronizando.', {
-      requestId,
-      profileId: profile.id,
-      previousAuthUserId: profile.auth_user_id,
-      nextAuthUserId: authUser.id
-    });
-    const { data: syncedProfile, error: syncError } = await admin
-      .from('app_users')
-      .update({ auth_user_id: authUser.id })
-      .eq('id', profile.id)
-      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
-      .single();
-    if (syncError) {
-      console.error('[create-user] Validacion admin fallida: no se pudo sincronizar auth_user_id', { requestId, error: syncError });
-      return { ok: false, status: 403, code: 'PROFILE_SYNC_FAILED', error: 'No se pudo sincronizar el perfil administrador con Supabase Auth.' };
-    }
-    profile = syncedProfile;
-  }
-
-  const active = isActive(profile);
-  const allowed = canManageUsers(profile);
-
-  if (!active) {
-    console.error('[create-user] Validacion admin fallida: perfil inactivo o bloqueado', { requestId, profileId: profile.id, status: profile.status, is_active: profile.is_active });
-    return { ok: false, status: 403, code: 'ADMIN_INACTIVE', error: 'Usuario administrador inactivo o bloqueado.' };
-  }
-
-  if (!allowed) {
-    console.error('[create-user] Validacion admin fallida: sin permisos de usuarios', { requestId, profileId: profile.id, role: profile.role, permissions: profile.permissions, permission_matrix: profile.permission_matrix });
-    return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para administrar usuarios.' };
-  }
-
-  return { ok: true, profile };
-}
-
-function getBearerToken(request) {
-  const rawHeaderValue = request.headers.authorization || request.headers.Authorization || '';
-  const rawHeader = Array.isArray(rawHeaderValue) ? rawHeaderValue[0] || '' : String(rawHeaderValue || '');
-  const match = rawHeader.match(/^Bearer\s+(.+)$/i);
-  const token = typeof match?.[1] === 'string' ? match[1].trim() : '';
-  return {
-    token,
-    diagnostics: {
-      authorizationHeaderLength: rawHeader.length,
-      tokenLength: token.length,
-      tokenHasNonAscii: /[^\x00-\x7F]/.test(token),
-      headerHasNonAscii: /[^\x00-\x7F]/.test(rawHeader)
-    }
-  };
-}
-
-function isJwtLike(token) {
-  return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
-}
-
-function isActive(user) {
-  return user?.is_active !== false && (user?.status || 'Activo') === 'Activo';
-}
-
-function canManageUsers(user) {
-  if (ADMIN_ROLES.includes(user.role)) return true;
-  if (Array.isArray(user.permissions) && (user.permissions.includes('*') || user.permissions.includes('users'))) return true;
-  const matrix = user.permission_matrix || {};
-  return Boolean(matrix.users?.create || matrix.users?.edit || matrix.users?.delete);
 }
