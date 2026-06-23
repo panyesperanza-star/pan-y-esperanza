@@ -65,9 +65,13 @@ export function useAppData(enabled = true, currentUser = null) {
     if (!hasSupabaseConfig || !supabase) return { 'Content-Type': 'application/json' };
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
+    if (!token) {
+      console.error('[usuarios] No hay token activo de Supabase Auth. localStorage puede estar obsoleto.');
+      throw new Error('Sesion de administrador no valida. Cierre sesion y vuelva a entrar.');
+    }
     return {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      Authorization: `Bearer ${token}`
     };
   }
 
@@ -268,12 +272,14 @@ export function useAppData(enabled = true, currentUser = null) {
     createUser: async (payload) => {
       const cleanPayload = sanitizeUserPayload(payload);
       if (hasSupabaseConfig) {
+        console.info('[usuarios] Solicitando alta de usuario al backend', { email: cleanPayload.email, role: cleanPayload.role });
         const response = await fetch('/api/create-user', {
           method: 'POST',
           headers: await getAuthHeaders(),
           body: JSON.stringify({ user: cleanPayload })
         });
         const result = await readApiJson(response);
+        console.info('[usuarios] Respuesta de alta de usuario', { ok: response.ok, status: response.status, code: result.code, error: result.error });
         if (!response.ok) {
           if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
             throw new Error(result.error || 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.');

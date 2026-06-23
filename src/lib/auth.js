@@ -20,15 +20,29 @@ export async function signIn({ email, password }, users = []) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error('Email o contrasena no validos.');
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from('app_users')
       .select('*')
-      .eq('email', data.user.email)
-      .single();
+      .eq('auth_user_id', data.user.id)
+      .maybeSingle();
+    if (!profile && !profileError) {
+      const byEmail = await supabase
+        .from('app_users')
+        .select('*')
+        .ilike('email', data.user.email)
+        .maybeSingle();
+      profile = byEmail.data;
+      profileError = byEmail.error;
+    }
     if (profileError) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
+    if (!profile) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
     if (!isUserActive(profile)) {
       await supabase.auth.signOut();
       throw new Error('Usuario inactivo o bloqueado. Contacte con administracion.');
+    }
+    if (!profile.auth_user_id) {
+      await supabase.from('app_users').update({ auth_user_id: data.user.id }).eq('id', profile.id);
+      profile = { ...profile, auth_user_id: data.user.id };
     }
     await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', profile.id);
     const current = withPermissions(profile);

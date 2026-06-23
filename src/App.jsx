@@ -1,9 +1,9 @@
 import { AlertTriangle, Database } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, getStoredUser, signIn, signOut } from './lib/auth';
-import { hasSupabaseConfig } from './lib/supabase';
+import { canAccess, clearStoredUser, getStoredUser, signIn, signOut } from './lib/auth';
+import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Beneficiaries } from './pages/Beneficiaries';
 import { Backup } from './pages/Backup';
 import { Communications } from './pages/Communications';
@@ -24,6 +24,29 @@ export default function App() {
   const [active, setActive] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function validateStoredSession() {
+      if (!hasSupabaseConfig || !supabase || !currentUser || hasResetToken) return;
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const sessionEmail = sessionData?.session?.user?.email?.toLowerCase();
+      const storedEmail = currentUser.email?.toLowerCase();
+      if (sessionError || !sessionData?.session || !sessionEmail || sessionEmail !== storedEmail) {
+        console.warn('[auth] Sesion Supabase ausente o distinta al usuario local', {
+          hasSession: Boolean(sessionData?.session),
+          sessionEmail,
+          storedEmail,
+          sessionError: sessionError?.message
+        });
+        await signOut();
+        clearStoredUser();
+        if (!cancelled) setCurrentUser(null);
+      }
+    }
+    validateStoredSession();
+    return () => { cancelled = true; };
+  }, [currentUser, hasResetToken]);
 
   const sorted = useMemo(() => {
     if (!data) return null;

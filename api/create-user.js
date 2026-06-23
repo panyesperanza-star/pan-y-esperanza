@@ -38,7 +38,7 @@ export default async function handler(request, response) {
       }
     });
 
-    const requester = await requireAdmin(request, admin);
+    const requester = await requireAdmin(request, admin, requestId);
     if (!requester.ok) {
       return sendJson(response, requester.status, { ok: false, code: requester.code, error: requester.error });
     }
@@ -155,28 +155,90 @@ function normalizeSupabaseAuthError(message) {
   return message;
 }
 
-async function requireAdmin(request, admin) {
+async function requireAdmin(request, admin, requestId) {
   const token = getBearerToken(request);
   if (!token) {
+    console.error('[create-user] Validacion admin fallida: falta Authorization Bearer', { requestId });
     return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion de administrador requerida.' };
   }
 
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData?.user?.email) {
+    console.error('[create-user] Validacion admin fallida: token invalido', { requestId, error: authError?.message, hasUser: Boolean(authData?.user) });
     return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
   }
 
-  const { data: profile, error: profileError } = await admin
-    .from('app_users')
-    .select('id,email,role,is_active,status,permissions,permission_matrix')
-    .eq('email', authData.user.email)
-    .single();
+  const authUser = authData.user;
+  const authEmail = authUser.email.toLowerCase();
+  console.info('[create-user] Validando administrador', { requestId, authUserId: authUser.id, authEmail });
 
-  if (profileError || !profile) {
+  let { data: profile, error: profileError } = await admin
+    .from('app_users')
+    .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+    .eq('auth_user_id', authUser.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error('[create-user] Validacion admin fallida: error buscando por auth_user_id', { requestId, error: profileError });
+    return { ok: false, status: 403, code: 'PROFILE_LOOKUP_FAILED', error: 'No se pudo validar el perfil administrador.' };
+  }
+
+  if (!profile) {
+    const byEmail = await admin
+      .from('app_users')
+      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+      .ilike('email', authEmail)
+      .maybeSingle();
+    if (byEmail.error) {
+      console.error('[create-user] Validacion admin fallida: error buscando por email', { requestId, authEmail, error: byEmail.error });
+      return { ok: false, status: 403, code: 'PROFILE_LOOKUP_FAILED', error: 'No se pudo validar el perfil administrador.' };
+    }
+    profile = byEmail.data;
+  }
+
+  if (!profile) {
+    console.error('[create-user] Validacion admin fallida: no existe perfil app_users', { requestId, authUserId: authUser.id, authEmail });
     return { ok: false, status: 403, code: 'PROFILE_NOT_FOUND', error: 'Usuario sin perfil administrativo.' };
   }
 
-  if (!isActive(profile) || !canManageUsers(profile)) {
+  if (!profile.auth_user_id || profile.auth_user_id !== authUser.id) {
+    console.warn('[create-user] Perfil administrador con auth_user_id desincronizado. Sincronizando.', {
+      requestId,
+      profileId: profile.id,
+      previousAuthUserId: profile.auth_user_id,
+      nextAuthUserId: authUser.id
+    });
+    const { data: syncedProfile, error: syncError } = await admin
+      .from('app_users')
+      .update({ auth_user_id: authUser.id })
+      .eq('id', profile.id)
+      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+      .single();
+    if (syncError) {
+      console.error('[create-user] Validacion admin fallida: no se pudo sincronizar auth_user_id', { requestId, error: syncError });
+      return { ok: false, status: 403, code: 'PROFILE_SYNC_FAILED', error: 'No se pudo sincronizar el perfil administrador con Supabase Auth.' };
+    }
+    profile = syncedProfile;
+  }
+
+  const active = isActive(profile);
+  const allowed = canManageUsers(profile);
+  console.info('[create-user] Resultado validacion admin', {
+    requestId,
+    profileId: profile.id,
+    email: profile.email,
+    role: profile.role,
+    isActive: active,
+    canManageUsers: allowed
+  });
+
+  if (!active) {
+    console.error('[create-user] Validacion admin fallida: perfil inactivo o bloqueado', { requestId, profileId: profile.id, status: profile.status, is_active: profile.is_active });
+    return { ok: false, status: 403, code: 'ADMIN_INACTIVE', error: 'Usuario administrador inactivo o bloqueado.' };
+  }
+
+  if (!allowed) {
+    console.error('[create-user] Validacion admin fallida: sin permisos de usuarios', { requestId, profileId: profile.id, role: profile.role, permissions: profile.permissions, permission_matrix: profile.permission_matrix });
     return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para administrar usuarios.' };
   }
 
