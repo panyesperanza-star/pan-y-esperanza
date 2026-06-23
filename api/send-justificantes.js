@@ -1,4 +1,7 @@
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
+
+const MAIL_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -13,6 +16,8 @@ export default async function handler(request, response) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.FROM_EMAIL;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const body = parseBody(request.body);
     const logoUrl = process.env.PUBLIC_LOGO_URL || body.logoUrl;
     const recipients = normalizeRecipients(body.to);
@@ -20,19 +25,14 @@ export default async function handler(request, response) {
     const organization = body.organization || {};
     const isTest = Boolean(body.testMode);
 
-    console.info('[send-justificantes] Payload recibido', {
-      requestId,
-      recipients: recipients.length,
-      testMode: isTest,
-      attachments: attachments.map((attachment) => ({
-        filename: attachment?.filename,
-        contentLength: attachment?.content?.length || 0
-      }))
-    });
-
     if (!apiKey || !from) {
       console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
       return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.' });
+    }
+
+    const auth = await requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId });
+    if (!auth.ok) {
+      return sendJson(response, auth.status, { ok: false, code: auth.code, error: auth.error });
     }
 
     if (!recipients.length) {
@@ -117,4 +117,69 @@ function escapeHtml(value) {
 function normalizeRecipients(value) {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
   return String(value || '').split(/[,\s;]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId }) {
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('[send-justificantes] Supabase admin no configurado', { requestId, hasSupabaseUrl: Boolean(supabaseUrl), hasServiceRoleKey: Boolean(serviceRoleKey) });
+    return { ok: false, status: 503, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.' };
+  }
+
+  const token = getBearerToken(request);
+  if (!token) {
+    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion requerida para enviar correos.' };
+  }
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+  const { data: authData, error: authError } = await admin.auth.getUser(token);
+  if (authError || !authData?.user?.email) {
+    console.error('[send-justificantes] Token invalido', { requestId, error: authError?.message });
+    return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
+  }
+
+  let { data: profile, error: profileError } = await admin
+    .from('app_users')
+    .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+    .eq('auth_user_id', authData.user.id)
+    .maybeSingle();
+
+  if (!profile && !profileError) {
+    const byEmail = await admin
+      .from('app_users')
+      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+      .ilike('email', authData.user.email)
+      .maybeSingle();
+    profile = byEmail.data;
+    profileError = byEmail.error;
+  }
+
+  if (profileError || !profile) {
+    console.error('[send-justificantes] Perfil no encontrado', { requestId, error: profileError?.message, email: authData.user.email });
+    return { ok: false, status: 403, code: 'PROFILE_NOT_FOUND', error: 'Usuario sin permisos para enviar correos.' };
+  }
+
+  const active = profile.is_active !== false && (profile.status || 'Activo') === 'Activo';
+  const allowed = canSendMail(profile);
+  if (!active || !allowed) {
+    console.error('[send-justificantes] Permiso denegado', { requestId, profileId: profile.id, role: profile.role, active, allowed });
+    return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para enviar correos.' };
+  }
+
+  return { ok: true, profile };
+}
+
+function getBearerToken(request) {
+  const rawHeaderValue = request.headers.authorization || request.headers.Authorization || '';
+  const rawHeader = Array.isArray(rawHeaderValue) ? rawHeaderValue[0] || '' : String(rawHeaderValue || '');
+  const match = rawHeader.match(/^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i);
+  return match?.[1] || '';
+}
+
+function canSendMail(user) {
+  if (MAIL_ROLES.includes(user.role)) return true;
+  if (Array.isArray(user.permissions) && (user.permissions.includes('*') || user.permissions.includes('communications') || user.permissions.includes('receipts'))) return true;
+  const matrix = user.permission_matrix || {};
+  return Boolean(matrix.communications?.create || matrix.receipts?.create || matrix.settings?.edit);
 }

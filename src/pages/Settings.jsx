@@ -8,6 +8,7 @@ import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PE
 import { formatDateTime } from '../lib/formatters';
 import { getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
+import { getApiHeaders } from '../lib/apiAuth';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
 export function Settings({ data, actions, currentUser }) {
@@ -93,7 +94,7 @@ function MailSettings({ settings, setSettings, onSave }) {
     try {
       const response = await fetch('/api/send-justificantes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getApiHeaders(),
         body: JSON.stringify({
           testMode: true,
           to: settings.mail_sender_email || settings.email,
@@ -349,7 +350,7 @@ async function sendWelcomeEmail(user, organization) {
     const logoUrl = typeof window !== 'undefined' ? new URL(officialLogoUrl, window.location.origin).toString() : undefined;
     await fetch('/api/send-justificantes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getApiHeaders(),
       body: JSON.stringify({
         testMode: true,
         to: user.email,

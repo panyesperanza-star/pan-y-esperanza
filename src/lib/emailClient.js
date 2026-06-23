@@ -1,3 +1,5 @@
+import { getApiHeaders } from './apiAuth';
+
 export const EMAIL_TEMPLATES = [
   {
     id: 'receipt',
@@ -26,23 +28,12 @@ export const EMAIL_TEMPLATES = [
 ];
 
 export async function sendEmailViaApi({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
-  console.info('[comunicaciones] Enviando request a /api/send-justificantes', {
-    recipients: to,
-    subject,
-    attachments: attachments.map((attachment) => ({
-      filename: attachment.filename,
-      size: attachment.content?.length || 0
-    })),
-    testMode
-  });
-
   const response = await fetch('/api/send-justificantes', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getApiHeaders(),
     body: JSON.stringify({ to, subject, message, attachments, organization, testMode })
   });
   const payload = await parseJsonResponse(response);
-  console.info('[comunicaciones] Respuesta recibida', { status: response.status, payload });
 
   if (!response.ok) {
     if (payload.code === 'MAIL_NOT_CONFIGURED') {

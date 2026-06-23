@@ -280,7 +280,6 @@ create table public.app_users (
   first_name text not null,
   last_name text,
   email text not null unique,
-  password text,
   phone text,
   role text not null check (role in ('Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
   position text,

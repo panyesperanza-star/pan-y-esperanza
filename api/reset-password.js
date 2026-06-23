@@ -48,7 +48,6 @@ export default async function handler(request, response) {
     const { error: authError } = await admin.auth.admin.updateUserById(resetToken.auth_user_id, { password });
     if (authError) throw authError;
 
-    await admin.from('app_users').update({ password }).eq('id', resetToken.user_id);
     await admin.from('password_reset_tokens').update({ used_at: new Date().toISOString() }).eq('id', resetToken.id);
     await admin.from('audit_logs').insert({
       user_name: resetToken.email,

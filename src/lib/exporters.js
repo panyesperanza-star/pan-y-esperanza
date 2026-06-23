@@ -137,7 +137,6 @@ export async function createReceiptsZipBlob(receiptEntries, allDeliveries = []) 
 }
 
 export async function createReceiptEmailAttachments(receiptEntries, allDeliveries = [], options = {}) {
-  console.info('[correo] Inicio createReceiptEmailAttachments', { entries: receiptEntries.length, includeSummary: Boolean(options.includeSummary) });
   const attachments = [];
   for (const entry of receiptEntries) {
     const { doc, receiptNumber } = await createDeliveryReceiptPdf(entry.delivery, entry.beneficiary, allDeliveries, options.organization || {});
@@ -155,7 +154,6 @@ export async function createReceiptEmailAttachments(receiptEntries, allDeliverie
       content: summaryContent
     });
   }
-  console.info('[correo] Adjuntos PDF listos', attachments.map((attachment) => ({ filename: attachment.filename, size: attachment.content.length })));
   return attachments;
 }
 

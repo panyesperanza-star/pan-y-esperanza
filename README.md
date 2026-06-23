@@ -189,12 +189,13 @@ En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. E
 
 1. Configura `SUPABASE_SERVICE_ROLE_KEY` solo en Vercel, nunca en variables `VITE_*`.
 2. Ejecuta `supabase/migrations/20260622_users_production_fix.sql`.
-3. Al crear usuario desde `Entidad > Usuarios`, la app llama a `api/create-user.js`.
-4. El backend crea primero el usuario en `auth.users`.
-5. Despues inserta el perfil en `public.app_users` con `auth_user_id`, rol, estado y permisos.
-6. Al editar, bloquear, desactivar, reactivar, eliminar o restablecer contrasena, la app llama a `api/admin-user.js`.
-7. El backend verifica el token Supabase del usuario actual y comprueba que tenga permisos de administracion de usuarios.
-8. Si la base ya existia antes de esta version, la migracion acumulada tambien anade `status`, `Coordinadora`, tokens de recuperacion y politicas RLS corregidas.
+3. Ejecuta `supabase/migrations/20260623_stabilization_security.sql` para retirar `app_users.password` y activar politicas RLS por permisos.
+4. Al crear usuario desde `Entidad > Usuarios`, la app llama a `api/create-user.js`.
+5. El backend crea primero el usuario en `auth.users`.
+6. Despues inserta el perfil en `public.app_users` con `auth_user_id`, rol, estado y permisos.
+7. Al editar, bloquear, desactivar, reactivar, eliminar o restablecer contrasena, la app llama a `api/admin-user.js`.
+8. El backend verifica el token Supabase del usuario actual y comprueba que tenga permisos de administracion de usuarios.
+9. Si la base ya existia antes de esta version, la migracion acumulada tambien anade `status`, `Coordinadora`, tokens de recuperacion y politicas RLS corregidas.
 
 La pantalla `Entidad > Usuarios` permite crear usuarios reales, editar permisos por modulo, desactivar, bloquear, reactivar, eliminar y restablecer contrasenas. Al crear un usuario se solicita el envio de un correo de bienvenida con la contrasena temporal usando Resend. Ese correo incluye el logo oficial de Pan y Esperanza desde `PUBLIC_LOGO_URL` o desde el logo publicado por la aplicacion.
 

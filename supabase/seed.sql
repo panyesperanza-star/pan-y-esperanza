@@ -43,6 +43,6 @@ on conflict (id) do update
 set name = excluded.name,
     modules = excluded.modules;
 
-insert into public.app_users (first_name, last_name, email, password, phone, role, position, is_active, permissions, created_by)
-values ('Elizabeth', '', 'elizabeth@panyesperanza.org', 'Elizabeth2026!', '', 'Superadministrador', 'Superadministrador', true, '["*"]'::jsonb, 'Sistema')
+insert into public.app_users (first_name, last_name, email, phone, role, position, is_active, permissions, created_by)
+values ('Elizabeth', '', 'elizabeth@panyesperanza.org', '', 'Superadministrador', 'Superadministrador', true, '["*"]'::jsonb, 'Sistema')
 on conflict (email) do nothing;

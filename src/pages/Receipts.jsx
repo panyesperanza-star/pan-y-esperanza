@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { HELP_TYPES } from '../lib/constants';
 import { createReceiptEmailAttachments, downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
+import { getApiHeaders } from '../lib/apiAuth';
 
 export function Receipts({ data, actions, currentUser }) {
   const [filters, setFilters] = useState({
@@ -120,10 +121,9 @@ export function Receipts({ data, actions, currentUser }) {
 
   async function sendEmail(email, entries, storedAttachments) {
     const attachments = storedAttachments || await createReceiptEmailAttachments(entries, receipts, { includeSummary: email.includeSummary, organization: data.organization_settings?.[0] });
-    console.info('[correo] Adjuntos generados', attachments.map((attachment) => ({ filename: attachment.filename, size: attachment.content?.length || 0 })));
     const result = await fetch('/api/send-justificantes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getApiHeaders(),
       body: JSON.stringify({
         to: email.recipients,
         subject: email.subject,
@@ -133,7 +133,6 @@ export function Receipts({ data, actions, currentUser }) {
       })
     });
     const payload = await parseJsonResponse(result);
-    console.info('[correo] Respuesta del servidor', { status: result.status, payload });
     if (!result.ok) {
       if (payload.code === 'MAIL_NOT_CONFIGURED') throw new Error(payload.error || 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.');
       throw new Error(payload.error || 'Error al enviar el correo.');
@@ -247,7 +246,6 @@ export function Receipts({ data, actions, currentUser }) {
             defaultRecipients={emailMode === 'beneficiary' ? beneficiaryRecipient : defaultRecipients}
             mode={emailMode}
             onSubmit={async (email) => {
-              console.info('[correo] Generando adjuntos para justificantes', { selected: selectedEntries.length });
               let attachments = [];
               try {
                 const result = await sendEmail(email, selectedEntries);

@@ -132,7 +132,6 @@ function sanitizeProfile(user) {
     first_name,
     last_name,
     email,
-    password,
     phone,
     role,
     position,
@@ -157,7 +156,6 @@ function normalizeSupabaseAuthError(message) {
 
 async function requireAdmin(request, admin, requestId) {
   const { token, diagnostics } = getBearerToken(request);
-  console.info('[create-user] Authorization recibida', { requestId, ...diagnostics });
   if (!token) {
     console.error('[create-user] Validacion admin fallida: falta Authorization Bearer', { requestId });
     return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'Sesion de administrador requerida.' };
@@ -189,7 +187,6 @@ async function requireAdmin(request, admin, requestId) {
 
   const authUser = authData.user;
   const authEmail = authUser.email.toLowerCase();
-  console.info('[create-user] Validando administrador', { requestId, authUserId: authUser.id, authEmail });
 
   let { data: profile, error: profileError } = await admin
     .from('app_users')
@@ -242,14 +239,6 @@ async function requireAdmin(request, admin, requestId) {
 
   const active = isActive(profile);
   const allowed = canManageUsers(profile);
-  console.info('[create-user] Resultado validacion admin', {
-    requestId,
-    profileId: profile.id,
-    email: profile.email,
-    role: profile.role,
-    isActive: active,
-    canManageUsers: allowed
-  });
 
   if (!active) {
     console.error('[create-user] Validacion admin fallida: perfil inactivo o bloqueado', { requestId, profileId: profile.id, status: profile.status, is_active: profile.is_active });
@@ -272,10 +261,8 @@ function getBearerToken(request) {
   return {
     token,
     diagnostics: {
-      authorizationHeaderReceived: rawHeader ? `${rawHeader.slice(0, 28)}...` : '',
       authorizationHeaderLength: rawHeader.length,
       tokenLength: token.length,
-      tokenPrefix: token.slice(0, 20),
       tokenHasNonAscii: /[^\x00-\x7F]/.test(token),
       headerHasNonAscii: /[^\x00-\x7F]/.test(rawHeader)
     }
