@@ -37,6 +37,7 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
   if (useMultipart) delete headers['Content-Type'];
 
   const payloadSize = estimatePayloadSize({ to, subject, message, attachments, organization, testMode, useMultipart });
+  console.info('[correo] Inicio flujo POST /api/send-justificantes');
   console.info('[correo] Enviando solicitud a /api/send-justificantes', payloadSize);
 
   const response = await fetch('/api/send-justificantes', {

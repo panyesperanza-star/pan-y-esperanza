@@ -1,5 +1,5 @@
 import { Archive, CalendarDays, FileText, Mail } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -55,6 +55,24 @@ export function Receipts({ data, actions, currentUser }) {
   }, [selectedEntries]);
 
   const beneficiaryRecipient = selectedEntries.length === 1 ? selectedEntries[0].beneficiary?.email || '' : '';
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.__pyeSendJustificantesFetchGuard) return undefined;
+    const originalFetch = window.fetch.bind(window);
+    window.__pyeSendJustificantesFetchGuard = true;
+    window.fetch = (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      const method = String(init?.method || input?.method || 'GET').toUpperCase();
+      if (url.includes('/api/send-justificantes') && method === 'GET') {
+        console.warn('[justificantes] Inicio flujo GET detectado', { url, method });
+      }
+      return originalFetch(input, init);
+    };
+    return () => {
+      window.fetch = originalFetch;
+      delete window.__pyeSendJustificantesFetchGuard;
+    };
+  }, []);
 
   function update(field, value) {
     setFilters((current) => ({ ...current, [field]: value }));
@@ -308,6 +326,9 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
 
   async function submit(event) {
     event.preventDefault();
+    event.stopPropagation();
+    event.nativeEvent?.stopImmediatePropagation?.();
+    console.info('[justificantes] Inicio flujo POST');
     setStatus('Generando PDFs y enviando correo...');
     setError('');
     try {
@@ -342,7 +363,9 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
       {status && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{status}</p>}
       {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
       <div className="flex justify-end">
-        <Button type="submit"><Mail size={18} /> Enviar justificantes</Button>
+        <Button type="submit" onClick={() => console.info('[justificantes] Boton pulsado')}>
+          <Mail size={18} /> Enviar justificantes
+        </Button>
       </div>
     </form>
   );
