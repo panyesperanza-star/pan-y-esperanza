@@ -1,5 +1,7 @@
 import { getApiHeaders } from './apiAuth';
 
+const SAFE_VERCEL_PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
+
 export const EMAIL_TEMPLATES = [
   {
     id: 'receipt',
@@ -30,15 +32,29 @@ export const EMAIL_TEMPLATES = [
 export async function sendEmailViaApi({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
   const useMultipart = attachments.some((attachment) => attachment?.blob instanceof Blob);
   const headers = await getApiHeaders();
+  const cleanOrganization = sanitizeOrganizationForTransport(organization);
   const requestBody = useMultipart
-    ? buildEmailFormData({ to, subject, message, attachments, organization, testMode })
-    : JSON.stringify({ to, subject, message, attachments, organization, testMode });
+    ? buildEmailFormData({ to, subject, message, attachments, organization: cleanOrganization, testMode })
+    : JSON.stringify({ to, subject, message, attachments, organization: cleanOrganization, testMode });
 
   if (useMultipart) delete headers['Content-Type'];
 
-  const payloadSize = estimatePayloadSize({ to, subject, message, attachments, organization, testMode, useMultipart });
+  const payloadSize = estimatePayloadSize({ to, subject, message, attachments, organization: cleanOrganization, testMode, useMultipart });
   console.info('[correo] Inicio flujo POST /api/send-justificantes');
-  console.info('[correo] Enviando solicitud a /api/send-justificantes', payloadSize);
+  console.info('[correo] Diagnostico payload /api/send-justificantes', {
+    contentType: useMultipart ? 'multipart/form-data; boundary=generado-por-navegador' : headers['Content-Type'] || 'application/json',
+    contentLengthEstimado: payloadSize.estimatedTotalBytes,
+    numeroPdfs: payloadSize.attachmentsCount,
+    tamanoTotalPdfs: payloadSize.attachmentsBytes,
+    tamanoFormDataEstimado: payloadSize.estimatedTotalBytes,
+    pdfs: payloadSize.attachmentSizes,
+    metadataBytes: payloadSize.metadataBytes,
+    headers: Object.keys(headers)
+  });
+
+  if (payloadSize.estimatedTotalBytes > SAFE_VERCEL_PAYLOAD_LIMIT_BYTES) {
+    throw new Error(`Los justificantes ocupan ${formatBytes(payloadSize.estimatedTotalBytes)} y superan el limite seguro de envio (${formatBytes(SAFE_VERCEL_PAYLOAD_LIMIT_BYTES)}). Selecciona menos justificantes o envia sin resumen PDF.`);
+  }
 
   const response = await fetch('/api/send-justificantes', {
     method: 'POST',
@@ -86,12 +102,14 @@ export function estimatePayloadSize({ to, subject, message, attachments = [], or
     transport: attachment.blob instanceof Blob ? 'multipart-blob' : attachment.content ? 'json-base64' : 'metadata'
   }));
   const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode })]).size;
+  const multipartOverheadBytes = useMultipart ? Math.max(1024, attachments.length * 512 + 2048) : 0;
   return {
     transport: useMultipart ? 'multipart/form-data' : 'application/json',
     metadataBytes,
     attachmentsCount: attachments.length,
     attachmentsBytes: attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0),
-    estimatedTotalBytes: metadataBytes + attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0),
+    multipartOverheadBytes,
+    estimatedTotalBytes: metadataBytes + attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0) + multipartOverheadBytes,
     attachmentSizes
   };
 }
@@ -140,4 +158,32 @@ export function sanitizeAttachmentsForLog(attachments = []) {
 
 function normalizeToField(value) {
   return Array.isArray(value) ? value.join(', ') : String(value || '');
+}
+
+function sanitizeOrganizationForTransport(organization = {}) {
+  const {
+    name,
+    cif,
+    address,
+    phone,
+    email,
+    web,
+    website
+  } = organization || {};
+  return {
+    name,
+    cif,
+    address,
+    phone,
+    email,
+    web,
+    website
+  };
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }

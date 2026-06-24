@@ -101,13 +101,15 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   doc.roundedRect(14, signatureY + 4, 80, 36, 2, 2);
   doc.roundedRect(112, signatureY + 4, 80, 36, 2, 2);
   if (delivery.signature_data_url) {
-    doc.addImage(delivery.signature_data_url, 'PNG', 14, signatureY + 5, 80, 32);
+    const signature = await compressDataUrlImage(delivery.signature_data_url, 520, 180, 0.74);
+    doc.addImage(signature.dataUrl, signature.format, 14, signatureY + 5, 80, 32);
   } else {
     doc.setFontSize(10);
     doc.text('Sin firma registrada', 14, signatureY + 12);
   }
   if (delivery.responsible_signature_data_url) {
-    doc.addImage(delivery.responsible_signature_data_url, 'PNG', 112, signatureY + 5, 80, 32);
+    const responsibleSignature = await compressDataUrlImage(delivery.responsible_signature_data_url, 520, 180, 0.74);
+    doc.addImage(responsibleSignature.dataUrl, responsibleSignature.format, 112, signatureY + 5, 80, 32);
   }
 
   drawReceiptLegalFooter(doc);
@@ -383,15 +385,20 @@ async function getOfficialLogo() {
   cachedLogo = await new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
+      const maxSide = 420;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
       const context = canvas.getContext('2d');
-      context.drawImage(image, 0, 0);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
       resolve({
-        dataUrl: canvas.toDataURL('image/png'),
-        width: image.naturalWidth,
-        height: image.naturalHeight
+        dataUrl: canvas.toDataURL('image/jpeg', 0.74),
+        format: 'JPEG',
+        width: canvas.width,
+        height: canvas.height
       });
     };
     image.onerror = reject;
@@ -429,7 +436,29 @@ async function addOfficialLogo(doc, x, y, maxWidth, maxHeight) {
   const ratio = Math.min(maxWidth / logo.width, maxHeight / logo.height);
   const width = logo.width * ratio;
   const height = logo.height * ratio;
-  doc.addImage(logo.dataUrl, 'PNG', x, y, width, height);
+  doc.addImage(logo.dataUrl, logo.format || 'JPEG', x, y, width, height);
+}
+
+function compressDataUrlImage(dataUrl, maxWidth, maxHeight, quality = 0.75) {
+  if (!dataUrl) return Promise.resolve({ dataUrl, format: 'PNG' });
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const ratio = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+      const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+      const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      resolve({ dataUrl: canvas.toDataURL('image/jpeg', quality), format: 'JPEG' });
+    };
+    image.onerror = () => resolve({ dataUrl, format: dataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG' });
+    image.src = dataUrl;
+  });
 }
 
 function groupTotals(deliveries, field) {
