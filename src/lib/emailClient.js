@@ -47,6 +47,7 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
       organization: cleanOrganization,
       testMode
     });
+  const outgoingPayload = useMultipart ? requestBody : JSON.parse(requestBody);
 
   if (useMultipart) delete headers['Content-Type'];
 
@@ -76,6 +77,9 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     metadataBytes: payloadSize.metadataBytes,
     headers: Object.keys(headers)
   });
+  console.log('[JUSTIFICANTES VERSION]', '6920df2');
+  console.log('[PAYLOAD]', outgoingPayload);
+  console.log('[PAYLOAD DIAGNOSTICO]', buildOutgoingPayloadDiagnostics(outgoingPayload, requestBody, payloadSize, useMultipart));
 
   if (payloadSize.estimatedTotalBytes > SAFE_VERCEL_PAYLOAD_LIMIT_BYTES) {
     throw new Error(`Los justificantes ocupan ${formatBytes(payloadSize.estimatedTotalBytes)} y superan el limite seguro de envio (${formatBytes(SAFE_VERCEL_PAYLOAD_LIMIT_BYTES)}). Selecciona menos justificantes o envia sin resumen PDF.`);
@@ -86,23 +90,23 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     headers,
     body: requestBody
   });
-  const payload = await parseJsonResponse(response);
+  const responsePayload = await parseJsonResponse(response);
   console.info('[correo] Respuesta recibida de /api/send-justificantes', {
     status: response.status,
     ok: response.ok,
-    payload
+    payload: responsePayload
   });
 
   if (!response.ok) {
-    if (payload.code === 'MAIL_NOT_CONFIGURED') {
-      throw new Error(payload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.');
+    if (responsePayload.code === 'MAIL_NOT_CONFIGURED') {
+      throw new Error(responsePayload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.');
     }
-    throw new Error(payload.error || 'Error al enviar el correo.');
+    throw new Error(responsePayload.error || 'Error al enviar el correo.');
   }
-  if (!payload.ok || !payload.id) {
-    throw new Error(payload.error || 'Resend no confirmo el envio del correo.');
+  if (!responsePayload.ok || !responsePayload.id) {
+    throw new Error(responsePayload.error || 'Resend no confirmo el envio del correo.');
   }
-  return payload;
+  return responsePayload;
 }
 
 export function buildEmailFormData({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
@@ -219,6 +223,71 @@ function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function buildOutgoingPayloadDiagnostics(payload, requestBody, payloadSize, useMultipart) {
+  if (useMultipart) {
+    const formEntries = [];
+    payload.forEach((value, key) => {
+      formEntries.push({
+        key,
+        type: value instanceof Blob ? 'Blob' : typeof value,
+        length: value instanceof Blob ? value.size : String(value || '').length,
+        fileName: typeof File !== 'undefined' && value instanceof File ? value.name : undefined
+      });
+    });
+    return {
+      mode: 'multipart/form-data',
+      jsonFinalBytes: null,
+      formDataEntries: formEntries,
+      keys: formEntries.map((entry) => entry.key),
+      payloadSize
+    };
+  }
+
+  const receiptEntries = Array.isArray(payload.receiptEntries) ? payload.receiptEntries : [];
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  const fieldLengths = Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [key, getValueLength(value)])
+  );
+  const receiptEntryLengths = receiptEntries.map((entry, index) => ({
+    index,
+    totalBytes: byteLength(JSON.stringify(entry)),
+    beneficiaryBytes: byteLength(JSON.stringify(entry.beneficiary || {})),
+    deliveryBytes: byteLength(JSON.stringify(entry.delivery || {})),
+    signatureLength: String(entry.delivery?.signature_data_url || '').length,
+    signatureBytes: byteLength(entry.delivery?.signature_data_url),
+    responsibleSignatureLength: String(entry.delivery?.responsible_signature_data_url || '').length,
+    responsibleSignatureBytes: byteLength(entry.delivery?.responsible_signature_data_url)
+  }));
+  const attachmentLengths = attachments.map((attachment, index) => ({
+    index,
+    filename: attachment?.filename,
+    keys: Object.keys(attachment || {}),
+    contentLength: String(attachment?.content || '').length,
+    blobSize: attachment?.blob?.size || 0,
+    size: attachment?.size || 0
+  }));
+
+  return {
+    mode: 'application/json',
+    jsonFinalBytes: byteLength(requestBody),
+    jsonFinalCharacters: String(requestBody || '').length,
+    keys: Object.keys(payload),
+    fieldLengths,
+    receiptEntriesLength: receiptEntries.length,
+    receiptEntriesJsonBytes: byteLength(JSON.stringify(receiptEntries)),
+    receiptEntryLengths,
+    attachmentsLength: attachments.length,
+    attachmentLengths,
+    payloadSize
+  };
+}
+
+function getValueLength(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === 'object') return byteLength(JSON.stringify(value));
+  return String(value || '').length;
 }
 
 function sanitizeReceiptEntriesForTransport(entries = []) {
