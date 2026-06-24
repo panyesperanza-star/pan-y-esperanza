@@ -54,29 +54,35 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   const generatedAt = new Date();
   const productRows = getReceiptProductRows(delivery);
 
-  await drawReceiptHeader(doc, receiptNumber, generatedAt, organization);
+  await drawReceiptHeaderClean(doc, receiptNumber, generatedAt, organization);
 
-  doc.setFontSize(15);
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('Justificante de entrega', 14, 45);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text('Documento individual para la persona beneficiaria', 14, 51);
+  doc.text('JUSTIFICANTE DE ENTREGA DE AYUDA SOCIAL', 14, 46);
 
+  drawPdfSectionTitle(doc, 'DATOS DEL BENEFICIARIO', 58);
   autoTable(doc, {
-    startY: 58,
+    startY: 63,
     body: [
-      ['Numero de justificante', receiptNumber],
       ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
       ['Codigo beneficiario', beneficiary?.code || '-'],
-      ['DNI/NIE / NIE O PASAPORTE beneficiario', beneficiary?.document_id || '-'],
+      ['Documento identificativo', beneficiary?.document_id || '-']
+    ],
+    styles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
+  });
+
+  drawPdfSectionTitle(doc, 'DATOS DE LA ENTREGA', doc.lastAutoTable.finalY + 10);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 15,
+    body: [
       ['Fecha y hora de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
       ['Responsable', delivery.responsible || '-'],
       ['Tipo de ayuda', delivery.help_type || '-'],
       ['Observaciones', delivery.notes || '-']
     ],
     styles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold' } }
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
   });
 
   autoTable(doc, {
@@ -103,6 +109,8 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   if (delivery.responsible_signature_data_url) {
     doc.addImage(delivery.responsible_signature_data_url, 'PNG', 112, signatureY + 5, 80, 32);
   }
+
+  drawReceiptLegalFooter(doc);
 
   return { doc, receiptNumber };
 }
@@ -175,6 +183,43 @@ async function drawReceiptHeader(doc, receiptNumber, generatedAt, organization =
   doc.text(`Generado: ${formatDateTime(generatedAt.toISOString())}`, 148, 22);
   doc.setFontSize(7);
   doc.text([organization.cif || 'CIF G00000000', organization.address, organization.phone, organization.email || 'info@panyesperanza.org'].filter(Boolean).join(' · '), 38, 31);
+  doc.setTextColor(23, 33, 27);
+}
+
+async function drawReceiptHeaderClean(doc, receiptNumber, generatedAt, organization = {}) {
+  await addOfficialLogo(doc, 14, 10, 28, 22);
+  doc.setTextColor(23, 33, 27);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(organization.name || 'Pan y Esperanza', 48, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('CIF: EN TRÁMITE', 48, 22);
+  doc.text('info@panyesperanza.org', 48, 27);
+  doc.text('www.panyesperanza.org', 48, 32);
+  doc.setFontSize(9);
+  doc.text(`Nº Justificante: ${receiptNumber}`, 142, 18);
+  doc.text(`Fecha de emisión: ${formatDateTime(generatedAt.toISOString())}`, 142, 25);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 38, 196, 38);
+}
+
+function drawPdfSectionTitle(doc, title, y) {
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(36, 126, 80);
+  doc.text(title, 14, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(23, 33, 27);
+}
+
+function drawReceiptLegalFooter(doc) {
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 272, 196, 272);
+  doc.setFontSize(8);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Este documento acredita la entrega de ayuda social realizada por Pan y Esperanza.', 14, 279);
+  doc.text('Documento generado electrónicamente por el Sistema de Gestión Pan y Esperanza.', 14, 285);
   doc.setTextColor(23, 33, 27);
 }
 
@@ -327,15 +372,23 @@ async function createDeliveriesSummaryDocument(deliveries) {
   const doc = new jsPDF();
   const beneficiaries = new Set(deliveries.map((item) => item.beneficiary_id).filter(Boolean));
   const totalProducts = deliveries.reduce((total, item) => total + Number(item.quantity || 0), 0);
+  const responsibles = new Set(deliveries.map((item) => item.responsible).filter(Boolean));
+  const period = getDeliveriesPeriod(deliveries);
 
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(16);
-  doc.text('Informe de entregas - Pan y Esperanza', 52, 20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('INFORME OFICIAL DE ENTREGAS', 52, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Periodo consultado: ${period}`, 52, 25);
+  doc.text(`Fecha de emisión: ${formatDateTime(new Date().toISOString())}`, 52, 31);
   autoTable(doc, {
-    startY: 34,
-    head: [['Fecha', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
+    startY: 40,
+    head: [['Fecha', 'Hora', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
     body: deliveries.map((delivery) => [
       formatDate(delivery.delivered_at),
+      formatTime(delivery.reception_at || delivery.delivered_at),
       delivery.beneficiary_name || '-',
       delivery.responsible || '-',
       delivery.inventory_item_name || delivery.product || '-',
@@ -347,12 +400,14 @@ async function createDeliveriesSummaryDocument(deliveries) {
   const totalsY = Math.min((doc.lastAutoTable?.finalY || 34) + 12, 265);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('Totales', 14, totalsY);
+  doc.text('RESUMEN DEL PERIODO', 14, totalsY);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  doc.text(`Total de beneficiarios: ${beneficiaries.size}`, 14, totalsY + 8);
-  doc.text(`Total de entregas: ${deliveries.length}`, 14, totalsY + 16);
-  doc.text(`Total de productos entregados: ${totalProducts}`, 14, totalsY + 24);
+  doc.text(`Beneficiarios atendidos: ${beneficiaries.size}`, 14, totalsY + 8);
+  doc.text(`Entregas realizadas: ${deliveries.length}`, 14, totalsY + 16);
+  doc.text(`Productos entregados: ${totalProducts}`, 14, totalsY + 24);
+  doc.text(`Responsables participantes: ${responsibles.size}`, 14, totalsY + 32);
+  drawDeliveriesReportFooter(doc);
   return doc;
 }
 
@@ -378,6 +433,30 @@ async function getOfficialLogo() {
     image.src = officialLogoUrl;
   });
   return cachedLogo;
+}
+
+function getDeliveriesPeriod(deliveries) {
+  const dates = deliveries.map((item) => item.delivered_at).filter(Boolean).sort();
+  if (!dates.length) return 'Sin entregas seleccionadas';
+  return `${formatDate(dates[0])} - ${formatDate(dates[dates.length - 1])}`;
+}
+
+function formatTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+
+function drawDeliveriesReportFooter(doc) {
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 272, 196, 272);
+  doc.setFontSize(8);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Informe interno de gestión y seguimiento.', 14, 278);
+  doc.text('Pan y Esperanza', 14, 283);
+  doc.text('info@panyesperanza.org · www.panyesperanza.org', 14, 288);
+  doc.setTextColor(23, 33, 27);
 }
 
 async function addOfficialLogo(doc, x, y, maxWidth, maxHeight) {
