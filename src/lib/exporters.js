@@ -1,7 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import JSZip from 'jszip';
-import QRCode from 'qrcode';
 import * as XLSX from 'xlsx';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { formatDate, formatDateTime, nextReceiptNumber } from './formatters';
@@ -54,12 +53,6 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   const receiptNumber = delivery.receipt_number || nextReceiptNumber(deliveries, delivery.delivered_at);
   const generatedAt = new Date();
   const productRows = getReceiptProductRows(delivery);
-  const qrPayload = [
-    `Justificante: ${receiptNumber}`,
-    `Beneficiario: ${beneficiary?.full_name || delivery.beneficiary_name || '-'}`,
-    `Fecha de entrega: ${formatDate(delivery.delivered_at)}`
-  ].join('\n');
-  const qrDataUrl = await QRCode.toDataURL(qrPayload, { margin: 1, width: 128 });
 
   await drawReceiptHeader(doc, receiptNumber, generatedAt, organization);
 
@@ -77,43 +70,26 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
       ['Codigo beneficiario', beneficiary?.code || '-'],
       ['DNI/NIE / NIE O PASAPORTE beneficiario', beneficiary?.document_id || '-'],
-      ['Direccion', beneficiary?.address_full || '-'],
-      ['Familia', delivery.family_name || '-'],
       ['Fecha y hora de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
-      ['Fecha y hora de recepcion', formatDateTime(delivery.reception_at)],
       ['Responsable', delivery.responsible || '-'],
       ['Tipo de ayuda', delivery.help_type || '-'],
-      ['Nombre del receptor', delivery.receiver_name || '-'],
-      ['DNI/NIE / NIE O PASAPORTE del receptor', delivery.receiver_document_id || '-'],
       ['Observaciones', delivery.notes || '-']
     ],
     styles: { fontSize: 9 },
     columnStyles: { 0: { fontStyle: 'bold' } }
   });
 
-  const qrY = 62;
-  doc.addImage(qrDataUrl, 'PNG', 160, qrY, 34, 34);
-  doc.setFontSize(7);
-  doc.text('QR de verificacion', 162, qrY + 39);
-
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 10,
-    head: [['Producto o ayuda entregada', 'Tipo de ayuda', 'Cantidad']],
+    head: [['Producto entregado', 'Cantidad']],
     body: productRows,
     headStyles: { fillColor: [36, 126, 80] },
     styles: { fontSize: 9 }
   });
 
-  const declarationY = doc.lastAutoTable.finalY + 12;
-  doc.setFillColor(244, 251, 247);
-  doc.roundedRect(14, declarationY, 182, 14, 2, 2, 'F');
-  doc.setFontSize(10);
-  doc.setTextColor(23, 33, 27);
-  doc.text('Declaro haber recibido la ayuda descrita en este documento.', 18, declarationY + 9);
-
-  const signatureY = declarationY + 27;
+  const signatureY = doc.lastAutoTable.finalY + 20;
   doc.setFontSize(12);
-  doc.text('Firma del receptor', 14, signatureY);
+  doc.text('Firma del beneficiario', 14, signatureY);
   doc.text('Firma del responsable', 112, signatureY);
   doc.setDrawColor(180, 190, 185);
   doc.roundedRect(14, signatureY + 4, 80, 36, 2, 2);
@@ -127,9 +103,6 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   if (delivery.responsible_signature_data_url) {
     doc.addImage(delivery.responsible_signature_data_url, 'PNG', 112, signatureY + 5, 80, 32);
   }
-
-  drawStamp(doc, 156, signatureY + 52);
-  drawReceiptFooter(doc, organization);
 
   return { doc, receiptNumber };
 }
@@ -205,33 +178,16 @@ async function drawReceiptHeader(doc, receiptNumber, generatedAt, organization =
   doc.setTextColor(23, 33, 27);
 }
 
-function drawStamp(doc, x, y) {
-  doc.setDrawColor(36, 126, 80);
-  doc.setTextColor(36, 126, 80);
-  doc.circle(x, y, 18);
-  doc.circle(x, y, 14);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('PAN Y', x, y - 3, { align: 'center' });
-  doc.text('ESPERANZA', x, y + 4, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
-  doc.text('ENTREGA REGISTRADA', x, y + 12, { align: 'center' });
-  doc.setTextColor(23, 33, 27);
-}
-
 function getReceiptProductRows(delivery) {
   if (Array.isArray(delivery.items) && delivery.items.length) {
     return delivery.items.map((item) => [
       item.name || item.inventory_item_name || item.product || '-',
-      item.help_type || delivery.help_type || '-',
       item.quantity || '-'
     ]);
   }
 
   return [[
     delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
-    delivery.help_type || '-',
     delivery.quantity || '-'
   ]];
 }
@@ -370,35 +326,33 @@ export function exportDeliveriesSummaryPdf(deliveries) {
 async function createDeliveriesSummaryDocument(deliveries) {
   const doc = new jsPDF();
   const beneficiaries = new Set(deliveries.map((item) => item.beneficiary_id).filter(Boolean));
-  const productTotals = groupTotals(deliveries, 'inventory_item_name');
-  const responsibleTotals = groupTotals(deliveries, 'responsible');
+  const totalProducts = deliveries.reduce((total, item) => total + Number(item.quantity || 0), 0);
 
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(16);
   doc.text('Informe de entregas - Pan y Esperanza', 52, 20);
   autoTable(doc, {
     startY: 34,
-    head: [['Indicador', 'Valor']],
-    body: [
-      ['Numero de entregas', deliveries.length],
-      ['Beneficiarios atendidos', beneficiaries.size],
-      ['Productos distintos', Object.keys(productTotals).length],
-      ['Responsables distintos', Object.keys(responsibleTotals).length]
-    ],
+    head: [['Fecha', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
+    body: deliveries.map((delivery) => [
+      formatDate(delivery.delivered_at),
+      delivery.beneficiary_name || '-',
+      delivery.responsible || '-',
+      delivery.inventory_item_name || delivery.product || '-',
+      delivery.quantity || '-',
+      delivery.help_type || '-'
+    ]),
     headStyles: { fillColor: [36, 126, 80] }
   });
-  autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 10,
-    head: [['Producto', 'Cantidad total']],
-    body: Object.entries(productTotals),
-    headStyles: { fillColor: [36, 126, 80] }
-  });
-  autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 10,
-    head: [['Responsable', 'Entregas']],
-    body: Object.entries(responsibleTotals),
-    headStyles: { fillColor: [36, 126, 80] }
-  });
+  const totalsY = Math.min((doc.lastAutoTable?.finalY || 34) + 12, 265);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Totales', 14, totalsY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Total de beneficiarios: ${beneficiaries.size}`, 14, totalsY + 8);
+  doc.text(`Total de entregas: ${deliveries.length}`, 14, totalsY + 16);
+  doc.text(`Total de productos entregados: ${totalProducts}`, 14, totalsY + 24);
   return doc;
 }
 
