@@ -7,7 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { formatDate, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
-import { createReceiptEmailAttachments, printBeneficiaryPdf } from '../lib/exporters';
+import { printBeneficiaryPdf } from '../lib/exporters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
 const emptyBeneficiary = {
@@ -398,11 +398,10 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, allDeliveries, organiza
     }
 
     let attachments = [];
+    const receiptEntries = form.attachReceipt ? [{ delivery: latestDelivery, beneficiary }] : [];
     try {
-      if (form.attachReceipt) {
-        attachments = await createReceiptEmailAttachments([{ delivery: latestDelivery, beneficiary }], allDeliveries, { organization });
-      }
-      const payload = await sendEmailViaApi({ to: form.recipients, subject: form.subject, message: form.message, attachments, organization });
+      const payload = await sendEmailViaApi({ to: form.recipients, subject: form.subject, message: form.message, receiptEntries, organization });
+      attachments = payload.attachments || [];
       await saveEmailLog(actions, currentUser, form, attachments.length, payload.message || 'Correo enviado correctamente.', attachments);
       onSent('Correo enviado correctamente.');
     } catch (err) {

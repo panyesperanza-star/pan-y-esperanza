@@ -1,5 +1,7 @@
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const MAIL_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
 
@@ -26,9 +28,25 @@ export default async function handler(request, response) {
     const { body, transport, rawSizeBytes } = await parseRequest(request);
     const logoUrl = process.env.PUBLIC_LOGO_URL || body.logoUrl;
     const recipients = normalizeRecipients(body.to);
-    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+    let attachments = Array.isArray(body.attachments) ? body.attachments : [];
     const organization = body.organization || {};
     const isTest = Boolean(body.testMode);
+    const receiptEntries = Array.isArray(body.receiptEntries) ? body.receiptEntries : [];
+
+    if (!attachments.length && receiptEntries.length) {
+      console.info('[send-justificantes] Generando PDFs en servidor', {
+        requestId,
+        receiptEntriesCount: receiptEntries.length,
+        includeSummary: Boolean(body.includeSummary),
+        signatureBytes: receiptEntries.reduce((total, entry) => total
+          + Buffer.byteLength(String(entry?.delivery?.signature_data_url || ''))
+          + Buffer.byteLength(String(entry?.delivery?.responsible_signature_data_url || '')), 0)
+      });
+      attachments = createServerReceiptAttachments(receiptEntries, {
+        includeSummary: Boolean(body.includeSummary),
+        organization
+      });
+    }
 
     const attachmentStats = attachments.map((attachment) => ({
       filename: attachment.filename,
@@ -41,6 +59,7 @@ export default async function handler(request, response) {
       transport,
       rawSizeBytes,
       recipientsCount: recipients.length,
+      receiptEntriesCount: receiptEntries.length,
       attachmentsCount: attachments.length,
       attachmentsBytes: attachmentStats.reduce((total, item) => total + item.contentBytes, 0),
       attachmentStats
@@ -124,8 +143,13 @@ export default async function handler(request, response) {
       });
     }
 
-    console.info('[send-justificantes] Envio correcto', { requestId, id: result.data?.id });
-    return sendJson(response, 200, { ok: true, id: result.data?.id, message: 'Correo enviado correctamente.' });
+    const responseAttachments = attachments.map((attachment) => ({
+      filename: attachment.filename,
+      size: getAttachmentBytes(attachment),
+      contentType: attachment.contentType || 'application/pdf'
+    }));
+    console.info('[send-justificantes] Envio correcto', { requestId, id: result.data?.id, responseAttachments });
+    return sendJson(response, 200, { ok: true, id: result.data?.id, message: 'Correo enviado correctamente.', attachments: responseAttachments });
   } catch (error) {
     console.error('[send-justificantes] Excepcion', { requestId, message: error.message, stack: error.stack });
     return sendJson(response, 500, { ok: false, code: 'MAIL_SEND_FAILED', error: error.message || 'Error al enviar el correo.' });
@@ -267,6 +291,209 @@ function validatePdfAttachment(attachment) {
 function normalizeAttachmentContent(content) {
   if (Buffer.isBuffer(content)) return content;
   return content;
+}
+
+function createServerReceiptAttachments(receiptEntries = [], options = {}) {
+  const attachments = receiptEntries.map((entry, index) => {
+    const doc = createServerReceiptPdf(entry, options.organization || {});
+    const receiptNumber = entry?.delivery?.receipt_number || fallbackReceiptNumber(entry?.delivery, index);
+    const buffer = Buffer.from(doc.output('arraybuffer'));
+    return {
+      filename: `Justificante-${receiptNumber}.pdf`,
+      contentType: 'application/pdf',
+      content: buffer
+    };
+  });
+
+  if (options.includeSummary) {
+    const summaryDoc = createServerDeliveriesSummaryPdf(receiptEntries);
+    attachments.push({
+      filename: 'Resumen-entregas.pdf',
+      contentType: 'application/pdf',
+      content: Buffer.from(summaryDoc.output('arraybuffer'))
+    });
+  }
+
+  return attachments;
+}
+
+function createServerReceiptPdf(entry = {}, organization = {}) {
+  const delivery = entry.delivery || {};
+  const beneficiary = entry.beneficiary || {};
+  const doc = new jsPDF();
+  const receiptNumber = delivery.receipt_number || fallbackReceiptNumber(delivery, 0);
+  const product = delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada';
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('PAN Y ESPERANZA', 14, 16);
+  doc.setFontSize(13);
+  doc.text('JUSTIFICANTE DE ENTREGA DE AYUDA SOCIAL', 14, 32);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`No. Justificante: ${receiptNumber}`, 140, 16);
+  doc.text(`Fecha de emision: ${formatDateTimeServer(new Date().toISOString())}`, 140, 23);
+  doc.text('CIF: EN TRAMITE', 14, 22);
+  doc.text(organization.email || 'info@panyesperanza.org', 14, 26);
+  doc.text(organization.web || organization.website || 'www.panyesperanza.org', 72, 26);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 38, 196, 38);
+
+  drawServerSectionTitle(doc, 'DATOS DEL BENEFICIARIO', 48);
+  autoTable(doc, {
+    startY: 53,
+    body: [
+      ['Beneficiario', beneficiary.full_name || delivery.beneficiary_name || '-'],
+      ['Codigo beneficiario', beneficiary.code || '-'],
+      ['Documento identificativo', beneficiary.document_id || '-']
+    ],
+    styles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
+  });
+
+  drawServerSectionTitle(doc, 'DATOS DE LA ENTREGA', doc.lastAutoTable.finalY + 10);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 15,
+    body: [
+      ['Fecha y hora de entrega', formatDateTimeServer(delivery.reception_at || delivery.delivered_at)],
+      ['Responsable', delivery.responsible || '-'],
+      ['Tipo de ayuda', delivery.help_type || '-'],
+      ['Observaciones', delivery.notes || '-']
+    ],
+    styles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Producto entregado', 'Cantidad']],
+    body: [[product, delivery.quantity || '-']],
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9 }
+  });
+
+  const signatureY = doc.lastAutoTable.finalY + 20;
+  doc.setFontSize(12);
+  doc.text('Firma del beneficiario', 14, signatureY);
+  doc.text('Firma del responsable', 112, signatureY);
+  doc.setDrawColor(180, 190, 185);
+  doc.roundedRect(14, signatureY + 4, 80, 36, 2, 2);
+  doc.roundedRect(112, signatureY + 4, 80, 36, 2, 2);
+  addServerSignature(doc, delivery.signature_data_url, 14, signatureY + 5);
+  addServerSignature(doc, delivery.responsible_signature_data_url, 112, signatureY + 5);
+
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 272, 196, 272);
+  doc.setFontSize(8);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Este documento acredita la entrega de ayuda social realizada por Pan y Esperanza.', 14, 279);
+  doc.text('Documento generado electronicamente por el Sistema de Gestion Pan y Esperanza.', 14, 285);
+  doc.setTextColor(23, 33, 27);
+
+  return doc;
+}
+
+function createServerDeliveriesSummaryPdf(receiptEntries = []) {
+  const doc = new jsPDF();
+  const deliveries = receiptEntries.map((entry) => entry.delivery || {});
+  const beneficiaries = new Set(receiptEntries.map((entry) => entry.beneficiary?.full_name || entry.delivery?.beneficiary_name).filter(Boolean));
+  const productsTotal = deliveries.reduce((total, delivery) => total + Number(delivery.quantity || 0), 0);
+  const responsibles = new Set(deliveries.map((delivery) => delivery.responsible).filter(Boolean));
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('INFORME OFICIAL DE ENTREGAS', 14, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Periodo consultado: ${getServerDeliveriesPeriod(deliveries)}`, 14, 26);
+  doc.text(`Fecha de emision: ${formatDateTimeServer(new Date().toISOString())}`, 14, 32);
+  autoTable(doc, {
+    startY: 40,
+    head: [['Fecha', 'Hora', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
+    body: deliveries.map((delivery) => [
+      formatDateServer(delivery.delivered_at),
+      formatTimeServer(delivery.reception_at || delivery.delivered_at),
+      delivery.beneficiary_name || '-',
+      delivery.responsible || '-',
+      delivery.inventory_item_name || delivery.product || '-',
+      delivery.quantity || '-',
+      delivery.help_type || '-'
+    ]),
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 8 }
+  });
+  const totalsY = Math.min((doc.lastAutoTable?.finalY || 40) + 12, 250);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('RESUMEN DEL PERIODO', 14, totalsY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Beneficiarios atendidos: ${beneficiaries.size}`, 14, totalsY + 8);
+  doc.text(`Entregas realizadas: ${deliveries.length}`, 14, totalsY + 16);
+  doc.text(`Productos entregados: ${productsTotal}`, 14, totalsY + 24);
+  doc.text(`Responsables participantes: ${responsibles.size}`, 14, totalsY + 32);
+  doc.setFontSize(8);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Informe interno de gestion y seguimiento.', 14, 278);
+  doc.text('Pan y Esperanza - info@panyesperanza.org - www.panyesperanza.org', 14, 284);
+  doc.setTextColor(23, 33, 27);
+  return doc;
+}
+
+function drawServerSectionTitle(doc, title, y) {
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(36, 126, 80);
+  doc.text(title, 14, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(23, 33, 27);
+}
+
+function addServerSignature(doc, dataUrl, x, y) {
+  if (!dataUrl) {
+    doc.setFontSize(10);
+    doc.text('Sin firma registrada', x, y + 8);
+    return;
+  }
+  try {
+    const format = dataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
+    doc.addImage(dataUrl, format, x, y, 80, 32);
+  } catch (error) {
+    console.warn('[send-justificantes] No se pudo insertar firma en PDF servidor', { message: error.message });
+    doc.setFontSize(10);
+    doc.text('Firma no disponible', x, y + 8);
+  }
+}
+
+function fallbackReceiptNumber(delivery = {}, index = 0) {
+  const year = new Date(delivery.delivered_at || Date.now()).getFullYear();
+  return `PE-${year}-${String(index + 1).padStart(6, '0')}`;
+}
+
+function getServerDeliveriesPeriod(deliveries = []) {
+  const dates = deliveries.map((item) => item.delivered_at).filter(Boolean).sort();
+  if (!dates.length) return 'Sin entregas seleccionadas';
+  return `${formatDateServer(dates[0])} - ${formatDateServer(dates[dates.length - 1])}`;
+}
+
+function formatDateServer(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('es-ES');
+}
+
+function formatTimeServer(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTimeServer(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('es-ES');
 }
 
 function buildHtml(message, logoUrl, organization = {}) {

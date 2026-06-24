@@ -4,7 +4,7 @@ import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { createReceiptEmailAttachments, printDeliveryReceiptPdf } from '../lib/exporters';
+import { printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime } from '../lib/formatters';
 
 export function Communications({ data, actions, currentUser }) {
@@ -55,11 +55,6 @@ export function Communications({ data, actions, currentUser }) {
     setForm((current) => ({ ...current, template: id, subject: template.subject, message: template.message, attachReceipt: id === 'receipt' }));
   }
 
-  async function buildAttachments() {
-    if (!form.attachReceipt || !beneficiary || !latestDelivery) return [];
-    return createReceiptEmailAttachments([{ delivery: latestDelivery, beneficiary }], data.deliveries, { organization });
-  }
-
   async function sendEmail(event) {
     event.preventDefault();
     if (!form.recipients) {
@@ -73,15 +68,16 @@ export function Communications({ data, actions, currentUser }) {
 
     setNotice('Generando PDF y enviando correo...');
     let attachments = [];
+    const receiptEntries = form.attachReceipt && beneficiary && latestDelivery ? [{ delivery: latestDelivery, beneficiary }] : [];
     try {
-      attachments = await buildAttachments();
       const payload = await sendEmailViaApi({
         to: form.recipients,
         subject: form.subject,
         message: form.message,
-        attachments,
+        receiptEntries,
         organization
       });
+      attachments = payload.attachments || [];
       await saveEmailLog(actions, currentUser, { ...form, recipients: form.recipients }, attachments.length, payload.message || 'Correo enviado correctamente.', attachments);
       setNotice('Correo enviado correctamente.');
     } catch (error) {

@@ -29,25 +29,50 @@ export const EMAIL_TEMPLATES = [
   }
 ];
 
-export async function sendEmailViaApi({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
-  const useMultipart = attachments.some((attachment) => attachment?.blob instanceof Blob);
+export async function sendEmailViaApi({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false }) {
+  const useServerPdfGeneration = Array.isArray(receiptEntries) && receiptEntries.length > 0;
+  const useMultipart = !useServerPdfGeneration && attachments.some((attachment) => attachment?.blob instanceof Blob);
   const headers = await getApiHeaders();
   const cleanOrganization = sanitizeOrganizationForTransport(organization);
+  const cleanReceiptEntries = useServerPdfGeneration ? sanitizeReceiptEntriesForTransport(receiptEntries) : [];
   const requestBody = useMultipart
     ? buildEmailFormData({ to, subject, message, attachments, organization: cleanOrganization, testMode })
-    : JSON.stringify({ to, subject, message, attachments, organization: cleanOrganization, testMode });
+    : JSON.stringify({
+      to,
+      subject,
+      message,
+      attachments: useServerPdfGeneration ? [] : attachments,
+      receiptEntries: cleanReceiptEntries,
+      includeSummary,
+      organization: cleanOrganization,
+      testMode
+    });
 
   if (useMultipart) delete headers['Content-Type'];
 
-  const payloadSize = estimatePayloadSize({ to, subject, message, attachments, organization: cleanOrganization, testMode, useMultipart });
+  const payloadSize = estimatePayloadSize({
+    to,
+    subject,
+    message,
+    attachments: useServerPdfGeneration ? [] : attachments,
+    receiptEntries: cleanReceiptEntries,
+    includeSummary,
+    organization: cleanOrganization,
+    testMode,
+    useMultipart
+  });
   console.info('[correo] Inicio flujo POST /api/send-justificantes');
   console.info('[correo] Diagnostico payload /api/send-justificantes', {
     contentType: useMultipart ? 'multipart/form-data; boundary=generado-por-navegador' : headers['Content-Type'] || 'application/json',
     contentLengthEstimado: payloadSize.estimatedTotalBytes,
-    numeroPdfs: payloadSize.attachmentsCount,
+    numeroJustificantes: payloadSize.receiptEntriesCount,
+    numeroPdfs: payloadSize.expectedPdfCount,
     tamanoTotalPdfs: payloadSize.attachmentsBytes,
     tamanoFormDataEstimado: payloadSize.estimatedTotalBytes,
     pdfs: payloadSize.attachmentSizes,
+    firmasBytes: payloadSize.signatureBytes,
+    receiptEntriesBytes: payloadSize.receiptEntriesBytes,
+    modoGeneracionPdf: useServerPdfGeneration ? 'servidor' : 'navegador',
     metadataBytes: payloadSize.metadataBytes,
     headers: Object.keys(headers)
   });
@@ -95,21 +120,29 @@ export function buildEmailFormData({ to, subject, message, attachments = [], org
   return formData;
 }
 
-export function estimatePayloadSize({ to, subject, message, attachments = [], organization = {}, testMode = false, useMultipart = false }) {
+export function estimatePayloadSize({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false, useMultipart = false }) {
   const attachmentSizes = attachments.map((attachment) => ({
     filename: attachment.filename,
     sizeBytes: attachment.blob?.size || attachment.size || attachment.content?.length || 0,
     transport: attachment.blob instanceof Blob ? 'multipart-blob' : attachment.content ? 'json-base64' : 'metadata'
   }));
-  const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode })]).size;
+  const signatureBytes = receiptEntries.reduce((total, entry) => total
+    + byteLength(entry.delivery?.signature_data_url)
+    + byteLength(entry.delivery?.responsible_signature_data_url), 0);
+  const receiptEntriesBytes = new Blob([JSON.stringify(receiptEntries)]).size;
+  const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode, includeSummary })]).size;
   const multipartOverheadBytes = useMultipart ? Math.max(1024, attachments.length * 512 + 2048) : 0;
   return {
     transport: useMultipart ? 'multipart/form-data' : 'application/json',
     metadataBytes,
+    receiptEntriesCount: receiptEntries.length,
+    receiptEntriesBytes,
+    signatureBytes,
+    expectedPdfCount: attachments.length || (receiptEntries.length + (includeSummary ? 1 : 0)),
     attachmentsCount: attachments.length,
     attachmentsBytes: attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0),
     multipartOverheadBytes,
-    estimatedTotalBytes: metadataBytes + attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0) + multipartOverheadBytes,
+    estimatedTotalBytes: metadataBytes + receiptEntriesBytes + attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0) + multipartOverheadBytes,
     attachmentSizes
   };
 }
@@ -186,4 +219,34 @@ function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function sanitizeReceiptEntriesForTransport(entries = []) {
+  return entries.map((entry) => ({
+    beneficiary: {
+      full_name: entry.beneficiary?.full_name || entry.delivery?.beneficiary_name || '',
+      code: entry.beneficiary?.code || '',
+      document_id: entry.beneficiary?.document_id || '',
+      email: entry.beneficiary?.email || ''
+    },
+    delivery: {
+      id: entry.delivery?.id,
+      receipt_number: entry.delivery?.receipt_number,
+      delivered_at: entry.delivery?.delivered_at,
+      reception_at: entry.delivery?.reception_at,
+      beneficiary_name: entry.delivery?.beneficiary_name,
+      responsible: entry.delivery?.responsible,
+      help_type: entry.delivery?.help_type,
+      inventory_item_name: entry.delivery?.inventory_item_name,
+      product: entry.delivery?.product,
+      quantity: entry.delivery?.quantity,
+      notes: entry.delivery?.notes,
+      signature_data_url: entry.delivery?.signature_data_url || '',
+      responsible_signature_data_url: entry.delivery?.responsible_signature_data_url || ''
+    }
+  }));
+}
+
+function byteLength(value) {
+  return new Blob([String(value || '')]).size;
 }

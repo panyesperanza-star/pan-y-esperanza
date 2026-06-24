@@ -5,7 +5,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { HELP_TYPES } from '../lib/constants';
-import { createReceiptEmailAttachments, downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
+import { downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 import { sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
 
@@ -138,15 +138,17 @@ export function Receipts({ data, actions, currentUser }) {
   }
 
   async function sendEmailEfficient(email, entries, storedAttachments) {
-    const attachments = storedAttachments || await createReceiptEmailAttachments(entries, receipts, { includeSummary: email.includeSummary, organization: data.organization_settings?.[0] });
+    const attachments = storedAttachments || [];
     const payload = await sendEmailViaApi({
       to: email.recipients,
       subject: email.subject,
       message: email.message,
       attachments,
+      receiptEntries: storedAttachments ? [] : entries,
+      includeSummary: Boolean(email.includeSummary),
       organization: data.organization_settings?.[0]
     });
-    return { payload, attachments };
+    return { payload, attachments: payload.attachments || attachments };
   }
 
   return (
