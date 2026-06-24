@@ -45,12 +45,20 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     body: requestBody
   });
   const payload = await parseJsonResponse(response);
+  console.info('[correo] Respuesta recibida de /api/send-justificantes', {
+    status: response.status,
+    ok: response.ok,
+    payload
+  });
 
   if (!response.ok) {
     if (payload.code === 'MAIL_NOT_CONFIGURED') {
       throw new Error(payload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.');
     }
     throw new Error(payload.error || 'Error al enviar el correo.');
+  }
+  if (!payload.ok || !payload.id) {
+    throw new Error(payload.error || 'Resend no confirmo el envio del correo.');
   }
   return payload;
 }

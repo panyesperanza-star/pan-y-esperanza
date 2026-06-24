@@ -7,7 +7,6 @@ import { PageHeader } from '../components/PageHeader';
 import { HELP_TYPES } from '../lib/constants';
 import { createReceiptEmailAttachments, downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
-import { getApiHeaders } from '../lib/apiAuth';
 import { sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
 
 export function Receipts({ data, actions, currentUser }) {
@@ -118,27 +117,6 @@ export function Receipts({ data, actions, currentUser }) {
       await saveEmailLog(actions, currentUser, email, selectedEntries.length, normalizeEmailError(error), []);
       setEmailNotice(normalizeEmailError(error));
     }
-  }
-
-  async function sendEmail(email, entries, storedAttachments) {
-    const attachments = storedAttachments || await createReceiptEmailAttachments(entries, receipts, { includeSummary: email.includeSummary, organization: data.organization_settings?.[0] });
-    const result = await fetch('/api/send-justificantes', {
-      method: 'POST',
-      headers: await getApiHeaders(),
-      body: JSON.stringify({
-        to: email.recipients,
-        subject: email.subject,
-        message: email.message,
-        attachments,
-        organization: data.organization_settings?.[0]
-      })
-    });
-    const payload = await parseJsonResponse(result);
-    if (!result.ok) {
-      if (payload.code === 'MAIL_NOT_CONFIGURED') throw new Error(payload.error || 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.');
-      throw new Error(payload.error || 'Error al enviar el correo.');
-    }
-    return { payload, attachments };
   }
 
   async function sendEmailEfficient(email, entries, storedAttachments) {
@@ -368,20 +346,6 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
       </div>
     </form>
   );
-}
-
-async function parseJsonResponse(response) {
-  const text = await response.text();
-  if (!text) {
-    console.warn('[correo] Respuesta vacia del servidor', { status: response.status });
-    return {};
-  }
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    console.error('[correo] Respuesta no JSON del servidor', { status: response.status, text: text.slice(0, 500), error });
-    return { error: 'Respuesta no valida del servidor.' };
-  }
 }
 
 function normalizeEmailError(error) {

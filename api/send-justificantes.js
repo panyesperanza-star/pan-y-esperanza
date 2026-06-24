@@ -66,6 +66,32 @@ export default async function handler(request, response) {
       return sendJson(response, 400, { ok: false, code: 'INVALID_ATTACHMENT', error: 'Uno de los adjuntos no es valido.' });
     }
 
+    const attachmentValidation = attachments.map(validatePdfAttachment);
+    const invalidPdf = attachmentValidation.find((item) => !item.ok);
+    if (invalidPdf) {
+      console.error('[send-justificantes] PDF invalido antes de Resend', { requestId, invalidPdf, attachmentValidation });
+      return sendJson(response, 400, {
+        ok: false,
+        code: 'INVALID_PDF_ATTACHMENT',
+        error: `El adjunto ${invalidPdf.filename || 'sin nombre'} no es un PDF valido: ${invalidPdf.reason}.`
+      });
+    }
+
+    const resendAttachments = attachments.map((attachment) => ({
+      filename: attachment.filename,
+      content: normalizeAttachmentContent(attachment.content),
+      contentType: attachment.contentType || 'application/pdf'
+    }));
+
+    console.info('[send-justificantes] Llamando a Resend', {
+      requestId,
+      from,
+      recipients,
+      subject: body.subject || 'Justificantes de entrega - Pan y Esperanza',
+      attachmentsCount: resendAttachments.length,
+      attachmentValidation
+    });
+
     const resend = new Resend(apiKey);
     const result = await resend.emails.send({
       from,
@@ -73,16 +99,29 @@ export default async function handler(request, response) {
       subject: body.subject || 'Justificantes de entrega - Pan y Esperanza',
       text: body.message || 'Adjuntamos los justificantes de entrega seleccionados.',
       html: buildHtml(body.message, logoUrl, organization),
-      attachments: attachments.map((attachment) => ({
-        filename: attachment.filename,
-        content: normalizeAttachmentContent(attachment.content)
-      }))
+      attachments: resendAttachments
+    });
+
+    console.info('[send-justificantes] Respuesta Resend', {
+      requestId,
+      data: result.data || null,
+      error: result.error || null,
+      hasProviderId: Boolean(result.data?.id)
     });
 
     if (result.error) {
       const providerMessage = result.error.message || result.error.name || 'Error al enviar el correo.';
       console.error('[send-justificantes] Error Resend', { requestId, error: result.error });
       return sendJson(response, 502, { ok: false, code: 'MAIL_PROVIDER_ERROR', error: providerMessage });
+    }
+
+    if (!result.data?.id) {
+      console.error('[send-justificantes] Resend no devolvio identificador de envio', { requestId, result });
+      return sendJson(response, 502, {
+        ok: false,
+        code: 'MAIL_PROVIDER_NO_ID',
+        error: 'Resend no confirmo el envio del correo.'
+      });
     }
 
     console.info('[send-justificantes] Envio correcto', { requestId, id: result.data?.id });
@@ -200,8 +239,33 @@ function summarizeAttachment(attachment) {
   };
 }
 
+function validatePdfAttachment(attachment) {
+  const filename = attachment?.filename || '';
+  const content = attachment?.content;
+  const bytes = getAttachmentBytes(attachment);
+  if (!bytes) return { ok: false, filename, bytes, reason: 'contenido vacio' };
+  if (bytes < 100) return { ok: false, filename, bytes, reason: 'tamano demasiado pequeno' };
+
+  const buffer = Buffer.isBuffer(content)
+    ? content
+    : typeof content === 'string'
+      ? Buffer.from(content, 'base64')
+      : Buffer.alloc(0);
+
+  const header = buffer.slice(0, 4).toString('ascii');
+  const ok = header === '%PDF';
+  return {
+    ok,
+    filename,
+    bytes,
+    contentType: attachment?.contentType || 'application/pdf',
+    pdfHeader: header,
+    reason: ok ? '' : `cabecera ${header || 'vacia'}`
+  };
+}
+
 function normalizeAttachmentContent(content) {
-  if (Buffer.isBuffer(content)) return content.toString('base64');
+  if (Buffer.isBuffer(content)) return content;
   return content;
 }
 
