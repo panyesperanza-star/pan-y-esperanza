@@ -28,10 +28,21 @@ export const EMAIL_TEMPLATES = [
 ];
 
 export async function sendEmailViaApi({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
+  const useMultipart = attachments.some((attachment) => attachment?.blob instanceof Blob);
+  const headers = await getApiHeaders();
+  const requestBody = useMultipart
+    ? buildEmailFormData({ to, subject, message, attachments, organization, testMode })
+    : JSON.stringify({ to, subject, message, attachments, organization, testMode });
+
+  if (useMultipart) delete headers['Content-Type'];
+
+  const payloadSize = estimatePayloadSize({ to, subject, message, attachments, organization, testMode, useMultipart });
+  console.info('[correo] Enviando solicitud a /api/send-justificantes', payloadSize);
+
   const response = await fetch('/api/send-justificantes', {
     method: 'POST',
-    headers: await getApiHeaders(),
-    body: JSON.stringify({ to, subject, message, attachments, organization, testMode })
+    headers,
+    body: requestBody
   });
   const payload = await parseJsonResponse(response);
 
@@ -42,6 +53,38 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     throw new Error(payload.error || 'Error al enviar el correo.');
   }
   return payload;
+}
+
+export function buildEmailFormData({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
+  const formData = new FormData();
+  formData.append('to', normalizeToField(to));
+  formData.append('subject', subject || '');
+  formData.append('message', message || '');
+  formData.append('organization', JSON.stringify(organization || {}));
+  formData.append('testMode', testMode ? 'true' : 'false');
+  attachments.forEach((attachment, index) => {
+    if (attachment?.blob instanceof Blob) {
+      formData.append('files', attachment.blob, attachment.filename || `adjunto-${index + 1}.pdf`);
+    }
+  });
+  return formData;
+}
+
+export function estimatePayloadSize({ to, subject, message, attachments = [], organization = {}, testMode = false, useMultipart = false }) {
+  const attachmentSizes = attachments.map((attachment) => ({
+    filename: attachment.filename,
+    sizeBytes: attachment.blob?.size || attachment.size || attachment.content?.length || 0,
+    transport: attachment.blob instanceof Blob ? 'multipart-blob' : attachment.content ? 'json-base64' : 'metadata'
+  }));
+  const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode })]).size;
+  return {
+    transport: useMultipart ? 'multipart/form-data' : 'application/json',
+    metadataBytes,
+    attachmentsCount: attachments.length,
+    attachmentsBytes: attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0),
+    estimatedTotalBytes: metadataBytes + attachmentSizes.reduce((total, item) => total + item.sizeBytes, 0),
+    attachmentSizes
+  };
 }
 
 export async function parseJsonResponse(response) {
@@ -74,6 +117,18 @@ export async function saveEmailLog(actions, currentUser, email, count, result, a
     result,
     subject: email.subject,
     message: email.message,
-    attachments
+    attachments: sanitizeAttachmentsForLog(attachments)
   });
+}
+
+export function sanitizeAttachmentsForLog(attachments = []) {
+  return attachments.map((attachment) => ({
+    filename: attachment.filename,
+    size: attachment.blob?.size || attachment.size || attachment.content?.length || 0,
+    contentType: attachment.contentType || 'application/pdf'
+  }));
+}
+
+function normalizeToField(value) {
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
 }

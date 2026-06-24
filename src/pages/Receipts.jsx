@@ -8,6 +8,7 @@ import { HELP_TYPES } from '../lib/constants';
 import { createReceiptEmailAttachments, downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 import { getApiHeaders } from '../lib/apiAuth';
+import { sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
 
 export function Receipts({ data, actions, currentUser }) {
   const [filters, setFilters] = useState({
@@ -110,7 +111,7 @@ export function Receipts({ data, actions, currentUser }) {
     };
     setEmailNotice('Generando PDF y enviando al beneficiario...');
     try {
-      const result = await sendEmail(email, selectedEntries);
+      const result = await sendEmailEfficient(email, selectedEntries);
       await saveEmailLog(actions, currentUser, email, selectedEntries.length, result.payload.message || 'Correo enviado correctamente.', result.attachments);
       setEmailNotice('Correo enviado correctamente.');
     } catch (error) {
@@ -137,6 +138,18 @@ export function Receipts({ data, actions, currentUser }) {
       if (payload.code === 'MAIL_NOT_CONFIGURED') throw new Error(payload.error || 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.');
       throw new Error(payload.error || 'Error al enviar el correo.');
     }
+    return { payload, attachments };
+  }
+
+  async function sendEmailEfficient(email, entries, storedAttachments) {
+    const attachments = storedAttachments || await createReceiptEmailAttachments(entries, receipts, { includeSummary: email.includeSummary, organization: data.organization_settings?.[0] });
+    const payload = await sendEmailViaApi({
+      to: email.recipients,
+      subject: email.subject,
+      message: email.message,
+      attachments,
+      organization: data.organization_settings?.[0]
+    });
     return { payload, attachments };
   }
 
@@ -227,7 +240,7 @@ export function Receipts({ data, actions, currentUser }) {
               {(data.email_logs || []).map((log) => <tr key={log.id}><td className="px-4 py-3">{formatDate(log.sent_at)}</td><td>{log.recipient}</td><td>{log.sent_by || '-'}</td><td>{log.receipts_count}</td><td>{log.result}</td><td className="pr-4 text-right"><Button variant="secondary" onClick={async () => {
                 try {
                   const email = { recipients: log.recipient, subject: log.subject, message: log.message };
-                  const result = await sendEmail(email, [], log.attachments || []);
+                  const result = await sendEmailEfficient(email, [], log.attachments || []);
                   await actions.updateEmailLog(log.id, { sent_at: new Date().toISOString(), result: result.payload.message || 'Correo enviado correctamente.' });
                 } catch (error) {
                   await actions.updateEmailLog(log.id, { sent_at: new Date().toISOString(), result: normalizeEmailError(error) });
@@ -248,7 +261,7 @@ export function Receipts({ data, actions, currentUser }) {
             onSubmit={async (email) => {
               let attachments = [];
               try {
-                const result = await sendEmail(email, selectedEntries);
+                const result = await sendEmailEfficient(email, selectedEntries);
                 attachments = result.attachments;
                 await saveEmailLog(actions, currentUser, email, selectedEntries.length, result.payload.message || 'Correo enviado correctamente.', attachments);
               } catch (error) {
@@ -273,7 +286,7 @@ async function saveEmailLog(actions, currentUser, email, count, result, attachme
     result,
     subject: email.subject,
     message: email.message,
-    attachments
+    attachments: sanitizeAttachmentsForLog(attachments)
   });
 }
 

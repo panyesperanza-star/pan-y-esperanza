@@ -53,6 +53,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   const doc = new jsPDF();
   const receiptNumber = delivery.receipt_number || nextReceiptNumber(deliveries, delivery.delivered_at);
   const generatedAt = new Date();
+  const productRows = getReceiptProductRows(delivery);
   const qrPayload = [
     `Justificante: ${receiptNumber}`,
     `Beneficiario: ${beneficiary?.full_name || delivery.beneficiary_name || '-'}`,
@@ -62,8 +63,15 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
 
   await drawReceiptHeader(doc, receiptNumber, generatedAt, organization);
 
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Justificante de entrega', 14, 45);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('Documento individual para la persona beneficiaria', 14, 51);
+
   autoTable(doc, {
-    startY: 48,
+    startY: 58,
     body: [
       ['Numero de justificante', receiptNumber],
       ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
@@ -71,12 +79,10 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['DNI/NIE / NIE O PASAPORTE beneficiario', beneficiary?.document_id || '-'],
       ['Direccion', beneficiary?.address_full || '-'],
       ['Familia', delivery.family_name || '-'],
-      ['Fecha de entrega', formatDate(delivery.delivered_at)],
+      ['Fecha y hora de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
       ['Fecha y hora de recepcion', formatDateTime(delivery.reception_at)],
       ['Responsable', delivery.responsible || '-'],
       ['Tipo de ayuda', delivery.help_type || '-'],
-      ['Producto entregado', delivery.inventory_item_name || '-'],
-      ['Cantidad', delivery.quantity || '-'],
       ['Nombre del receptor', delivery.receiver_name || '-'],
       ['DNI/NIE / NIE O PASAPORTE del receptor', delivery.receiver_document_id || '-'],
       ['Observaciones', delivery.notes || '-']
@@ -85,10 +91,18 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
     columnStyles: { 0: { fontStyle: 'bold' } }
   });
 
-  const qrY = 52;
+  const qrY = 62;
   doc.addImage(qrDataUrl, 'PNG', 160, qrY, 34, 34);
   doc.setFontSize(7);
   doc.text('QR de verificacion', 162, qrY + 39);
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Producto o ayuda entregada', 'Tipo de ayuda', 'Cantidad']],
+    body: productRows,
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9 }
+  });
 
   const declarationY = doc.lastAutoTable.finalY + 12;
   doc.setFillColor(244, 251, 247);
@@ -115,6 +129,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   }
 
   drawStamp(doc, 156, signatureY + 52);
+  drawReceiptFooter(doc, organization);
 
   return { doc, receiptNumber };
 }
@@ -140,31 +155,25 @@ export async function createReceiptEmailAttachments(receiptEntries, allDeliverie
   const attachments = [];
   for (const entry of receiptEntries) {
     const { doc, receiptNumber } = await createDeliveryReceiptPdf(entry.delivery, entry.beneficiary, allDeliveries, options.organization || {});
-    const content = pdfToBase64(doc);
+    const blob = doc.output('blob');
     attachments.push({
       filename: `Justificante-${receiptNumber}.pdf`,
-      content
+      blob,
+      size: blob.size,
+      contentType: 'application/pdf'
     });
   }
   if (options.includeSummary) {
     const summaryDoc = await createDeliveriesSummaryDocument(receiptEntries.map((entry) => entry.delivery));
-    const summaryContent = pdfToBase64(summaryDoc);
+    const summaryBlob = summaryDoc.output('blob');
     attachments.push({
       filename: 'Resumen-entregas.pdf',
-      content: summaryContent
+      blob: summaryBlob,
+      size: summaryBlob.size,
+      contentType: 'application/pdf'
     });
   }
   return attachments;
-}
-
-function pdfToBase64(doc) {
-  const dataUri = doc.output('datauristring');
-  const base64 = dataUri.includes(',') ? dataUri.split(',')[1] : '';
-  if (!base64) {
-    console.error('[correo] PDF sin contenido base64');
-    throw new Error('Error al enviar el correo.');
-  }
-  return base64;
 }
 
 export function downloadBlob(blob, filename) {
@@ -208,6 +217,39 @@ function drawStamp(doc, x, y) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.text('ENTREGA REGISTRADA', x, y + 12, { align: 'center' });
+  doc.setTextColor(23, 33, 27);
+}
+
+function getReceiptProductRows(delivery) {
+  if (Array.isArray(delivery.items) && delivery.items.length) {
+    return delivery.items.map((item) => [
+      item.name || item.inventory_item_name || item.product || '-',
+      item.help_type || delivery.help_type || '-',
+      item.quantity || '-'
+    ]);
+  }
+
+  return [[
+    delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
+    delivery.help_type || '-',
+    delivery.quantity || '-'
+  ]];
+}
+
+function drawReceiptFooter(doc, organization = {}) {
+  const y = 286;
+  const footer = [
+    organization.name || 'Pan y Esperanza',
+    organization.cif,
+    organization.address,
+    organization.phone,
+    organization.email || 'info@panyesperanza.org'
+  ].filter(Boolean).join(' · ');
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, y - 6, 196, y - 6);
+  doc.setFontSize(7);
+  doc.setTextColor(96, 112, 100);
+  doc.text(footer, 105, y, { align: 'center', maxWidth: 180 });
   doc.setTextColor(23, 33, 27);
 }
 

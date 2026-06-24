@@ -11,19 +11,40 @@ export default async function handler(request, response) {
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  console.info('[send-justificantes] Inicio', { requestId });
+  console.info('[send-justificantes] Inicio', {
+    requestId,
+    method: request.method,
+    contentType: getHeader(request, 'content-type'),
+    contentLength: Number(getHeader(request, 'content-length') || 0)
+  });
 
   try {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.FROM_EMAIL;
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const body = parseBody(request.body);
+    const { body, transport, rawSizeBytes } = await parseRequest(request);
     const logoUrl = process.env.PUBLIC_LOGO_URL || body.logoUrl;
     const recipients = normalizeRecipients(body.to);
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
     const organization = body.organization || {};
     const isTest = Boolean(body.testMode);
+
+    const attachmentStats = attachments.map((attachment) => ({
+      filename: attachment.filename,
+      contentBytes: getAttachmentBytes(attachment),
+      hasBuffer: Buffer.isBuffer(attachment.content),
+      hasStringContent: typeof attachment.content === 'string'
+    }));
+    console.info('[send-justificantes] Payload recibido', {
+      requestId,
+      transport,
+      rawSizeBytes,
+      recipientsCount: recipients.length,
+      attachmentsCount: attachments.length,
+      attachmentsBytes: attachmentStats.reduce((total, item) => total + item.contentBytes, 0),
+      attachmentStats
+    });
 
     if (!apiKey || !from) {
       console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
@@ -41,7 +62,7 @@ export default async function handler(request, response) {
 
     const invalidAttachment = attachments.find((attachment) => !attachment?.filename || !attachment?.content);
     if (invalidAttachment) {
-      console.error('[send-justificantes] Adjunto invalido', { requestId, invalidAttachment });
+      console.error('[send-justificantes] Adjunto invalido', { requestId, invalidAttachment: summarizeAttachment(invalidAttachment) });
       return sendJson(response, 400, { ok: false, code: 'INVALID_ATTACHMENT', error: 'Uno de los adjuntos no es valido.' });
     }
 
@@ -54,7 +75,7 @@ export default async function handler(request, response) {
       html: buildHtml(body.message, logoUrl, organization),
       attachments: attachments.map((attachment) => ({
         filename: attachment.filename,
-        content: attachment.content
+        content: normalizeAttachmentContent(attachment.content)
       }))
     });
 
@@ -86,6 +107,102 @@ function parseBody(body) {
     }
   }
   return body;
+}
+
+async function parseRequest(request) {
+  const contentType = getHeader(request, 'content-type');
+  if (contentType.toLowerCase().includes('multipart/form-data')) {
+    const raw = await readRawBody(request);
+    return {
+      transport: 'multipart/form-data',
+      rawSizeBytes: raw.length,
+      body: parseMultipart(raw, contentType)
+    };
+  }
+
+  const parsed = parseBody(request.body);
+  const rawSizeBytes = typeof request.body === 'string'
+    ? Buffer.byteLength(request.body)
+    : Buffer.byteLength(JSON.stringify(parsed || {}));
+  return { transport: 'application/json', rawSizeBytes, body: parsed };
+}
+
+function readRawBody(request) {
+  if (Buffer.isBuffer(request.body)) return Promise.resolve(request.body);
+  if (typeof request.body === 'string') return Promise.resolve(Buffer.from(request.body));
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    request.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    request.on('end', () => resolve(Buffer.concat(chunks)));
+    request.on('error', reject);
+  });
+}
+
+function parseMultipart(buffer, contentType) {
+  const boundary = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[1] || contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[2];
+  if (!boundary) throw new Error('No se pudo leer el boundary multipart.');
+
+  const body = { attachments: [] };
+  const raw = buffer.toString('binary');
+  const parts = raw.split(`--${boundary}`).slice(1, -1);
+
+  for (const rawPart of parts) {
+    const part = rawPart.replace(/^\r\n/, '').replace(/\r\n$/, '');
+    const separator = part.indexOf('\r\n\r\n');
+    if (separator === -1) continue;
+    const headerText = part.slice(0, separator);
+    const contentBinary = part.slice(separator + 4);
+    const disposition = headerText.match(/content-disposition:\s*([^\r\n]+)/i)?.[1] || '';
+    const name = disposition.match(/name="([^"]+)"/i)?.[1] || '';
+    const filename = disposition.match(/filename="([^"]*)"/i)?.[1] || '';
+    const contentTypeHeader = headerText.match(/content-type:\s*([^\r\n]+)/i)?.[1] || 'application/octet-stream';
+
+    if (!name) continue;
+    if (filename) {
+      body.attachments.push({
+        filename,
+        contentType: contentTypeHeader,
+        content: Buffer.from(contentBinary, 'binary')
+      });
+      continue;
+    }
+
+    const value = Buffer.from(contentBinary, 'binary').toString('utf8');
+    if (name === 'organization') {
+      body.organization = parseBody(value);
+    } else if (name === 'testMode') {
+      body.testMode = value === 'true';
+    } else {
+      body[name] = value;
+    }
+  }
+
+  return body;
+}
+
+function getHeader(request, name) {
+  if (typeof request.headers?.get === 'function') return String(request.headers.get(name) || '');
+  const value = request.headers?.[name] || request.headers?.[name.toLowerCase()] || request.headers?.[name.toUpperCase()] || '';
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '');
+}
+
+function getAttachmentBytes(attachment) {
+  if (Buffer.isBuffer(attachment?.content)) return attachment.content.length;
+  if (typeof attachment?.content === 'string') return Buffer.byteLength(attachment.content);
+  return 0;
+}
+
+function summarizeAttachment(attachment) {
+  return {
+    filename: attachment?.filename,
+    contentBytes: getAttachmentBytes(attachment),
+    hasContent: Boolean(attachment?.content)
+  };
+}
+
+function normalizeAttachmentContent(content) {
+  if (Buffer.isBuffer(content)) return content.toString('base64');
+  return content;
 }
 
 function buildHtml(message, logoUrl, organization = {}) {
