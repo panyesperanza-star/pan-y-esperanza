@@ -168,24 +168,6 @@ export function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-async function drawReceiptHeader(doc, receiptNumber, generatedAt, organization = {}) {
-  doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 210, 36, 'F');
-  await addOfficialLogo(doc, 12, 7, 24, 22);
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
-  doc.text(organization.name || 'Pan y Esperanza', 38, 15);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Justificante profesional de entrega de ayuda', 38, 24);
-  doc.setFontSize(9);
-  doc.text(receiptNumber, 148, 14);
-  doc.text(`Generado: ${formatDateTime(generatedAt.toISOString())}`, 148, 22);
-  doc.setFontSize(7);
-  doc.text([organization.cif || 'CIF G00000000', organization.address, organization.phone, organization.email || 'info@panyesperanza.org'].filter(Boolean).join(' · '), 38, 31);
-  doc.setTextColor(23, 33, 27);
-}
-
 async function drawReceiptHeaderClean(doc, receiptNumber, generatedAt, organization = {}) {
   await addOfficialLogo(doc, 14, 10, 28, 22);
   doc.setTextColor(23, 33, 27);
@@ -235,23 +217,6 @@ function getReceiptProductRows(delivery) {
     delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
     delivery.quantity || '-'
   ]];
-}
-
-function drawReceiptFooter(doc, organization = {}) {
-  const y = 286;
-  const footer = [
-    organization.name || 'Pan y Esperanza',
-    organization.cif,
-    organization.address,
-    organization.phone,
-    organization.email || 'info@panyesperanza.org'
-  ].filter(Boolean).join(' · ');
-  doc.setDrawColor(219, 229, 220);
-  doc.line(14, y - 6, 196, y - 6);
-  doc.setFontSize(7);
-  doc.setTextColor(96, 112, 100);
-  doc.text(footer, 105, y, { align: 'center', maxWidth: 180 });
-  doc.setTextColor(23, 33, 27);
 }
 
 export async function exportReportPdf(data) {
