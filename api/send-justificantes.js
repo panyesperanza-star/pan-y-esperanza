@@ -1,9 +1,10 @@
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const MAIL_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
+console.info('[send-justificantes] jsPDF export', { type: typeof jsPDF });
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
