@@ -1,5 +1,5 @@
-import { Archive, CalendarDays, FileText, Mail } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Archive, CalendarDays, Eye, FileText, Mail, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -7,7 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { HELP_TYPES } from '../lib/constants';
 import { downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
-import { sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
+import { openStoredEmailAttachment, sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
 
 export function Receipts({ data, actions, currentUser }) {
   const [filters, setFilters] = useState({
@@ -21,6 +21,10 @@ export function Receipts({ data, actions, currentUser }) {
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailMode, setEmailMode] = useState('manual');
   const [emailNotice, setEmailNotice] = useState('');
+  const [noticeType, setNoticeType] = useState('info');
+  const [busyAction, setBusyAction] = useState('');
+  const [attachmentLog, setAttachmentLog] = useState(null);
+  const [attachmentError, setAttachmentError] = useState('');
 
   const receipts = useMemo(() => withFallbackReceiptNumbers(data.deliveries), [data.deliveries]);
 
@@ -43,6 +47,10 @@ export function Receipts({ data, actions, currentUser }) {
       generated: receipts.length
     };
   }, [receipts]);
+  const receiptEmailLogs = useMemo(
+    () => (data.email_logs || []).filter((log) => Number(log.receipts_count || 0) > 0),
+    [data.email_logs]
+  );
 
   const selectedEntries = selected
     .map((id) => receipts.find((delivery) => delivery.id === id))
@@ -55,24 +63,6 @@ export function Receipts({ data, actions, currentUser }) {
   }, [selectedEntries]);
 
   const beneficiaryRecipient = selectedEntries.length === 1 ? selectedEntries[0].beneficiary?.email || '' : '';
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || window.__pyeSendJustificantesFetchGuard) return undefined;
-    const originalFetch = window.fetch.bind(window);
-    window.__pyeSendJustificantesFetchGuard = true;
-    window.fetch = (input, init = {}) => {
-      const url = typeof input === 'string' ? input : input?.url || '';
-      const method = String(init?.method || input?.method || 'GET').toUpperCase();
-      if (url.includes('/api/send-justificantes') && method === 'GET') {
-        console.warn('[justificantes] Inicio flujo GET detectado', { url, method });
-      }
-      return originalFetch(input, init);
-    };
-    return () => {
-      window.fetch = originalFetch;
-      delete window.__pyeSendJustificantesFetchGuard;
-    };
-  }, []);
 
   function update(field, value) {
     setFilters((current) => ({ ...current, [field]: value }));
@@ -91,17 +81,42 @@ export function Receipts({ data, actions, currentUser }) {
 
   async function generateZip() {
     if (!selectedEntries.length) return;
-    await downloadReceiptsZip('justificantes-seleccionados', selectedEntries, receipts);
+    setBusyAction('zip');
+    setEmailNotice('');
+    try {
+      await downloadReceiptsZip('justificantes-seleccionados', selectedEntries, receipts, { includeSummary: false });
+      showNotice(`ZIP generado con ${selectedEntries.length} justificante${selectedEntries.length === 1 ? '' : 's'}.`, 'success');
+    } catch (error) {
+      showNotice(error.message || 'No se pudo generar el ZIP.', 'error');
+    } finally {
+      setBusyAction('');
+    }
   }
 
   async function generateMonthlyZip() {
-    const periodDeliveries = receipts.filter((delivery) => isInCurrentPeriod(delivery.delivered_at, 'month'));
+    const periodDeliveries = filtered.filter((delivery) => isInCurrentPeriod(delivery.delivered_at, 'month'));
     const entries = periodDeliveries.map((delivery) => ({
       delivery,
       beneficiary: data.beneficiaries.find((item) => item.id === delivery.beneficiary_id)
     }));
-    if (!entries.length) return;
-    await downloadReceiptsZip('justificantes-mensual', entries, receipts);
+    if (!entries.length) {
+      showNotice('No hay justificantes del mes actual con los filtros seleccionados.', 'error');
+      return;
+    }
+    setBusyAction('monthly-zip');
+    try {
+      await downloadReceiptsZip(`justificantes-${todayISO().slice(0, 7)}`, entries, receipts, { includeSummary: false });
+      showNotice(`ZIP mensual generado con ${entries.length} justificante${entries.length === 1 ? '' : 's'}.`, 'success');
+    } catch (error) {
+      showNotice(error.message || 'No se pudo generar el ZIP mensual.', 'error');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  function showNotice(message, type = 'info') {
+    setEmailNotice(message);
+    setNoticeType(type);
   }
 
   function openManualEmail() {
@@ -111,13 +126,13 @@ export function Receipts({ data, actions, currentUser }) {
   }
 
   async function openBeneficiaryEmail() {
-    setEmailNotice('');
+    showNotice('', 'info');
     if (selectedEntries.length !== 1) {
-      setEmailNotice('Selecciona un unico justificante para enviarlo al beneficiario.');
+      showNotice('Selecciona un único justificante para enviarlo al beneficiario.', 'error');
       return;
     }
     if (!beneficiaryRecipient) {
-      setEmailNotice('Este beneficiario no tiene correo electrónico registrado.');
+      showNotice('Este beneficiario no tiene correo electrónico registrado.', 'error');
       return;
     }
     const email = {
@@ -126,14 +141,17 @@ export function Receipts({ data, actions, currentUser }) {
       message: 'Adjuntamos su justificante de entrega en PDF.',
       includeSummary: false
     };
-    setEmailNotice('Generando PDF y enviando al beneficiario...');
+    showNotice('Generando PDF y enviando al beneficiario...', 'info');
+    setBusyAction('beneficiary-email');
     try {
       const result = await sendEmailEfficient(email, selectedEntries);
-      await saveEmailLog(actions, currentUser, email, selectedEntries.length, result.payload.message || 'Correo enviado correctamente.', result.attachments);
-      setEmailNotice('Correo enviado correctamente.');
+      const logged = await saveReceiptEmailLog(email, selectedEntries, result, 'Enviado');
+      showNotice(logged ? 'Correo enviado correctamente.' : 'Correo enviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
     } catch (error) {
-      await saveEmailLog(actions, currentUser, email, selectedEntries.length, normalizeEmailError(error), []);
-      setEmailNotice(normalizeEmailError(error));
+      await saveReceiptEmailLog(email, selectedEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || [] }, 'Error', normalizeEmailError(error));
+      showNotice(normalizeEmailError(error), 'error');
+    } finally {
+      setBusyAction('');
     }
   }
 
@@ -151,6 +169,71 @@ export function Receipts({ data, actions, currentUser }) {
     return { payload, attachments: payload.attachments || attachments };
   }
 
+  async function saveReceiptEmailLog(email, entries, result, status, failureMessage = '') {
+    const normalizedEntries = Array.isArray(entries) ? entries : [];
+    try {
+      await saveEmailLog(
+        actions,
+        currentUser,
+        email,
+        normalizedEntries.length,
+        status === 'Enviado' ? result.payload?.message || 'Correo enviado correctamente.' : failureMessage || 'Error al enviar el correo.',
+        result.attachments || [],
+        result.payload?.id || '',
+        status,
+        normalizedEntries.map((entry) => entry.delivery?.id).filter(Boolean)
+      );
+      return true;
+    } catch (error) {
+      console.error('[justificantes] No se pudo registrar el historial de envío', {
+        status,
+        providerId: result.payload?.id || null,
+        error: error.message
+      });
+      return false;
+    }
+  }
+
+  function entriesForLog(log) {
+    const ids = new Set([
+      ...(Array.isArray(log.receipt_ids) ? log.receipt_ids : []),
+      ...(log.attachments || []).map((item) => item.deliveryId || item.delivery_id).filter(Boolean)
+    ]);
+    return receipts
+      .filter((delivery) => ids.has(delivery.id))
+      .map((delivery) => ({
+        delivery,
+        beneficiary: data.beneficiaries.find((item) => item.id === delivery.beneficiary_id)
+      }));
+  }
+
+  async function resendLog(log) {
+    const email = { recipients: log.recipient, subject: log.subject, message: log.message };
+    const storedAttachments = (log.attachments || []).filter((item) => item.storagePath || item.storage_path);
+    const fallbackEntries = entriesForLog(log);
+    const storedReceiptCount = storedAttachments.filter((item) => !(item.isSummary || item.is_summary)).length;
+    const canReuseOriginals = storedReceiptCount >= Number(log.receipts_count || 0) && storedReceiptCount > 0;
+    if (!canReuseOriginals && !fallbackEntries.length) {
+      showNotice('No existe un PDF original ni datos suficientes para regenerar este envío.', 'error');
+      return;
+    }
+    setBusyAction(`resend-${log.id}`);
+    try {
+      const result = canReuseOriginals
+        ? await sendEmailEfficient(email, [], storedAttachments)
+        : await sendEmailEfficient(email, fallbackEntries);
+      const logEntries = fallbackEntries.length ? fallbackEntries : Array.from({ length: Number(log.receipts_count || 0) }, () => ({ delivery: {} }));
+      const logged = await saveReceiptEmailLog(email, logEntries, result, 'Enviado');
+      showNotice(logged ? 'Correo reenviado correctamente.' : 'Correo reenviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
+    } catch (error) {
+      const logEntries = fallbackEntries.length ? fallbackEntries : Array.from({ length: Number(log.receipts_count || 0) }, () => ({ delivery: {} }));
+      await saveReceiptEmailLog(email, logEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || storedAttachments }, 'Error', normalizeEmailError(error));
+      showNotice(normalizeEmailError(error), 'error');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -158,16 +241,16 @@ export function Receipts({ data, actions, currentUser }) {
         description="Consulta, filtra y descarga justificantes de entrega de forma masiva."
         actions={
           <>
-            <Button onClick={openBeneficiaryEmail} disabled={selected.length !== 1}><Mail size={18} /> Enviar justificante al beneficiario</Button>
-            <Button variant="secondary" onClick={openManualEmail} disabled={!selected.length}><Mail size={18} /> Enviar justificantes</Button>
-            <Button variant="secondary" onClick={generateZip} disabled={!selected.length}><Archive size={18} /> Generar ZIP</Button>
-            <Button variant="secondary" onClick={generateMonthlyZip}><CalendarDays size={18} /> Generar ZIP mensual</Button>
+            <Button onClick={openBeneficiaryEmail} disabled={selected.length !== 1 || Boolean(busyAction)}><Mail size={18} /> Enviar justificante al beneficiario</Button>
+            <Button variant="secondary" onClick={openManualEmail} disabled={!selected.length || Boolean(busyAction)}><Mail size={18} /> Enviar justificantes</Button>
+            <Button variant="secondary" onClick={generateZip} disabled={!selected.length || Boolean(busyAction)}><Archive size={18} /> {busyAction === 'zip' ? 'Generando...' : 'Generar ZIP'}</Button>
+            <Button variant="secondary" onClick={generateMonthlyZip} disabled={Boolean(busyAction)}><CalendarDays size={18} /> {busyAction === 'monthly-zip' ? 'Generando...' : 'Generar ZIP mensual'}</Button>
             <Button onClick={() => exportDeliveriesSummaryPdf(filtered)}><FileText size={18} /> Generar informe de entregas</Button>
           </>
         }
       />
 
-      {emailNotice && <div className="mb-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{emailNotice}</div>}
+      {emailNotice && <div className={`mb-5 rounded-md border p-3 text-sm font-medium ${noticeClass(noticeType)}`}>{emailNotice}</div>}
 
       <div className="mb-5 grid gap-4 sm:grid-cols-3">
         <Stat label="Entregas hoy" value={stats.today} />
@@ -230,21 +313,25 @@ export function Receipts({ data, actions, currentUser }) {
       </div>
 
       <section className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-        <h3 className="font-bold text-ink">Historial de envios</h3>
+        <h3 className="font-bold text-ink">Historial de envíos</h3>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Destinatario</th><th>Usuario</th><th>Nº justificantes</th><th>Resultado</th><th className="text-right pr-4">Acciones</th></tr></thead>
+          <table className="w-full min-w-[1120px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Hora</th><th>Usuario</th><th>Destinatario</th><th>Nº justificantes</th><th>Resultado</th><th>ID Resend</th><th className="text-right pr-4">Acciones</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {(data.email_logs || []).map((log) => <tr key={log.id}><td className="px-4 py-3">{formatDate(log.sent_at)}</td><td>{log.recipient}</td><td>{log.sent_by || '-'}</td><td>{log.receipts_count}</td><td>{log.result}</td><td className="pr-4 text-right"><Button variant="secondary" onClick={async () => {
-                try {
-                  const email = { recipients: log.recipient, subject: log.subject, message: log.message };
-                  const result = await sendEmailEfficient(email, [], log.attachments || []);
-                  await actions.updateEmailLog(log.id, { sent_at: new Date().toISOString(), result: result.payload.message || 'Correo enviado correctamente.' });
-                } catch (error) {
-                  await actions.updateEmailLog(log.id, { sent_at: new Date().toISOString(), result: normalizeEmailError(error) });
-                }
-              }}>Reenviar</Button></td></tr>)}
-              {!(data.email_logs || []).length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="6">Sin envios registrados.</td></tr>}
+              {receiptEmailLogs.map((log) => <tr key={log.id}>
+                <td className="px-4 py-3">{formatDate(log.sent_at)}</td>
+                <td>{formatLogTime(log.sent_at)}</td>
+                <td>{log.sent_by || '-'}</td>
+                <td className="max-w-[240px] break-words">{log.recipient}</td>
+                <td>{log.receipts_count}</td>
+                <td><span className={logStatusClass(log.status, log.result)}>{log.status || inferLogStatus(log.result)}</span></td>
+                <td className="max-w-[170px] break-all font-mono text-xs">{log.provider_id || extractProviderId(log.result) || '-'}</td>
+                <td className="pr-4"><div className="flex justify-end gap-2">
+                  <Button variant="secondary" disabled={!(log.attachments || []).length} onClick={() => { setAttachmentError(''); setAttachmentLog(log); }}><Eye size={16} /> Ver PDF</Button>
+                  <Button variant="secondary" disabled={busyAction === `resend-${log.id}`} onClick={() => resendLog(log)}><RefreshCw size={16} /> {busyAction === `resend-${log.id}` ? 'Enviando...' : 'Reenviar'}</Button>
+                </div></td>
+              </tr>)}
+              {!receiptEmailLogs.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="8">Sin envíos registrados.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -257,13 +344,12 @@ export function Receipts({ data, actions, currentUser }) {
             defaultRecipients={emailMode === 'beneficiary' ? beneficiaryRecipient : defaultRecipients}
             mode={emailMode}
             onSubmit={async (email) => {
-              let attachments = [];
               try {
                 const result = await sendEmailEfficient(email, selectedEntries);
-                attachments = result.attachments;
-                await saveEmailLog(actions, currentUser, email, selectedEntries.length, result.payload.message || 'Correo enviado correctamente.', attachments);
+                const logged = await saveReceiptEmailLog(email, selectedEntries, result, 'Enviado');
+                showNotice(logged ? 'Correo enviado correctamente.' : 'Correo enviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
               } catch (error) {
-                await saveEmailLog(actions, currentUser, email, selectedEntries.length, normalizeEmailError(error), attachments);
+                await saveReceiptEmailLog(email, selectedEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || [] }, 'Error', normalizeEmailError(error));
                 throw error;
               }
               setEmailOpen(false);
@@ -271,11 +357,35 @@ export function Receipts({ data, actions, currentUser }) {
           />
         </Modal>
       )}
+
+      {attachmentLog && (
+        <Modal title="PDF enviados" onClose={() => setAttachmentLog(null)}>
+          <div className="space-y-3">
+            {attachmentError && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{attachmentError}</p>}
+            {(attachmentLog.attachments || []).map((attachment, index) => (
+              <div key={`${attachment.filename}-${index}`} className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-0">
+                <div>
+                  <p className="font-semibold text-ink">{attachment.filename || `Justificante ${index + 1}`}</p>
+                  <p className="text-xs text-slate-500">{formatAttachmentSize(attachment.size)}</p>
+                </div>
+                <Button variant="secondary" disabled={!(attachment.storagePath || attachment.storage_path)} onClick={async () => {
+                  try {
+                    setAttachmentError('');
+                    await openStoredEmailAttachment(attachment);
+                  } catch (error) {
+                    setAttachmentError(error.message);
+                  }
+                }}><Eye size={16} /> Abrir PDF</Button>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
 
-async function saveEmailLog(actions, currentUser, email, count, result, attachments) {
+async function saveEmailLog(actions, currentUser, email, count, result, attachments, providerId = '', status = 'Enviado', receiptIds = []) {
   await actions.createEmailLog({
     sent_at: new Date().toISOString(),
     recipient: email.recipients,
@@ -284,8 +394,45 @@ async function saveEmailLog(actions, currentUser, email, count, result, attachme
     result,
     subject: email.subject,
     message: email.message,
-    attachments: sanitizeAttachmentsForLog(attachments)
+    attachments: sanitizeAttachmentsForLog(attachments),
+    provider_id: providerId || null,
+    status,
+    receipt_ids: receiptIds
   });
+}
+
+function noticeClass(type) {
+  if (type === 'success') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (type === 'error') return 'border-red-200 bg-red-50 text-red-700';
+  return 'border-brand-200 bg-brand-50 text-brand-700';
+}
+
+function formatLogTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+
+function inferLogStatus(result) {
+  return /error|fall/i.test(String(result || '')) ? 'Error' : 'Enviado';
+}
+
+function logStatusClass(status, result) {
+  const success = (status || inferLogStatus(result)) === 'Enviado';
+  return `inline-flex rounded-md px-2 py-1 text-xs font-semibold ${success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`;
+}
+
+function extractProviderId(result) {
+  return String(result || '').match(/Resend:\s*([^\s]+)/i)?.[1] || '';
+}
+
+function formatAttachmentSize(bytes) {
+  const value = Number(bytes || 0);
+  if (!value) return 'Tamaño no disponible';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function Stat({ label, value }) {
@@ -324,15 +471,16 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
   });
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
   async function submit(event) {
     event.preventDefault();
     event.stopPropagation();
     event.nativeEvent?.stopImmediatePropagation?.();
-    console.info('[justificantes] Inicio flujo POST');
     setStatus('Generando PDFs y enviando correo...');
     setError('');
+    setSubmitting(true);
     try {
       await onSubmit(form);
       setStatus('Correo enviado correctamente.');
@@ -340,13 +488,15 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
       console.error('[correo] Error en envio de justificantes', err);
       setError(normalizeEmailError(err));
       setStatus('');
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
     <form className="grid gap-4" onSubmit={submit}>
       <p className="rounded-md bg-brand-50 p-3 text-sm text-brand-700">
-        Se generaran {selectedCount} PDF{selectedCount === 1 ? '' : 's'} individual{selectedCount === 1 ? '' : 'es'} de justificante y se enviaran como adjuntos. No se adjuntara ningun ZIP.
+        Se generarán {selectedCount} PDF{selectedCount === 1 ? '' : 's'} individual{selectedCount === 1 ? '' : 'es'} de justificante y se enviarán como adjuntos. No se adjuntará ningún ZIP.
       </p>
       {mode === 'beneficiary' && <p className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">Destinatario rellenado automaticamente desde el email guardado en la ficha del beneficiario.</p>}
       <FormField label="Destinatarios">
@@ -365,8 +515,8 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
       {status && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{status}</p>}
       {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
       <div className="flex justify-end">
-        <Button type="submit" onClick={() => console.info('[justificantes] Boton pulsado')}>
-          <Mail size={18} /> Enviar justificantes
+        <Button type="submit" disabled={submitting}>
+          <Mail size={18} /> {submitting ? 'Enviando...' : 'Enviar justificantes'}
         </Button>
       </div>
     </form>
@@ -376,7 +526,7 @@ function EmailForm({ selectedCount, defaultRecipients, mode, onSubmit }) {
 function normalizeEmailError(error) {
   const message = error?.message || '';
   if (message.startsWith('Servicio de correo no configurado.')) return message;
-  if (message.includes('Failed to fetch') || message.includes('NetworkError')) return 'Error al enviar el correo.';
+  if (message.includes('Failed to fetch') || message.includes('NetworkError')) return `Error de red al enviar el correo: ${message}`;
   return message || 'Error al enviar el correo.';
 }
 

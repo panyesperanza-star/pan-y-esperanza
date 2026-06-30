@@ -13,11 +13,11 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 - Entregas vinculadas a beneficiarios con fecha, responsable, tipo de ayuda, cantidad y observaciones.
 - Firma de recepcion en cada entrega con raton, dedo o lapiz tactil.
 - Datos del receptor: nombre, DNI/NIE / NIE O PASAPORTE y fecha/hora de recepcion.
-- Justificantes profesionales con logo, numero unico `PE-AAAA-000001`, fecha/hora de generacion, sello visual y codigo QR.
+- Justificantes profesionales con logo, numero unico `PE-AAAA-000001`, fecha/hora, productos, observaciones y firmas.
 - Boton `Imprimir justificante de entrega` con PDF que incluye datos, productos, cantidades, responsable, receptor, firma del receptor y firma del responsable.
 - Seccion `Justificantes` con filtros, seleccion multiple, `Generar ZIP`, `Generar ZIP mensual`, envio real de PDFs individuales, envio directo al beneficiario, historial de envios y reenvio.
 - Nueva seccion `Comunicaciones` con envio de emails por Resend, plantillas reutilizables, adjunto PDF opcional, historial y estructura preparada para WhatsApp.
-- Cada ZIP incluye todos los justificantes seleccionados y un PDF resumen de entregas.
+- Los ZIP incluyen un PDF individual por cada justificante seleccionado. El resumen estadistico se genera por separado.
 - Beneficiarios con campo email para enviar el PDF individual al correo registrado.
 - Boton `Enviar email` dentro de la ficha del beneficiario con plantillas de justificante, aviso de recogida, solicitud de documentacion y agradecimiento.
 - Configuracion editable de identidad corporativa: entidad, CIF, direccion, telefono, correo, web y logo.
@@ -71,7 +71,7 @@ Usuario inicial en modo demo:
 2. Abre SQL Editor.
 3. Ejecuta `supabase/schema.sql`.
 4. Opcionalmente ejecuta `supabase/seed.sql`.
-5. Si ya tenias una base creada con una version anterior, ejecuta las migraciones de `supabase/migrations` en orden cronologico.
+5. Si ya tenias una base creada con una version anterior, ejecuta las migraciones de `supabase/migrations` en orden cronologico, incluida `20260630_receipts_email_history.sql`.
 6. Copia `.env.example` a `.env`.
 7. Rellena:
 
@@ -271,9 +271,9 @@ PUBLIC_LOGO_URL=
 8. Dibuja tambien la firma del responsable.
 9. Vuelve a Inventario: el stock debe bajar y debe aparecer un movimiento de salida.
 10. Vuelve a la ficha del beneficiario: debe aparecer la entrega en historial, actualizarse la ultima ayuda y mostrar `Firma disponible`.
-11. En Entregas pulsa `Imprimir justificante de entrega` y comprueba que el PDF incluye logo, numero de justificante, QR, sello, declaracion y firmas.
+11. En Entregas pulsa `Imprimir justificante de entrega` y comprueba que el PDF incluye logo, numero de justificante, datos de la entrega, productos y firmas.
 12. Ve a `Justificantes`, filtra por fechas, beneficiario, responsable o tipo de ayuda.
-13. Selecciona varios justificantes y pulsa `Generar ZIP` para obtener un ZIP con los PDF y el resumen.
+13. Selecciona varios justificantes y pulsa `Generar ZIP` para obtener un ZIP con un PDF individual por justificante.
 14. Usa `Generar ZIP mensual` para descargar automaticamente los justificantes del mes actual.
 15. Pulsa `Enviar justificantes`, introduce destinatarios, asunto y mensaje; se enviaran los justificantes como PDFs individuales mediante la API de correo.
 16. Pulsa `Generar informe de entregas` para crear el PDF resumen.
@@ -285,7 +285,7 @@ PUBLIC_LOGO_URL=
 22. En `Entidad > Correo`, revisa el estado Configurado/No configurado y pulsa `Enviar correo de prueba`.
 23. En `Justificantes`, envia varios justificantes: deben adjuntarse como PDFs individuales, no como ZIP.
 24. Selecciona un unico justificante y pulsa `Enviar justificante al beneficiario`; si hay email se enviara directamente, y si no hay email debe mostrarse `Este beneficiario no tiene correo electrónico registrado.`
-25. En `Justificantes > Historial de envios`, pulsa `Reenviar` para reutilizar los adjuntos guardados.
+25. En `Justificantes > Historial de envios`, usa `Ver PDF` para abrir el original almacenado y `Reenviar` para reutilizarlo.
 26. En `Entidad > Usuarios`, crea un usuario con cargo, contrasena temporal y foto opcional.
 27. Comprueba que se guardan ultimo acceso, fecha de creacion y creado por.
 28. En `Usuarios > Permisos`, modifica permisos Ver/Crear/Editar/Eliminar por modulo.
@@ -349,7 +349,7 @@ Cada entrega genera un numero de justificante con formato `PE-AAAA-000001`. El P
 
 La seccion `Justificantes` muestra todos los justificantes derivados de entregas registradas. Permite filtrar por fecha desde/hasta, beneficiario, responsable y tipo de ayuda. Puedes marcar varias filas con casillas y generar un unico archivo ZIP con todos los PDF seleccionados.
 
-El boton `Generar ZIP mensual` descarga automaticamente todos los justificantes del mes actual. Todos los ZIP incluyen tambien `Resumen-entregas.pdf`, con entregas totales, beneficiarios atendidos, productos entregados, cantidades y responsables.
+El boton `Generar ZIP mensual` descarga automaticamente todos los justificantes del mes actual que cumplen los filtros activos. El informe estadistico se mantiene separado en `Generar informe de entregas`.
 
 El boton `Enviar justificantes` permite introducir uno o varios destinatarios, asunto y mensaje. La aplicacion genera un PDF individual por cada justificante seleccionado y los envia como adjuntos mediante la funcion serverless `api/send-justificantes.js`. No adjunta ZIP.
 
@@ -357,7 +357,7 @@ La casilla `Enviar tambien resumen PDF` permite adjuntar opcionalmente `Resumen-
 
 El boton `Enviar justificante al beneficiario` esta pensado para moviles y para el envio individual: selecciona un unico justificante y, si el beneficiario tiene email registrado, se envia directamente a ese correo. Si no tiene email, la aplicacion muestra `Este beneficiario no tiene correo electrónico registrado.`
 
-La subseccion `Historial de envios` guarda fecha, destinatario, usuario que envio, numero de justificantes y resultado. El boton `Reenviar` reutiliza los adjuntos guardados en el historial, sin regenerar los PDFs.
+La subseccion `Historial de envios` guarda fecha, hora, destinatario, usuario, numero de justificantes, resultado e ID de Resend. Los PDF se almacenan en la ruta privada `justificantes/` del bucket configurado; `Ver PDF` abre una URL firmada temporal y `Reenviar` reutiliza el original. Si un registro antiguo no tiene archivo almacenado, se regenera desde la entrega vinculada.
 
 Todos los correos HTML incluyen logo, nombre de entidad, fecha, texto personalizado y datos corporativos de la entidad.
 

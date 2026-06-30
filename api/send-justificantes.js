@@ -5,10 +5,7 @@ import autoTableModule from 'jspdf-autotable';
 
 const MAIL_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
 const autoTable = typeof autoTableModule === 'function' ? autoTableModule : autoTableModule.default;
-console.info('[send-justificantes] PDF exports', {
-  jsPDF: typeof jsPDF,
-  autoTable: typeof autoTable
-});
+const MAX_RESEND_ATTACHMENTS_BYTES = 35 * 1024 * 1024;
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -18,6 +15,7 @@ export default async function handler(request, response) {
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  let responseAttachments = [];
   console.info('[send-justificantes] Inicio', {
     requestId,
     method: request.method,
@@ -30,6 +28,7 @@ export default async function handler(request, response) {
     const from = process.env.FROM_EMAIL;
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const storageBucket = process.env.SUPABASE_STORAGE_BUCKET || process.env.VITE_SUPABASE_STORAGE_BUCKET || 'documentos';
     const { body, transport, rawSizeBytes } = await parseRequest(request);
     const logoUrl = process.env.PUBLIC_LOGO_URL || body.logoUrl;
     const recipients = normalizeRecipients(body.to);
@@ -37,6 +36,22 @@ export default async function handler(request, response) {
     const organization = body.organization || {};
     const isTest = Boolean(body.testMode);
     const receiptEntries = Array.isArray(body.receiptEntries) ? body.receiptEntries : [];
+
+    if (!apiKey || !from) {
+      console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
+      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.' });
+    }
+
+    const auth = await requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId });
+    if (!auth.ok) {
+      return sendJson(response, auth.status, { ok: false, code: auth.code, error: auth.error });
+    }
+
+    assertPdfRuntime();
+
+    if (attachments.length) {
+      attachments = await loadStoredAttachments(auth.admin, storageBucket, attachments, requestId);
+    }
 
     if (!attachments.length && receiptEntries.length) {
       console.info('[send-justificantes] Generando PDFs en servidor', {
@@ -47,10 +62,12 @@ export default async function handler(request, response) {
           + Buffer.byteLength(String(entry?.delivery?.signature_data_url || ''))
           + Buffer.byteLength(String(entry?.delivery?.responsible_signature_data_url || '')), 0)
       });
-      attachments = createServerReceiptAttachments(receiptEntries, {
+      attachments = await createServerReceiptAttachments(receiptEntries, {
         includeSummary: Boolean(body.includeSummary),
-        organization
+        organization,
+        logoUrl
       });
+      attachments = await persistGeneratedAttachments(auth.admin, storageBucket, attachments, requestId);
     }
 
     const attachmentStats = attachments.map((attachment) => ({
@@ -70,18 +87,16 @@ export default async function handler(request, response) {
       attachmentStats
     });
 
-    if (!apiKey || !from) {
-      console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
-      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.' });
-    }
-
-    const auth = await requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId });
-    if (!auth.ok) {
-      return sendJson(response, auth.status, { ok: false, code: auth.code, error: auth.error });
-    }
-
     if (!recipients.length) {
       return sendJson(response, 400, { ok: false, code: 'NO_RECIPIENTS', error: 'Debes indicar al menos un destinatario.' });
+    }
+
+    if (!isTest && !attachments.length) {
+      return sendJson(response, 400, {
+        ok: false,
+        code: 'NO_RECEIPTS',
+        error: 'No se ha podido generar o recuperar ningun justificante PDF.'
+      });
     }
 
     const invalidAttachment = attachments.find((attachment) => !attachment?.filename || !attachment?.content);
@@ -101,10 +116,27 @@ export default async function handler(request, response) {
       });
     }
 
+    const totalAttachmentBytes = attachmentValidation.reduce((total, item) => total + item.bytes, 0);
+    if (totalAttachmentBytes > MAX_RESEND_ATTACHMENTS_BYTES) {
+      return sendJson(response, 413, {
+        ok: false,
+        code: 'ATTACHMENTS_TOO_LARGE',
+        error: 'Los PDF seleccionados superan el limite de 35 MB. Envie menos justificantes en cada correo.'
+      });
+    }
+
     const resendAttachments = attachments.map((attachment) => ({
       filename: attachment.filename,
       content: normalizeAttachmentContent(attachment.content),
       contentType: attachment.contentType || 'application/pdf'
+    }));
+    responseAttachments = attachments.map((attachment) => ({
+      filename: attachment.filename,
+      size: getAttachmentBytes(attachment),
+      contentType: attachment.contentType || 'application/pdf',
+      storagePath: attachment.storagePath || null,
+      deliveryId: attachment.deliveryId || null,
+      isSummary: Boolean(attachment.isSummary)
     }));
 
     console.info('[send-justificantes] Llamando a Resend', {
@@ -136,7 +168,7 @@ export default async function handler(request, response) {
     if (result.error) {
       const providerMessage = result.error.message || result.error.name || 'Error al enviar el correo.';
       console.error('[send-justificantes] Error Resend', { requestId, error: result.error });
-      return sendJson(response, 502, { ok: false, code: 'MAIL_PROVIDER_ERROR', error: providerMessage });
+      return sendJson(response, 502, { ok: false, code: 'MAIL_PROVIDER_ERROR', error: providerMessage, attachments: responseAttachments });
     }
 
     if (!result.data?.id) {
@@ -144,20 +176,16 @@ export default async function handler(request, response) {
       return sendJson(response, 502, {
         ok: false,
         code: 'MAIL_PROVIDER_NO_ID',
-        error: 'Resend no confirmo el envio del correo.'
+        error: 'Resend no confirmo el envio del correo.',
+        attachments: responseAttachments
       });
     }
 
-    const responseAttachments = attachments.map((attachment) => ({
-      filename: attachment.filename,
-      size: getAttachmentBytes(attachment),
-      contentType: attachment.contentType || 'application/pdf'
-    }));
     console.info('[send-justificantes] Envio correcto', { requestId, id: result.data?.id, responseAttachments });
     return sendJson(response, 200, { ok: true, id: result.data?.id, message: 'Correo enviado correctamente.', attachments: responseAttachments });
   } catch (error) {
     console.error('[send-justificantes] Excepcion', { requestId, message: error.message, stack: error.stack });
-    return sendJson(response, 500, { ok: false, code: 'MAIL_SEND_FAILED', error: error.message || 'Error al enviar el correo.' });
+    return sendJson(response, 500, { ok: false, code: 'MAIL_SEND_FAILED', error: error.message || 'Error al enviar el correo.', attachments: responseAttachments });
   }
 }
 
@@ -298,40 +326,134 @@ function normalizeAttachmentContent(content) {
   return content;
 }
 
-function createServerReceiptAttachments(receiptEntries = [], options = {}) {
+function assertPdfRuntime() {
+  if (typeof jsPDF !== 'function') {
+    throw new Error(`jsPDF no esta disponible como constructor (tipo recibido: ${typeof jsPDF}).`);
+  }
+  if (typeof autoTable !== 'function') {
+    throw new Error(`autoTable no esta disponible como funcion (tipo recibido: ${typeof autoTable}).`);
+  }
+}
+
+async function loadStoredAttachments(admin, bucket, references = [], requestId) {
+  const loaded = [];
+  for (const reference of references) {
+    if (reference?.content) {
+      loaded.push(reference);
+      continue;
+    }
+    const storagePath = reference?.storagePath || reference?.storage_path;
+    if (!storagePath) continue;
+    const { data, error } = await admin.storage.from(bucket).download(storagePath);
+    if (error || !data) {
+      console.error('[send-justificantes] No se pudo recuperar PDF original', {
+        requestId,
+        storagePath,
+        error: error?.message
+      });
+      throw new Error(`No se pudo recuperar el PDF original ${reference.filename || storagePath}.`);
+    }
+    const content = Buffer.from(await data.arrayBuffer());
+    loaded.push({
+      ...reference,
+      storagePath,
+      contentType: reference.contentType || 'application/pdf',
+      content
+    });
+  }
+  console.info('[send-justificantes] PDFs originales recuperados', {
+    requestId,
+    requested: references.length,
+    loaded: loaded.length
+  });
+  return loaded;
+}
+
+async function persistGeneratedAttachments(admin, bucket, attachments = [], requestId) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const year = new Date().getFullYear();
+  const persisted = [];
+  const uploadedPaths = [];
+  for (const [index, attachment] of attachments.entries()) {
+    const safeName = sanitizeStorageFilename(attachment.filename || `justificante-${index + 1}.pdf`);
+    const storagePath = `justificantes/${year}/${timestamp}-${index + 1}-${safeName}`;
+    const { error } = await admin.storage.from(bucket).upload(storagePath, attachment.content, {
+      contentType: attachment.contentType || 'application/pdf',
+      upsert: false
+    });
+    if (error) {
+      console.error('[send-justificantes] No se pudo guardar PDF en Storage', {
+        requestId,
+        bucket,
+        storagePath,
+        error: error.message
+      });
+      if (uploadedPaths.length) await admin.storage.from(bucket).remove(uploadedPaths);
+      throw new Error(`No se pudo guardar el justificante ${attachment.filename} en Supabase Storage: ${error.message}`);
+    }
+    uploadedPaths.push(storagePath);
+    persisted.push({ ...attachment, storagePath });
+  }
+  console.info('[send-justificantes] Persistencia de PDFs completada', {
+    requestId,
+    bucket,
+    generated: attachments.length,
+    stored: persisted.filter((item) => item.storagePath).length
+  });
+  return persisted;
+}
+
+function sanitizeStorageFilename(value) {
+  return String(value || 'justificante.pdf')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+export async function createServerReceiptAttachments(receiptEntries = [], options = {}) {
+  assertPdfRuntime();
+  const logo = await loadServerLogo(options.logoUrl);
   const attachments = receiptEntries.map((entry, index) => {
-    const doc = createServerReceiptPdf(entry, options.organization || {});
+    const doc = createServerReceiptPdf(entry, options.organization || {}, logo);
     const receiptNumber = entry?.delivery?.receipt_number || fallbackReceiptNumber(entry?.delivery, index);
     const buffer = Buffer.from(doc.output('arraybuffer'));
     return {
       filename: `Justificante-${receiptNumber}.pdf`,
       contentType: 'application/pdf',
-      content: buffer
+      content: buffer,
+      deliveryId: entry?.delivery?.id || null,
+      isSummary: false
     };
   });
 
   if (options.includeSummary) {
-    const summaryDoc = createServerDeliveriesSummaryPdf(receiptEntries);
+    const summaryDoc = createServerDeliveriesSummaryPdf(receiptEntries, options.organization || {}, logo);
     attachments.push({
       filename: 'Resumen-entregas.pdf',
       contentType: 'application/pdf',
-      content: Buffer.from(summaryDoc.output('arraybuffer'))
+      content: Buffer.from(summaryDoc.output('arraybuffer')),
+      deliveryId: null,
+      isSummary: true
     });
   }
 
   return attachments;
 }
 
-function createServerReceiptPdf(entry = {}, organization = {}) {
+function createServerReceiptPdf(entry = {}, organization = {}, logo = null) {
   const delivery = entry.delivery || {};
   const beneficiary = entry.beneficiary || {};
   const doc = new jsPDF();
   const receiptNumber = delivery.receipt_number || fallbackReceiptNumber(delivery, 0);
-  const product = delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada';
+  const productRows = getServerProductRows(delivery);
 
   doc.setFont('helvetica', 'bold');
+  if (logo) {
+    doc.addImage(logo.bytes, logo.format, 14, 8, 26, 26);
+  }
   doc.setFontSize(15);
-  doc.text('PAN Y ESPERANZA', 14, 16);
+  doc.text(organization.name || 'PAN Y ESPERANZA', logo ? 46 : 14, 16);
   doc.setFontSize(13);
   doc.text('JUSTIFICANTE DE ENTREGA DE AYUDA SOCIAL', 14, 32);
   doc.setFont('helvetica', 'normal');
@@ -372,12 +494,16 @@ function createServerReceiptPdf(entry = {}, organization = {}) {
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 10,
     head: [['Producto entregado', 'Cantidad']],
-    body: [[product, delivery.quantity || '-']],
+    body: productRows,
     headStyles: { fillColor: [36, 126, 80] },
     styles: { fontSize: 9 }
   });
 
-  const signatureY = doc.lastAutoTable.finalY + 20;
+  let signatureY = doc.lastAutoTable.finalY + 20;
+  if (signatureY > 215) {
+    doc.addPage();
+    signatureY = 28;
+  }
   doc.setFontSize(12);
   doc.text('Firma del beneficiario', 14, signatureY);
   doc.text('Firma del responsable', 112, signatureY);
@@ -398,29 +524,37 @@ function createServerReceiptPdf(entry = {}, organization = {}) {
   return doc;
 }
 
-function createServerDeliveriesSummaryPdf(receiptEntries = []) {
+function createServerDeliveriesSummaryPdf(receiptEntries = [], organization = {}, logo = null) {
   const doc = new jsPDF();
   const deliveries = receiptEntries.map((entry) => entry.delivery || {});
+  const summaryRows = receiptEntries.flatMap((entry) => {
+    const delivery = entry.delivery || {};
+    const beneficiaryName = entry.beneficiary?.full_name || delivery.beneficiary_name || '-';
+    return getServerProductRows(delivery).map(([product, quantity]) => ({ delivery, beneficiaryName, product, quantity }));
+  });
   const beneficiaries = new Set(receiptEntries.map((entry) => entry.beneficiary?.full_name || entry.delivery?.beneficiary_name).filter(Boolean));
-  const productsTotal = deliveries.reduce((total, delivery) => total + Number(delivery.quantity || 0), 0);
+  const productsTotal = summaryRows.reduce((total, row) => total + Number(row.quantity || 0), 0);
   const responsibles = new Set(deliveries.map((delivery) => delivery.responsible).filter(Boolean));
+  if (logo) {
+    doc.addImage(logo.bytes, logo.format, 14, 8, 26, 26);
+  }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
-  doc.text('INFORME OFICIAL DE ENTREGAS', 14, 18);
+  doc.text('INFORME OFICIAL DE ENTREGAS', logo ? 46 : 14, 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Periodo consultado: ${getServerDeliveriesPeriod(deliveries)}`, 14, 26);
-  doc.text(`Fecha de emision: ${formatDateTimeServer(new Date().toISOString())}`, 14, 32);
+  doc.text(`Periodo consultado: ${getServerDeliveriesPeriod(deliveries)}`, logo ? 46 : 14, 26);
+  doc.text(`Fecha de emision: ${formatDateTimeServer(new Date().toISOString())}`, logo ? 46 : 14, 32);
   autoTable(doc, {
     startY: 40,
     head: [['Fecha', 'Hora', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
-    body: deliveries.map((delivery) => [
+    body: summaryRows.map(({ delivery, beneficiaryName, product, quantity }) => [
       formatDateServer(delivery.delivered_at),
       formatTimeServer(delivery.reception_at || delivery.delivered_at),
-      delivery.beneficiary_name || '-',
+      beneficiaryName,
       delivery.responsible || '-',
-      delivery.inventory_item_name || delivery.product || '-',
-      delivery.quantity || '-',
+      product,
+      quantity,
       delivery.help_type || '-'
     ]),
     headStyles: { fillColor: [36, 126, 80] },
@@ -439,7 +573,7 @@ function createServerDeliveriesSummaryPdf(receiptEntries = []) {
   doc.setFontSize(8);
   doc.setTextColor(96, 112, 100);
   doc.text('Informe interno de gestion y seguimiento.', 14, 278);
-  doc.text('Pan y Esperanza - info@panyesperanza.org - www.panyesperanza.org', 14, 284);
+  doc.text(`${organization.name || 'Pan y Esperanza'} - ${organization.email || 'info@panyesperanza.org'} - ${organization.web || organization.website || 'www.panyesperanza.org'}`, 14, 284);
   doc.setTextColor(23, 33, 27);
   return doc;
 }
@@ -466,6 +600,36 @@ function addServerSignature(doc, dataUrl, x, y) {
     console.warn('[send-justificantes] No se pudo insertar firma en PDF servidor', { message: error.message });
     doc.setFontSize(10);
     doc.text('Firma no disponible', x, y + 8);
+  }
+}
+
+function getServerProductRows(delivery = {}) {
+  if (Array.isArray(delivery.items) && delivery.items.length) {
+    return delivery.items.map((item) => [
+      item.name || item.inventory_item_name || item.product || '-',
+      item.quantity || '-'
+    ]);
+  }
+  return [[
+    delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
+    delivery.quantity || '-'
+  ]];
+}
+
+async function loadServerLogo(logoUrl) {
+  if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) return null;
+  try {
+    const response = await fetch(logoUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const contentType = response.headers.get('content-type') || '';
+    const format = contentType.includes('jpeg') || contentType.includes('jpg') ? 'JPEG' : 'PNG';
+    return { bytes: new Uint8Array(await response.arrayBuffer()), format };
+  } catch (error) {
+    console.warn('[send-justificantes] No se pudo cargar el logo para el PDF', {
+      logoUrl,
+      error: error.message
+    });
+    return null;
   }
 }
 
@@ -580,7 +744,7 @@ async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, req
     return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para enviar correos.' };
   }
 
-  return { ok: true, profile };
+  return { ok: true, profile, admin };
 }
 
 function getBearerToken(request) {

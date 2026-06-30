@@ -1,4 +1,5 @@
 import { getApiHeaders } from './apiAuth';
+import { hasSupabaseConfig, supabase, supabaseStorageBucket } from './supabase';
 
 const SAFE_VERCEL_PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -77,9 +78,7 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     metadataBytes: payloadSize.metadataBytes,
     headers: Object.keys(headers)
   });
-  console.log('[JUSTIFICANTES VERSION]', '6920df2');
-  console.log('[PAYLOAD]', outgoingPayload);
-  console.log('[PAYLOAD DIAGNOSTICO]', buildOutgoingPayloadDiagnostics(outgoingPayload, requestBody, payloadSize, useMultipart));
+  console.info('[correo] Estructura del payload', buildOutgoingPayloadDiagnostics(outgoingPayload, requestBody, payloadSize, useMultipart));
 
   if (payloadSize.estimatedTotalBytes > SAFE_VERCEL_PAYLOAD_LIMIT_BYTES) {
     throw new Error(`Los justificantes ocupan ${formatBytes(payloadSize.estimatedTotalBytes)} y superan el limite seguro de envio (${formatBytes(SAFE_VERCEL_PAYLOAD_LIMIT_BYTES)}). Selecciona menos justificantes o envia sin resumen PDF.`);
@@ -99,14 +98,22 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
 
   if (!response.ok) {
     if (responsePayload.code === 'MAIL_NOT_CONFIGURED') {
-      throw new Error(responsePayload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.');
+      throw createEmailApiError(responsePayload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.', responsePayload, response.status);
     }
-    throw new Error(responsePayload.error || 'Error al enviar el correo.');
+    throw createEmailApiError(responsePayload.error || 'Error al enviar el correo.', responsePayload, response.status);
   }
   if (!responsePayload.ok || !responsePayload.id) {
-    throw new Error(responsePayload.error || 'Resend no confirmo el envio del correo.');
+    throw createEmailApiError(responsePayload.error || 'Resend no confirmo el envio del correo.', responsePayload, response.status);
   }
   return responsePayload;
+}
+
+function createEmailApiError(message, payload = {}, status = 0) {
+  const error = new Error(message);
+  error.code = payload.code || 'MAIL_SEND_FAILED';
+  error.status = status;
+  error.payload = payload;
+  return error;
 }
 
 export function buildEmailFormData({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
@@ -172,7 +179,7 @@ export function normalizeEmailError(error) {
   return message || 'Error al enviar el correo.';
 }
 
-export async function saveEmailLog(actions, currentUser, email, count, result, attachments = []) {
+export async function saveEmailLog(actions, currentUser, email, count, result, attachments = [], providerId = '', status = 'Enviado', receiptIds = []) {
   await actions.createEmailLog({
     sent_at: new Date().toISOString(),
     recipient: email.recipients || email.to || '',
@@ -181,7 +188,10 @@ export async function saveEmailLog(actions, currentUser, email, count, result, a
     result,
     subject: email.subject,
     message: email.message,
-    attachments: sanitizeAttachmentsForLog(attachments)
+    attachments: sanitizeAttachmentsForLog(attachments),
+    provider_id: providerId || null,
+    status,
+    receipt_ids: receiptIds
   });
 }
 
@@ -189,8 +199,21 @@ export function sanitizeAttachmentsForLog(attachments = []) {
   return attachments.map((attachment) => ({
     filename: attachment.filename,
     size: attachment.blob?.size || attachment.size || attachment.content?.length || 0,
-    contentType: attachment.contentType || 'application/pdf'
+    contentType: attachment.contentType || 'application/pdf',
+    storagePath: attachment.storagePath || attachment.storage_path || null,
+    deliveryId: attachment.deliveryId || attachment.delivery_id || null,
+    isSummary: Boolean(attachment.isSummary || attachment.is_summary)
   }));
+}
+
+export async function openStoredEmailAttachment(attachment) {
+  const storagePath = attachment?.storagePath || attachment?.storage_path;
+  if (!storagePath) throw new Error('El PDF original no esta disponible en el almacenamiento.');
+  if (!hasSupabaseConfig || !supabase) throw new Error('Almacenamiento de Supabase no configurado.');
+  const { data, error } = await supabase.storage.from(supabaseStorageBucket).createSignedUrl(storagePath, 120);
+  if (error || !data?.signedUrl) throw new Error(error?.message || 'No se pudo abrir el PDF almacenado.');
+  window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  return data.signedUrl;
 }
 
 function normalizeToField(value) {
@@ -309,6 +332,10 @@ function sanitizeReceiptEntriesForTransport(entries = []) {
       inventory_item_name: entry.delivery?.inventory_item_name,
       product: entry.delivery?.product,
       quantity: entry.delivery?.quantity,
+      items: Array.isArray(entry.delivery?.items) ? entry.delivery.items.map((item) => ({
+        name: item.name || item.inventory_item_name || item.product || '',
+        quantity: item.quantity
+      })) : [],
       notes: entry.delivery?.notes,
       signature_data_url: entry.delivery?.signature_data_url || '',
       responsible_signature_data_url: entry.delivery?.responsible_signature_data_url || ''

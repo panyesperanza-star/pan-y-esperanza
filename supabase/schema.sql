@@ -160,6 +160,9 @@ create table public.email_logs (
   subject text,
   message text,
   attachments jsonb not null default '[]'::jsonb,
+  provider_id text,
+  status text not null default 'Enviado',
+  receipt_ids jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 

@@ -101,6 +101,12 @@ async function create(table, payload) {
       if (retry.error) throw retry.error;
       return retry.data;
     }
+    if (error && shouldRetryWithoutEmailHistoryFields(table, error, cleanPayload)) {
+      const fallbackPayload = withoutEmailHistoryFields(cleanPayload);
+      const retry = await supabase.from(table).insert(fallbackPayload).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
     if (error) throw error;
     return data;
   }
@@ -170,6 +176,18 @@ function shouldRetryWithoutUserStatus(table, error, payload) {
 function withoutStatus(payload) {
   const { status, ...rest } = payload;
   return rest;
+}
+
+function shouldRetryWithoutEmailHistoryFields(table, error, payload) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  const hasNewFields = ['provider_id', 'status', 'receipt_ids'].some((field) => Object.hasOwn(payload, field));
+  return table === 'email_logs' && hasNewFields && (error?.code === 'PGRST204' || message.includes('column'));
+}
+
+function withoutEmailHistoryFields(payload) {
+  const { provider_id, status, receipt_ids, ...fallback } = payload;
+  if (provider_id) fallback.result = `${fallback.result || 'Correo enviado correctamente.'} Resend: ${provider_id}`;
+  return fallback;
 }
 
 export const dataStore = { list, create, update, remove, loadAll, assertUniqueDocument, resetLocalDemo, replaceLocalData };

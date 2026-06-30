@@ -93,7 +93,11 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
     styles: { fontSize: 9 }
   });
 
-  const signatureY = doc.lastAutoTable.finalY + 20;
+  let signatureY = doc.lastAutoTable.finalY + 20;
+  if (signatureY > 215) {
+    doc.addPage();
+    signatureY = 28;
+  }
   doc.setFontSize(12);
   doc.text('Firma del beneficiario', 14, signatureY);
   doc.text('Firma del responsable', 112, signatureY);
@@ -117,20 +121,23 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   return { doc, receiptNumber };
 }
 
-export async function downloadReceiptsZip(filename, receiptEntries, allDeliveries = []) {
-  const blob = await createReceiptsZipBlob(receiptEntries, allDeliveries);
+export async function downloadReceiptsZip(filename, receiptEntries, allDeliveries = [], options = {}) {
+  const blob = await createReceiptsZipBlob(receiptEntries, allDeliveries, options);
   downloadBlob(blob, `${filename}.zip`);
 }
 
-export async function createReceiptsZipBlob(receiptEntries, allDeliveries = []) {
+export async function createReceiptsZipBlob(receiptEntries, allDeliveries = [], options = {}) {
   const zip = new JSZip();
   const deliveries = receiptEntries.map((entry) => entry.delivery);
-  for (const entry of receiptEntries) {
-    const { doc, receiptNumber } = await createDeliveryReceiptPdf(entry.delivery, entry.beneficiary, allDeliveries);
-    zip.file(`Justificante-${receiptNumber}.pdf`, doc.output('blob'));
+  for (const [index, entry] of receiptEntries.entries()) {
+    const { doc, receiptNumber } = await createDeliveryReceiptPdf(entry.delivery, entry.beneficiary, allDeliveries, options.organization || {});
+    const suffix = receiptEntries.filter((item) => (item.delivery.receipt_number || '') === receiptNumber).length > 1 ? `-${index + 1}` : '';
+    zip.file(`Justificante-${receiptNumber}${suffix}.pdf`, doc.output('blob'));
   }
-  const summaryDoc = await createDeliveriesSummaryDocument(deliveries);
-  zip.file('Resumen-entregas.pdf', summaryDoc.output('blob'));
+  if (options.includeSummary) {
+    const summaryDoc = await createDeliveriesSummaryDocument(deliveries);
+    zip.file('Resumen-entregas.pdf', summaryDoc.output('blob'));
+  }
   return zip.generateAsync({ type: 'blob' });
 }
 
@@ -338,7 +345,8 @@ export function exportDeliveriesSummaryPdf(deliveries) {
 async function createDeliveriesSummaryDocument(deliveries) {
   const doc = new jsPDF();
   const beneficiaries = new Set(deliveries.map((item) => item.beneficiary_id).filter(Boolean));
-  const totalProducts = deliveries.reduce((total, item) => total + Number(item.quantity || 0), 0);
+  const summaryRows = deliveries.flatMap((delivery) => getReceiptProductRows(delivery).map(([product, quantity]) => ({ delivery, product, quantity })));
+  const totalProducts = summaryRows.reduce((total, item) => total + Number(item.quantity || 0), 0);
   const responsibles = new Set(deliveries.map((item) => item.responsible).filter(Boolean));
   const period = getDeliveriesPeriod(deliveries);
 
@@ -353,13 +361,13 @@ async function createDeliveriesSummaryDocument(deliveries) {
   autoTable(doc, {
     startY: 40,
     head: [['Fecha', 'Hora', 'Beneficiario', 'Responsable', 'Producto', 'Cantidad', 'Tipo de ayuda']],
-    body: deliveries.map((delivery) => [
+    body: summaryRows.map(({ delivery, product, quantity }) => [
       formatDate(delivery.delivered_at),
       formatTime(delivery.reception_at || delivery.delivered_at),
       delivery.beneficiary_name || '-',
       delivery.responsible || '-',
-      delivery.inventory_item_name || delivery.product || '-',
-      delivery.quantity || '-',
+      product,
+      quantity,
       delivery.help_type || '-'
     ]),
     headStyles: { fillColor: [36, 126, 80] }
