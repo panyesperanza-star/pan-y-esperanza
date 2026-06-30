@@ -519,7 +519,7 @@ function createServerReceiptPdf(entry = {}, organization = {}, logo = null) {
 
   doc.setFont('helvetica', 'bold');
   if (logo) {
-    doc.addImage(logo.bytes, logo.format, 14, 8, 26, 26);
+    safeAddPdfImage(doc, logo, 'logo de la organizacion (justificante)', 14, 8, 26, 26);
   }
   doc.setFontSize(15);
   doc.text(organization.name || 'PAN Y ESPERANZA', logo ? 46 : 14, 16);
@@ -579,8 +579,8 @@ function createServerReceiptPdf(entry = {}, organization = {}, logo = null) {
   doc.setDrawColor(180, 190, 185);
   doc.roundedRect(14, signatureY + 4, 80, 36, 2, 2);
   doc.roundedRect(112, signatureY + 4, 80, 36, 2, 2);
-  addServerSignature(doc, delivery.signature_data_url, 14, signatureY + 5);
-  addServerSignature(doc, delivery.responsible_signature_data_url, 112, signatureY + 5);
+  addServerSignature(doc, delivery.signature_data_url, 'firma del beneficiario', 14, signatureY + 5);
+  addServerSignature(doc, delivery.responsible_signature_data_url, 'firma del responsable', 112, signatureY + 5);
 
   doc.setDrawColor(219, 229, 220);
   doc.line(14, 272, 196, 272);
@@ -605,7 +605,7 @@ function createServerDeliveriesSummaryPdf(receiptEntries = [], organization = {}
   const productsTotal = summaryRows.reduce((total, row) => total + Number(row.quantity || 0), 0);
   const responsibles = new Set(deliveries.map((delivery) => delivery.responsible).filter(Boolean));
   if (logo) {
-    doc.addImage(logo.bytes, logo.format, 14, 8, 26, 26);
+    safeAddPdfImage(doc, logo, 'logo de la organizacion (resumen)', 14, 8, 26, 26);
   }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
@@ -656,17 +656,14 @@ function drawServerSectionTitle(doc, title, y) {
   doc.setTextColor(23, 33, 27);
 }
 
-function addServerSignature(doc, dataUrl, x, y) {
+function addServerSignature(doc, dataUrl, label, x, y) {
   if (!dataUrl) {
     doc.setFontSize(10);
     doc.text('Sin firma registrada', x, y + 8);
     return;
   }
-  try {
-    const format = dataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
-    doc.addImage(dataUrl, format, x, y, 80, 32);
-  } catch (error) {
-    console.warn('[send-justificantes] No se pudo insertar firma en PDF servidor', { message: error.message });
+  const image = parseImageDataUrl(dataUrl, label);
+  if (!image || !safeAddPdfImage(doc, image, label, x, y, 80, 32)) {
     doc.setFontSize(10);
     doc.text('Firma no disponible', x, y + 8);
   }
@@ -690,9 +687,17 @@ async function loadServerLogo(logoUrl) {
   try {
     const response = await fetch(logoUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const contentType = response.headers.get('content-type') || '';
-    const format = contentType.includes('jpeg') || contentType.includes('jpg') ? 'JPEG' : 'PNG';
-    return { bytes: new Uint8Array(await response.arrayBuffer()), format };
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const image = validateImageBuffer(bytes, 'logo de la organizacion');
+    if (!image.ok) {
+      console.warn('[send-justificantes] Logo omitido por imagen invalida', {
+        logoUrl,
+        bytes: bytes.length,
+        reason: image.reason
+      });
+      return null;
+    }
+    return { bytes, format: image.format, validation: image };
   } catch (error) {
     console.warn('[send-justificantes] No se pudo cargar el logo para el PDF', {
       logoUrl,
@@ -700,6 +705,162 @@ async function loadServerLogo(logoUrl) {
     });
     return null;
   }
+}
+
+function parseImageDataUrl(dataUrl, label) {
+  const match = String(dataUrl || '').match(/^data:(image\/(?:png|jpeg|jpg));base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match) {
+    console.warn('[send-justificantes] Imagen Base64 omitida', {
+      image: label,
+      reason: 'data URL ausente o formato no compatible'
+    });
+    return null;
+  }
+  const normalized = match[2].replace(/\s+/g, '');
+  if (!isValidBase64(normalized)) {
+    console.warn('[send-justificantes] Imagen Base64 omitida', {
+      image: label,
+      reason: 'Base64 invalido',
+      characters: normalized.length
+    });
+    return null;
+  }
+  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=');
+  const bytes = Buffer.from(padded, 'base64');
+  const validation = validateImageBuffer(bytes, label);
+  if (!validation.ok) {
+    console.warn('[send-justificantes] Imagen Base64 omitida', {
+      image: label,
+      bytes: bytes.length,
+      reason: validation.reason
+    });
+    return null;
+  }
+  return { bytes, format: validation.format, validation };
+}
+
+function safeAddPdfImage(doc, image, label, x, y, width, height) {
+  const bytes = Buffer.isBuffer(image?.bytes) ? image.bytes : Buffer.from(image?.bytes || []);
+  const validation = image?.validation?.ok ? image.validation : validateImageBuffer(bytes, label);
+  console.info('[send-justificantes] Imagen antes de doc.addImage', {
+    image: label,
+    format: validation.format || image?.format || null,
+    bytes: bytes.length,
+    valid: validation.ok,
+    reason: validation.reason || null,
+    pngHeaderValid: validation.pngHeaderValid ?? null
+  });
+  if (!validation.ok || !bytes.length) {
+    console.warn('[send-justificantes] Imagen omitida antes de doc.addImage', {
+      image: label,
+      bytes: bytes.length,
+      reason: validation.reason || 'buffer vacio'
+    });
+    return false;
+  }
+  try {
+    doc.addImage(new Uint8Array(bytes), validation.format, x, y, width, height, undefined, 'FAST');
+    return true;
+  } catch (error) {
+    console.warn('[send-justificantes] doc.addImage fallo; imagen omitida', {
+      image: label,
+      format: validation.format,
+      bytes: bytes.length,
+      error: error.message
+    });
+    return false;
+  }
+}
+
+function isValidBase64(value) {
+  if (!value || value.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return false;
+  const firstPadding = value.indexOf('=');
+  return firstPadding === -1 || firstPadding >= value.length - 2;
+}
+
+export function validateImageBuffer(input, label = 'imagen') {
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (!bytes.length) return { ok: false, format: null, reason: `${label}: buffer vacio`, pngHeaderValid: false };
+  if (hasPngHeader(bytes)) return validatePngBuffer(bytes, label);
+  if (hasJpegHeader(bytes)) {
+    const complete = bytes.length >= 4 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+    return {
+      ok: complete,
+      format: 'JPEG',
+      reason: complete ? '' : `${label}: JPEG incompleto`,
+      pngHeaderValid: false
+    };
+  }
+  return { ok: false, format: null, reason: `${label}: cabecera PNG/JPEG no valida`, pngHeaderValid: false };
+}
+
+function validatePngBuffer(bytes, label) {
+  if (bytes.length < 33) return { ok: false, format: 'PNG', reason: `${label}: PNG demasiado pequeno`, pngHeaderValid: true };
+  let offset = 8;
+  let sawHeader = false;
+  let sawData = false;
+  let sawEnd = false;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const typeStart = offset + 4;
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    const chunkEnd = dataEnd + 4;
+    if (chunkEnd > bytes.length) {
+      return { ok: false, format: 'PNG', reason: `${label}: chunk PNG truncado`, pngHeaderValid: true };
+    }
+    const type = bytes.subarray(typeStart, dataStart).toString('ascii');
+    if (!/^[A-Za-z]{4}$/.test(type)) {
+      return { ok: false, format: 'PNG', reason: `${label}: tipo de chunk PNG invalido`, pngHeaderValid: true };
+    }
+    const expectedCrc = bytes.readUInt32BE(dataEnd);
+    const actualCrc = crc32(bytes.subarray(typeStart, dataEnd));
+    if (expectedCrc !== actualCrc) {
+      return { ok: false, format: 'PNG', reason: `${label}: CRC invalido en chunk ${type}`, pngHeaderValid: true };
+    }
+    if (type === 'IHDR') {
+      if (sawHeader || offset !== 8 || length !== 13 || bytes.readUInt32BE(dataStart) === 0 || bytes.readUInt32BE(dataStart + 4) === 0) {
+        return { ok: false, format: 'PNG', reason: `${label}: cabecera IHDR invalida`, pngHeaderValid: true };
+      }
+      sawHeader = true;
+    }
+    if (type === 'IDAT') sawData = true;
+    if (type === 'IEND') {
+      sawEnd = length === 0;
+      offset = chunkEnd;
+      break;
+    }
+    offset = chunkEnd;
+  }
+  const complete = sawHeader && sawData && sawEnd && offset === bytes.length;
+  return {
+    ok: complete,
+    format: 'PNG',
+    reason: complete ? '' : `${label}: estructura PNG incompleta`,
+    pngHeaderValid: true
+  };
+}
+
+function hasPngHeader(bytes) {
+  return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+}
+
+function hasJpegHeader(bytes) {
+  return bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8;
+}
+
+let crcTable;
+function crc32(buffer) {
+  if (!crcTable) {
+    crcTable = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      return value >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function fallbackReceiptNumber(delivery = {}, index = 0) {
