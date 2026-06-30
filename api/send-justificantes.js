@@ -35,6 +35,7 @@ export default async function handler(request, response) {
     let attachments = Array.isArray(body.attachments) ? body.attachments : [];
     const organization = body.organization || {};
     const isTest = Boolean(body.testMode);
+    const shouldLogEmail = Boolean(body.logEmail) && !isTest;
     const receiptEntries = Array.isArray(body.receiptEntries) ? body.receiptEntries : [];
 
     if (!apiKey || !from) {
@@ -91,7 +92,7 @@ export default async function handler(request, response) {
       return sendJson(response, 400, { ok: false, code: 'NO_RECIPIENTS', error: 'Debes indicar al menos un destinatario.' });
     }
 
-    if (!isTest && !attachments.length) {
+    if (shouldLogEmail && !attachments.length) {
       return sendJson(response, 400, {
         ok: false,
         code: 'NO_RECEIPTS',
@@ -168,11 +169,37 @@ export default async function handler(request, response) {
     if (result.error) {
       const providerMessage = result.error.message || result.error.name || 'Error al enviar el correo.';
       console.error('[send-justificantes] Error Resend', { requestId, error: result.error });
+      if (shouldLogEmail) {
+        await recordEmailLog(auth.admin, {
+          body,
+          auth,
+          recipients,
+          attachments: responseAttachments,
+          providerId: null,
+          status: 'Error',
+          result: providerMessage,
+          receiptEntries,
+          requestId
+        });
+      }
       return sendJson(response, 502, { ok: false, code: 'MAIL_PROVIDER_ERROR', error: providerMessage, attachments: responseAttachments });
     }
 
     if (!result.data?.id) {
       console.error('[send-justificantes] Resend no devolvio identificador de envio', { requestId, result });
+      if (shouldLogEmail) {
+        await recordEmailLog(auth.admin, {
+          body,
+          auth,
+          recipients,
+          attachments: responseAttachments,
+          providerId: null,
+          status: 'Error',
+          result: 'Resend no confirmo el envio del correo.',
+          receiptEntries,
+          requestId
+        });
+      }
       return sendJson(response, 502, {
         ok: false,
         code: 'MAIL_PROVIDER_NO_ID',
@@ -181,8 +208,48 @@ export default async function handler(request, response) {
       });
     }
 
-    console.info('[send-justificantes] Envio correcto', { requestId, id: result.data?.id, responseAttachments });
-    return sendJson(response, 200, { ok: true, id: result.data?.id, message: 'Correo enviado correctamente.', attachments: responseAttachments });
+    let emailLog = null;
+    if (shouldLogEmail) {
+      emailLog = await recordEmailLog(auth.admin, {
+        body,
+        auth,
+        recipients,
+        attachments: responseAttachments,
+        providerId: result.data.id,
+        status: 'Enviado',
+        result: 'Correo enviado correctamente.',
+        receiptEntries,
+        requestId
+      });
+      if (!emailLog?.id) {
+        console.error('[send-justificantes] Resend confirmo el envio pero fallo email_logs', {
+          requestId,
+          providerId: result.data.id
+        });
+        return sendJson(response, 500, {
+          ok: false,
+          code: 'MAIL_SENT_LOG_FAILED',
+          error: `Resend acepto el correo con ID ${result.data.id}, pero no se pudo registrar el historial.`,
+          id: result.data.id,
+          attachments: responseAttachments
+        });
+      }
+    }
+
+    console.info('[send-justificantes] Envio correcto', {
+      requestId,
+      id: result.data.id,
+      emailLogId: emailLog?.id || null,
+      responseAttachments
+    });
+    return sendJson(response, 200, {
+      ok: true,
+      id: result.data.id,
+      logged: shouldLogEmail ? Boolean(emailLog?.id) : false,
+      emailLog,
+      message: 'Correo enviado correctamente.',
+      attachments: responseAttachments
+    });
   } catch (error) {
     console.error('[send-justificantes] Excepcion', { requestId, message: error.message, stack: error.stack });
     return sendJson(response, 500, { ok: false, code: 'MAIL_SEND_FAILED', error: error.message || 'Error al enviar el correo.', attachments: responseAttachments });
@@ -268,6 +335,8 @@ function parseMultipart(buffer, contentType) {
       body.organization = parseBody(value);
     } else if (name === 'testMode') {
       body.testMode = value === 'true';
+    } else if (name === 'logEmail') {
+      body.logEmail = value === 'true';
     } else {
       body[name] = value;
     }
@@ -696,6 +765,79 @@ function normalizeRecipients(value) {
   return String(value || '').split(/[,\s;]+/).map((item) => item.trim()).filter(Boolean);
 }
 
+export async function recordEmailLog(admin, context) {
+  const {
+    body,
+    auth,
+    recipients,
+    attachments,
+    providerId,
+    status,
+    result,
+    receiptEntries,
+    requestId
+  } = context;
+  const receiptIds = [...new Set([
+    ...receiptEntries.map((entry) => entry?.delivery?.id).filter(Boolean),
+    ...attachments.map((attachment) => attachment?.deliveryId || attachment?.delivery_id).filter(Boolean)
+  ])];
+  const senderName = [auth.profile?.first_name, auth.profile?.last_name].filter(Boolean).join(' ')
+    || auth.profile?.email
+    || 'Usuario';
+  const historyResult = status === 'Error' && !/^error\b/i.test(result) ? `Error: ${result}` : result;
+  const basePayload = {
+    sent_at: new Date().toISOString(),
+    recipient: recipients.join(', '),
+    sent_by: senderName,
+    receipts_count: attachments.filter((attachment) => !attachment.isSummary).length || receiptIds.length,
+    result: providerId ? `${historyResult} Resend: ${providerId}` : historyResult,
+    subject: body.subject || 'Justificantes de entrega - Pan y Esperanza',
+    message: body.message || '',
+    attachments
+  };
+  const fullPayload = {
+    ...basePayload,
+    provider_id: providerId,
+    status,
+    receipt_ids: receiptIds
+  };
+
+  let { data, error } = await admin.from('email_logs').insert(fullPayload).select().single();
+  if (error && isMissingEmailLogColumn(error)) {
+    console.warn('[send-justificantes] email_logs usa esquema anterior; guardando ID en result', {
+      requestId,
+      providerId,
+      error: error.message
+    });
+    const fallback = await admin.from('email_logs').insert(basePayload).select().single();
+    data = fallback.data;
+    error = fallback.error;
+  }
+  if (error || !data?.id) {
+    console.error('[send-justificantes] No se pudo registrar email_logs', {
+      requestId,
+      providerId,
+      status,
+      error: error?.message,
+      code: error?.code
+    });
+    return null;
+  }
+  console.info('[send-justificantes] email_logs registrado', {
+    requestId,
+    emailLogId: data.id,
+    providerId,
+    status,
+    receiptIds
+  });
+  return data;
+}
+
+function isMissingEmailLogColumn(error) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return error?.code === 'PGRST204' || message.includes('provider_id') || message.includes('receipt_ids') || message.includes('status');
+}
+
 async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId }) {
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[send-justificantes] Supabase admin no configurado', { requestId, hasSupabaseUrl: Boolean(supabaseUrl), hasServiceRoleKey: Boolean(serviceRoleKey) });
@@ -718,14 +860,14 @@ async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, req
 
   let { data: profile, error: profileError } = await admin
     .from('app_users')
-    .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+    .select('id,email,first_name,last_name,auth_user_id,role,is_active,status,permissions,permission_matrix')
     .eq('auth_user_id', authData.user.id)
     .maybeSingle();
 
   if (!profile && !profileError) {
     const byEmail = await admin
       .from('app_users')
-      .select('id,email,auth_user_id,role,is_active,status,permissions,permission_matrix')
+      .select('id,email,first_name,last_name,auth_user_id,role,is_active,status,permissions,permission_matrix')
       .ilike('email', authData.user.email)
       .maybeSingle();
     profile = byEmail.data;
@@ -744,6 +886,13 @@ async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, req
     return { ok: false, status: 403, code: 'FORBIDDEN', error: 'No tiene permisos para enviar correos.' };
   }
 
+  console.info('[send-justificantes] Permiso de correo validado', {
+    requestId,
+    profileId: profile.id,
+    authUserId: authData.user.id,
+    email: authData.user.email,
+    role: profile.role
+  });
   return { ok: true, profile, admin };
 }
 

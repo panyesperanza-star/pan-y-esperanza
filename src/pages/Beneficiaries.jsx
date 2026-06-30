@@ -400,13 +400,21 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, allDeliveries, organiza
     let attachments = [];
     const receiptEntries = form.attachReceipt ? [{ delivery: latestDelivery, beneficiary }] : [];
     try {
-      const payload = await sendEmailViaApi({ to: form.recipients, subject: form.subject, message: form.message, receiptEntries, organization });
+      const payload = await sendEmailViaApi({
+        to: form.recipients,
+        subject: form.subject,
+        message: form.message,
+        receiptEntries,
+        organization,
+        logEmail: receiptEntries.length > 0
+      });
       attachments = payload.attachments || [];
-      await saveEmailLog(actions, currentUser, form, attachments.length, payload.message || 'Correo enviado correctamente.', attachments);
-      onSent('Correo enviado correctamente.');
+      if (receiptEntries.length) await actions.reloadData();
+      else await saveEmailLog(actions, currentUser, form, attachments.length, payload.message || 'Correo enviado correctamente.', attachments, payload.id);
+      onSent(`Correo enviado correctamente. ID Resend: ${payload.id}`);
     } catch (err) {
       const message = normalizeEmailError(err);
-      await saveEmailLog(actions, currentUser, form, attachments.length, message, attachments);
+      if (!receiptEntries.length) await saveEmailLog(actions, currentUser, form, attachments.length, message, attachments, '', 'Error');
       setStatus('');
       setError(message);
     }

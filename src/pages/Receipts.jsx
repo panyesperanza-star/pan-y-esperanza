@@ -7,9 +7,9 @@ import { PageHeader } from '../components/PageHeader';
 import { HELP_TYPES } from '../lib/constants';
 import { downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
-import { openStoredEmailAttachment, sanitizeAttachmentsForLog, sendEmailViaApi } from '../lib/emailClient';
+import { openStoredEmailAttachment, sendEmailViaApi } from '../lib/emailClient';
 
-export function Receipts({ data, actions, currentUser }) {
+export function Receipts({ data, actions }) {
   const [filters, setFilters] = useState({
     from: '',
     to: '',
@@ -145,10 +145,9 @@ export function Receipts({ data, actions, currentUser }) {
     setBusyAction('beneficiary-email');
     try {
       const result = await sendEmailEfficient(email, selectedEntries);
-      const logged = await saveReceiptEmailLog(email, selectedEntries, result, 'Enviado');
-      showNotice(logged ? 'Correo enviado correctamente.' : 'Correo enviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
+      await actions.reloadData();
+      showNotice(`Correo enviado correctamente. ID Resend: ${result.payload.id}`, 'success');
     } catch (error) {
-      await saveReceiptEmailLog(email, selectedEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || [] }, 'Error', normalizeEmailError(error));
       showNotice(normalizeEmailError(error), 'error');
     } finally {
       setBusyAction('');
@@ -164,34 +163,10 @@ export function Receipts({ data, actions, currentUser }) {
       attachments,
       receiptEntries: storedAttachments ? [] : entries,
       includeSummary: Boolean(email.includeSummary),
-      organization: data.organization_settings?.[0]
+      organization: data.organization_settings?.[0],
+      logEmail: true
     });
     return { payload, attachments: payload.attachments || attachments };
-  }
-
-  async function saveReceiptEmailLog(email, entries, result, status, failureMessage = '') {
-    const normalizedEntries = Array.isArray(entries) ? entries : [];
-    try {
-      await saveEmailLog(
-        actions,
-        currentUser,
-        email,
-        normalizedEntries.length,
-        status === 'Enviado' ? result.payload?.message || 'Correo enviado correctamente.' : failureMessage || 'Error al enviar el correo.',
-        result.attachments || [],
-        result.payload?.id || '',
-        status,
-        normalizedEntries.map((entry) => entry.delivery?.id).filter(Boolean)
-      );
-      return true;
-    } catch (error) {
-      console.error('[justificantes] No se pudo registrar el historial de envío', {
-        status,
-        providerId: result.payload?.id || null,
-        error: error.message
-      });
-      return false;
-    }
   }
 
   function entriesForLog(log) {
@@ -199,8 +174,28 @@ export function Receipts({ data, actions, currentUser }) {
       ...(Array.isArray(log.receipt_ids) ? log.receipt_ids : []),
       ...(log.attachments || []).map((item) => item.deliveryId || item.delivery_id).filter(Boolean)
     ]);
+    const receiptNumbers = new Set((log.attachments || [])
+      .map((item) => String(item.filename || '').match(/Justificante-(PE-\d{4}-\d{6})\.pdf/i)?.[1])
+      .filter(Boolean));
+    const exactEntries = receipts
+      .filter((delivery) => ids.has(delivery.id) || receiptNumbers.has(delivery.receipt_number))
+      .map((delivery) => ({
+        delivery,
+        beneficiary: data.beneficiaries.find((item) => item.id === delivery.beneficiary_id)
+      }));
+    if (exactEntries.length) return exactEntries;
+
+    const recipientEmails = new Set(String(log.recipient || '').toLowerCase().split(/[,;\s]+/).filter(Boolean));
+    const beneficiaryIds = new Set(data.beneficiaries
+      .filter((beneficiary) => recipientEmails.has(String(beneficiary.email || '').toLowerCase()))
+      .map((beneficiary) => beneficiary.id));
+    const expectedCount = Math.max(0, Number(log.receipts_count || 0));
+    const sentDate = String(log.sent_at || '').slice(0, 10);
+    if (!beneficiaryIds.size || !expectedCount) return [];
     return receipts
-      .filter((delivery) => ids.has(delivery.id))
+      .filter((delivery) => beneficiaryIds.has(delivery.beneficiary_id) && (!sentDate || String(delivery.delivered_at || '').slice(0, 10) <= sentDate))
+      .sort((a, b) => String(b.delivered_at || '').localeCompare(String(a.delivered_at || '')))
+      .slice(0, expectedCount)
       .map((delivery) => ({
         delivery,
         beneficiary: data.beneficiaries.find((item) => item.id === delivery.beneficiary_id)
@@ -222,12 +217,9 @@ export function Receipts({ data, actions, currentUser }) {
       const result = canReuseOriginals
         ? await sendEmailEfficient(email, [], storedAttachments)
         : await sendEmailEfficient(email, fallbackEntries);
-      const logEntries = fallbackEntries.length ? fallbackEntries : Array.from({ length: Number(log.receipts_count || 0) }, () => ({ delivery: {} }));
-      const logged = await saveReceiptEmailLog(email, logEntries, result, 'Enviado');
-      showNotice(logged ? 'Correo reenviado correctamente.' : 'Correo reenviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
+      await actions.reloadData();
+      showNotice(`Correo reenviado correctamente. ID Resend: ${result.payload.id}`, 'success');
     } catch (error) {
-      const logEntries = fallbackEntries.length ? fallbackEntries : Array.from({ length: Number(log.receipts_count || 0) }, () => ({ delivery: {} }));
-      await saveReceiptEmailLog(email, logEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || storedAttachments }, 'Error', normalizeEmailError(error));
       showNotice(normalizeEmailError(error), 'error');
     } finally {
       setBusyAction('');
@@ -324,7 +316,7 @@ export function Receipts({ data, actions, currentUser }) {
                 <td>{log.sent_by || '-'}</td>
                 <td className="max-w-[240px] break-words">{log.recipient}</td>
                 <td>{log.receipts_count}</td>
-                <td><span className={logStatusClass(log.status, log.result)}>{log.status || inferLogStatus(log.result)}</span></td>
+                <td><span className={logStatusClass(log)}>{resolveLogStatus(log)}</span></td>
                 <td className="max-w-[170px] break-all font-mono text-xs">{log.provider_id || extractProviderId(log.result) || '-'}</td>
                 <td className="pr-4"><div className="flex justify-end gap-2">
                   <Button variant="secondary" disabled={!(log.attachments || []).length} onClick={() => { setAttachmentError(''); setAttachmentLog(log); }}><Eye size={16} /> Ver PDF</Button>
@@ -346,10 +338,9 @@ export function Receipts({ data, actions, currentUser }) {
             onSubmit={async (email) => {
               try {
                 const result = await sendEmailEfficient(email, selectedEntries);
-                const logged = await saveReceiptEmailLog(email, selectedEntries, result, 'Enviado');
-                showNotice(logged ? 'Correo enviado correctamente.' : 'Correo enviado, pero no se pudo registrar en el historial.', logged ? 'success' : 'error');
+                await actions.reloadData();
+                showNotice(`Correo enviado correctamente. ID Resend: ${result.payload.id}`, 'success');
               } catch (error) {
-                await saveReceiptEmailLog(email, selectedEntries, { payload: error.payload || {}, attachments: error.payload?.attachments || [] }, 'Error', normalizeEmailError(error));
                 throw error;
               }
               setEmailOpen(false);
@@ -385,22 +376,6 @@ export function Receipts({ data, actions, currentUser }) {
   );
 }
 
-async function saveEmailLog(actions, currentUser, email, count, result, attachments, providerId = '', status = 'Enviado', receiptIds = []) {
-  await actions.createEmailLog({
-    sent_at: new Date().toISOString(),
-    recipient: email.recipients,
-    sent_by: `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || 'Usuario',
-    receipts_count: count,
-    result,
-    subject: email.subject,
-    message: email.message,
-    attachments: sanitizeAttachmentsForLog(attachments),
-    provider_id: providerId || null,
-    status,
-    receipt_ids: receiptIds
-  });
-}
-
 function noticeClass(type) {
   if (type === 'success') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (type === 'error') return 'border-red-200 bg-red-50 text-red-700';
@@ -414,13 +389,17 @@ function formatLogTime(value) {
   return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 }
 
-function inferLogStatus(result) {
-  return /error|fall/i.test(String(result || '')) ? 'Error' : 'Enviado';
+function resolveLogStatus(log) {
+  if ((log.status || '').toLowerCase() === 'error' || /error|fall/i.test(String(log.result || ''))) return 'Error';
+  if (log.provider_id || extractProviderId(log.result)) return 'Enviado';
+  return 'Sin confirmar';
 }
 
-function logStatusClass(status, result) {
-  const success = (status || inferLogStatus(result)) === 'Enviado';
-  return `inline-flex rounded-md px-2 py-1 text-xs font-semibold ${success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`;
+function logStatusClass(log) {
+  const status = resolveLogStatus(log);
+  if (status === 'Enviado') return 'inline-flex rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700';
+  if (status === 'Error') return 'inline-flex rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-700';
+  return 'inline-flex rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700';
 }
 
 function extractProviderId(result) {

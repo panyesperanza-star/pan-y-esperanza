@@ -359,6 +359,8 @@ El boton `Enviar justificante al beneficiario` esta pensado para moviles y para 
 
 La subseccion `Historial de envios` guarda fecha, hora, destinatario, usuario, numero de justificantes, resultado e ID de Resend. Los PDF se almacenan en la ruta privada `justificantes/` del bucket configurado; `Ver PDF` abre una URL firmada temporal y `Reenviar` reutiliza el original. Si un registro antiguo no tiene archivo almacenado, se regenera desde la entrega vinculada.
 
+El historial de justificantes se registra desde `api/send-justificantes.js`, no desde React. La interfaz solo confirma el envio cuando el PDF es valido, Resend devuelve `data.id` y `email_logs` devuelve la fila creada. Los registros antiguos sin ID de Resend se muestran como `Sin confirmar`.
+
 Todos los correos HTML incluyen logo, nombre de entidad, fecha, texto personalizado y datos corporativos de la entidad.
 
 Si los beneficiarios seleccionados tienen email registrado, el campo de destinatarios de `Enviar justificantes` se rellena automaticamente como punto de partida. Esto deja preparada la evolucion hacia envios completamente automaticos al email del beneficiario.

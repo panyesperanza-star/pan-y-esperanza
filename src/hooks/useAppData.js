@@ -90,6 +90,7 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   const actions = useMemo(() => ({
+    reloadData: reload,
     createBeneficiary: async (payload) => {
       dataStore.assertUniqueDocument(data.beneficiaries, payload);
       await dataStore.create('beneficiaries', {

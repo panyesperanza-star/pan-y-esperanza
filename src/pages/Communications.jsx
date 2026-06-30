@@ -75,14 +75,16 @@ export function Communications({ data, actions, currentUser }) {
         subject: form.subject,
         message: form.message,
         receiptEntries,
-        organization
+        organization,
+        logEmail: receiptEntries.length > 0
       });
       attachments = payload.attachments || [];
-      await saveEmailLog(actions, currentUser, { ...form, recipients: form.recipients }, attachments.length, payload.message || 'Correo enviado correctamente.', attachments);
-      setNotice('Correo enviado correctamente.');
+      if (receiptEntries.length) await actions.reloadData();
+      else await saveEmailLog(actions, currentUser, { ...form, recipients: form.recipients }, attachments.length, payload.message || 'Correo enviado correctamente.', attachments, payload.id);
+      setNotice(`Correo enviado correctamente. ID Resend: ${payload.id}`);
     } catch (error) {
       const message = normalizeEmailError(error);
-      await saveEmailLog(actions, currentUser, { ...form, recipients: form.recipients }, attachments.length, message, attachments);
+      if (!receiptEntries.length) await saveEmailLog(actions, currentUser, { ...form, recipients: form.recipients }, attachments.length, message, attachments, '', 'Error');
       setNotice(message);
     }
   }

@@ -30,14 +30,14 @@ export const EMAIL_TEMPLATES = [
   }
 ];
 
-export async function sendEmailViaApi({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false }) {
+export async function sendEmailViaApi({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false, logEmail = false }) {
   const useServerPdfGeneration = Array.isArray(receiptEntries) && receiptEntries.length > 0;
   const useMultipart = !useServerPdfGeneration && attachments.some((attachment) => attachment?.blob instanceof Blob);
   const headers = await getApiHeaders();
   const cleanOrganization = sanitizeOrganizationForTransport(organization);
   const cleanReceiptEntries = useServerPdfGeneration ? sanitizeReceiptEntriesForTransport(receiptEntries) : [];
   const requestBody = useMultipart
-    ? buildEmailFormData({ to, subject, message, attachments, organization: cleanOrganization, testMode })
+    ? buildEmailFormData({ to, subject, message, attachments, organization: cleanOrganization, testMode, logEmail })
     : JSON.stringify({
       to,
       subject,
@@ -46,7 +46,8 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
       receiptEntries: cleanReceiptEntries,
       includeSummary,
       organization: cleanOrganization,
-      testMode
+      testMode,
+      logEmail
     });
   const outgoingPayload = useMultipart ? requestBody : JSON.parse(requestBody);
 
@@ -61,6 +62,7 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     includeSummary,
     organization: cleanOrganization,
     testMode,
+    logEmail,
     useMultipart
   });
   console.info('[correo] Inicio flujo POST /api/send-justificantes');
@@ -105,6 +107,9 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
   if (!responsePayload.ok || !responsePayload.id) {
     throw createEmailApiError(responsePayload.error || 'Resend no confirmo el envio del correo.', responsePayload, response.status);
   }
+  if (logEmail && (!responsePayload.logged || !responsePayload.emailLog?.id)) {
+    throw createEmailApiError('El correo fue aceptado por Resend, pero no se pudo registrar correctamente en el historial.', responsePayload, response.status);
+  }
   return responsePayload;
 }
 
@@ -116,13 +121,14 @@ function createEmailApiError(message, payload = {}, status = 0) {
   return error;
 }
 
-export function buildEmailFormData({ to, subject, message, attachments = [], organization = {}, testMode = false }) {
+export function buildEmailFormData({ to, subject, message, attachments = [], organization = {}, testMode = false, logEmail = false }) {
   const formData = new FormData();
   formData.append('to', normalizeToField(to));
   formData.append('subject', subject || '');
   formData.append('message', message || '');
   formData.append('organization', JSON.stringify(organization || {}));
   formData.append('testMode', testMode ? 'true' : 'false');
+  formData.append('logEmail', logEmail ? 'true' : 'false');
   attachments.forEach((attachment, index) => {
     if (attachment?.blob instanceof Blob) {
       formData.append('files', attachment.blob, attachment.filename || `adjunto-${index + 1}.pdf`);
@@ -131,7 +137,7 @@ export function buildEmailFormData({ to, subject, message, attachments = [], org
   return formData;
 }
 
-export function estimatePayloadSize({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false, useMultipart = false }) {
+export function estimatePayloadSize({ to, subject, message, attachments = [], receiptEntries = [], includeSummary = false, organization = {}, testMode = false, logEmail = false, useMultipart = false }) {
   const attachmentSizes = attachments.map((attachment) => ({
     filename: attachment.filename,
     sizeBytes: attachment.blob?.size || attachment.size || attachment.content?.length || 0,
@@ -141,7 +147,7 @@ export function estimatePayloadSize({ to, subject, message, attachments = [], re
     + byteLength(entry.delivery?.signature_data_url)
     + byteLength(entry.delivery?.responsible_signature_data_url), 0);
   const receiptEntriesBytes = new Blob([JSON.stringify(receiptEntries)]).size;
-  const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode, includeSummary })]).size;
+  const metadataBytes = new Blob([JSON.stringify({ to, subject, message, organization, testMode, includeSummary, logEmail })]).size;
   const multipartOverheadBytes = useMultipart ? Math.max(1024, attachments.length * 512 + 2048) : 0;
   return {
     transport: useMultipart ? 'multipart/form-data' : 'application/json',
