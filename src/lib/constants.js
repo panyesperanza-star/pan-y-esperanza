@@ -1,5 +1,5 @@
 export const HELP_TYPES = ['Alimentos', 'Higiene', 'Ropa', 'Ayuda economica', 'Otra ayuda'];
-export const BENEFICIARY_SITUATIONS = ['Activa', 'Urgente', 'Seguimiento', 'Inactiva'];
+export const BENEFICIARY_SITUATIONS = ['Activa', 'Urgente', 'Prioritario', 'Seguimiento', 'Vulnerable', 'Inactiva'];
 export const MODULES = [
   { id: 'dashboard', label: 'Panel' },
   { id: 'settings', label: 'Entidad' },

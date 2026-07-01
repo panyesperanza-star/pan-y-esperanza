@@ -4,6 +4,13 @@ insert into storage.buckets (id, name, public)
 values ('documentos', 'documentos', false)
 on conflict (id) do nothing;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('beneficiary-photos', 'beneficiary-photos', false, 524288, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 create table public.beneficiary_sequence (
   id smallint primary key default 1,
   last_value integer not null default 0,
@@ -41,6 +48,7 @@ create table public.beneficiaries (
   postal_code text,
   phone text,
   email text,
+  photo_url text,
   photo_data_url text,
   birth_date date,
   sex text,
@@ -488,6 +496,17 @@ grant execute on function public.is_app_admin() to authenticated;
 
 create policy "authenticated_read_documentos" on storage.objects for select to authenticated using (bucket_id = 'documentos');
 create policy "authenticated_write_documentos" on storage.objects for all to authenticated using (bucket_id = 'documentos') with check (bucket_id = 'documentos');
+create policy "beneficiary_photos_select_by_permission" on storage.objects for select to authenticated using (
+  bucket_id = 'beneficiary-photos'
+);
+create policy "beneficiary_photos_insert_by_permission" on storage.objects for insert to authenticated with check (
+  bucket_id = 'beneficiary-photos'
+  and (storage.foldername(name))[1] = 'beneficiaries'
+);
+create policy "beneficiary_photos_delete_by_permission" on storage.objects for delete to authenticated using (
+  bucket_id = 'beneficiary-photos'
+  and (storage.foldername(name))[1] = 'beneficiaries'
+);
 
 create index beneficiaries_search_idx on public.beneficiaries (full_name, document_id, code);
 create index deliveries_beneficiary_idx on public.deliveries (beneficiary_id, delivered_at desc);

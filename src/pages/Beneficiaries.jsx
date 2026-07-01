@@ -32,12 +32,13 @@ import {
   UserPlus,
   Users
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
+import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printBeneficiaryPdf, printDeliveryReceiptPdf } from '../lib/exporters';
@@ -260,6 +261,21 @@ function SituationBadge({ value }) {
   if (['activa', 'inactiva'].includes(normalize(value))) return null;
   const tone = value === 'Urgente' ? 'bg-orange-50 text-orange-700 ring-orange-200' : value === 'Inactiva' ? 'bg-slate-100 text-slate-600 ring-slate-200' : value === 'Seguimiento' ? 'bg-blue-50 text-blue-700 ring-blue-200' : 'bg-brand-50 text-brand-700 ring-brand-100';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tone}`}>{value || 'Sin situación'}</span>;
+}
+
+function SocialSituationBadge({ value }) {
+  const normalized = normalize(value);
+  const label = normalized === 'activa' ? 'Atención general' : normalized === 'inactiva' ? 'Sin seguimiento' : value || 'Sin situación';
+  const tone = normalized === 'urgente'
+    ? 'bg-orange-50 text-orange-700 ring-orange-200'
+    : normalized === 'prioritario'
+      ? 'bg-amber-50 text-amber-700 ring-amber-200'
+      : normalized === 'vulnerable'
+        ? 'bg-rose-50 text-rose-700 ring-rose-200'
+        : normalized === 'seguimiento'
+          ? 'bg-blue-50 text-blue-700 ring-blue-200'
+          : 'bg-white/90 text-slate-700 ring-slate-200';
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${tone}`}>{label}</span>;
 }
 
 function initials(name) {
@@ -492,6 +508,40 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     }
   }
 
+  async function handlePhotoChange(photoDataUrl) {
+    const previousPhotoUrl = beneficiary.photo_url;
+    if (!photoDataUrl) {
+      console.info('[BeneficiaryPhoto] Eliminando referencia de base de datos', { beneficiaryId: beneficiary.id });
+      await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, photo_url: null, photo_data_url: null });
+      try {
+        await removeBeneficiaryPhoto(previousPhotoUrl);
+      } catch (cleanupError) {
+        console.warn('[BeneficiaryPhoto] La referencia se elimino, pero fallo la limpieza del objeto anterior', cleanupError);
+      }
+      setNotice('Fotografía eliminada correctamente.');
+      return { displayUrl: null };
+    }
+
+    const uploaded = await uploadBeneficiaryPhoto(beneficiary.id, photoDataUrl);
+    try {
+      console.info('[BeneficiaryPhoto] Guardando referencia en base de datos', { beneficiaryId: beneficiary.id, photoUrl: uploaded.photoUrl });
+      await actions.updateBeneficiary(beneficiary.id, {
+        ...beneficiary,
+        photo_url: uploaded.photoUrl,
+        photo_data_url: uploaded.photoDataUrl
+      });
+    } catch (databaseError) {
+      await removeBeneficiaryPhoto(uploaded.photoUrl).catch((cleanupError) => console.warn('[BeneficiaryPhoto] No se pudo limpiar la subida fallida', cleanupError));
+      console.error('[BeneficiaryPhoto] Error al guardar la referencia', databaseError);
+      throw new Error(`La fotografía se subió, pero no se pudo guardar en el expediente: ${databaseError.message}`);
+    }
+    if (previousPhotoUrl && previousPhotoUrl !== uploaded.photoUrl) {
+      await removeBeneficiaryPhoto(previousPhotoUrl).catch((cleanupError) => console.warn('[BeneficiaryPhoto] No se pudo limpiar la fotografia sustituida', cleanupError));
+    }
+    setNotice('Fotografía actualizada correctamente.');
+    return uploaded;
+  }
+
   return (
     <div className="-m-5">
       <CrmHeader
@@ -503,10 +553,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
         onDelivery={() => setDeliveryOpen(true)}
-        onPhotoChange={async (photoDataUrl) => {
-          await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, photo_data_url: photoDataUrl });
-          setNotice(photoDataUrl ? 'Fotografía actualizada correctamente.' : 'Fotografía eliminada correctamente.');
-        }}
+        onPhotoChange={handlePhotoChange}
       />
 
       {notice && <div className="mx-5 mt-4 rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
@@ -600,8 +647,8 @@ function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, on
           <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} onChange={onPhotoChange} />
           <div className="min-w-0 pb-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs font-bold tracking-wide text-brand-700">{beneficiary.code}</span>
               <StatusBadge active={beneficiary.is_active} />
+              <SocialSituationBadge value={beneficiary.situation} />
             </div>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
@@ -624,8 +671,22 @@ function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, on
 function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
-  const inputRef = useRef(null);
-  const photo = beneficiary.photo_data_url || beneficiary.photo_url || beneficiary.photo || beneficiary.avatar_url;
+  const [photo, setPhoto] = useState(null);
+  const galleryInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    setError('');
+    resolveBeneficiaryPhotoUrl(beneficiary)
+      .then((displayUrl) => { if (active) setPhoto(displayUrl); })
+      .catch((photoError) => {
+        if (!active) return;
+        setPhoto(null);
+        setError(photoError.message || 'No se pudo recuperar la fotografía.');
+      });
+    return () => { active = false; };
+  }, [beneficiary.id, beneficiary.photo_url, beneficiary.photo_data_url, beneficiary.photo, beneficiary.avatar_url]);
 
   async function selectPhoto(event) {
     const file = event.target.files?.[0];
@@ -633,13 +694,17 @@ function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
     setWorking(true);
     setError('');
     try {
+      console.info('[BeneficiaryPhoto] Imagen seleccionada', { source: event.target.capture ? 'camera' : 'gallery', type: file.type, bytes: file.size });
       const optimized = await optimizeBeneficiaryPhoto(file);
-      await onChange(optimized);
+      console.info('[BeneficiaryPhoto] Imagen optimizada', { bytes: approximateDataUrlBytes(optimized) });
+      const result = await onChange(optimized);
+      setPhoto(result?.displayUrl || optimized);
     } catch (photoError) {
       setError(photoError.message || 'No se pudo procesar la fotografía.');
     } finally {
       setWorking(false);
-      if (inputRef.current) inputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
   }
 
@@ -649,6 +714,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
     setError('');
     try {
       await onChange(null);
+      setPhoto(null);
     } catch (photoError) {
       setError(photoError.message || 'No se pudo eliminar la fotografía.');
     } finally {
@@ -659,15 +725,20 @@ function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
   return (
     <div className="relative w-28 shrink-0">
       <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-brand-50 text-3xl font-bold text-brand-700 shadow-lg">
-        {photo ? <img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" /> : initials(beneficiary.full_name)}
+        {photo ? <a href={photo} target="_blank" rel="noreferrer" className="h-full w-full" title="Abrir fotografía"><img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" onError={() => setError('La fotografía existe, pero el navegador no ha podido mostrarla.')} /></a> : initials(beneficiary.full_name)}
         {working && <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/55 text-white"><Loader2 className="animate-spin" size={25} /></span>}
       </div>
       {canEdit && (
         <div className="absolute -bottom-2 -right-2 flex gap-1">
-          <label className="focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-brand-700 shadow-md ring-1 ring-slate-200 hover:bg-brand-50" title={photo ? 'Cambiar fotografía' : 'Añadir fotografía'}>
+          <label className="focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-brand-700 shadow-md ring-1 ring-slate-200 hover:bg-brand-50" title={photo ? 'Elegir otra imagen' : 'Elegir imagen'}>
+            <Upload size={17} />
+            <span className="sr-only">{photo ? 'Elegir otra imagen' : 'Elegir imagen'}</span>
+            <input ref={galleryInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={working} onChange={selectPhoto} />
+          </label>
+          <label className="focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-brand-700 shadow-md ring-1 ring-slate-200 hover:bg-brand-50" title="Hacer una foto">
             <Camera size={17} />
-            <span className="sr-only">{photo ? 'Cambiar fotografía' : 'Añadir fotografía'}</span>
-            <input ref={inputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={working} onChange={selectPhoto} />
+            <span className="sr-only">Hacer una foto</span>
+            <input ref={cameraInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={working} onChange={selectPhoto} />
           </label>
           {photo && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografía" title="Eliminar fotografía"><ImageOff size={17} /></button>}
         </div>
