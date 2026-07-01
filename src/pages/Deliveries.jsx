@@ -75,9 +75,9 @@ export function Deliveries({ data, actions }) {
   );
 }
 
-function DeliveryForm({ data, onSubmit }) {
+export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
   const [form, setForm] = useState({
-    beneficiary_id: data.beneficiaries[0]?.id || '',
+    beneficiary_id: initialBeneficiaryId || data.beneficiaries[0]?.id || '',
     delivered_at: todayISO(),
     responsible: '',
     delivered_time: new Date().toTimeString().slice(0, 5),

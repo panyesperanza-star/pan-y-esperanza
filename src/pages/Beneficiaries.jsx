@@ -5,14 +5,18 @@ import {
   CircleUserRound,
   ClipboardList,
   Clock3,
+  ContactRound,
   Download,
   Edit3,
+  Euro,
   FileText,
   HeartHandshake,
+  Home,
   Mail,
   MapPin,
   MessageCircle,
   NotebookTabs,
+  PackagePlus,
   PackageCheck,
   Paperclip,
   Phone,
@@ -22,6 +26,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  UserPlus,
   Users
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -35,6 +40,7 @@ import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } f
 import { printBeneficiaryPdf, printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
+import { DeliveryForm } from './Deliveries';
 
 const emptyBeneficiary = {
   code: '',
@@ -213,6 +219,10 @@ export function Beneficiaries({ data, actions, currentUser }) {
             canEdit={canEdit}
             canDelete={canDelete}
             onEdit={() => { setProfileId(null); setEditing(profile); }}
+            onAddFamilyMember={(familyId) => {
+              setProfileId(null);
+              setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries), family_id: familyId });
+            }}
           />
         </Modal>
       )}
@@ -428,21 +438,32 @@ function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit }) {
+function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const family = data.families.find((item) => item.id === beneficiary.family_id);
+  const familyMembers = family ? data.beneficiaries.filter((item) => item.family_id === family.id) : [];
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
+  const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
+  const estimatedValue = deliveries.reduce((total, item) => total + Number(item.estimated_value ?? item.value ?? item.amount ?? 0), 0);
+  const hasEstimatedValue = deliveries.some((item) => Number(item.estimated_value ?? item.value ?? item.amount ?? 0) > 0);
+  const canCreateDelivery = canDo(currentUser, 'deliveries', 'create');
+  const canCreateFamily = canDo(currentUser, 'families', 'create');
+  const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
 
   const tabs = [
     { id: 'overview', label: 'Resumen', icon: CircleUserRound },
-    { id: 'social', label: 'Historial social', icon: NotebookTabs, count: history.length },
+    { id: 'personal', label: 'Datos personales', icon: ContactRound },
+    { id: 'family', label: 'Familia', icon: Users, count: familyMembers.length || undefined },
     { id: 'deliveries', label: 'Entregas', icon: PackageCheck, count: deliveries.length },
     { id: 'documents', label: 'Documentos', icon: Paperclip, count: documents.length },
-    { id: 'emails', label: 'Comunicaciones', icon: Mail, count: emailLogs.length }
+    { id: 'emails', label: 'Comunicaciones', icon: Mail, count: emailLogs.length },
+    { id: 'social', label: 'Historial social', icon: NotebookTabs, count: history.length }
   ];
 
   async function openWhatsApp() {
@@ -470,34 +491,29 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
 
   return (
     <div className="-m-5">
-      <header className="bg-gradient-to-br from-brand-700 to-brand-600 px-5 py-6 text-white sm:px-7">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold ring-1 ring-white/25">{initials(beneficiary.full_name)}</div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-brand-100">{beneficiary.code}</p><span className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-bold">{beneficiary.is_active ? 'Activo' : 'Inactivo'}</span></div>
-              <h2 className="mt-1 truncate text-2xl font-bold">{beneficiary.full_name}</h2>
-              <p className="mt-1 text-sm text-brand-100">{beneficiary.document_id || 'Sin documento'} · {beneficiary.situation || 'Sin situación'}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="focus-ring inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold ring-1 ring-white/25 hover:bg-white/20" onClick={openWhatsApp}><MessageCircle size={17} /> WhatsApp</button>
-            <button className="focus-ring inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50" onClick={() => { setNotice(''); setEmailOpen(true); }}><Mail size={17} /> Enviar email</button>
-            <button className="focus-ring rounded-lg bg-white/10 p-2 ring-1 ring-white/25 hover:bg-white/20" onClick={() => printBeneficiaryPdf(beneficiary, deliveries)} aria-label="Imprimir ficha" title="Imprimir ficha"><Printer size={18} /></button>
-            {canEdit && <button className="focus-ring rounded-lg bg-white/10 p-2 ring-1 ring-white/25 hover:bg-white/20" onClick={onEdit} aria-label="Editar beneficiario" title="Editar beneficiario"><Edit3 size={18} /></button>}
-          </div>
-        </div>
-        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <ProfileMetric label="Entregas" value={deliveries.length} />
-          <ProfileMetric label="Documentos" value={documents.length} />
-          <ProfileMetric label="Seguimientos" value={history.length} />
-          <ProfileMetric label="Última ayuda" value={formatDate(beneficiary.last_help_at)} compact />
-        </div>
-      </header>
+      <CrmHeader
+        beneficiary={beneficiary}
+        family={family}
+        canEdit={canEdit}
+        canCreateDelivery={canCreateDelivery}
+        onEdit={onEdit}
+        onWhatsApp={openWhatsApp}
+        onEmail={() => { setNotice(''); setEmailOpen(true); }}
+        onDelivery={() => setDeliveryOpen(true)}
+      />
 
       {notice && <div className="mx-5 mt-4 rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
 
-      <nav className="mt-5 overflow-x-auto border-y border-slate-200 bg-white px-5" aria-label="Secciones del expediente">
+      <ProfileSummaryCards
+        beneficiary={beneficiary}
+        deliveries={deliveries}
+        documents={documents}
+        incidents={incidents}
+        estimatedValue={estimatedValue}
+        hasEstimatedValue={hasEstimatedValue}
+      />
+
+      <nav className="mt-6 overflow-x-auto border-y border-slate-200 bg-white px-5 sm:px-7" aria-label="Secciones del expediente">
         <div className="flex min-w-max gap-1">
           {tabs.map(({ id, label, icon: Icon, count }) => (
             <button key={id} className={`focus-ring flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>
@@ -508,11 +524,23 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       </nav>
 
       <main className="bg-slate-50/70 p-5 sm:p-7">
-        {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} />}
-        {tab === 'social' && <SocialHistory history={history} beneficiary={beneficiary} actions={actions} canEdit={canEdit} />}
+        {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} deliveries={deliveries} history={history} />}
+        {tab === 'personal' && <PersonalDataPanel beneficiary={beneficiary} />}
+        {tab === 'family' && (
+          <FamilyPanel
+            beneficiary={beneficiary}
+            family={family}
+            members={familyMembers}
+            canAddMember={canCreateBeneficiary}
+            canCreateFamily={canCreateFamily && canEdit}
+            onAddMember={() => onAddFamilyMember(family.id)}
+            onCreateFamily={() => setFamilyOpen(true)}
+          />
+        )}
         {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
         {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} />}
         {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
+        {tab === 'social' && <SocialHistory history={history} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
       </main>
 
       {emailOpen && (
@@ -527,57 +555,162 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
           />
         </Modal>
       )}
+      {deliveryOpen && (
+        <Modal wide title={`Nueva entrega · ${beneficiary.full_name}`} onClose={() => setDeliveryOpen(false)}>
+          <DeliveryForm
+            data={data}
+            initialBeneficiaryId={beneficiary.id}
+            onSubmit={async (payload) => {
+              await actions.createDelivery(payload);
+              setDeliveryOpen(false);
+              setNotice('Entrega registrada correctamente.');
+            }}
+          />
+        </Modal>
+      )}
+      {familyOpen && (
+        <Modal title="Crear unidad familiar" onClose={() => setFamilyOpen(false)}>
+          <QuickFamilyForm
+            beneficiary={beneficiary}
+            onSubmit={async (payload) => {
+              await actions.createFamily(payload);
+              await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, family_id: payload.id });
+              setFamilyOpen(false);
+              setNotice('Unidad familiar creada y vinculada correctamente.');
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
 
-function ProfileMetric({ label, value, compact = false }) {
-  return <div className="rounded-xl bg-white/10 px-3 py-2.5 ring-1 ring-white/15"><p className="text-[11px] font-semibold uppercase tracking-wide text-brand-100">{label}</p><p className={`mt-0.5 font-bold ${compact ? 'text-sm' : 'text-xl'}`}>{value}</p></div>;
+function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery }) {
+  const photo = beneficiary.photo_url || beneficiary.photo || beneficiary.avatar_url;
+  return (
+    <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
+      <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
+      <div className="relative flex flex-col gap-6 pt-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
+          <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-brand-50 text-3xl font-bold text-brand-700 shadow-lg">
+            {photo ? <img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" /> : initials(beneficiary.full_name)}
+          </div>
+          <div className="min-w-0 pb-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs font-bold tracking-wide text-brand-700">{beneficiary.code}</span>
+              <StatusBadge active={beneficiary.is_active} />
+              <SituationBadge value={beneficiary.situation} />
+            </div>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
+              <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-slate-400" /> Alta: {formatDate(beneficiary.joined_at)}</span>
+              <span className="flex items-center gap-1.5"><Users size={15} className="text-slate-400" /> {family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
+          <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
+          <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
+          {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}
+        </div>
+      </div>
+    </header>
+  );
 }
 
-function OverviewPanel({ beneficiary, family }) {
+function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, estimatedValue, hasEstimatedValue }) {
+  const cards = [
+    { label: 'Beneficiario desde', value: formatDate(beneficiary.joined_at), icon: CalendarDays, tone: 'brand' },
+    { label: 'Última ayuda', value: formatDate(beneficiary.last_help_at), icon: Clock3, tone: 'blue' },
+    { label: 'Total entregas', value: deliveries.length, icon: PackageCheck, tone: 'brand' },
+    { label: 'Valor aproximado', value: hasEstimatedValue ? formatCurrency(estimatedValue) : 'Sin valorar', icon: Euro, tone: 'amber' },
+    { label: 'Documentos', value: documents.length, icon: Paperclip, tone: 'violet' },
+    { label: 'Incidencias', value: incidents, icon: ClipboardList, tone: incidents ? 'red' : 'slate' }
+  ];
+  const tones = {
+    brand: 'bg-brand-50 text-brand-700', blue: 'bg-blue-50 text-blue-700', amber: 'bg-amber-50 text-amber-700',
+    violet: 'bg-violet-50 text-violet-700', red: 'bg-red-50 text-red-700', slate: 'bg-slate-100 text-slate-600'
+  };
+  return (
+    <section className="grid gap-3 bg-slate-50/70 px-5 pt-6 sm:grid-cols-2 sm:px-7 xl:grid-cols-6" aria-label="Resumen rápido del expediente">
+      {cards.map(({ label, value, icon: Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={`inline-flex rounded-lg p-2 ${tones[tone]}`}><Icon size={18} /></span><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p></div>)}
+    </section>
+  );
+}
+
+function OverviewPanel({ beneficiary, family, deliveries, history }) {
+  const latestDelivery = deliveries[0];
+  const latestHistory = [...history].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <InfoCard icon={UserRound} title="Datos personales">
-        <InfoGrid items={[
-          ['DNI, NIE o pasaporte', beneficiary.document_id],
-          ['Fecha de nacimiento', formatDate(beneficiary.birth_date)],
-          ['Sexo', beneficiary.sex],
-          ['Nacionalidad', beneficiary.nationality],
-          ['Estado civil', beneficiary.marital_status],
-          ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']
-        ]} />
+      <InfoCard icon={HeartHandshake} title="Situación actual">
+        <div className="flex flex-wrap gap-2"><SituationBadge value={beneficiary.situation} /><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{beneficiary.requested_help || 'Ayuda sin especificar'}</span></div>
+        <p className="mt-4 text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p>
       </InfoCard>
-      <InfoCard icon={Phone} title="Contacto y domicilio">
+      <InfoCard icon={ContactRound} title="Contacto principal">
         <div className="space-y-3">
           <ContactLine icon={Phone} label="Teléfono" value={beneficiary.phone} />
           <ContactLine icon={Mail} label="Email" value={beneficiary.email} />
           <ContactLine icon={MapPin} label="Dirección" value={[beneficiary.address_full, beneficiary.postal_code].filter(Boolean).join(' · ')} />
         </div>
       </InfoCard>
-      <InfoCard icon={Users} title="Unidad familiar">
-        <InfoGrid items={[
-          ['Familia vinculada', family ? `${family.family_code} · ${family.responsible_name}` : 'Sin familia vinculada'],
-          ['Miembros', beneficiary.family_members],
-          ['Menores', beneficiary.minors_count],
-          ['Contacto familiar', family?.phone || family?.email]
-        ]} />
+      <InfoCard icon={PackageCheck} title="Última entrega">
+        {latestDelivery ? <><p className="font-bold text-ink">{latestDelivery.help_type || 'Ayuda entregada'}</p><p className="mt-1 text-sm text-slate-500">{formatDate(latestDelivery.delivered_at)} · {latestDelivery.inventory_item_name || 'Sin producto'}</p><p className="mt-3 text-sm text-slate-600">Cantidad: {latestDelivery.quantity || '-'} · Responsable: {latestDelivery.responsible || '-'}</p></> : <p className="text-sm text-slate-500">No hay entregas registradas.</p>}
       </InfoCard>
-      <InfoCard icon={ClipboardList} title="Atención">
-        <InfoGrid items={[
-          ['Situación', beneficiary.situation],
-          ['Ayuda solicitada', beneficiary.requested_help],
-          ['Primera atención', formatDate(beneficiary.first_attention_at)],
-          ['Fecha de alta', formatDate(beneficiary.joined_at)],
-          ['Última ayuda', formatDate(beneficiary.last_help_at)]
-        ]} />
+      <InfoCard icon={NotebookTabs} title="Último seguimiento">
+        {latestHistory ? <><div className="flex items-center justify-between gap-3"><p className="font-bold text-ink">{latestHistory.entry_type || 'Seguimiento'}</p><span className="text-xs text-slate-500">{formatDate(latestHistory.date)}</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{latestHistory.notes}</p></> : <p className="text-sm text-slate-500">No hay anotaciones en el historial social.</p>}
       </InfoCard>
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-        <div className="flex items-center gap-2"><FileText size={19} className="text-brand-700" /><h3 className="font-bold text-ink">Observaciones</h3></div>
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p>
-      </section>
+      <InfoCard icon={Users} title="Unidad familiar"><InfoGrid items={[["Unidad", family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'], ['Miembros', beneficiary.family_members], ['Menores', beneficiary.minors_count], ['Contacto', family?.phone || family?.email]]} /></InfoCard>
+      <InfoCard icon={CalendarDays} title="Fechas del expediente"><InfoGrid items={[["Primera atención", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Última ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
     </div>
   );
+}
+
+function PersonalDataPanel({ beneficiary }) {
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <InfoCard icon={UserRound} title="Identificación">
+        <InfoGrid items={[["Nombre completo", beneficiary.full_name], ['Código', beneficiary.code], ['DNI, NIE o pasaporte', beneficiary.document_id], ['Fecha de nacimiento', formatDate(beneficiary.birth_date)], ['Sexo', beneficiary.sex], ['Estado civil', beneficiary.marital_status], ['Nacionalidad', beneficiary.nationality]]} />
+      </InfoCard>
+      <InfoCard icon={ContactRound} title="Contacto">
+        <div className="space-y-3"><ContactLine icon={Phone} label="Teléfono" value={beneficiary.phone} /><ContactLine icon={Mail} label="Email" value={beneficiary.email} /><ContactLine icon={MapPin} label="Dirección" value={beneficiary.address_full} /><ContactLine icon={Home} label="Código postal" value={beneficiary.postal_code} /></div>
+      </InfoCard>
+      <InfoCard icon={ClipboardList} title="Datos de atención"><InfoGrid items={[["Situación", beneficiary.situation], ['Ayuda solicitada', beneficiary.requested_help], ['Primera atención', formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Última ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
+      <InfoCard icon={FileText} title="Observaciones"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p></InfoCard>
+    </div>
+  );
+}
+
+function FamilyPanel({ beneficiary, family, members, canAddMember, canCreateFamily, onAddMember, onCreateFamily }) {
+  if (!family) {
+    return <EmptyState icon={Users} title="Sin unidad familiar" text="Este beneficiario no está vinculado a ninguna unidad familiar." action={canCreateFamily ? <Button onClick={onCreateFamily}><Plus size={17} /> Crear unidad familiar</Button> : null} />;
+  }
+  return (
+    <section>
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+        <div><p className="text-xs font-bold uppercase tracking-wide text-brand-700">Unidad familiar</p><h3 className="mt-1 text-2xl font-bold text-ink">{family.family_code}</h3><p className="mt-2 text-sm text-slate-600">Titular: <strong>{family.responsible_name || beneficiary.full_name}</strong></p></div>
+        {canAddMember && <Button onClick={onAddMember}><UserPlus size={17} /> Añadir miembro</Button>}
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3"><FamilyMetric label="Miembros vinculados" value={members.length || beneficiary.family_members || 1} /><FamilyMetric label="Menores" value={members.length ? members.reduce((sum, item) => sum + Number(item.minors_count || 0), 0) : beneficiary.minors_count || 0} /><FamilyMetric label="Dependientes" value={family.dependents_count || 0} /></div>
+      <div className="mt-5"><SectionHeading icon={Users} title="Miembros de la unidad" description="Beneficiarios vinculados a esta familia." /><div className="mt-4 grid gap-3 sm:grid-cols-2">{members.map((member) => <article key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-700">{initials(member.full_name)}</span><div className="min-w-0"><p className="truncate font-bold text-ink">{member.full_name}</p><p className="text-xs text-slate-500">{member.code} · {member.id === beneficiary.id ? 'Expediente actual' : member.situation || 'Miembro'}</p></div></article>)}</div>{!members.length && <div className="mt-4"><EmptyState icon={Users} title="Sin miembros vinculados" text="La unidad familiar existe, pero todavía no tiene beneficiarios vinculados." /></div>}</div>
+    </section>
+  );
+}
+
+function FamilyMetric({ label, value }) {
+  return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-ink">{value}</p></div>;
+}
+
+function QuickFamilyForm({ beneficiary, onSubmit }) {
+  const [form, setForm] = useState({ id: crypto.randomUUID(), family_code: `FAM-${String(Date.now()).slice(-4)}`, responsible_name: beneficiary.full_name, address: beneficiary.address_full || '', phone: beneficiary.phone || '', email: beneficiary.email || '', dependents_count: beneficiary.minors_count || 0, notes: '' });
+  const [saving, setSaving] = useState(false);
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  return <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSubmit(form); } finally { setSaving(false); } }}><FormField label="Código familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField><FormField label="Titular"><input className={inputClass} required value={form.responsible_name} onChange={(event) => update('responsible_name', event.target.value)} /></FormField><div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div><FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField><FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField><FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField><div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div><div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Creando…' : 'Crear y vincular familia'}</Button></div></form>;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
 }
 
 function InfoCard({ icon: Icon, title, children }) {
@@ -678,8 +811,8 @@ function SectionHeading({ icon: Icon, title, description }) {
   return <div className="flex items-start gap-3"><span className="rounded-lg bg-white p-2 text-brand-700 shadow-sm ring-1 ring-slate-200"><Icon size={19} /></span><div><h3 className="font-bold text-ink">{title}</h3><p className="text-sm text-slate-500">{description}</p></div></div>;
 }
 
-function EmptyState({ icon: Icon, title, text }) {
-  return <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-9 text-center"><Icon className="mx-auto text-slate-300" size={30} /><h4 className="mt-2 font-bold text-ink">{title}</h4><p className="mt-1 text-sm text-slate-500">{text}</p></div>;
+function EmptyState({ icon: Icon, title, text, action = null }) {
+  return <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-9 text-center"><Icon className="mx-auto text-slate-300" size={30} /><h4 className="mt-2 font-bold text-ink">{title}</h4><p className="mt-1 text-sm text-slate-500">{text}</p>{action && <div className="mt-4 flex justify-center">{action}</div>}</div>;
 }
 
 function BeneficiaryEmailForm({ beneficiary, deliveries, organization, actions, currentUser, onSent }) {
@@ -738,7 +871,7 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, organization, actions, 
   );
 }
 
-function SocialHistory({ history, beneficiary, actions, canEdit }) {
+function SocialHistory({ history, beneficiary, actions, currentUser, canEdit }) {
   const [note, setNote] = useState('');
   const [entryType, setEntryType] = useState('Seguimiento');
   const [date, setDate] = useState(todayISO());
@@ -774,11 +907,15 @@ function SocialHistory({ history, beneficiary, actions, canEdit }) {
         {history.map((item) => (
           <article key={item.id} className="relative flex gap-4">
             <span className="z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700 ring-4 ring-slate-50"><CalendarDays size={17} /></span>
-            <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-ink">{item.entry_type || 'Seguimiento'}</h4><time className="text-xs font-medium text-slate-500">{formatDate(item.date)}</time></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.notes}</p></div>
+            <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-ink">{item.entry_type || 'Seguimiento'}</h4><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><UserRound size={13} /> {socialHistoryUser(item, currentUser)}</p></div><time className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{formatDate(item.date)}</time></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.notes}</p></div>
           </article>
         ))}
       </div>
       {!history.length && <div className="mt-4"><EmptyState icon={NotebookTabs} title="Sin anotaciones" text="Todavía no hay entradas en el historial social." /></div>}
     </section>
   );
+}
+
+function socialHistoryUser(item, currentUser) {
+  return item.user_name || item.created_by || item.user || (item.isLocalDraft ? `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() : '') || 'Usuario no registrado';
 }
