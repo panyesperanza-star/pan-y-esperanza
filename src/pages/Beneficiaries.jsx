@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
@@ -12,6 +13,8 @@ import {
   FileText,
   HeartHandshake,
   Home,
+  ImageOff,
+  Loader2,
   Mail,
   MapPin,
   MessageCircle,
@@ -254,6 +257,7 @@ function StatusBadge({ active }) {
 }
 
 function SituationBadge({ value }) {
+  if (['activa', 'inactiva'].includes(normalize(value))) return null;
   const tone = value === 'Urgente' ? 'bg-orange-50 text-orange-700 ring-orange-200' : value === 'Inactiva' ? 'bg-slate-100 text-slate-600 ring-slate-200' : value === 'Seguimiento' ? 'bg-blue-50 text-blue-700 ring-blue-200' : 'bg-brand-50 text-brand-700 ring-brand-100';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tone}`}>{value || 'Sin situación'}</span>;
 }
@@ -450,8 +454,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
-  const estimatedValue = deliveries.reduce((total, item) => total + Number(item.estimated_value ?? item.value ?? item.amount ?? 0), 0);
-  const hasEstimatedValue = deliveries.some((item) => Number(item.estimated_value ?? item.value ?? item.amount ?? 0) > 0);
+  const valuation = calculateDeliveriesValue(deliveries, data.inventory_items);
   const canCreateDelivery = canDo(currentUser, 'deliveries', 'create');
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
@@ -500,6 +503,10 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
         onDelivery={() => setDeliveryOpen(true)}
+        onPhotoChange={async (photoDataUrl) => {
+          await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, photo_data_url: photoDataUrl });
+          setNotice(photoDataUrl ? 'Fotografía actualizada correctamente.' : 'Fotografía eliminada correctamente.');
+        }}
       />
 
       {notice && <div className="mx-5 mt-4 rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
@@ -509,8 +516,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         deliveries={deliveries}
         documents={documents}
         incidents={incidents}
-        estimatedValue={estimatedValue}
-        hasEstimatedValue={hasEstimatedValue}
+        valuation={valuation}
       />
 
       <nav className="mt-6 overflow-x-auto border-y border-slate-200 bg-white px-5 sm:px-7" aria-label="Secciones del expediente">
@@ -585,21 +591,17 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery }) {
-  const photo = beneficiary.photo_url || beneficiary.photo || beneficiary.avatar_url;
+function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery, onPhotoChange }) {
   return (
     <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
       <div className="relative flex flex-col gap-6 pt-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-brand-50 text-3xl font-bold text-brand-700 shadow-lg">
-            {photo ? <img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" /> : initials(beneficiary.full_name)}
-          </div>
+          <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} onChange={onPhotoChange} />
           <div className="min-w-0 pb-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs font-bold tracking-wide text-brand-700">{beneficiary.code}</span>
               <StatusBadge active={beneficiary.is_active} />
-              <SituationBadge value={beneficiary.situation} />
             </div>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
@@ -619,12 +621,69 @@ function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, on
   );
 }
 
-function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, estimatedValue, hasEstimatedValue }) {
+function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const inputRef = useRef(null);
+  const photo = beneficiary.photo_data_url || beneficiary.photo_url || beneficiary.photo || beneficiary.avatar_url;
+
+  async function selectPhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setWorking(true);
+    setError('');
+    try {
+      const optimized = await optimizeBeneficiaryPhoto(file);
+      await onChange(optimized);
+    } catch (photoError) {
+      setError(photoError.message || 'No se pudo procesar la fotografía.');
+    } finally {
+      setWorking(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function removePhoto() {
+    if (!window.confirm('¿Eliminar la fotografía del beneficiario?')) return;
+    setWorking(true);
+    setError('');
+    try {
+      await onChange(null);
+    } catch (photoError) {
+      setError(photoError.message || 'No se pudo eliminar la fotografía.');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div className="relative w-28 shrink-0">
+      <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-brand-50 text-3xl font-bold text-brand-700 shadow-lg">
+        {photo ? <img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" /> : initials(beneficiary.full_name)}
+        {working && <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/55 text-white"><Loader2 className="animate-spin" size={25} /></span>}
+      </div>
+      {canEdit && (
+        <div className="absolute -bottom-2 -right-2 flex gap-1">
+          <label className="focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white text-brand-700 shadow-md ring-1 ring-slate-200 hover:bg-brand-50" title={photo ? 'Cambiar fotografía' : 'Añadir fotografía'}>
+            <Camera size={17} />
+            <span className="sr-only">{photo ? 'Cambiar fotografía' : 'Añadir fotografía'}</span>
+            <input ref={inputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={working} onChange={selectPhoto} />
+          </label>
+          {photo && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografía" title="Eliminar fotografía"><ImageOff size={17} /></button>}
+        </div>
+      )}
+      {error && <p className="absolute left-0 top-full z-20 mt-4 w-64 rounded-lg border border-red-200 bg-white p-2 text-xs font-semibold text-red-700 shadow-lg" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, valuation }) {
+  const latestDelivery = getLatestDelivery(deliveries);
   const cards = [
     { label: 'Beneficiario desde', value: formatDate(beneficiary.joined_at), icon: CalendarDays, tone: 'brand' },
-    { label: 'Última ayuda', value: formatDate(beneficiary.last_help_at), icon: Clock3, tone: 'blue' },
+    { label: 'Última ayuda', value: latestDelivery ? formatDate(latestDelivery.delivered_at) : '-', detail: latestDelivery?.help_type || '', icon: Clock3, tone: 'blue' },
     { label: 'Total entregas', value: deliveries.length, icon: PackageCheck, tone: 'brand' },
-    { label: 'Valor aproximado', value: hasEstimatedValue ? formatCurrency(estimatedValue) : 'Sin valorar', icon: Euro, tone: 'amber' },
+    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'Valoración parcial' : '', icon: Euro, tone: 'amber' },
     { label: 'Documentos', value: documents.length, icon: Paperclip, tone: 'violet' },
     { label: 'Incidencias', value: incidents, icon: ClipboardList, tone: incidents ? 'red' : 'slate' }
   ];
@@ -634,13 +693,13 @@ function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, es
   };
   return (
     <section className="grid gap-3 bg-slate-50/70 px-5 pt-6 sm:grid-cols-2 sm:px-7 xl:grid-cols-6" aria-label="Resumen rápido del expediente">
-      {cards.map(({ label, value, icon: Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={`inline-flex rounded-lg p-2 ${tones[tone]}`}><Icon size={18} /></span><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p></div>)}
+      {cards.map(({ label, value, detail, icon: Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={`inline-flex rounded-lg p-2 ${tones[tone]}`}><Icon size={18} /></span><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p>{detail && <p className="mt-1 truncate text-xs font-medium text-slate-500">{detail}</p>}</div>)}
     </section>
   );
 }
 
 function OverviewPanel({ beneficiary, family, deliveries, history }) {
-  const latestDelivery = deliveries[0];
+  const latestDelivery = getLatestDelivery(deliveries);
   const latestHistory = [...history].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -670,14 +729,24 @@ function OverviewPanel({ beneficiary, family, deliveries, history }) {
 function PersonalDataPanel({ beneficiary }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <InfoCard icon={UserRound} title="Identificación">
-        <InfoGrid items={[["Nombre completo", beneficiary.full_name], ['Código', beneficiary.code], ['DNI, NIE o pasaporte', beneficiary.document_id], ['Fecha de nacimiento', formatDate(beneficiary.birth_date)], ['Sexo', beneficiary.sex], ['Estado civil', beneficiary.marital_status], ['Nacionalidad', beneficiary.nationality]]} />
+      <InfoCard icon={UserRound} title="Información personal">
+        <InfoGrid items={[["Nombre completo", beneficiary.full_name], ['Fecha de nacimiento', formatDate(beneficiary.birth_date)], ['Sexo', beneficiary.sex], ['Nacionalidad', beneficiary.nationality], ['Estado civil', beneficiary.marital_status]]} />
+      </InfoCard>
+      <InfoCard icon={FileText} title="Documento identificativo">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">DNI, NIE o pasaporte</p>
+          <p className="mt-2 text-xl font-bold tracking-wide text-ink">{beneficiary.document_id || '-'}</p>
+          <div className="mt-4 border-t border-slate-200 pt-3"><p className="text-xs text-slate-500">Código de beneficiario</p><p className="mt-1 font-mono text-sm font-bold text-brand-700">{beneficiary.code}</p></div>
+        </div>
       </InfoCard>
       <InfoCard icon={ContactRound} title="Contacto">
         <div className="space-y-3"><ContactLine icon={Phone} label="Teléfono" value={beneficiary.phone} /><ContactLine icon={Mail} label="Email" value={beneficiary.email} /><ContactLine icon={MapPin} label="Dirección" value={beneficiary.address_full} /><ContactLine icon={Home} label="Código postal" value={beneficiary.postal_code} /></div>
       </InfoCard>
-      <InfoCard icon={ClipboardList} title="Datos de atención"><InfoGrid items={[["Situación", beneficiary.situation], ['Ayuda solicitada', beneficiary.requested_help], ['Primera atención', formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Última ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
-      <InfoCard icon={FileText} title="Observaciones"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p></InfoCard>
+      <InfoCard icon={ClipboardList} title="Situación actual">
+        <div className="mb-4 flex flex-wrap gap-2"><StatusBadge active={beneficiary.is_active} /><SituationBadge value={beneficiary.situation} /><span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">{beneficiary.requested_help || 'Ayuda sin especificar'}</span></div>
+        <InfoGrid items={[["Primera atención", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)]]} />
+        <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-medium text-slate-500">Observaciones</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p></div>
+      </InfoCard>
     </div>
   );
 }
@@ -711,6 +780,86 @@ function QuickFamilyForm({ beneficiary, onSubmit }) {
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
+}
+
+function getLatestDelivery(deliveries) {
+  return [...deliveries].sort((a, b) => {
+    const aValue = `${a.delivered_at || ''}T${a.delivered_time || '00:00:00'}`;
+    const bValue = `${b.delivered_at || ''}T${b.delivered_time || '00:00:00'}`;
+    return bValue.localeCompare(aValue);
+  })[0];
+}
+
+function calculateDeliveriesValue(deliveries, inventoryItems = []) {
+  let total = 0;
+  let valuedCount = 0;
+  deliveries.forEach((delivery) => {
+    const explicitTotal = firstPositiveNumber(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
+    if (explicitTotal !== null) {
+      total += explicitTotal;
+      valuedCount += 1;
+      return;
+    }
+    const inventoryItem = inventoryItems.find((item) => item.id === delivery.inventory_item_id);
+    const unitValue = firstPositiveNumber(inventoryItem?.unit_value, inventoryItem?.estimated_unit_value, inventoryItem?.economic_value, inventoryItem?.price, inventoryItem?.cost);
+    if (unitValue !== null) {
+      total += unitValue * Number(delivery.quantity || 0);
+      valuedCount += 1;
+    }
+  });
+  return { total, valuedCount, isPartial: valuedCount > 0 && valuedCount < deliveries.length };
+}
+
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
+}
+
+async function optimizeBeneficiaryPhoto(file) {
+  const acceptedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+  if (!acceptedTypes.has(file.type)) throw new Error('Selecciona una imagen JPG, PNG o WEBP.');
+  if (file.size > 10 * 1024 * 1024) throw new Error('La imagen no puede superar los 10 MB.');
+
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadPhotoImage(sourceUrl);
+    const firstPass = renderSquarePhoto(image, 512, 0.78);
+    return approximateDataUrlBytes(firstPass) <= 240 * 1024 ? firstPass : renderSquarePhoto(image, 384, 0.68);
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
+function loadPhotoImage(sourceUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('La imagen seleccionada no se puede leer.'));
+    image.src = sourceUrl;
+  });
+}
+
+function renderSquarePhoto(image, maxSize, quality) {
+  const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+  if (!sourceSize) throw new Error('La imagen seleccionada no tiene un tamaño válido.');
+  const targetSize = Math.min(maxSize, sourceSize);
+  const sourceX = Math.max((image.naturalWidth - sourceSize) / 2, 0);
+  const sourceY = Math.max((image.naturalHeight - sourceSize) / 2, 0);
+  const canvas = document.createElement('canvas');
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('El navegador no puede optimizar esta imagen.');
+  context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, targetSize, targetSize);
+  return canvas.toDataURL('image/webp', quality);
+}
+
+function approximateDataUrlBytes(dataUrl) {
+  return Math.ceil((dataUrl.length - String(dataUrl).indexOf(',') - 1) * 0.75);
 }
 
 function InfoCard({ icon: Icon, title, children }) {

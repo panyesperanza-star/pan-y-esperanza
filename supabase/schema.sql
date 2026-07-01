@@ -41,6 +41,7 @@ create table public.beneficiaries (
   postal_code text,
   phone text,
   email text,
+  photo_data_url text,
   birth_date date,
   sex text,
   nationality text,
