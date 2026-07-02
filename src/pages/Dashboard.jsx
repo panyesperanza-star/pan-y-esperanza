@@ -1,14 +1,12 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Banknote,
   Boxes,
   CalendarClock,
   CheckCircle2,
   Clock3,
   FileText,
   Gift,
-  HandCoins,
   HandHeart,
   KeyRound,
   Mail,
@@ -16,8 +14,6 @@ import {
   Play,
   ShieldAlert,
   UserCheck,
-  UserPlus,
-  UserX,
   Users
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -86,277 +82,177 @@ export function Dashboard({ data, currentUser, onNavigate }) {
     onNavigate?.(moduleId);
   }
 
-  const priorityCards = [
-    {
-      title: 'Familias urgentes',
-      value: operations.urgentFamilies.length,
-      detail: `${operations.priorityFamilies.length} familias priorizadas`,
-      icon: ShieldAlert,
-      moduleId: 'families',
-      tone: 'red'
-    },
-    {
-      title: `Sin ayuda +${STALE_HELP_DAYS} dias`,
-      value: operations.staleBeneficiaries.length,
-      detail: 'Beneficiarios activos',
-      icon: Clock3,
-      moduleId: 'beneficiaries',
-      tone: 'amber'
-    },
-    {
-      title: 'Stock critico',
-      value: operations.criticalStock.length,
-      detail: `${operations.outOfStock.length} productos agotados`,
-      icon: AlertTriangle,
-      moduleId: 'inventory',
-      tone: 'orange'
-    },
-    {
-      title: 'Caducidades proximas',
-      value: operations.expiringSoon.length,
-      detail: `Ventana de ${EXPIRY_WINDOW_DAYS} dias`,
-      icon: CalendarClock,
-      moduleId: 'inventory',
-      tone: 'yellow'
-    },
-    {
-      title: 'Correos pendientes',
-      value: operations.pendingEmails.length,
-      detail: 'Comunicaciones no resueltas',
-      icon: Mail,
-      moduleId: 'communications',
-      tone: 'blue'
-    },
-    {
-      title: 'Justificantes pendientes',
-      value: operations.pendingReceipts.length,
-      detail: 'Sin numero o firma',
-      icon: FileText,
-      moduleId: 'receipts',
-      tone: 'purple'
-    }
-  ];
-
-  const todayCards = [
-    {
-      title: 'Entregas de hoy',
-      value: operations.todayDeliveries.length,
-      detail: describeList(operations.todayDeliveries, (item) => item.beneficiary_name || item.help_type),
-      icon: PackageCheck,
-      moduleId: 'deliveries'
-    },
-    {
-      title: 'Nuevos beneficiarios',
-      value: operations.newBeneficiaries.length,
-      detail: describeList(operations.newBeneficiaries, (item) => item.full_name),
-      icon: UserPlus,
-      moduleId: 'beneficiaries'
-    },
-    {
-      title: 'Donaciones pendientes',
-      value: operations.pendingDonations.length,
-      detail: describeList(operations.pendingDonations, (item) => item.donor || item.donation_type),
-      icon: Gift,
-      moduleId: 'donations'
-    },
-    {
-      title: 'Voluntarios activos',
-      value: operations.activeVolunteers.length,
-      detail: describeList(operations.activeVolunteers, (item) => item.full_name),
-      icon: UserCheck,
-      moduleId: 'volunteers'
-    }
-  ];
-
-  const assistantItems = [
-    pluralSummary(operations.urgentFamilies.length, 'familia urgente', 'familias urgentes'),
-    pluralSummary(operations.todayDeliveries.length, 'entrega', 'entregas'),
-    pluralSummary(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
-    pluralSummary(operations.pendingDonations.length, 'donacion pendiente', 'donaciones pendientes')
-  ];
-  const firstTask = priorityCards.find((item) => Number(item.value) > 0 && canAccess(currentUser, item.moduleId))?.moduleId
-    || todayCards.find((item) => Number(item.value) > 0 && canAccess(currentUser, item.moduleId))?.moduleId
-    || (canAccess(currentUser, 'deliveries') ? 'deliveries' : 'dashboard');
+  const familyModule = canAccess(currentUser, 'families')
+    ? 'families'
+    : canAccess(currentUser, 'beneficiaries')
+      ? 'beneficiaries'
+      : null;
+  const priorityCards = buildPriorityCards(operations, currentUser, familyModule);
+  const quickItems = buildQuickItems(operations, currentUser, familyModule);
+  const tasks = buildTasks(operations, currentUser, familyModule);
+  const assistant = buildAssistantState(operations, currentUser, familyModule);
+  const communicationCards = buildCommunicationCards(operations, currentUser, secureSummary);
+  const summaryCards = buildSummaryCards(operations, data, currentUser);
+  const canSeeFamilies = Boolean(familyModule);
+  const canSeeInventory = canAccess(currentUser, 'inventory');
 
   return (
     <>
-      <PageHeader title="CENTRO DE OPERACIONES" description="Pagina principal de trabajo diario de Pan y Esperanza." />
+      <PageHeader title="CENTRO DE OPERACIONES" description="Pagina principal para decidir que necesita Pan y Esperanza hoy." />
 
       <AssistantCard
-        userName={displayUserName(currentUser)}
-        items={assistantItems}
-        onStart={() => openModule(firstTask)}
-        disabled={!canAccess(currentUser, firstTask)}
+        message={assistant.message}
+        recommendation={assistant.recommendation}
+        summaryItems={assistant.summaryItems}
+        onStart={() => openModule(assistant.primaryModule)}
+        disabled={!assistant.primaryModule}
       />
 
-      <section className="mt-5">
-        <SectionTitle title="PRIORIDADES" subtitle="Alertas calculadas automaticamente con los datos cargados desde Supabase." />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {priorityCards.map((card) => (
-            <ActionCard key={card.title} {...card} canOpen={canAccess(currentUser, card.moduleId)} onOpen={openModule} />
-          ))}
-        </div>
+      {quickItems.length > 0 && (
+        <section className="mt-5">
+          <SectionTitle title="BARRA RAPIDA DE HOY" subtitle={formatDate(today)} />
+          <QuickTodayBar items={quickItems} onOpen={openModule} />
+        </section>
+      )}
+
+      <section className="mt-6">
+        <SectionTitle title="PRIORIDADES" subtitle="Ordenadas para abrir directamente el modulo que corresponde." />
+        <PriorityDeck cards={priorityCards} onOpen={openModule} />
       </section>
 
       <section className="mt-6">
-        <SectionTitle title="HOY" subtitle={formatDate(today)} />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {todayCards.map((card) => (
-            <TodayCard key={card.title} {...card} canOpen={canAccess(currentUser, card.moduleId)} onOpen={openModule} />
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-6">
-        <SectionTitle title="FAMILIAS PRIORITARIAS" subtitle="Solo se muestran las unidades con mayor nivel de urgencia." />
-        {operations.priorityFamilies.length ? (
+        <SectionTitle title="MIS TAREAS" subtitle="Tareas automaticas generadas con datos reales." />
+        {tasks.length ? (
           <div className="grid gap-4 lg:grid-cols-2">
-            {operations.priorityFamilies.slice(0, FAMILY_LIMIT).map((family) => (
-              <FamilyPriorityCard key={family.id} family={family} canOpen={canAccess(currentUser, family.moduleId)} onOpen={openModule} />
+            {tasks.map((task) => (
+              <TaskCard key={task.title} task={task} onOpen={openModule} />
             ))}
           </div>
         ) : (
-          <EmptyState text="Sin familias prioritarias con los datos actuales." />
+          <EmptyState title="No hay tareas pendientes." text="Todo correcto por ahora." />
         )}
       </section>
 
-      <section className="mt-6">
-        <SectionTitle title="INVENTARIO" subtitle="Solo alertas: stock bajo, agotados y caducidades proximas." />
-        <div className="grid gap-5 lg:grid-cols-3">
-          <AlertList
-            title="Stock bajo"
-            icon={Boxes}
-            items={operations.lowStock}
-            empty="Sin productos bajo minimo."
-            renderItem={(item) => (
-              <>
-                <strong>{item.name}</strong>
-                <p>Stock: {formatNumber(item.stock)} {item.unit || ''}. Minimo: {formatNumber(item.low_stock_threshold)}.</p>
-              </>
-            )}
-            onOpen={() => openModule('inventory')}
-            canOpen={canAccess(currentUser, 'inventory')}
-          />
-          <AlertList
-            title="Productos agotados"
-            icon={AlertTriangle}
-            items={operations.outOfStock}
-            empty="Sin productos agotados."
-            renderItem={(item) => (
-              <>
-                <strong>{item.name}</strong>
-                <p>{item.category || 'Sin categoria'} - {item.location || 'Sin ubicacion'}</p>
-              </>
-            )}
-            onOpen={() => openModule('inventory')}
-            canOpen={canAccess(currentUser, 'inventory')}
-          />
-          <AlertList
-            title="Proximas caducidades"
-            icon={CalendarClock}
-            items={operations.expiringSoon}
-            empty="Sin caducidades proximas."
-            renderItem={(item) => (
-              <>
-                <strong>{item.name}</strong>
-                <p>{formatExpiry(item.expires_at, today)} - Lote {item.lot || '-'}</p>
-              </>
-            )}
-            onOpen={() => openModule('inventory')}
-            canOpen={canAccess(currentUser, 'inventory')}
-          />
-        </div>
-      </section>
-
-      <section className="mt-6">
-        <SectionTitle title="COMUNICACIONES" subtitle="Pendientes de correo, justificantes y recuperaciones de contrasena." />
-        <div className="grid gap-4 lg:grid-cols-3">
-          <CommunicationCard
-            title="Emails pendientes"
-            value={operations.pendingEmails.length}
-            detail={describeList(operations.pendingEmails, (item) => item.subject || item.recipient)}
-            icon={Mail}
-            moduleId="communications"
-            canOpen={canAccess(currentUser, 'communications')}
-            onOpen={openModule}
-          />
-          <CommunicationCard
-            title="Justificantes pendientes"
-            value={operations.pendingReceipts.length}
-            detail={describeList(operations.pendingReceipts, (item) => item.beneficiary_name || item.receipt_number)}
-            icon={FileText}
-            moduleId="receipts"
-            canOpen={canAccess(currentUser, 'receipts')}
-            onOpen={openModule}
-          />
-          <CommunicationCard
-            title="Recuperaciones de contrasena"
-            value={secureSummary.loading ? '...' : secureSummary.pendingPasswordResets ?? '-'}
-            detail={secureSummary.pendingPasswordResets === null ? 'Visible con permiso de usuarios' : 'Solicitudes vigentes'}
-            icon={KeyRound}
-            moduleId="users"
-            canOpen={canAccess(currentUser, 'users')}
-            onOpen={openModule}
-          />
-        </div>
-      </section>
-
-      <section className="mt-6">
-        <SectionTitle title="RESUMEN" subtitle="Estadisticas generales del sistema." />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Beneficiarios activos" value={operations.summary.activeBeneficiaries} icon={HandHeart} />
-          <StatCard label="Familias activas" value={operations.summary.activeFamilies} icon={Users} />
-          <StatCard label="Menores atendidos" value={operations.summary.minors} icon={Users} />
-          <StatCard label="Entregas realizadas" value={operations.activeDeliveries.length} icon={PackageCheck} />
-          <StatCard label="Entregas del mes" value={operations.summary.deliveriesThisMonth} icon={PackageCheck} />
-          <StatCard label="Inventario bajo minimo" value={operations.criticalStock.length} icon={AlertTriangle} />
-          <StatCard label="Ingresos del mes" value={`${operations.summary.monthlyIncome.toFixed(2)} EUR`} icon={HandCoins} />
-          <StatCard label="Gastos del mes" value={`${operations.summary.monthlyExpenses.toFixed(2)} EUR`} icon={Banknote} />
-          <StatCard label="Pendiente devolucion" value={`${operations.summary.pendingLoans.toFixed(2)} EUR`} icon={Boxes} />
-          <StatCard label="Correos enviados" value={(data.email_logs || []).length} icon={Mail} />
-          <StatCard label="Usuarios activos" value={operations.summary.activeUsers} icon={UserCheck} />
-          <StatCard label="Usuarios bloqueados" value={operations.summary.blockedUsers} icon={UserX} />
-        </div>
-        <section className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-          <h3 className="font-bold text-ink">Ultimos accesos</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            {operations.summary.lastAccesses.map((user) => (
-              <div key={user.id} className="rounded-md bg-slate-50 p-3 text-sm">
-                <strong>{user.first_name} {user.last_name}</strong>
-                <p className="text-slate-600">{formatDate(user.last_access_at)}</p>
-              </div>
-            ))}
-            {!operations.summary.lastAccesses.length && <p className="text-sm text-slate-500">Sin accesos registrados.</p>}
-          </div>
+      {canSeeFamilies && (
+        <section className="mt-6">
+          <SectionTitle title="FAMILIAS PRIORITARIAS" subtitle="Solo las unidades con mayor urgencia operativa." />
+          {operations.priorityFamilies.length ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {operations.priorityFamilies.slice(0, FAMILY_LIMIT).map((family) => (
+                <FamilyPriorityCard key={family.id} family={family} moduleId={familyModule} onOpen={openModule} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No hay asuntos urgentes." text="No hay familias prioritarias con los datos actuales." />
+          )}
         </section>
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <Chart title="Entregas por mes" data={operations.summary.monthlyDeliveries} />
-          <Chart title="Productos entregados" data={operations.summary.productTotals} />
-        </div>
+      )}
+
+      {(canSeeInventory || communicationCards.length > 0) && (
+        <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          {canSeeInventory && (
+            <div>
+              <SectionTitle title="INVENTARIO" subtitle="Solo alertas utiles: bajo minimo, agotados y caducidades." />
+              <div className="grid gap-4 lg:grid-cols-3 xl:grid-cols-1">
+                <AlertList
+                  title="Stock bajo"
+                  icon={Boxes}
+                  items={operations.lowStock}
+                  empty="Todo correcto por ahora."
+                  renderItem={(item) => (
+                    <>
+                      <strong>{item.name}</strong>
+                      <p>Stock: {formatNumber(item.stock)} {item.unit || ''}. Minimo: {formatNumber(item.low_stock_threshold)}.</p>
+                    </>
+                  )}
+                  onOpen={() => openModule('inventory')}
+                />
+                <AlertList
+                  title="Productos agotados"
+                  icon={AlertTriangle}
+                  items={operations.outOfStock}
+                  empty="No hay productos agotados."
+                  renderItem={(item) => (
+                    <>
+                      <strong>{item.name}</strong>
+                      <p>{item.category || 'Sin categoria'} - {item.location || 'Sin ubicacion'}</p>
+                    </>
+                  )}
+                  onOpen={() => openModule('inventory')}
+                />
+                <AlertList
+                  title="Proximas caducidades"
+                  icon={CalendarClock}
+                  items={operations.expiringSoon}
+                  empty="No hay caducidades proximas."
+                  renderItem={(item) => (
+                    <>
+                      <strong>{item.name}</strong>
+                      <p>{formatExpiry(item.expires_at, today)} - Lote {item.lot || '-'}</p>
+                    </>
+                  )}
+                  onOpen={() => openModule('inventory')}
+                />
+              </div>
+            </div>
+          )}
+
+          {communicationCards.length > 0 && (
+            <div>
+              <SectionTitle title="COMUNICACIONES" subtitle="Correos, justificantes y recuperaciones pendientes." />
+              <div className="grid gap-4">
+                {communicationCards.map((card) => (
+                  <CommunicationCard key={card.title} {...card} onOpen={openModule} />
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="mt-6">
+        <SectionTitle title="RESUMEN GENERAL" subtitle="Indicadores generales al final de la pantalla." />
+        {summaryCards.length ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {summaryCards.map((card) => (
+              <StatCard key={card.label} label={card.label} value={card.value} icon={card.icon} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="Sin resumen disponible." text="No hay indicadores visibles con tus permisos." />
+        )}
       </section>
     </>
   );
 }
 
-function AssistantCard({ userName, items, onStart, disabled }) {
+function AssistantCard({ message, recommendation, summaryItems, onStart, disabled }) {
   return (
-    <section className="rounded-md bg-brand-700 p-5 text-white shadow-panel">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+    <section className="rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
+      <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Asistente de jornada</p>
-          <h3 className="mt-2 text-3xl font-bold">Buenos dias, {userName}.</h3>
-          <p className="mt-2 text-sm text-brand-50">Hoy tienes:</p>
-          <ul className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            {items.map((item) => (
-              <li key={item} className="flex items-center gap-2 rounded-md bg-white/10 px-3 py-2">
-                <CheckCircle2 size={17} className="text-brand-100" />
+          <h3 className="mt-2 max-w-4xl text-2xl font-bold leading-tight sm:text-3xl">{message}</h3>
+          <div className="mt-4 rounded-md bg-white/10 p-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Recomendacion principal</p>
+            <p className="mt-1 text-sm font-semibold text-white">{recommendation}</p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {summaryItems.map((item) => (
+              <span key={item} className="inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm">
+                <CheckCircle2 size={16} className="text-brand-100" />
                 {item}
-              </li>
+              </span>
             ))}
-          </ul>
+          </div>
         </div>
-        <Button variant="secondary" onClick={onStart} disabled={disabled} className="self-start whitespace-nowrap border-white bg-white text-brand-700 hover:bg-brand-50 lg:self-center">
-          <Play size={18} /> Comenzar jornada
+        <Button
+          variant="secondary"
+          onClick={onStart}
+          disabled={disabled}
+          className="h-14 self-start whitespace-nowrap border-white bg-white px-5 text-base text-brand-700 hover:bg-brand-50 lg:self-center"
+        >
+          <Play size={20} /> Comenzar jornada
         </Button>
       </div>
     </section>
@@ -372,64 +268,116 @@ function SectionTitle({ title, subtitle }) {
   );
 }
 
-function ActionCard({ title, value, detail, icon: Icon, moduleId, tone, canOpen, onOpen }) {
+function QuickTodayBar({ items, onOpen }) {
   return (
-    <button
-      type="button"
-      disabled={!canOpen}
-      onClick={() => onOpen(moduleId)}
-      className={`focus-ring group flex min-h-32 w-full flex-col justify-between rounded-md border bg-white p-4 text-left shadow-panel transition ${toneClasses(tone)} disabled:cursor-not-allowed disabled:opacity-60`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span className="rounded-md bg-white/70 p-2"><Icon size={22} /></span>
-        <ArrowRight size={18} className="opacity-60 transition group-hover:translate-x-0.5" />
-      </div>
-      <div className="mt-4">
-        <p className="text-3xl font-bold">{value}</p>
-        <p className="mt-1 font-semibold text-ink">{title}</p>
-        <p className="mt-1 text-sm text-slate-600">{detail}</p>
-      </div>
-    </button>
+    <div className="grid gap-3 md:grid-cols-5">
+      {items.map((item) => (
+        <button
+          key={item.title}
+          type="button"
+          onClick={() => onOpen(item.moduleId)}
+          className={`focus-ring rounded-md border p-3 text-left shadow-panel transition hover:-translate-y-0.5 ${quickToneClasses(item.tone)}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="rounded-md bg-white/70 p-2"><item.icon size={18} /></span>
+            <ArrowRight size={16} className="opacity-60" />
+          </div>
+          <p className="mt-3 text-2xl font-bold">{item.value}</p>
+          <p className="text-sm font-semibold">{item.title}</p>
+        </button>
+      ))}
+    </div>
   );
 }
 
-function TodayCard({ title, value, detail, icon: Icon, moduleId, canOpen, onOpen }) {
+function PriorityDeck({ cards, onOpen }) {
+  if (!cards.length) return <EmptyState title="No hay asuntos urgentes." text="No hay prioridades visibles con tus permisos." />;
+
+  const hasActivePriority = cards.some((card) => Number(card.value) > 0);
+  const featured = cards.find((card) => Number(card.value) > 0) || cards[0];
+  const compactCards = cards.filter((card) => card.title !== featured.title);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.05fr_1.4fr]">
+      <button
+        type="button"
+        onClick={() => onOpen(featured.moduleId)}
+        className={`focus-ring group min-h-56 rounded-md border p-5 text-left shadow-panel transition hover:-translate-y-0.5 ${priorityToneClasses(hasActivePriority ? featured.tone : 'green')}`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <span className="rounded-md bg-white/70 p-3"><featured.icon size={28} /></span>
+          <ArrowRight size={20} className="opacity-60 transition group-hover:translate-x-0.5" />
+        </div>
+        <p className="mt-8 text-5xl font-bold">{featured.value}</p>
+        <p className="mt-2 text-lg font-bold">{hasActivePriority ? featured.title : 'No hay asuntos urgentes.'}</p>
+        <p className="mt-2 text-sm opacity-80">{hasActivePriority ? featured.detail : 'Todo correcto por ahora.'}</p>
+      </button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {compactCards.map((card) => (
+          <PriorityCompactCard key={card.title} card={card} onOpen={onOpen} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PriorityCompactCard({ card, onOpen }) {
+  const tone = Number(card.value) > 0 ? card.tone : 'green';
   return (
     <button
       type="button"
-      disabled={!canOpen}
-      onClick={() => onOpen(moduleId)}
-      className="focus-ring rounded-md border border-slate-200 bg-white p-4 text-left shadow-panel transition hover:border-brand-200 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+      onClick={() => onOpen(card.moduleId)}
+      className={`focus-ring rounded-md border p-4 text-left shadow-panel transition hover:-translate-y-0.5 ${priorityToneClasses(tone)}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="rounded-md bg-brand-50 p-2 text-brand-700"><Icon size={20} /></span>
-        <ArrowRight size={17} className="text-slate-400" />
+        <span className="rounded-md bg-white/70 p-2"><card.icon size={20} /></span>
+        <span className="text-2xl font-bold">{card.value}</span>
       </div>
-      <p className="mt-4 text-2xl font-bold text-ink">{value}</p>
-      <p className="mt-1 font-semibold text-ink">{title}</p>
-      <p className="mt-2 min-h-10 text-sm text-slate-500">{detail}</p>
+      <p className="mt-3 font-bold">{card.title}</p>
+      <p className="mt-1 text-sm opacity-80">{Number(card.value) > 0 ? card.detail : 'Todo correcto por ahora.'}</p>
     </button>
   );
 }
 
-function FamilyPriorityCard({ family, canOpen, onOpen }) {
+function TaskCard({ task, onOpen }) {
   return (
     <article className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <span className={taskPriorityClass(task.priority)}>{task.priority}</span>
+          <h4 className="mt-3 text-lg font-bold text-ink">{task.title}</h4>
+          <p className="mt-1 text-sm text-slate-600">{task.detail}</p>
+        </div>
+        <Button variant="secondary" onClick={() => onOpen(task.moduleId)} className="self-start whitespace-nowrap">
+          {task.action}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function FamilyPriorityCard({ family, moduleId, onOpen }) {
+  const isCritical = family.priorityLevel === 'Critica';
+  return (
+    <article className={`rounded-md border p-5 shadow-panel ${isCritical ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{family.code || 'Unidad familiar'}</p>
-          <h4 className="mt-1 text-lg font-bold text-ink">{family.name}</h4>
+          <h4 className={`mt-1 text-xl font-bold ${isCritical ? 'text-red-950' : 'text-ink'}`}>{family.name}</h4>
         </div>
         <span className={priorityBadgeClass(family.priorityLevel)}>{family.priorityLevel}</span>
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Metric label="Miembros" value={family.membersCount} />
         <Metric label="Menores" value={family.minorsCount} />
         <Metric label="Dias sin ayuda" value={family.daysWithoutHelpText} />
-        <Metric label="Prioridad" value={family.priorityLevel} />
+        <Metric label="Ultima ayuda" value={family.lastHelpText} />
       </dl>
+      <div className="mt-4 rounded-md bg-white/70 p-3 text-sm text-slate-700">
+        <strong>Motivo:</strong> {family.priorityReason}
+      </div>
       <div className="mt-4 flex justify-end">
-        <Button variant="secondary" disabled={!canOpen} onClick={() => onOpen(family.moduleId)}>
+        <Button variant={isCritical ? 'primary' : 'secondary'} onClick={() => onOpen(moduleId || family.moduleId)}>
           Ver expediente
         </Button>
       </div>
@@ -437,12 +385,12 @@ function FamilyPriorityCard({ family, canOpen, onOpen }) {
   );
 }
 
-function AlertList({ title, icon: Icon, items, empty, renderItem, onOpen, canOpen }) {
+function AlertList({ title, icon: Icon, items, empty, renderItem, onOpen }) {
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
       <div className="flex items-center justify-between gap-3">
         <h4 className="flex items-center gap-2 font-bold text-ink"><Icon size={19} /> {title}</h4>
-        <Button variant="secondary" disabled={!canOpen} onClick={onOpen}>
+        <Button variant="secondary" onClick={onOpen}>
           Abrir
         </Button>
       </div>
@@ -458,21 +406,21 @@ function AlertList({ title, icon: Icon, items, empty, renderItem, onOpen, canOpe
   );
 }
 
-function CommunicationCard({ title, value, detail, icon: Icon, moduleId, canOpen, onOpen }) {
+function CommunicationCard({ title, value, detail, icon: Icon, moduleId, onOpen }) {
+  const active = Number(value) > 0;
   return (
     <button
       type="button"
-      disabled={!canOpen}
       onClick={() => onOpen(moduleId)}
-      className="focus-ring rounded-md border border-slate-200 bg-white p-5 text-left shadow-panel transition hover:border-brand-200 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className={`focus-ring rounded-md border p-4 text-left shadow-panel transition hover:-translate-y-0.5 ${active ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="rounded-md bg-slate-100 p-2 text-slate-700"><Icon size={20} /></span>
-        <ArrowRight size={17} className="text-slate-400" />
+        <span className="rounded-md bg-white/70 p-2"><Icon size={20} /></span>
+        <ArrowRight size={17} className="opacity-60" />
       </div>
-      <p className="mt-4 text-3xl font-bold text-ink">{value}</p>
-      <p className="mt-1 font-semibold text-ink">{title}</p>
-      <p className="mt-2 text-sm text-slate-500">{detail}</p>
+      <p className="mt-4 text-3xl font-bold">{value}</p>
+      <p className="mt-1 font-semibold">{title}</p>
+      <p className="mt-2 text-sm opacity-80">{detail}</p>
     </button>
   );
 }
@@ -486,28 +434,256 @@ function Metric({ label, value }) {
   );
 }
 
-function EmptyState({ text }) {
-  return <div className="rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-panel">{text}</div>;
+function EmptyState({ title, text }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-5 text-sm shadow-panel">
+      <p className="font-bold text-ink">{title}</p>
+      {text && <p className="mt-1 text-slate-500">{text}</p>}
+    </div>
+  );
 }
 
-function Chart({ title, data }) {
-  const max = Math.max(...Object.values(data), 1);
-  return (
-    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-      <h3 className="font-bold text-ink">{title}</h3>
-      <div className="mt-4 space-y-3">
-        {Object.entries(data).map(([label, value]) => (
-          <div key={label}>
-            <div className="mb-1 flex justify-between text-sm"><span>{label}</span><strong>{value}</strong></div>
-            <div className="h-3 rounded bg-slate-100">
-              <div className="h-3 rounded bg-brand-600" style={{ width: `${Math.max((value / max) * 100, 8)}%` }} />
-            </div>
-          </div>
-        ))}
-        {!Object.keys(data).length && <p className="text-sm text-slate-500">Sin datos suficientes.</p>}
-      </div>
-    </section>
-  );
+function buildPriorityCards(operations, currentUser, familyModule) {
+  return [
+    familyModule && {
+      title: 'Familias urgentes',
+      value: operations.urgentFamilies.length,
+      detail: `${operations.criticalFamilies.length} criticas, ${operations.priorityFamilies.length} priorizadas`,
+      icon: ShieldAlert,
+      moduleId: familyModule,
+      tone: 'red'
+    },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: `Sin ayuda +${STALE_HELP_DAYS} dias`,
+      value: operations.staleBeneficiaries.length,
+      detail: 'Beneficiarios activos sin ayuda reciente',
+      icon: Clock3,
+      moduleId: 'beneficiaries',
+      tone: 'orange'
+    },
+    canAccess(currentUser, 'inventory') && {
+      title: 'Stock critico',
+      value: operations.criticalStock.length,
+      detail: `${operations.outOfStock.length} agotados`,
+      icon: AlertTriangle,
+      moduleId: 'inventory',
+      tone: 'red'
+    },
+    canAccess(currentUser, 'inventory') && {
+      title: 'Caducidades proximas',
+      value: operations.expiringSoon.length,
+      detail: `Proximos ${EXPIRY_WINDOW_DAYS} dias`,
+      icon: CalendarClock,
+      moduleId: 'inventory',
+      tone: 'orange'
+    },
+    canAccess(currentUser, 'communications') && {
+      title: 'Correos pendientes',
+      value: operations.pendingEmails.length,
+      detail: 'Comunicaciones no resueltas',
+      icon: Mail,
+      moduleId: 'communications',
+      tone: 'blue'
+    },
+    canAccess(currentUser, 'receipts') && {
+      title: 'Justificantes pendientes',
+      value: operations.pendingReceipts.length,
+      detail: 'Sin numero o firma',
+      icon: FileText,
+      moduleId: 'receipts',
+      tone: 'orange'
+    }
+  ].filter(Boolean);
+}
+
+function buildQuickItems(operations, currentUser, familyModule) {
+  return [
+    familyModule && {
+      title: 'Familias criticas',
+      value: operations.criticalFamilies.length,
+      icon: ShieldAlert,
+      moduleId: familyModule,
+      tone: operations.criticalFamilies.length ? 'red' : 'green'
+    },
+    canAccess(currentUser, 'deliveries') && {
+      title: 'Entregas de hoy',
+      value: operations.todayDeliveries.length,
+      icon: PackageCheck,
+      moduleId: 'deliveries',
+      tone: operations.todayDeliveries.length ? 'blue' : 'green'
+    },
+    canAccess(currentUser, 'inventory') && {
+      title: 'Productos criticos',
+      value: operations.criticalStock.length,
+      icon: Boxes,
+      moduleId: 'inventory',
+      tone: operations.criticalStock.length ? 'red' : 'green'
+    },
+    canAccess(currentUser, 'receipts') && {
+      title: 'Justificantes pendientes',
+      value: operations.pendingReceipts.length,
+      icon: FileText,
+      moduleId: 'receipts',
+      tone: operations.pendingReceipts.length ? 'orange' : 'green'
+    },
+    canAccess(currentUser, 'donations') && {
+      title: 'Donaciones pendientes',
+      value: operations.pendingDonations.length,
+      icon: Gift,
+      moduleId: 'donations',
+      tone: operations.pendingDonations.length ? 'orange' : 'green'
+    }
+  ].filter(Boolean);
+}
+
+function buildTasks(operations, currentUser, familyModule) {
+  return [
+    familyModule && operations.criticalFamilies.length > 0 && {
+      title: 'Revisar familias criticas',
+      detail: pluralSummary(operations.criticalFamilies.length, 'familia critica requiere atencion', 'familias criticas requieren atencion'),
+      priority: 'Critica',
+      action: 'Ver familias',
+      moduleId: familyModule
+    },
+    canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0 && {
+      title: 'Registrar entregas pendientes',
+      detail: pluralSummary(operations.todayDeliveries.length, 'entrega de hoy para revisar', 'entregas de hoy para revisar'),
+      priority: 'Alta',
+      action: 'Ir a entregas',
+      moduleId: 'deliveries'
+    },
+    canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && {
+      title: 'Revisar stock bajo',
+      detail: pluralSummary(operations.criticalStock.length, 'producto esta bajo minimo', 'productos estan bajo minimo'),
+      priority: operations.outOfStock.length ? 'Critica' : 'Alta',
+      action: 'Abrir inventario',
+      moduleId: 'inventory'
+    },
+    canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && {
+      title: 'Revisar productos proximos a caducar',
+      detail: pluralSummary(operations.expiringSoon.length, 'producto vence pronto', 'productos vencen pronto'),
+      priority: 'Alta',
+      action: 'Abrir inventario',
+      moduleId: 'inventory'
+    },
+    canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && {
+      title: 'Enviar justificantes pendientes',
+      detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revision', 'justificantes necesitan revision'),
+      priority: 'Alta',
+      action: 'Ver justificantes',
+      moduleId: 'receipts'
+    },
+    canAccess(currentUser, 'beneficiaries') && operations.newBeneficiaries.length > 0 && {
+      title: 'Revisar beneficiarios nuevos',
+      detail: pluralSummary(operations.newBeneficiaries.length, 'beneficiario nuevo hoy', 'beneficiarios nuevos hoy'),
+      priority: 'Media',
+      action: 'Ver beneficiarios',
+      moduleId: 'beneficiaries'
+    }
+  ].filter(Boolean);
+}
+
+function buildAssistantState(operations, currentUser, familyModule) {
+  const primary = getPrimaryAction(operations, currentUser, familyModule);
+  const parts = [
+    familyModule && operations.criticalFamilies.length > 0 && pluralLabel(operations.criticalFamilies.length, 'familia critica', 'familias criticas'),
+    canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0 && pluralLabel(operations.todayDeliveries.length, 'entrega de hoy', 'entregas de hoy'),
+    canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && pluralLabel(operations.criticalStock.length, 'producto critico', 'productos criticos'),
+    canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
+    canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
+    canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donacion pendiente', 'donaciones pendientes')
+  ].filter(Boolean);
+  const userName = displayUserName(currentUser);
+  const message = parts.length
+    ? `Buenos dias, ${userName}. Hoy hay ${joinSentence(parts)}.`
+    : `Buenos dias, ${userName}. No hay asuntos urgentes.`;
+
+  return {
+    message,
+    recommendation: primary?.recommendation || 'Todo correcto por ahora.',
+    primaryModule: primary?.moduleId || null,
+    summaryItems: parts.length ? parts.map((item) => `${item}.`) : ['Todo correcto por ahora.']
+  };
+}
+
+function getPrimaryAction(operations, currentUser, familyModule) {
+  if (familyModule && operations.criticalFamilies.length > 0) {
+    return { moduleId: familyModule, recommendation: 'Empieza revisando la familia critica con mas riesgo.' };
+  }
+  if (canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0) {
+    return { moduleId: 'deliveries', recommendation: 'Empieza por las entregas de hoy y deja registradas las acciones pendientes.' };
+  }
+  if (canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0) {
+    return { moduleId: 'inventory', recommendation: 'Empieza revisando el stock critico antes de preparar nuevas entregas.' };
+  }
+  if (canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0) {
+    return { moduleId: 'inventory', recommendation: 'Prioriza los productos proximos a caducar para evitar perdidas.' };
+  }
+  if (canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0) {
+    return { moduleId: 'receipts', recommendation: 'Cierra los justificantes pendientes para mantener la documentacion al dia.' };
+  }
+  return null;
+}
+
+function buildCommunicationCards(operations, currentUser, secureSummary) {
+  return [
+    canAccess(currentUser, 'communications') && {
+      title: 'Emails pendientes',
+      value: operations.pendingEmails.length,
+      detail: describeList(operations.pendingEmails, (item) => item.subject || item.recipient),
+      icon: Mail,
+      moduleId: 'communications'
+    },
+    canAccess(currentUser, 'receipts') && {
+      title: 'Justificantes pendientes',
+      value: operations.pendingReceipts.length,
+      detail: describeList(operations.pendingReceipts, (item) => item.beneficiary_name || item.receipt_number),
+      icon: FileText,
+      moduleId: 'receipts'
+    },
+    canAccess(currentUser, 'users') && {
+      title: 'Recuperaciones de contrasena',
+      value: secureSummary.loading ? '...' : secureSummary.pendingPasswordResets ?? 0,
+      detail: secureSummary.loading ? 'Cargando solicitudes vigentes' : 'Solicitudes vigentes',
+      icon: KeyRound,
+      moduleId: 'users'
+    }
+  ].filter(Boolean);
+}
+
+function buildSummaryCards(operations, data, currentUser) {
+  return [
+    canAccess(currentUser, 'beneficiaries') && {
+      label: 'Beneficiarios activos',
+      value: operations.summary.activeBeneficiaries,
+      icon: HandHeart
+    },
+    canAccess(currentUser, 'families') && {
+      label: 'Familias activas',
+      value: operations.summary.activeFamilies,
+      icon: Users
+    },
+    canAccess(currentUser, 'deliveries') && {
+      label: 'Entregas del mes',
+      value: operations.summary.deliveriesThisMonth,
+      icon: PackageCheck
+    },
+    canAccess(currentUser, 'inventory') && {
+      label: 'Inventario bajo minimo',
+      value: operations.criticalStock.length,
+      icon: AlertTriangle
+    },
+    canAccess(currentUser, 'communications') && {
+      label: 'Correos enviados',
+      value: (data.email_logs || []).length,
+      icon: Mail
+    },
+    canAccess(currentUser, 'users') && {
+      label: 'Usuarios activos',
+      value: operations.summary.activeUsers,
+      icon: UserCheck
+    }
+  ].filter(Boolean);
 }
 
 function buildOperations(data, today, pendingPasswordResets) {
@@ -515,6 +691,7 @@ function buildOperations(data, today, pendingPasswordResets) {
   const activeBeneficiaries = (data.beneficiaries || []).filter((item) => item.is_active);
   const latestDeliveryByBeneficiary = latestDeliveriesMap(activeDeliveries);
   const priorityFamilies = buildFamilyPriorities(data, activeDeliveries, latestDeliveryByBeneficiary, today);
+  const criticalFamilies = priorityFamilies.filter((item) => item.priorityLevel === 'Critica');
   const urgentFamilies = priorityFamilies.filter((item) => ['Critica', 'Alta'].includes(item.priorityLevel));
   const staleBeneficiaries = activeBeneficiaries.filter((beneficiary) => {
     const latest = beneficiary.last_help_at || latestDeliveryByBeneficiary.get(beneficiary.id)?.delivered_at;
@@ -537,12 +714,12 @@ function buildOperations(data, today, pendingPasswordResets) {
   const todayDeliveries = activeDeliveries.filter((item) => toDateKey(item.delivered_at) === today);
   const newBeneficiaries = activeBeneficiaries.filter((item) => toDateKey(item.joined_at || item.created_at) === today);
   const pendingDonations = (data.donations || []).filter(isPendingDonation);
-  const activeVolunteers = (data.volunteers || []).filter(isActiveVolunteer);
 
   return {
     activeDeliveries,
     activeBeneficiaries,
     priorityFamilies,
+    criticalFamilies,
     urgentFamilies,
     staleBeneficiaries,
     outOfStock,
@@ -554,49 +731,23 @@ function buildOperations(data, today, pendingPasswordResets) {
     todayDeliveries,
     newBeneficiaries,
     pendingDonations,
-    activeVolunteers,
     pendingPasswordResets,
-    summary: buildSummary(data, activeDeliveries, criticalStock)
+    summary: buildSummary(data, activeDeliveries, today)
   };
 }
 
-function buildSummary(data, activeDeliveries, lowStock) {
-  const month = todayISO().slice(0, 7);
+function buildSummary(data, activeDeliveries, today) {
+  const month = today.slice(0, 7);
   const activeBeneficiaries = (data.beneficiaries || []).filter((item) => item.is_active).length;
   const activeFamilies = (data.families || []).length;
-  const minors = (data.beneficiaries || []).reduce((total, item) => total + Number(item.minors_count || 0), 0);
   const deliveriesThisMonth = activeDeliveries.filter((item) => String(item.delivered_at || '').startsWith(month)).length;
-  const monthlyIncome = (data.treasury_incomes || []).filter((item) => String(item.income_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
-  const monthlyExpenses = (data.treasury_expenses || []).filter((item) => String(item.expense_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
-  const pendingLoans = (data.treasury_loans || []).filter((item) => ['Pendiente', 'Pendiente de devolver', 'Parcialmente devuelto'].includes(item.status)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const activeUsers = (data.app_users || []).filter((user) => getUserStatus(user) === 'Activo').length;
-  const blockedUsers = (data.app_users || []).filter((user) => getUserStatus(user) !== 'Activo').length;
-  const lastAccesses = [...(data.app_users || [])].filter((user) => user.last_access_at).sort((a, b) => String(b.last_access_at).localeCompare(String(a.last_access_at))).slice(0, 3);
-  const monthlyDeliveries = activeDeliveries.reduce((acc, item) => {
-    const key = String(item.delivered_at || '').slice(0, 7) || 'Sin fecha';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const productTotals = activeDeliveries.reduce((acc, item) => {
-    const key = item.inventory_item_name || 'Sin producto';
-    acc[key] = (acc[key] || 0) + Number(item.quantity || 0);
-    return acc;
-  }, {});
 
   return {
     activeBeneficiaries,
     activeFamilies,
-    minors,
     deliveriesThisMonth,
-    monthlyIncome,
-    monthlyExpenses,
-    pendingLoans,
-    activeUsers,
-    blockedUsers,
-    lastAccesses,
-    monthlyDeliveries,
-    productTotals,
-    lowStock
+    activeUsers
   };
 }
 
@@ -653,16 +804,37 @@ function enrichFamilyGroup(group, activeDeliveries, latestDeliveryByBeneficiary,
   const situations = beneficiaries.map((item) => normalize(item.situation));
   const hasUrgentSituation = situations.some((item) => item.includes('urgente'));
   const hasPrioritySituation = situations.some((item) => item.includes('prioritario') || item.includes('vulnerable'));
+  const reasons = [];
   let priorityScore = 0;
 
-  if (hasUrgentSituation) priorityScore += 50;
-  if (hasPrioritySituation) priorityScore += 35;
-  if (!latestHelpAt && beneficiaries.length) priorityScore += 35;
-  if (Number.isFinite(daysWithoutHelp) && daysWithoutHelp >= 60) priorityScore += 30;
-  else if (Number.isFinite(daysWithoutHelp) && daysWithoutHelp >= STALE_HELP_DAYS) priorityScore += 15;
-  if (minorsCount > 0) priorityScore += 10;
+  if (hasUrgentSituation) {
+    priorityScore += 50;
+    reasons.push('situacion urgente registrada');
+  }
+  if (hasPrioritySituation) {
+    priorityScore += 35;
+    reasons.push('situacion prioritaria o vulnerable');
+  }
+  if (!latestHelpAt && beneficiaries.length) {
+    priorityScore += 35;
+    reasons.push('sin ayudas registradas');
+  }
+  if (Number.isFinite(daysWithoutHelp) && daysWithoutHelp >= 60) {
+    priorityScore += 30;
+    reasons.push(`${daysWithoutHelp} dias sin ayuda`);
+  } else if (Number.isFinite(daysWithoutHelp) && daysWithoutHelp >= STALE_HELP_DAYS) {
+    priorityScore += 15;
+    reasons.push(`${daysWithoutHelp} dias sin ayuda`);
+  }
+  if (minorsCount > 0) {
+    priorityScore += 10;
+    reasons.push(`${minorsCount} menores`);
+  }
   if (minorsCount >= 3) priorityScore += 10;
-  if (membersCount >= 5) priorityScore += 10;
+  if (membersCount >= 5) {
+    priorityScore += 10;
+    reasons.push(`${membersCount} miembros`);
+  }
 
   return {
     ...group,
@@ -672,6 +844,8 @@ function enrichFamilyGroup(group, activeDeliveries, latestDeliveryByBeneficiary,
     minorsCount,
     daysWithoutHelp,
     daysWithoutHelpText: Number.isFinite(daysWithoutHelp) ? String(daysWithoutHelp) : 'Sin registro',
+    lastHelpText: latestHelpAt ? formatDate(latestHelpAt) : 'Sin ayuda registrada',
+    priorityReason: sentenceCase(reasons[0] || 'seguimiento social'),
     priorityScore,
     priorityLevel: priorityLevel(priorityScore)
   };
@@ -681,7 +855,7 @@ function priorityLevel(score) {
   if (score >= 70) return 'Critica';
   if (score >= 45) return 'Alta';
   if (score >= 25) return 'Media';
-  return 'Seguimiento';
+  return 'Normal';
 }
 
 function latestDeliveriesMap(deliveries) {
@@ -710,12 +884,6 @@ function isPendingDonation(donation) {
   return ['pendiente', 'pending', 'solicitada', 'comprometida'].includes(status);
 }
 
-function isActiveVolunteer(volunteer) {
-  if (Object.prototype.hasOwnProperty.call(volunteer, 'is_active')) return volunteer.is_active !== false;
-  const status = normalize(volunteer.status || '');
-  return !status || !['inactivo', 'bloqueado', 'baja'].includes(status);
-}
-
 function daysBetween(from, to) {
   if (!from || !to) return Number.NaN;
   const start = new Date(toDateKey(from));
@@ -729,7 +897,7 @@ function toDateKey(value) {
 }
 
 function describeList(items, picker) {
-  if (!items.length) return 'Sin registros pendientes.';
+  if (!items.length) return 'Todo correcto por ahora.';
   const names = items.slice(0, 2).map(picker).filter(Boolean);
   if (!names.length) return `${items.length} registro${items.length === 1 ? '' : 's'}`;
   const extra = items.length > names.length ? ` +${items.length - names.length}` : '';
@@ -740,26 +908,52 @@ function pluralSummary(count, singular, plural) {
   return `${count} ${count === 1 ? singular : plural}.`;
 }
 
-function displayUserName(user) {
-  return user?.first_name || String(user?.email || 'Elizabeth').split('@')[0] || 'Elizabeth';
+function pluralLabel(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function toneClasses(tone) {
+function joinSentence(parts) {
+  if (parts.length <= 1) return parts[0] || '';
+  if (parts.length === 2) return `${parts[0]} y ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`;
+}
+
+function displayUserName(user) {
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+  return fullName || user?.full_name || String(user?.email || 'Elizabeth').split('@')[0] || 'Elizabeth';
+}
+
+function priorityToneClasses(tone) {
   const classes = {
     red: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100',
     orange: 'border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100',
-    yellow: 'border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100',
     blue: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100',
-    purple: 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+    green: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
   };
   return classes[tone] || classes.blue;
 }
 
-function priorityBadgeClass(level) {
-  if (level === 'Critica') return 'rounded-md bg-red-50 px-2 py-1 text-xs font-bold text-red-700';
-  if (level === 'Alta') return 'rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700';
+function quickToneClasses(tone) {
+  const classes = {
+    red: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100',
+    orange: 'border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100',
+    green: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+  };
+  return classes[tone] || classes.blue;
+}
+
+function taskPriorityClass(priority) {
+  if (priority === 'Critica') return 'rounded-md bg-red-50 px-2 py-1 text-xs font-bold text-red-700';
+  if (priority === 'Alta') return 'rounded-md bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700';
   return 'rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700';
+}
+
+function priorityBadgeClass(level) {
+  if (level === 'Critica') return 'rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white';
+  if (level === 'Alta') return 'rounded-md bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700';
+  if (level === 'Media') return 'rounded-md bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700';
+  return 'rounded-md bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700';
 }
 
 function formatExpiry(value, today) {
@@ -773,6 +967,11 @@ function formatExpiry(value, today) {
 function formatNumber(value) {
   const number = Number(value || 0);
   return Number.isInteger(number) ? String(number) : number.toFixed(2);
+}
+
+function sentenceCase(value) {
+  if (!value) return '';
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 async function readJson(response) {
