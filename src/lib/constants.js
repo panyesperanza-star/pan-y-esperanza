@@ -78,7 +78,12 @@ function withModulePermissions(matrix, moduleId, permissions) {
 }
 
 export function isRoleActionAllowed(role, moduleId, actionId) {
-  if (moduleId === 'accounting' && actionId === 'delete') return role === 'Superadministrador';
+  if (moduleId === 'accounting') {
+    if (actionId === 'delete') return role === 'Superadministrador';
+    if (role === 'Voluntario') return actionId === 'view';
+    if (role === 'Coordinadora' || role === 'Coordinador') return actionId === 'view' || actionId === 'create';
+    return true;
+  }
   if (moduleId !== 'inventory' || role === 'Superadministrador') return true;
   if (actionId === 'delete') return false;
   if (role === 'Voluntario') return actionId === 'view';
@@ -103,8 +108,8 @@ export const ROLE_PERMISSIONS = {
   Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'accounting', 'treasury', 'reports', 'users', 'settings'],
   Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
   Tesorera: ['donations', 'accounting', 'treasury', 'reports', 'receipts', 'communications'],
-  Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'reports'],
-  Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory']
+  Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'accounting', 'reports'],
+  Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory', 'accounting']
 };
 
 export const LEGACY_ROLE_PERMISSIONS = {
@@ -112,7 +117,7 @@ export const LEGACY_ROLE_PERMISSIONS = {
   Secretario: ROLE_PERMISSIONS.Secretaria,
   Tesorero: ROLE_PERMISSIONS.Tesorera,
   Administrador: ROLE_PERMISSIONS.Presidenta,
-  Coordinador: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'treasury', 'reports'],
+  Coordinador: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'accounting', 'treasury', 'reports'],
   Consulta: ['reports']
 };
 

@@ -164,7 +164,7 @@ export default function App() {
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    accounting: <Accounting data={sorted} currentUser={currentUser} />,
+    accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} />,
     treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,

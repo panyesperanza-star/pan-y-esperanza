@@ -139,6 +139,169 @@ export function useAppData(enabled = true, currentUser = null) {
     }
   }
 
+  function assertAccountingSuperadmin() {
+    if (currentUser?.role !== 'Superadministrador') {
+      throw new Error('Solo el Superadministrador puede anular o eliminar registros contables.');
+    }
+  }
+
+  function userMeta() {
+    return {
+      created_by: currentUser?.id || null,
+      created_by_name: currentUserName(),
+      created_by_email: currentUser?.email || ''
+    };
+  }
+
+  async function accountingAuditTrail(tableName, recordId, action, previousData, nextData) {
+    await dataStore.create('accounting_audit_trail', {
+      table_name: tableName,
+      record_id: recordId || null,
+      action,
+      previous_data: previousData || null,
+      next_data: nextData || null,
+      user_id: currentUser?.id || null,
+      user_name: currentUserName(),
+      user_email: currentUser?.email || '',
+      happened_at: new Date().toISOString()
+    });
+  }
+
+  function findFinancialAccount(accountId) {
+    const account = (data.financial_accounts || []).find((item) => item.id === accountId);
+    if (!account || account.status === 'voided' || account.is_active === false) {
+      throw new Error('Selecciona una cuenta activa de Caja o Banco.');
+    }
+    return account;
+  }
+
+  function isCashAccount(account) {
+    const type = normalize(account?.account_type || account?.name || '');
+    return type === 'cash' || type.includes('caja') || type.includes('efectivo');
+  }
+
+  function movementDelta(movement) {
+    const amount = Number(movement?.amount || 0);
+    if (['cash_out', 'bank_out', 'transfer_out'].includes(movement?.movement_type)) return -amount;
+    return amount;
+  }
+
+  function assertNoUnauthorizedNegativeBalance(account, nextBalance, allowNegativeBalance) {
+    if (nextBalance >= 0) return;
+    if (currentUser?.role === 'Superadministrador' && allowNegativeBalance === true) return;
+    throw new Error(`La operacion dejaria saldo negativo en ${account.name}. Saldo disponible: ${Number(account.current_balance || 0).toFixed(2)} EUR.`);
+  }
+
+  function operationDate(value) {
+    return String(value || new Date().toISOString()).slice(0, 10);
+  }
+
+  function operationDateTime(value) {
+    return value ? String(value) : new Date().toISOString().slice(0, 16);
+  }
+
+  function sanitizeFinancialAccountPayload(payload, initial = {}) {
+    const name = String(payload?.name || '').trim();
+    const accountType = payload?.account_type || 'cash';
+    const allowed = ['cash', 'bank', 'bizum', 'paypal', 'card', 'other'];
+    const openingBalance = Number(payload?.opening_balance || 0);
+    if (!name) throw new Error('El nombre de la cuenta es obligatorio.');
+    if (!allowed.includes(accountType)) throw new Error('El tipo de cuenta no es valido.');
+    if (!Number.isFinite(openingBalance) || openingBalance < 0) throw new Error('El saldo inicial no puede ser negativo.');
+    return {
+      name,
+      account_type: accountType,
+      bank_name: String(payload?.bank_name || '').trim(),
+      account_number: String(payload?.account_number || '').trim(),
+      iban: String(payload?.iban || '').trim(),
+      currency: 'EUR',
+      opening_balance: initial.id ? Number(initial.opening_balance || 0) : openingBalance,
+      current_balance: initial.id ? Number(initial.current_balance || 0) : openingBalance,
+      status: initial.status || 'active',
+      is_active: initial.is_active !== false,
+      notes: String(payload?.notes || '').trim()
+    };
+  }
+
+  function sanitizeCashBankMovementPayload(payload, forcedType) {
+    const movementType = forcedType || payload?.movement_type;
+    const allowed = ['cash_in', 'cash_out', 'bank_in', 'bank_out'];
+    const amount = Number(payload?.amount || 0);
+    const reason = String(payload?.reason || payload?.notes || '').trim();
+    if (!allowed.includes(movementType)) throw new Error('El tipo de movimiento no es valido.');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('El importe debe ser mayor que cero.');
+    if (reason.length < 3) throw new Error('El motivo es obligatorio.');
+    const account = findFinancialAccount(payload?.financial_account_id);
+    if (movementType.startsWith('cash') && !isCashAccount(account)) throw new Error('Selecciona una cuenta de caja para movimientos de efectivo.');
+    if (movementType.startsWith('bank') && isCashAccount(account)) throw new Error('Selecciona una cuenta bancaria para movimientos de banco.');
+    return {
+      account,
+      movement: {
+        financial_account_id: account.id,
+        movement_type: movementType,
+        amount,
+        currency: 'EUR',
+        movement_at: operationDate(payload?.movement_datetime || payload?.movement_at),
+        payment_method: movementType.startsWith('cash') ? 'Efectivo' : String(payload?.payment_method || 'Transferencia').trim(),
+        reference: String(payload?.reference || '').trim(),
+        status: 'active',
+        notes: reason,
+        ...userMeta()
+      },
+      event: {
+        event_type: movementType.endsWith('_in') ? 'income' : 'expense',
+        occurred_at: operationDate(payload?.movement_datetime || payload?.movement_at),
+        title: reason,
+        description: `Fecha y hora operativa: ${operationDateTime(payload?.movement_datetime)}${payload?.reference ? `. Referencia: ${payload.reference}` : ''}`,
+        amount,
+        currency: 'EUR',
+        status: 'active',
+        financial_account_id: account.id,
+        source_module: 'accounting',
+        ...userMeta()
+      },
+      document: buildAccountingDocumentPayload(payload, amount, operationDate(payload?.movement_datetime || payload?.movement_at))
+    };
+  }
+
+  function buildAccountingDocumentPayload(payload, amount, documentAt) {
+    const fileName = String(payload?.document_name || '').trim();
+    const fileDataUrl = String(payload?.document_data_url || '').trim();
+    if (!fileName && !fileDataUrl) return null;
+    return {
+      document_type: payload?.document_type || 'proof',
+      document_number: String(payload?.document_number || '').trim(),
+      document_at: documentAt,
+      amount: Number(amount || 0),
+      currency: 'EUR',
+      file_name: fileName,
+      file_data_url: fileDataUrl,
+      status: 'active',
+      notes: String(payload?.document_notes || '').trim(),
+      ...userMeta()
+    };
+  }
+
+  async function createAccountingDocumentForEvent(eventId, documentPayload) {
+    if (!documentPayload) return null;
+    const document = await dataStore.create('accounting_documents', {
+      ...documentPayload,
+      accounting_event_id: eventId
+    });
+    await accountingAuditTrail('accounting_documents', document.id, 'create', null, document);
+    return document;
+  }
+
+  async function applyAccountBalance(account, nextBalance, actionLabel) {
+    const previous = { ...account };
+    const updated = await dataStore.update('financial_accounts', account.id, {
+      current_balance: nextBalance,
+      updated_at: new Date().toISOString()
+    });
+    await accountingAuditTrail('financial_accounts', account.id, actionLabel, previous, updated);
+    return updated;
+  }
+
   async function readApiJson(response) {
     const text = await response.text();
     try {
@@ -361,6 +524,202 @@ export function useAppData(enabled = true, currentUser = null) {
     deleteDonation: async (id) => {
       assertPermission('donations', 'delete');
       await dataStore.remove('donations', id);
+      await reload();
+    },
+    createFinancialAccount: async (payload) => {
+      assertPermission('accounting', 'create');
+      const cleanAccount = sanitizeFinancialAccountPayload(payload);
+      const account = await dataStore.create('financial_accounts', {
+        ...cleanAccount,
+        ...userMeta()
+      });
+      await accountingAuditTrail('financial_accounts', account.id, 'create', null, account);
+      await audit(`Contabilidad: creo cuenta ${account.name}`.trim());
+      await reload();
+    },
+    updateFinancialAccount: async (id, payload) => {
+      assertPermission('accounting', 'edit');
+      const current = findFinancialAccount(id);
+      const cleanAccount = sanitizeFinancialAccountPayload(payload, current);
+      const updated = await dataStore.update('financial_accounts', id, cleanAccount);
+      await accountingAuditTrail('financial_accounts', id, 'update', current, updated);
+      await audit(`Contabilidad: edito cuenta ${updated.name || current.name}`.trim());
+      await reload();
+    },
+    deleteFinancialAccount: async (id) => {
+      assertAccountingSuperadmin();
+      const account = (data.financial_accounts || []).find((item) => item.id === id);
+      if (!account) throw new Error('La cuenta no existe.');
+      const hasRelations = (data.cash_bank_movements || []).some((movement) => movement.financial_account_id === id)
+        || (data.accounting_events || []).some((event) => event.financial_account_id === id);
+      if (hasRelations) throw new Error('No se puede eliminar una cuenta con movimientos o eventos relacionados. Puedes desactivarla.');
+      await dataStore.remove('financial_accounts', id);
+      await accountingAuditTrail('financial_accounts', id, 'delete', account, null);
+      await audit(`Contabilidad: elimino cuenta sin relaciones ${account.name}`.trim());
+      await reload();
+    },
+    registerCashBankMovement: async (payload) => {
+      assertPermission('accounting', 'create');
+      const { account, movement, event, document } = sanitizeCashBankMovementPayload(payload);
+      const nextBalance = Number(account.current_balance || 0) + movementDelta(movement);
+      assertNoUnauthorizedNegativeBalance(account, nextBalance, payload?.allow_negative_balance === true);
+      const createdEvent = await dataStore.create('accounting_events', event);
+      await accountingAuditTrail('accounting_events', createdEvent.id, 'create', null, createdEvent);
+      const createdMovement = await dataStore.create('cash_bank_movements', {
+        ...movement,
+        accounting_event_id: createdEvent.id
+      });
+      await accountingAuditTrail('cash_bank_movements', createdMovement.id, 'create', null, createdMovement);
+      await createAccountingDocumentForEvent(createdEvent.id, document);
+      await applyAccountBalance(account, nextBalance, 'balance_update');
+      await audit(`Contabilidad: registro movimiento ${movement.notes}`.trim());
+      await reload();
+    },
+    registerBankTransfer: async (payload) => {
+      assertPermission('accounting', 'create');
+      const source = findFinancialAccount(payload?.from_account_id);
+      const target = findFinancialAccount(payload?.to_account_id);
+      if (source.id === target.id) throw new Error('La cuenta origen y destino deben ser diferentes.');
+      const amount = Number(payload?.amount || 0);
+      const reason = String(payload?.reason || '').trim();
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('El importe debe ser mayor que cero.');
+      if (reason.length < 3) throw new Error('El motivo es obligatorio.');
+      const sourceNextBalance = Number(source.current_balance || 0) - amount;
+      assertNoUnauthorizedNegativeBalance(source, sourceNextBalance, payload?.allow_negative_balance === true);
+      const targetNextBalance = Number(target.current_balance || 0) + amount;
+      const movementDate = operationDate(payload?.movement_datetime || payload?.movement_at);
+      const createdEvent = await dataStore.create('accounting_events', {
+        event_type: 'correction',
+        occurred_at: movementDate,
+        title: reason,
+        description: `Transferencia interna de ${source.name} a ${target.name}. Fecha y hora operativa: ${operationDateTime(payload?.movement_datetime)}`,
+        amount,
+        currency: 'EUR',
+        status: 'active',
+        financial_account_id: source.id,
+        source_module: 'accounting',
+        ...userMeta()
+      });
+      await accountingAuditTrail('accounting_events', createdEvent.id, 'create', null, createdEvent);
+      const outMovement = await dataStore.create('cash_bank_movements', {
+        accounting_event_id: createdEvent.id,
+        financial_account_id: source.id,
+        movement_type: 'transfer_out',
+        amount,
+        currency: 'EUR',
+        movement_at: movementDate,
+        payment_method: 'Transferencia',
+        reference: String(payload?.reference || '').trim(),
+        status: 'active',
+        notes: reason,
+        ...userMeta()
+      });
+      const inMovement = await dataStore.create('cash_bank_movements', {
+        accounting_event_id: createdEvent.id,
+        financial_account_id: target.id,
+        movement_type: 'transfer_in',
+        amount,
+        currency: 'EUR',
+        movement_at: movementDate,
+        payment_method: 'Transferencia',
+        reference: String(payload?.reference || '').trim(),
+        status: 'active',
+        notes: reason,
+        ...userMeta()
+      });
+      await accountingAuditTrail('cash_bank_movements', outMovement.id, 'create', null, outMovement);
+      await accountingAuditTrail('cash_bank_movements', inMovement.id, 'create', null, inMovement);
+      await createAccountingDocumentForEvent(createdEvent.id, buildAccountingDocumentPayload(payload, amount, movementDate));
+      await applyAccountBalance(source, sourceNextBalance, 'balance_update');
+      await applyAccountBalance(target, targetNextBalance, 'balance_update');
+      await audit(`Contabilidad: transferencia ${source.name} a ${target.name}`.trim());
+      await reload();
+    },
+    correctCashBankMovement: async (id, payload) => {
+      assertPermission('accounting', 'edit');
+      const original = (data.cash_bank_movements || []).find((movement) => movement.id === id);
+      if (!original) throw new Error('El movimiento no existe.');
+      if (original.status === 'voided') throw new Error('No se puede corregir un movimiento anulado.');
+      if (original.status === 'corrected') throw new Error('Este movimiento ya fue corregido.');
+      if (String(original.movement_type || '').startsWith('transfer_')) {
+        throw new Error('Para corregir una transferencia, anula la transferencia y registra una nueva.');
+      }
+      const correctionReason = String(payload?.correction_reason || '').trim();
+      if (correctionReason.length < 5) throw new Error('Indica un motivo de correccion valido.');
+      const account = findFinancialAccount(original.financial_account_id);
+      const { movement, event, document } = sanitizeCashBankMovementPayload({
+        ...payload,
+        financial_account_id: account.id,
+        movement_type: original.movement_type
+      }, original.movement_type);
+      const balanceAfterReversal = Number(account.current_balance || 0) - movementDelta(original);
+      const nextBalance = balanceAfterReversal + movementDelta(movement);
+      assertNoUnauthorizedNegativeBalance(account, nextBalance, payload?.allow_negative_balance === true);
+      const previousMovement = { ...original };
+      const correctedOriginal = await dataStore.update('cash_bank_movements', original.id, {
+        status: 'corrected',
+        void_reason: correctionReason,
+        updated_at: new Date().toISOString()
+      });
+      await accountingAuditTrail('cash_bank_movements', original.id, 'mark_corrected', previousMovement, correctedOriginal);
+      const previousEvent = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      if (previousEvent) {
+        const updatedEvent = await dataStore.update('accounting_events', previousEvent.id, {
+          status: 'corrected',
+          void_reason: correctionReason,
+          updated_at: new Date().toISOString()
+        });
+        await accountingAuditTrail('accounting_events', previousEvent.id, 'mark_corrected', previousEvent, updatedEvent);
+      }
+      const createdEvent = await dataStore.create('accounting_events', {
+        ...event,
+        correction_of_event_id: original.accounting_event_id || null,
+        description: `${event.description}. Correccion: ${correctionReason}`
+      });
+      await accountingAuditTrail('accounting_events', createdEvent.id, 'create_correction', null, createdEvent);
+      const createdMovement = await dataStore.create('cash_bank_movements', {
+        ...movement,
+        accounting_event_id: createdEvent.id
+      });
+      await accountingAuditTrail('cash_bank_movements', createdMovement.id, 'create_correction', null, createdMovement);
+      await createAccountingDocumentForEvent(createdEvent.id, document);
+      await applyAccountBalance(account, nextBalance, 'balance_correction');
+      await audit(`Contabilidad: corrigio movimiento ${original.id}`.trim());
+      await reload();
+    },
+    voidCashBankMovement: async (id, reason) => {
+      assertAccountingSuperadmin();
+      const cleanReason = String(reason || '').trim();
+      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulacion valido.');
+      const original = (data.cash_bank_movements || []).find((movement) => movement.id === id);
+      if (!original) throw new Error('El movimiento no existe.');
+      if (original.status === 'voided') throw new Error('El movimiento ya esta anulado.');
+      const relatedMovements = original.accounting_event_id && String(original.movement_type || '').startsWith('transfer_')
+        ? (data.cash_bank_movements || []).filter((movement) => movement.accounting_event_id === original.accounting_event_id && movement.status !== 'voided')
+        : [original];
+      for (const movement of relatedMovements) {
+        const account = findFinancialAccount(movement.financial_account_id);
+        const nextBalance = Number(account.current_balance || 0) - movementDelta(movement);
+        const updatedMovement = await dataStore.update('cash_bank_movements', movement.id, {
+          status: 'voided',
+          voided_at: new Date().toISOString(),
+          void_reason: cleanReason,
+          updated_at: new Date().toISOString()
+        });
+        await accountingAuditTrail('cash_bank_movements', movement.id, 'void', movement, updatedMovement);
+        await applyAccountBalance(account, nextBalance, 'balance_void');
+      }
+      const event = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      if (event) {
+        const updatedEvent = await dataStore.update('accounting_events', event.id, {
+          status: 'voided',
+          voided_at: new Date().toISOString(),
+          void_reason: cleanReason,
+          updated_at: new Date().toISOString()
+        });
+        await accountingAuditTrail('accounting_events', event.id, 'void', event, updatedEvent);
+      }
+      await audit(`Contabilidad: anulo movimiento ${id}`.trim());
       await reload();
     },
     createTreasuryIncome: async (payload) => {

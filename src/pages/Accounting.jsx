@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowDownCircle,
-  ArrowRight,
   ArrowUpCircle,
   Banknote,
   BarChart3,
@@ -22,10 +21,11 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { formatDate, normalize } from '../lib/formatters';
+import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const QUICK_ACTIONS = [
   { label: 'Registrar gasto', icon: ArrowDownCircle, tone: 'border-red-200 bg-red-50 text-red-700' },
@@ -38,13 +38,23 @@ const QUICK_ACTIONS = [
   { label: 'Subir factura/ticket', icon: Upload, tone: 'border-slate-200 bg-slate-50 text-slate-700' }
 ];
 
-export function Accounting({ data, currentUser }) {
-  const [activeAction, setActiveAction] = useState(null);
+export function Accounting({ data, actions, currentUser }) {
+  const [modal, setModal] = useState(null);
   const canCreate = canDo(currentUser, 'accounting', 'create');
   const canEdit = canDo(currentUser, 'accounting', 'edit');
   const canDelete = canDo(currentUser, 'accounting', 'delete');
   const report = useMemo(() => buildAccountingReport(data), [data]);
   const areaGroups = useMemo(() => buildAreaGroups(report), [report]);
+  const isSuperadmin = currentUser?.role === 'Superadministrador';
+
+  function openQuickAction(label) {
+    const mapping = {
+      'Registrar gasto': { type: 'movement', movementType: 'bank_out', title: 'Registrar pago bancario' },
+      'Registrar ingreso': { type: 'movement', movementType: 'bank_in', title: 'Registrar ingreso bancario' },
+      'Subir factura/ticket': { type: 'future', title: label }
+    };
+    setModal(mapping[label] || { type: 'future', title: label });
+  }
 
   return (
     <>
@@ -106,6 +116,14 @@ export function Accounting({ data, currentUser }) {
           </div>
         </div>
       </section>
+
+      <CashBankWorkspace
+        report={report}
+        canCreate={canCreate}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        onOpen={setModal}
+      />
 
       <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -175,7 +193,7 @@ export function Accounting({ data, currentUser }) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {QUICK_ACTIONS.map((action) => (
-              <QuickActionButton key={action.label} action={action} onClick={() => setActiveAction(action.label)} />
+              <QuickActionButton key={action.label} action={action} onClick={() => openQuickAction(action.label)} />
             ))}
           </div>
         </section>
@@ -193,21 +211,478 @@ export function Accounting({ data, currentUser }) {
         </div>
       </section>
 
-      {activeAction && (
-        <Modal title={activeAction} onClose={() => setActiveAction(null)}>
+      {modal?.type === 'account' && (
+        <Modal title={modal.item ? 'Editar cuenta' : modal.title || 'Nueva cuenta'} onClose={() => setModal(null)}>
+          <FinancialAccountForm
+            initial={modal.item}
+            defaultType={modal.accountType}
+            onSubmit={async (payload) => {
+              if (modal.item) await actions.updateFinancialAccount(modal.item.id, payload);
+              else await actions.createFinancialAccount(payload);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'movement' && (
+        <Modal title={modal.title || movementTypeLabel(modal.movementType)} onClose={() => setModal(null)}>
+          <CashBankMovementForm
+            accounts={report.financialAccounts}
+            movementType={modal.movementType}
+            isSuperadmin={isSuperadmin}
+            onSubmit={async (payload) => {
+              await actions.registerCashBankMovement({ ...payload, movement_type: modal.movementType });
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'transfer' && (
+        <Modal title="Transferencia entre cuentas" onClose={() => setModal(null)}>
+          <TransferForm
+            accounts={report.financialAccounts}
+            isSuperadmin={isSuperadmin}
+            onSubmit={async (payload) => {
+              await actions.registerBankTransfer(payload);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'correct-movement' && (
+        <Modal title="Corregir movimiento" onClose={() => setModal(null)}>
+          <CashBankMovementForm
+            accounts={report.financialAccounts}
+            movementType={modal.item.movement_type}
+            movement={modal.item}
+            isCorrection
+            isSuperadmin={isSuperadmin}
+            onSubmit={async (payload) => {
+              await actions.correctCashBankMovement(modal.item.id, payload);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'void-movement' && (
+        <Modal title="Anular movimiento" onClose={() => setModal(null)}>
+          <VoidMovementForm
+            movement={modal.item}
+            onSubmit={async (reason) => {
+              await actions.voidCashBankMovement(modal.item.id, reason);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'delete-account' && (
+        <Modal title="Eliminar cuenta sin relaciones" onClose={() => setModal(null)}>
+          <DeleteAccountForm
+            account={modal.item}
+            onSubmit={async () => {
+              await actions.deleteFinancialAccount(modal.item.id);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === 'future' && (
+        <Modal title={modal.title} onClose={() => setModal(null)}>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-5">
             <p className="text-lg font-bold text-ink">Disponible en la siguiente fase.</p>
             <p className="mt-2 text-sm text-slate-600">
-              La pantalla ya esta preparada para abrir este flujo desde aqui sin mezclar dinero real y valor social.
+              En Fase 3.2 quedan cerrados Caja y Bancos. Este flujo se activara cuando toque su bloque correspondiente.
             </p>
           </div>
           <div className="mt-5 flex justify-end">
-            <Button onClick={() => setActiveAction(null)}>Entendido</Button>
+            <Button onClick={() => setModal(null)}>Entendido</Button>
           </div>
         </Modal>
       )}
     </>
   );
+}
+
+function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
+  const cashAccounts = report.financialAccounts.filter(isCashAccount);
+  const bankAccounts = report.financialAccounts.filter((account) => !isCashAccount(account));
+
+  return (
+    <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Caja y bancos</p>
+          <h3 className="text-xl font-bold text-ink">Operativa cerrada para efectivo, cuentas y transferencias</h3>
+          <p className="mt-1 text-sm text-slate-600">Los movimientos actualizan saldo, crean evento contable y quedan registrados en auditoria.</p>
+        </div>
+        {canCreate && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => onOpen({ type: 'account', title: 'Nueva caja', accountType: 'cash' })}><Wallet size={17} /> Nueva caja</Button>
+            <Button variant="secondary" onClick={() => onOpen({ type: 'account', title: 'Nueva cuenta bancaria', accountType: 'bank' })}><Landmark size={17} /> Nueva cuenta</Button>
+          </div>
+        )}
+      </div>
+
+      {!canCreate && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Modo consulta. Tu usuario puede ver Caja y Bancos, pero no registrar movimientos.
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1.3fr]">
+        <div className="space-y-4">
+          <AccountColumn
+            title="Caja"
+            accounts={cashAccounts}
+            emptyText="No hay cajas creadas todavia."
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onOpen={onOpen}
+          />
+          <AccountColumn
+            title="Bancos"
+            accounts={bankAccounts}
+            emptyText="No hay cuentas bancarias creadas todavia."
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onOpen={onOpen}
+          />
+        </div>
+
+        <div className="rounded-md border border-slate-200">
+          <div className="border-b border-slate-200 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="font-bold text-ink">Movimientos de Caja y Bancos</h4>
+                <p className="text-sm text-slate-500">Linea temporal unica, incluyendo activos, corregidos y anulados.</p>
+              </div>
+              {canCreate && (
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="subtle" onClick={() => onOpen({ type: 'movement', movementType: 'cash_in', title: 'Entrada de efectivo' })}><ArrowUpCircle size={16} /> Entrada caja</Button>
+                  <Button variant="secondary" onClick={() => onOpen({ type: 'movement', movementType: 'cash_out', title: 'Salida de efectivo' })}><ArrowDownCircle size={16} /> Salida caja</Button>
+                  <Button variant="subtle" onClick={() => onOpen({ type: 'movement', movementType: 'bank_in', title: 'Ingreso bancario' })}><ArrowUpCircle size={16} /> Ingreso banco</Button>
+                  <Button variant="secondary" onClick={() => onOpen({ type: 'movement', movementType: 'bank_out', title: 'Pago bancario' })}><ArrowDownCircle size={16} /> Pago banco</Button>
+                  <Button onClick={() => onOpen({ type: 'transfer' })}><RefreshCw size={16} /> Transferir</Button>
+                </div>
+              )}
+            </div>
+          </div>
+          <CashBankTimeline
+            rows={report.cashBankTimeline}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onOpen={onOpen}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, onOpen }) {
+  return (
+    <section className="rounded-md border border-slate-200 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h4 className="font-bold text-ink">{title}</h4>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{accounts.length}</span>
+      </div>
+      <div className="grid gap-3">
+        {accounts.map((account) => (
+          <article key={account.id} className="rounded-md bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-bold text-ink">{account.name}</p>
+                <p className="text-xs text-slate-500">{accountTypeLabel(account.account_type)}{account.bank_name ? ` - ${account.bank_name}` : ''}</p>
+              </div>
+              <p className="text-right text-lg font-bold text-ink">{formatMoney(account.current_balance)}</p>
+            </div>
+            {(canEdit || canDelete) && (
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {canEdit && <Button variant="secondary" onClick={() => onOpen({ type: 'account', item: account })}>Editar</Button>}
+                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>Eliminar vacia</Button>}
+              </div>
+            )}
+          </article>
+        ))}
+        {!accounts.length && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">{emptyText}</p>}
+      </div>
+    </section>
+  );
+}
+
+function CashBankTimeline({ rows, canEdit, canDelete, onOpen }) {
+  if (!rows.length) {
+    return <div className="p-4"><EmptyState icon={ClipboardList} title="No hay movimientos de Caja o Bancos." detail="Crea una caja o cuenta bancaria y registra la primera operacion." /></div>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+          <tr>
+            <th className="px-4 py-3">Fecha y hora</th>
+            <th>Cuenta</th>
+            <th>Tipo</th>
+            <th>Motivo</th>
+            <th>Importe</th>
+            <th>Estado</th>
+            <th>Usuario</th>
+            {(canEdit || canDelete) && <th className="pr-4 text-right">Acciones</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => {
+            const canCorrect = canEdit && row.status === 'active' && !String(row.movement_type || '').startsWith('transfer_');
+            const canVoid = canDelete && row.status === 'active';
+            return (
+              <tr key={row.id} className="align-top">
+                <td className="px-4 py-3 text-slate-600">{row.created_at ? formatDateTime(row.created_at) : formatDate(row.date)}</td>
+                <td className="py-3 font-semibold text-ink">{row.accountName}</td>
+                <td className="py-3"><TypeBadge type={row.type} /></td>
+                <td className="max-w-[280px] py-3 text-slate-700">{row.concept}</td>
+                <td className={`py-3 font-bold ${row.direction === 'out' ? 'text-red-700' : 'text-emerald-700'}`}>{formatMovementAmount(row)}</td>
+                <td className="py-3"><StatusBadge status={statusLabel(row.status)} /></td>
+                <td className="py-3 text-slate-600">{row.userName}</td>
+                {(canEdit || canDelete) && (
+                  <td className="pr-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      {canCorrect && <Button variant="secondary" onClick={() => onOpen({ type: 'correct-movement', item: row.raw })}>Corregir</Button>}
+                      {canVoid && <Button variant="danger" onClick={() => onOpen({ type: 'void-movement', item: row.raw })}>Anular</Button>}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FinancialAccountForm({ initial, defaultType = 'cash', onSubmit }) {
+  const [form, setForm] = useState(initial || {
+    name: '',
+    account_type: defaultType,
+    bank_name: '',
+    account_number: '',
+    iban: '',
+    opening_balance: 0,
+    notes: ''
+  });
+  const [error, setError] = useState('');
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await onSubmit(form);
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo guardar la cuenta.');
+    }
+  }
+
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+      <FormError message={error} />
+      <FormField label="Nombre" required><input className={inputClass} required value={form.name || ''} onChange={(event) => updateForm(setForm, 'name', event.target.value)} /></FormField>
+      <FormField label="Tipo" required>
+        <select className={inputClass} value={form.account_type || defaultType} disabled={Boolean(initial)} onChange={(event) => updateForm(setForm, 'account_type', event.target.value)}>
+          <option value="cash">Caja efectivo</option>
+          <option value="bank">Cuenta bancaria</option>
+          <option value="bizum">Bizum</option>
+          <option value="paypal">PayPal</option>
+          <option value="card">Tarjeta</option>
+          <option value="other">Otra cuenta</option>
+        </select>
+      </FormField>
+      <FormField label="Saldo inicial" required><input className={inputClass} type="number" step="0.01" min="0" required disabled={Boolean(initial)} value={form.opening_balance ?? 0} onChange={(event) => updateForm(setForm, 'opening_balance', Number(event.target.value))} /></FormField>
+      <FormField label="Banco"><input className={inputClass} value={form.bank_name || ''} onChange={(event) => updateForm(setForm, 'bank_name', event.target.value)} /></FormField>
+      <FormField label="Numero de cuenta"><input className={inputClass} value={form.account_number || ''} onChange={(event) => updateForm(setForm, 'account_number', event.target.value)} /></FormField>
+      <FormField label="IBAN"><input className={inputClass} value={form.iban || ''} onChange={(event) => updateForm(setForm, 'iban', event.target.value)} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes || ''} onChange={(event) => updateForm(setForm, 'notes', event.target.value)} /></FormField></div>
+      <div className="flex justify-end sm:col-span-2"><Button type="submit">{initial ? 'Guardar cambios' : 'Crear cuenta'}</Button></div>
+    </form>
+  );
+}
+
+function CashBankMovementForm({ accounts, movementType, movement, isCorrection = false, isSuperadmin, onSubmit }) {
+  const accountOptions = accounts.filter((account) => movementType.startsWith('cash') ? isCashAccount(account) : !isCashAccount(account));
+  const [form, setForm] = useState({
+    financial_account_id: movement?.financial_account_id || accountOptions[0]?.id || '',
+    movement_datetime: toDateTimeInputValue(movement?.created_at || movement?.movement_at),
+    amount: movement?.amount || 0,
+    reason: movement?.notes || '',
+    reference: movement?.reference || '',
+    payment_method: movement?.payment_method || (movementType.startsWith('cash') ? 'Efectivo' : 'Transferencia'),
+    document_name: '',
+    document_data_url: '',
+    document_type: movementType.endsWith('_out') ? 'ticket' : 'receipt',
+    correction_reason: '',
+    allow_negative_balance: false
+  });
+  const [error, setError] = useState('');
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await onSubmit(form);
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo registrar el movimiento.');
+    }
+  }
+
+  if (!accountOptions.length) {
+    return <EmptyState icon={Wallet} title="No hay cuenta disponible." detail={movementType.startsWith('cash') ? 'Crea primero una caja.' : 'Crea primero una cuenta bancaria.'} />;
+  }
+
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+      <FormError message={error} />
+      <FormField label="Cuenta" required>
+        <select className={inputClass} required disabled={isCorrection} value={form.financial_account_id} onChange={(event) => updateForm(setForm, 'financial_account_id', event.target.value)}>
+          {accountOptions.map((account) => <option key={account.id} value={account.id}>{account.name} - {formatMoney(account.current_balance)}</option>)}
+        </select>
+      </FormField>
+      <FormField label="Fecha y hora" required><input className={inputClass} type="datetime-local" required value={form.movement_datetime} onChange={(event) => updateForm(setForm, 'movement_datetime', event.target.value)} /></FormField>
+      <FormField label="Importe" required><input className={inputClass} type="number" step="0.01" min="0.01" required value={form.amount} onChange={(event) => updateForm(setForm, 'amount', Number(event.target.value))} /></FormField>
+      <FormField label="Metodo"><select className={inputClass} value={form.payment_method} onChange={(event) => updateForm(setForm, 'payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
+      <div className="sm:col-span-2"><FormField label="Motivo" required><textarea className={inputClass} rows="3" required value={form.reason} onChange={(event) => updateForm(setForm, 'reason', event.target.value)} /></FormField></div>
+      <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => updateForm(setForm, 'reference', event.target.value)} /></FormField>
+      <FileAttachmentField form={form} setForm={setForm} />
+      {isCorrection && <div className="sm:col-span-2"><FormField label="Motivo de correccion" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => updateForm(setForm, 'correction_reason', event.target.value)} /></FormField></div>}
+      {isSuperadmin && movementType.endsWith('_out') && <NegativeBalanceToggle form={form} setForm={setForm} />}
+      <div className="flex justify-end sm:col-span-2"><Button type="submit">{isCorrection ? 'Guardar correccion' : 'Registrar movimiento'}</Button></div>
+    </form>
+  );
+}
+
+function TransferForm({ accounts, isSuperadmin, onSubmit }) {
+  const [form, setForm] = useState({
+    from_account_id: accounts[0]?.id || '',
+    to_account_id: accounts[1]?.id || '',
+    movement_datetime: toDateTimeInputValue(),
+    amount: 0,
+    reason: '',
+    reference: '',
+    document_name: '',
+    document_data_url: '',
+    document_type: 'proof',
+    allow_negative_balance: false
+  });
+  const [error, setError] = useState('');
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await onSubmit(form);
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo registrar la transferencia.');
+    }
+  }
+
+  if (accounts.length < 2) {
+    return <EmptyState icon={Landmark} title="Faltan cuentas." detail="Necesitas al menos dos cuentas activas para registrar una transferencia." />;
+  }
+
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+      <FormError message={error} />
+      <FormField label="Cuenta origen" required><select className={inputClass} required value={form.from_account_id} onChange={(event) => updateForm(setForm, 'from_account_id', event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} - {formatMoney(account.current_balance)}</option>)}</select></FormField>
+      <FormField label="Cuenta destino" required><select className={inputClass} required value={form.to_account_id} onChange={(event) => updateForm(setForm, 'to_account_id', event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} - {formatMoney(account.current_balance)}</option>)}</select></FormField>
+      <FormField label="Fecha y hora" required><input className={inputClass} type="datetime-local" required value={form.movement_datetime} onChange={(event) => updateForm(setForm, 'movement_datetime', event.target.value)} /></FormField>
+      <FormField label="Importe" required><input className={inputClass} type="number" step="0.01" min="0.01" required value={form.amount} onChange={(event) => updateForm(setForm, 'amount', Number(event.target.value))} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Motivo" required><textarea className={inputClass} rows="3" required value={form.reason} onChange={(event) => updateForm(setForm, 'reason', event.target.value)} /></FormField></div>
+      <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => updateForm(setForm, 'reference', event.target.value)} /></FormField>
+      <FileAttachmentField form={form} setForm={setForm} />
+      {isSuperadmin && <NegativeBalanceToggle form={form} setForm={setForm} />}
+      <div className="flex justify-end sm:col-span-2"><Button type="submit">Registrar transferencia</Button></div>
+    </form>
+  );
+}
+
+function VoidMovementForm({ movement, onSubmit }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await onSubmit(reason);
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo anular el movimiento.');
+    }
+  }
+  return (
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <FormError message={error} />
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        Vas a anular el movimiento {movementTypeLabel(movement.movement_type)} por {formatMoney(movement.amount)}. El saldo de la cuenta se revertira automaticamente.
+      </div>
+      <FormField label="Motivo de anulacion" required><textarea className={inputClass} rows="4" required value={reason} onChange={(event) => setReason(event.target.value)} /></FormField>
+      <div className="flex justify-end"><Button variant="danger" type="submit">Anular movimiento</Button></div>
+    </form>
+  );
+}
+
+function DeleteAccountForm({ account, onSubmit }) {
+  const [error, setError] = useState('');
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await onSubmit();
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo eliminar la cuenta.');
+    }
+  }
+  return (
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <FormError message={error} />
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        Solo se eliminara si no tiene movimientos ni eventos relacionados. Si ya fue usada, el sistema bloqueara la eliminacion.
+      </div>
+      <p className="font-bold text-ink">{account.name}</p>
+      <div className="flex justify-end"><Button variant="danger" type="submit">Eliminar cuenta vacia</Button></div>
+    </form>
+  );
+}
+
+function FileAttachmentField({ form, setForm }) {
+  async function handleFile(file) {
+    if (!file) {
+      setForm((state) => ({ ...state, document_name: '', document_data_url: '' }));
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    setForm((state) => ({ ...state, document_name: file.name, document_data_url: dataUrl }));
+  }
+  return (
+    <FormField label="Documento adjunto opcional">
+      <input className={inputClass} type="file" onChange={(event) => handleFile(event.target.files?.[0])} />
+      {form.document_name && <p className="mt-1 text-xs text-slate-500">{form.document_name}</p>}
+    </FormField>
+  );
+}
+
+function NegativeBalanceToggle({ form, setForm }) {
+  return (
+    <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">
+      <input type="checkbox" className="mt-1" checked={Boolean(form.allow_negative_balance)} onChange={(event) => updateForm(setForm, 'allow_negative_balance', event.target.checked)} />
+      <span>Autorizo saldo negativo de forma excepcional.</span>
+    </label>
+  );
+}
+
+function FormError({ message }) {
+  return message ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:col-span-2">{message}</div> : null;
 }
 
 function PermissionBadges({ canCreate, canEdit, canDelete }) {
@@ -334,7 +809,9 @@ function AreaGroup({ group }) {
 function buildAccountingReport(data = {}) {
   const accountingEvents = activeRecords(asArray(data.accounting_events));
   const financialAccounts = activeRecords(asArray(data.financial_accounts));
-  const cashBankMovements = activeRecords(asArray(data.cash_bank_movements));
+  const rawAccountingEvents = asArray(data.accounting_events);
+  const rawCashBankMovements = asArray(data.cash_bank_movements);
+  const cashBankMovements = activeRecords(rawCashBankMovements);
   const accountingDocuments = activeRecords(asArray(data.accounting_documents));
   const accountingContacts = asArray(data.accounting_contacts);
   const loanRecords = activeRecords(asArray(data.loan_records));
@@ -384,15 +861,15 @@ function buildAccountingReport(data = {}) {
 
   const contactsById = new Map(accountingContacts.map((contact) => [contact.id, contact]));
   const accountsById = new Map(financialAccounts.map((account) => [account.id, account]));
-  const eventsById = new Map(accountingEvents.map((event) => [event.id, event]));
+  const eventsById = new Map(rawAccountingEvents.map((event) => [event.id, event]));
   const firstMovementByEvent = new Map();
-  cashBankMovements.forEach((movement) => {
+  rawCashBankMovements.forEach((movement) => {
     if (movement.accounting_event_id && !firstMovementByEvent.has(movement.accounting_event_id)) firstMovementByEvent.set(movement.accounting_event_id, movement);
   });
 
   const recentMovements = buildRecentMovements({
-    accountingEvents,
-    cashBankMovements,
+    accountingEvents: rawAccountingEvents,
+    cashBankMovements: rawCashBankMovements,
     loanRecords,
     loanMovements,
     debtRecords,
@@ -408,6 +885,7 @@ function buildAccountingReport(data = {}) {
     firstMovementByEvent,
     useTreasuryFallback: usingTreasuryFallback
   });
+  const cashBankTimeline = buildCashBankTimeline(rawCashBankMovements, eventsById, accountsById);
 
   const alerts = buildAlerts({
     pendingInvoices: pendingInvoiceCount,
@@ -436,6 +914,8 @@ function buildAccountingReport(data = {}) {
     socialBalance: socialReceived - socialDelivered,
     alerts,
     recentMovements,
+    cashBankTimeline,
+    financialAccounts,
     usingTreasuryFallback,
     metrics: {
       incomes: accountingEvents.filter((event) => event.event_type === 'income' || event.event_type === 'donation_money').length + treasuryIncomes.length,
@@ -704,6 +1184,30 @@ function buildAreaGroups(report) {
   ];
 }
 
+function buildCashBankTimeline(movements, eventsById, accountsById) {
+  return movements
+    .map((movement) => {
+      const event = eventsById.get(movement.accounting_event_id);
+      const account = accountsById.get(movement.financial_account_id);
+      return {
+        id: movement.id,
+        raw: movement,
+        date: movement.movement_at || movement.created_at,
+        created_at: movement.created_at,
+        movement_type: movement.movement_type,
+        type: movementTypeLabel(movement.movement_type),
+        concept: movement.notes || event?.title || movement.reference || 'Movimiento caja/banco',
+        accountName: account?.name || 'Cuenta no encontrada',
+        amount: Number(movement.amount || 0),
+        direction: movementDirection(movement.movement_type),
+        status: movement.status || 'active',
+        method: movement.payment_method || accountMethod(account, movement.movement_type),
+        userName: movement.created_by_name || event?.created_by_name || '-'
+      };
+    })
+    .sort((a, b) => String(b.created_at || b.date).localeCompare(String(a.created_at || a.date)));
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -850,6 +1354,18 @@ function statusLabel(status) {
   return labels[status] || status || 'Registrado';
 }
 
+function accountTypeLabel(type) {
+  const labels = {
+    cash: 'Caja efectivo',
+    bank: 'Cuenta bancaria',
+    bizum: 'Bizum',
+    paypal: 'PayPal',
+    card: 'Tarjeta',
+    other: 'Otra cuenta'
+  };
+  return labels[type] || type || 'Cuenta';
+}
+
 function contactName(contact) {
   return contact?.name || '-';
 }
@@ -870,6 +1386,33 @@ function formatMovementAmount(movement) {
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+}
+
+function toDateTimeInputValue(value) {
+  if (!value) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  }
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${text}T09:00`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return text.slice(0, 16);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+function updateForm(setForm, field, value) {
+  setForm((state) => ({ ...state, [field]: value }));
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer el documento adjunto.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function sumBy(rows, selector) {
