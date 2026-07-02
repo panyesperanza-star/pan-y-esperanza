@@ -1,11 +1,17 @@
-import { LEGACY_ROLE_PERMISSIONS, MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
+import { MODULES } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
 
 export function getStoredUser() {
   const raw = localStorage.getItem(SESSION_KEY);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  try {
+    return withPermissions(JSON.parse(raw));
+  } catch {
+    clearStoredUser();
+    return null;
+  }
 }
 
 export function storeUser(user) {
@@ -20,32 +26,8 @@ export async function signIn({ email, password }, users = []) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error('Email o contrasena no validos.');
-    let { data: profile, error: profileError } = await supabase
-      .from('app_users')
-      .select('*')
-      .eq('auth_user_id', data.user.id)
-      .maybeSingle();
-    if (!profile && !profileError) {
-      const byEmail = await supabase
-        .from('app_users')
-        .select('*')
-        .ilike('email', data.user.email)
-        .maybeSingle();
-      profile = byEmail.data;
-      profileError = byEmail.error;
-    }
-    if (profileError) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
-    if (!profile) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
-    if (!isUserActive(profile)) {
-      await supabase.auth.signOut();
-      throw new Error('Usuario inactivo o bloqueado. Contacte con administracion.');
-    }
-    if (!profile.auth_user_id) {
-      await supabase.from('app_users').update({ auth_user_id: data.user.id }).eq('id', profile.id);
-      profile = { ...profile, auth_user_id: data.user.id };
-    }
-    await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', profile.id);
-    const current = withPermissions(profile);
+    const current = await loadDatabaseProfile(data.user);
+    await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', current.id);
     storeUser(current);
     return current;
   }
@@ -64,13 +46,48 @@ export async function signOut() {
   clearStoredUser();
 }
 
+export async function refreshCurrentUser() {
+  if (!hasSupabaseConfig || !supabase) return getStoredUser();
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data?.session?.user) throw new Error('La sesion ha caducado.');
+  const current = await loadDatabaseProfile(data.session.user);
+  storeUser(current);
+  return current;
+}
+
+async function loadDatabaseProfile(authUser) {
+  let { data: profile, error: profileError } = await supabase
+    .from('app_users')
+    .select('*')
+    .eq('auth_user_id', authUser.id)
+    .maybeSingle();
+  if (!profile && !profileError) {
+    const byEmail = await supabase
+      .from('app_users')
+      .select('*')
+      .ilike('email', authUser.email)
+      .maybeSingle();
+    profile = byEmail.data;
+    profileError = byEmail.error;
+  }
+  if (profileError || !profile) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
+  if (!isUserActive(profile)) {
+    await supabase.auth.signOut();
+    throw new Error('Usuario inactivo o bloqueado. Contacte con administracion.');
+  }
+  if (!profile.auth_user_id) {
+    await supabase.from('app_users').update({ auth_user_id: authUser.id }).eq('id', profile.id);
+    profile = { ...profile, auth_user_id: authUser.id };
+  }
+  return withPermissions(profile);
+}
+
 export function withPermissions(user) {
-  const permissions = Array.isArray(user.permissions) ? user.permissions : ROLE_PERMISSIONS[user.role] || LEGACY_ROLE_PERMISSIONS[user.role] || [];
-  return {
-    ...user,
-    permissions,
-    permission_matrix: user.permission_matrix || ROLE_PERMISSION_MATRIX[user.role]
-  };
+  const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+  const permissionMatrix = user?.permission_matrix && typeof user.permission_matrix === 'object' && !Array.isArray(user.permission_matrix)
+    ? user.permission_matrix
+    : {};
+  return { ...user, permissions, permission_matrix: permissionMatrix };
 }
 
 export function getUserStatus(user) {
@@ -83,9 +100,9 @@ export function isUserActive(user) {
 
 export function canAccess(user, moduleId) {
   if (!user) return false;
-  if (user.permission_matrix?.[moduleId]?.view) return true;
-  const permissions = user.permissions || ROLE_PERMISSIONS[user.role] || LEGACY_ROLE_PERMISSIONS[user.role] || [];
-  return permissions.includes('*') || permissions.includes(moduleId);
+  if (user.role === 'Superadministrador') return true;
+  if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.view);
+  return Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
 
 export function getFirstAccessibleModule(user) {
@@ -94,7 +111,11 @@ export function getFirstAccessibleModule(user) {
 
 export function canDo(user, moduleId, action = 'view') {
   if (!user) return false;
-  if (user.permissions?.includes('*')) return true;
-  if (user.permission_matrix?.[moduleId]) return Boolean(user.permission_matrix[moduleId][action]);
-  return action === 'view' && canAccess(user, moduleId);
+  if (user.role === 'Superadministrador') return true;
+  if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
+  return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
+}
+
+function hasPermissionMatrix(user) {
+  return Boolean(user?.permission_matrix && Object.keys(user.permission_matrix).length);
 }

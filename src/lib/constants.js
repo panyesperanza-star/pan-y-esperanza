@@ -71,7 +71,7 @@ export const ROLE_PERMISSIONS = {
   Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
   Tesorera: ['donations', 'treasury', 'reports', 'receipts', 'communications'],
   Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'reports'],
-  Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory', 'treasury']
+  Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory']
 };
 
 export const LEGACY_ROLE_PERMISSIONS = {

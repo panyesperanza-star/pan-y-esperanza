@@ -2,7 +2,7 @@ import { AlertTriangle, Database } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, signIn, signOut } from './lib/auth';
+import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, refreshCurrentUser, signIn, signOut } from './lib/auth';
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Beneficiaries } from './pages/Beneficiaries';
@@ -27,6 +27,7 @@ export default function App() {
   const isDebugAdminRoute = pathname === '/debug/admin';
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
+  const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig || hasResetToken || !getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
 
   useEffect(() => {
@@ -38,25 +39,26 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function validateStoredSession() {
-      if (!hasSupabaseConfig || !supabase || !currentUser || hasResetToken) return;
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      const sessionEmail = sessionData?.session?.user?.email?.toLowerCase();
-      const storedEmail = currentUser.email?.toLowerCase();
-      if (sessionError || !sessionData?.session || !sessionEmail || sessionEmail !== storedEmail) {
-        console.warn('[auth] Sesion Supabase ausente o distinta al usuario local', {
-          hasSession: Boolean(sessionData?.session),
-          sessionEmail,
-          storedEmail,
-          sessionError: sessionError?.message
-        });
+      if (!hasSupabaseConfig || !supabase || !currentUser || hasResetToken) {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+      setAuthReady(false);
+      try {
+        const freshUser = await refreshCurrentUser();
+        if (!cancelled) setCurrentUser(freshUser);
+      } catch (sessionError) {
+        console.warn('[auth] No se pudo refrescar el perfil desde Supabase', { error: sessionError?.message });
         await signOut();
         clearStoredUser();
         if (!cancelled) setCurrentUser(null);
+      } finally {
+        if (!cancelled) setAuthReady(true);
       }
     }
     validateStoredSession();
     return () => { cancelled = true; };
-  }, [currentUser, hasResetToken]);
+  }, [currentUser?.id, currentUser?.email, hasResetToken]);
 
   const firstAccessibleModule = getFirstAccessibleModule(currentUser);
 
@@ -108,6 +110,8 @@ export default function App() {
   if (hasResetToken) {
     return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
   }
+
+  if (!authReady) return <div className="flex min-h-screen items-center justify-center">Comprobando permisos...</div>;
 
   if (!currentUser && hasSupabaseConfig) {
     return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
