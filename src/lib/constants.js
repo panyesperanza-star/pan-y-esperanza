@@ -1,7 +1,7 @@
 export const HELP_TYPES = ['Alimentos', 'Higiene', 'Ropa', 'Ayuda economica', 'Otra ayuda'];
 export const BENEFICIARY_SITUATIONS = ['Activa', 'Urgente', 'Prioritario', 'Seguimiento', 'Vulnerable', 'Inactiva'];
 export const MODULES = [
-  { id: 'dashboard', label: 'Dashboard', path: '/dashboard' },
+  { id: 'dashboard', label: 'Centro de operaciones', path: '/dashboard' },
   { id: 'beneficiaries', label: 'Beneficiarios', path: '/beneficiaries' },
   { id: 'communications', label: 'Comunicaciones', path: '/communications' },
   { id: 'families', label: 'Familias', path: '/families' },
@@ -30,7 +30,7 @@ export const DOCUMENT_TYPES = ['DNI/NIE / NIE O PASAPORTE', 'Empadronamiento', '
 export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario'];
 
 export const PERMISSION_MODULES = [
-  { id: 'dashboard', label: 'Ver Dashboard', actions: ['view'] },
+  { id: 'dashboard', label: 'Ver Centro de operaciones', actions: ['view'] },
   { id: 'beneficiaries', label: 'Beneficiarios' },
   { id: 'communications', label: 'Comunicaciones' },
   { id: 'families', label: 'Familias' },

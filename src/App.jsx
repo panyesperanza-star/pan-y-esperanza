@@ -140,7 +140,7 @@ export default function App() {
   }
 
   const pages = {
-    dashboard: <Dashboard data={sorted} />,
+    dashboard: <Dashboard data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} />,
