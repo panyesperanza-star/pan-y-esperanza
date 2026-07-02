@@ -9,6 +9,7 @@ export const MODULES = [
   { id: 'receipts', label: 'Justificantes', path: '/receipts' },
   { id: 'inventory', label: 'Inventario', path: '/inventory' },
   { id: 'donations', label: 'Donaciones', path: '/donations' },
+  { id: 'accounting', label: 'Contabilidad', path: '/accounting' },
   { id: 'treasury', label: 'TESORERIA', path: '/treasury' },
   { id: 'volunteers', label: 'Voluntarios', path: '/volunteers' },
   { id: 'reports', label: 'Informes', path: '/reports' },
@@ -38,6 +39,7 @@ export const PERMISSION_MODULES = [
   { id: 'receipts', label: 'Justificantes' },
   { id: 'inventory', label: 'Inventario' },
   { id: 'donations', label: 'Donaciones' },
+  { id: 'accounting', label: 'Contabilidad' },
   { id: 'treasury', label: 'Tesoreria' },
   { id: 'volunteers', label: 'Voluntarios' },
   { id: 'reports', label: 'Informes' },
@@ -76,6 +78,7 @@ function withModulePermissions(matrix, moduleId, permissions) {
 }
 
 export function isRoleActionAllowed(role, moduleId, actionId) {
+  if (moduleId === 'accounting' && actionId === 'delete') return role === 'Superadministrador';
   if (moduleId !== 'inventory' || role === 'Superadministrador') return true;
   if (actionId === 'delete') return false;
   if (role === 'Voluntario') return actionId === 'view';
@@ -97,9 +100,9 @@ export function constrainRolePermissionMatrix(role, matrix = {}) {
 
 export const ROLE_PERMISSIONS = {
   Superadministrador: ['*'],
-  Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
+  Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'accounting', 'treasury', 'reports', 'users', 'settings'],
   Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
-  Tesorera: ['donations', 'treasury', 'reports', 'receipts', 'communications'],
+  Tesorera: ['donations', 'accounting', 'treasury', 'reports', 'receipts', 'communications'],
   Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'reports'],
   Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory']
 };

@@ -13,6 +13,17 @@ const TABLES = [
   'inventory_items',
   'inventory_movements',
   'donations',
+  'accounting_events',
+  'financial_accounts',
+  'cash_bank_movements',
+  'accounting_contacts',
+  'accounting_documents',
+  'loan_records',
+  'loan_movements',
+  'debt_records',
+  'debt_movements',
+  'social_value_events',
+  'accounting_audit_trail',
   'treasury_incomes',
   'treasury_expenses',
   'treasury_loans',
@@ -23,6 +34,19 @@ const TABLES = [
   'audit_logs',
   'app_users'
 ];
+const OPTIONAL_TABLES = new Set([
+  'accounting_events',
+  'financial_accounts',
+  'cash_bank_movements',
+  'accounting_contacts',
+  'accounting_documents',
+  'loan_records',
+  'loan_movements',
+  'debt_records',
+  'debt_movements',
+  'social_value_events',
+  'accounting_audit_trail'
+]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const DATE_FIELDS = new Set([
   'birth_date',
@@ -37,6 +61,16 @@ const DATE_FIELDS = new Set([
   'reception_at',
   'sent_at',
   'donated_at',
+  'occurred_at',
+  'movement_at',
+  'document_at',
+  'due_at',
+  'paid_at',
+  'payment_at',
+  'repaid_at',
+  'debt_at',
+  'social_value_at',
+  'voided_at',
   'income_at',
   'expense_at',
   'loan_at',
@@ -86,7 +120,10 @@ function sanitizePayload(payload) {
 async function list(table) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      if (OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [];
+      throw error;
+    }
     return data || [];
   }
   return readLocal()[table] || [];
@@ -189,6 +226,14 @@ function withoutEmailHistoryFields(payload) {
   const { provider_id, status, receipt_ids, ...fallback } = payload;
   if (provider_id) fallback.result = `${fallback.result || 'Correo enviado correctamente.'} Resend: ${provider_id}`;
   return fallback;
+}
+
+function isMissingTableError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return error?.code === '42P01'
+    || error?.code === 'PGRST205'
+    || message.includes('could not find the table')
+    || (message.includes('relation') && message.includes('does not exist'));
 }
 
 export const dataStore = { list, create, update, remove, loadAll, assertUniqueDocument, resetLocalDemo, replaceLocalData };

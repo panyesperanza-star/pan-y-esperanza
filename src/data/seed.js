@@ -103,6 +103,17 @@ export const seedData = {
   donations: [
     { id: crypto.randomUUID(), donor: 'Empresa Solidaria SL', donor_kind: 'Empresa', donation_type: 'Alimentos', donated_at: todayISO(), estimated_value: 450, notes: 'Entrega mensual de productos no perecederos.' }
   ],
+  accounting_events: [],
+  financial_accounts: [],
+  cash_bank_movements: [],
+  accounting_contacts: [],
+  accounting_documents: [],
+  loan_records: [],
+  loan_movements: [],
+  debt_records: [],
+  debt_movements: [],
+  social_value_events: [],
+  accounting_audit_trail: [],
   treasury_incomes: [
     { id: crypto.randomUUID(), income_at: todayISO(), category: 'Donaciones', concept: 'Donacion economica inicial', amount: 600, donor: 'Empresa Solidaria SL', payment_method: 'Transferencia', notes: 'Ingreso de ejemplo para tesoreria.', document_name: '' }
   ],
@@ -123,7 +134,7 @@ export const seedData = {
   roles: [
     { id: 'superadmin', name: 'Superadministrador', modules: ['*'] },
     { id: 'president', name: 'Presidenta', modules: ['*'] },
-    { id: 'treasurer', name: 'Tesorera', modules: ['donations', 'treasury', 'reports', 'receipts'] },
+    { id: 'treasurer', name: 'Tesorera', modules: ['donations', 'accounting', 'treasury', 'reports', 'receipts'] },
     { id: 'secretary', name: 'Secretaria', modules: ['beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
     { id: 'volunteer', name: 'Voluntario', modules: ['beneficiaries', 'deliveries', 'inventory', 'treasury'] },
     { id: 'viewer', name: 'Consulta', modules: ['dashboard', 'reports'] }

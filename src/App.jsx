@@ -5,6 +5,7 @@ import { useAppData } from './hooks/useAppData';
 import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, refreshCurrentUser, signIn, signOut } from './lib/auth';
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
+import { Accounting } from './pages/Accounting';
 import { Beneficiaries } from './pages/Beneficiaries';
 import { Backup } from './pages/Backup';
 import { Communications } from './pages/Communications';
@@ -109,6 +110,12 @@ export default function App() {
       ...data,
       deliveries: [...data.deliveries].sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at))),
       inventory_movements: [...data.inventory_movements].sort((a, b) => String(b.moved_at).localeCompare(String(a.moved_at))),
+      accounting_events: [...(data.accounting_events || [])].sort((a, b) => String(b.occurred_at || b.created_at).localeCompare(String(a.occurred_at || a.created_at))),
+      cash_bank_movements: [...(data.cash_bank_movements || [])].sort((a, b) => String(b.movement_at || b.created_at).localeCompare(String(a.movement_at || a.created_at))),
+      accounting_documents: [...(data.accounting_documents || [])].sort((a, b) => String(b.document_at || b.created_at).localeCompare(String(a.document_at || a.created_at))),
+      loan_records: [...(data.loan_records || [])].sort((a, b) => String(b.loan_at || b.created_at).localeCompare(String(a.loan_at || a.created_at))),
+      debt_records: [...(data.debt_records || [])].sort((a, b) => String(b.debt_at || b.created_at).localeCompare(String(a.debt_at || a.created_at))),
+      social_value_events: [...(data.social_value_events || [])].sort((a, b) => String(b.social_value_at || b.created_at).localeCompare(String(a.social_value_at || a.created_at))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -157,6 +164,7 @@ export default function App() {
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    accounting: <Accounting data={sorted} currentUser={currentUser} />,
     treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
