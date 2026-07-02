@@ -1,4 +1,4 @@
-import { LEGACY_ROLE_PERMISSIONS, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
+import { LEGACY_ROLE_PERMISSIONS, MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
@@ -65,7 +65,7 @@ export async function signOut() {
 }
 
 export function withPermissions(user) {
-  const permissions = user.permissions?.length ? user.permissions : ROLE_PERMISSIONS[user.role] || LEGACY_ROLE_PERMISSIONS[user.role] || [];
+  const permissions = Array.isArray(user.permissions) ? user.permissions : ROLE_PERMISSIONS[user.role] || LEGACY_ROLE_PERMISSIONS[user.role] || [];
   return {
     ...user,
     permissions,
@@ -86,6 +86,10 @@ export function canAccess(user, moduleId) {
   if (user.permission_matrix?.[moduleId]?.view) return true;
   const permissions = user.permissions || ROLE_PERMISSIONS[user.role] || LEGACY_ROLE_PERMISSIONS[user.role] || [];
   return permissions.includes('*') || permissions.includes(moduleId);
+}
+
+export function getFirstAccessibleModule(user) {
+  return MODULES.find((module) => canAccess(user, module.id))?.id || null;
 }
 
 export function canDo(user, moduleId, action = 'view') {

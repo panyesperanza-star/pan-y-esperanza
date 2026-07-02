@@ -2,7 +2,8 @@ import { AlertTriangle, Database } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, clearStoredUser, getStoredUser, signIn, signOut } from './lib/auth';
+import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, signIn, signOut } from './lib/auth';
+import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Beneficiaries } from './pages/Beneficiaries';
 import { Backup } from './pages/Backup';
@@ -22,10 +23,17 @@ import { Volunteers } from './pages/Volunteers';
 
 export default function App() {
   const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
-  const isDebugAdminRoute = window.location.pathname === '/debug/admin';
-  const [active, setActive] = useState('dashboard');
+  const [pathname, setPathname] = useState(window.location.pathname);
+  const isDebugAdminRoute = pathname === '/debug/admin';
+  const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
+
+  useEffect(() => {
+    const handleHistoryChange = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', handleHistoryChange);
+    return () => window.removeEventListener('popstate', handleHistoryChange);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +57,41 @@ export default function App() {
     validateStoredSession();
     return () => { cancelled = true; };
   }, [currentUser, hasResetToken]);
+
+  const firstAccessibleModule = getFirstAccessibleModule(currentUser);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const requestedModule = isDebugAdminRoute ? 'users' : getModuleByPath(pathname);
+    if (requestedModule && canAccess(currentUser, requestedModule)) {
+      setActive(requestedModule);
+      return;
+    }
+    if (!firstAccessibleModule) {
+      setActive(null);
+      return;
+    }
+    const nextPath = getModulePath(firstAccessibleModule);
+    window.history.replaceState({}, '', nextPath);
+    setPathname(nextPath);
+    setActive(firstAccessibleModule);
+  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, pathname]);
+
+  function navigateTo(moduleId) {
+    if (!canAccess(currentUser, moduleId)) return;
+    const nextPath = getModulePath(moduleId);
+    window.history.pushState({}, '', nextPath);
+    setPathname(nextPath);
+    setActive(moduleId);
+  }
+
+  async function logout() {
+    await signOut();
+    window.history.replaceState({}, '', '/');
+    setPathname('/');
+    setActive(null);
+    setCurrentUser(null);
+  }
 
   const sorted = useMemo(() => {
     if (!data) return null;
@@ -80,9 +123,21 @@ export default function App() {
     }} />;
   }
 
+  if (!firstAccessibleModule) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f7faf6] px-4">
+        <section className="max-w-lg rounded-md border border-slate-200 bg-white p-8 text-center shadow-panel">
+          <h1 className="text-2xl font-bold text-ink">Sin modulos asignados</h1>
+          <p className="mt-3 text-slate-600">Tu cuenta esta activa, pero no tiene permisos de visualizacion. Solicita acceso a un administrador.</p>
+          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesion</button>
+        </section>
+      </main>
+    );
+  }
+
   const pages = {
     dashboard: <Dashboard data={sorted} />,
-    settings: <Settings data={sorted} actions={actions} currentUser={currentUser} />,
+    settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} />,
     families: <Families data={sorted} actions={actions} />,
@@ -93,15 +148,15 @@ export default function App() {
     treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
-    backup: <Backup data={sorted} actions={actions} />
+    backup: <Backup data={sorted} actions={actions} />,
+    users: <Settings key="users" data={sorted} actions={actions} currentUser={currentUser} initialTab="users" />
   };
 
-  const visiblePages = Object.fromEntries(Object.entries(pages).filter(([moduleId]) => moduleId === 'dashboard' || canAccess(currentUser, moduleId)));
-  const selectedPage = visiblePages[active] ? active : 'dashboard';
-  const pageContent = isDebugAdminRoute ? <DebugAdmin currentUser={currentUser} /> : visiblePages[selectedPage];
+  const selectedPage = active && canAccess(currentUser, active) ? active : firstAccessibleModule;
+  const pageContent = isDebugAdminRoute && canAccess(currentUser, 'users') ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
   return (
-    <Layout active={selectedPage} setActive={setActive} onReset={actions.resetDemo} currentUser={currentUser} onLogout={async () => { await signOut(); setCurrentUser(null); }}>
+    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout}>
       {!hasSupabaseConfig && <div className="mb-5 flex gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><Database size={18} /> Modo demo local activo. Configura Supabase para usar PostgreSQL.</div>}
       {error && <div className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={18} /> {error}</div>}
       {pageContent}

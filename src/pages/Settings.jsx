@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -6,25 +6,33 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
-import { getUserStatus } from '../lib/auth';
+import { canAccess, getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
-export function Settings({ data, actions, currentUser }) {
+export function Settings({ data, actions, currentUser, initialTab = 'entity' }) {
   const current = data.organization_settings?.[0] || {};
   const [form, setForm] = useState(current);
-  const [tab, setTab] = useState('entity');
+  const canViewSettings = canAccess(currentUser, 'settings');
+  const canViewUsers = canAccess(currentUser, 'users');
+  const fallbackTab = canViewSettings ? 'entity' : 'users';
+  const requestedTabAllowed = initialTab === 'users' ? canViewUsers : canViewSettings;
+  const [tab, setTab] = useState(requestedTabAllowed ? initialTab : fallbackTab);
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
+
+  useEffect(() => {
+    setTab(initialTab === 'users' && canViewUsers ? 'users' : fallbackTab);
+  }, [initialTab, canViewUsers, fallbackTab]);
 
   return (
     <>
-      <PageHeader title="Configuracion" description="Identidad corporativa, usuarios, roles y permisos." />
+      <PageHeader title={initialTab === 'users' ? 'Usuarios' : 'Configuracion'} description={initialTab === 'users' ? 'Gestion de usuarios, roles y permisos.' : 'Identidad corporativa y configuracion del sistema.'} />
       <div className="mb-5 flex flex-wrap gap-2">
-        <Button variant={tab === 'entity' ? 'primary' : 'secondary'} onClick={() => setTab('entity')}>Entidad</Button>
-        <Button variant={tab === 'mail' ? 'primary' : 'secondary'} onClick={() => setTab('mail')}>Correo</Button>
-        <Button variant={tab === 'users' ? 'primary' : 'secondary'} onClick={() => setTab('users')}>Usuarios</Button>
-        <Button variant={tab === 'system' ? 'primary' : 'secondary'} onClick={() => setTab('system')}>Estado del sistema</Button>
+        {canViewSettings && <Button variant={tab === 'entity' ? 'primary' : 'secondary'} onClick={() => setTab('entity')}>Entidad</Button>}
+        {canViewSettings && <Button variant={tab === 'mail' ? 'primary' : 'secondary'} onClick={() => setTab('mail')}>Correo</Button>}
+        {canViewUsers && <Button variant={tab === 'users' ? 'primary' : 'secondary'} onClick={() => setTab('users')}>Usuarios</Button>}
+        {canViewSettings && <Button variant={tab === 'system' ? 'primary' : 'secondary'} onClick={() => setTab('system')}>Estado del sistema</Button>}
       </div>
       {tab === 'entity' && (
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
@@ -306,7 +314,7 @@ function UserForm({ initial, organization, onSubmit }) {
       event.preventDefault();
       setError('');
       try {
-        await onSubmit(form);
+        await onSubmit({ ...form, permissions: viewPermissionsFromMatrix(form.permission_matrix, form.role) });
       } catch (err) {
         setError(normalizeUserError(err));
       }
@@ -333,12 +341,17 @@ function PermissionEditor({ value, onChange }) {
   function toggle(moduleId, actionId) {
     onChange({ ...value, [moduleId]: { ...(value[moduleId] || {}), [actionId]: !value[moduleId]?.[actionId] } });
   }
-  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por modulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[620px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Modulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" checked={Boolean(value[module.id]?.[action.id])} onChange={() => toggle(module.id, action.id)} /></td>)}</tr>)}</tbody></table></div></div>;
+  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por modulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[620px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Modulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => { const supported = !module.actions || module.actions.includes(action.id); return <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" checked={supported && Boolean(value[module.id]?.[action.id])} disabled={!supported} onChange={() => toggle(module.id, action.id)} /></td>; })}</tr>)}</tbody></table></div></div>;
 }
 
 function PermissionsMatrix({ users, actions, setMessage }) {
   const [drafts, setDrafts] = useState(() => Object.fromEntries(users.map((user) => [user.id, user.permission_matrix || ROLE_PERMISSION_MATRIX[user.role] || {}])));
-  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { await actions.updateUser(user.id, { ...user, permission_matrix: drafts[user.id] }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
+  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
+}
+
+function viewPermissionsFromMatrix(matrix = {}, role = '') {
+  if (role === 'Superadministrador') return ['*'];
+  return Object.entries(matrix).filter(([, actions]) => actions?.view).map(([moduleId]) => moduleId);
 }
 
 function AuditTable({ logs }) {

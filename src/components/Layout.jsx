@@ -5,11 +5,11 @@ import { canAccess } from '../lib/auth';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 
-const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, treasury: HandCoins, volunteers: UserRoundCheck, reports: PieChart, backup: DatabaseBackup };
+const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, treasury: HandCoins, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup };
 
 export function Layout({ active, setActive, onReset, currentUser, onLogout, children }) {
   const [open, setOpen] = useState(false);
-  const modules = MODULES.filter((module) => module.id === 'dashboard' || canAccess(currentUser, module.id));
+  const modules = MODULES.filter((module) => canAccess(currentUser, module.id));
   const nav = (
     <nav className="space-y-1">
       {modules.map((module) => {
