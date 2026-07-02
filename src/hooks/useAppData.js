@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { canDo } from '../lib/auth';
+import { constrainRolePermissionMatrix } from '../lib/constants';
 import { dataStore } from '../lib/dataStore';
-import { nextBeneficiaryCode, nextReceiptNumber, normalizeDocument } from '../lib/formatters';
+import { nextBeneficiaryCode, nextReceiptNumber, normalize, normalizeDocument } from '../lib/formatters';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
 
@@ -48,6 +49,68 @@ export function useAppData(enabled = true, currentUser = null) {
     };
   }
 
+  function currentUserName() {
+    return `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim()
+      || currentUser?.email
+      || 'Usuario';
+  }
+
+  function sanitizeInventoryItemPayload(payload) {
+    const { stock, ...editable } = payload || {};
+    const item = {
+      ...editable,
+      name: String(editable.name || '').trim(),
+      category: String(editable.category || '').trim(),
+      lot: String(editable.lot || '').trim(),
+      donor: String(editable.donor || '').trim(),
+      location: String(editable.location || '').trim(),
+      unit: String(editable.unit || '').trim(),
+      low_stock_threshold: Number(editable.low_stock_threshold || 0),
+      notes: String(editable.notes || '').trim()
+    };
+    if (!item.name) throw new Error('El nombre del producto es obligatorio.');
+    if (!item.category) throw new Error('La categoria del producto es obligatoria.');
+    if (!item.unit) throw new Error('La unidad del producto es obligatoria.');
+    if (!Number.isFinite(item.low_stock_threshold) || item.low_stock_threshold < 0) {
+      throw new Error('El stock minimo no puede ser negativo.');
+    }
+    return item;
+  }
+
+  function assertUniqueInventoryItem(payload, currentId) {
+    const duplicate = data.inventory_items.find((item) => (
+      item.id !== currentId
+      && normalize(item.name) === normalize(payload.name)
+      && normalize(item.lot) === normalize(payload.lot)
+    ));
+    if (duplicate) {
+      throw new Error(`Ya existe ${payload.name}${payload.lot ? ` con el lote ${payload.lot}` : ' sin lote asignado'}.`);
+    }
+  }
+
+  function sanitizeInventoryMovement(payload) {
+    const movementType = payload?.movement_type;
+    const quantity = Number(payload?.quantity || 0);
+    const item = data.inventory_items.find((entry) => entry.id === payload?.item_id);
+    if (!item) throw new Error('Selecciona un producto valido.');
+    if (!['Entrada', 'Salida'].includes(movementType)) throw new Error('El tipo de movimiento no es valido.');
+    if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad debe ser mayor que cero.');
+    if (movementType === 'Salida' && quantity > Number(item.stock || 0)) {
+      throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
+    }
+    return {
+      item,
+      movement: {
+        item_id: item.id,
+        movement_type: movementType,
+        quantity,
+        moved_at: payload.moved_at || new Date().toISOString().slice(0, 10),
+        responsible: String(payload.responsible || '').trim() || currentUserName(),
+        notes: String(payload.notes || '').trim()
+      }
+    };
+  }
+
   function isLastActiveSuperadmin(userId) {
     const existing = data.app_users.find((user) => user.id === userId);
     return existing?.role === 'Superadministrador'
@@ -58,6 +121,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const status = payload.status || (payload.is_active === false ? 'Inactivo' : 'Activo');
     return {
       ...payload,
+      permission_matrix: constrainRolePermissionMatrix(payload.role, payload.permission_matrix || {}),
       status,
       is_active: status === 'Activo'
     };
@@ -152,6 +216,10 @@ export function useAppData(enabled = true, currentUser = null) {
       const family = data.families.find((item) => item.id === beneficiary?.family_id);
       const item = data.inventory_items.find((entry) => entry.id === payload.inventory_item_id);
       const quantity = Number(payload.quantity || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad de la entrega debe ser mayor que cero.');
+      if (item && quantity > Number(item.stock || 0)) {
+        throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
+      }
       await dataStore.create('deliveries', {
         ...payload,
         receipt_number: payload.receipt_number || nextReceiptNumber(data.deliveries, payload.delivered_at),
@@ -162,7 +230,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       if (!hasSupabaseConfig && beneficiary) await dataStore.update('beneficiaries', beneficiary.id, { last_help_at: payload.delivered_at });
       if (!hasSupabaseConfig && item && quantity > 0) {
-        const nextStock = Math.max(Number(item.stock || 0) - quantity, 0);
+        const nextStock = Number(item.stock || 0) - quantity;
         await dataStore.update('inventory_items', item.id, { stock: nextStock });
         await dataStore.create('inventory_movements', {
           item_id: item.id,
@@ -234,22 +302,56 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createInventoryItem: async (payload) => {
-      await dataStore.create('inventory_items', payload);
-      await audit(`Creo inventario ${payload.name || ''}`.trim());
+      assertPermission('inventory', 'edit');
+      const item = sanitizeInventoryItemPayload(payload);
+      assertUniqueInventoryItem(item);
+      await dataStore.create('inventory_items', { ...item, ...(!hasSupabaseConfig ? { stock: 0 } : {}) });
+      await audit(`Creo producto de inventario ${item.name}`.trim());
       await reload();
     },
     updateInventoryItem: async (id, payload) => {
-      await dataStore.update('inventory_items', id, payload);
-      await audit(`Edito inventario ${payload.name || ''}`.trim());
+      assertPermission('inventory', 'edit');
+      const item = sanitizeInventoryItemPayload(payload);
+      assertUniqueInventoryItem(item, id);
+      await dataStore.update('inventory_items', id, item);
+      await audit(`Edito producto de inventario ${item.name}`.trim());
+      await reload();
+    },
+    deleteInventoryItem: async (id) => {
+      assertPermission('inventory', 'delete');
+      const item = data.inventory_items.find((entry) => entry.id === id);
+      try {
+        await dataStore.remove('inventory_items', id);
+      } catch (error) {
+        if (error?.code === '23503') {
+          throw new Error('No se puede eliminar un producto con movimientos registrados.');
+        }
+        throw error;
+      }
+      await audit(`Elimino producto de inventario ${item?.name || ''}`.trim());
       await reload();
     },
     createInventoryMovement: async (payload) => {
-      const item = data.inventory_items.find((entry) => entry.id === payload.item_id);
-      const quantity = Number(payload.quantity || 0);
-      const stock = payload.movement_type === 'Entrada' ? Number(item.stock || 0) + quantity : Math.max(Number(item.stock || 0) - quantity, 0);
-      await dataStore.create('inventory_movements', { ...payload, item_name: item?.name || '' });
-      if (item) await dataStore.update('inventory_items', item.id, { stock });
-      await audit(`Registro movimiento de inventario ${item?.name || ''}`.trim());
+      assertPermission('inventory', 'create');
+      const { item, movement } = sanitizeInventoryMovement(payload);
+      if (hasSupabaseConfig) {
+        const { error: movementError } = await supabase.rpc('register_inventory_movement', {
+          p_item_id: movement.item_id,
+          p_movement_type: movement.movement_type,
+          p_quantity: movement.quantity,
+          p_moved_at: movement.moved_at,
+          p_responsible: movement.responsible,
+          p_notes: movement.notes
+        });
+        if (movementError) throw movementError;
+      } else {
+        const nextStock = movement.movement_type === 'Entrada'
+          ? Number(item.stock || 0) + movement.quantity
+          : Number(item.stock || 0) - movement.quantity;
+        await dataStore.update('inventory_items', item.id, { stock: nextStock });
+        await dataStore.create('inventory_movements', { ...movement, item_name: item.name });
+      }
+      if (!hasSupabaseConfig) await audit(`Registro ${movement.movement_type.toLowerCase()} de inventario ${item.name}`.trim());
       await reload();
     },
     createDonation: async (payload) => {

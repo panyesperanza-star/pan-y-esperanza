@@ -4,7 +4,7 @@ import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
+import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
 import { canAccess, canDo, getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
@@ -334,22 +334,23 @@ function UserForm({ initial, organization, onSubmit }) {
       <FormField label="Foto de perfil opcional"><input className={inputClass} type="file" accept="image/*" onChange={(event) => updatePhoto(event.target.files?.[0])} /></FormField>
       <FormField label="Creado por"><input className={inputClass} value={form.created_by || ''} onChange={(event) => update('created_by', event.target.value)} /></FormField>
       {form.profile_photo && <div className="sm:col-span-2"><img src={form.profile_photo} alt="" className="h-16 w-16 rounded-full object-cover" /></div>}
-      <div className="sm:col-span-2"><PermissionEditor value={form.permission_matrix || ROLE_PERMISSION_MATRIX[form.role] || {}} onChange={(matrix) => update('permission_matrix', matrix)} /></div>
+      <div className="sm:col-span-2"><PermissionEditor value={form.permission_matrix || ROLE_PERMISSION_MATRIX[form.role] || {}} role={form.role} onChange={(matrix) => update('permission_matrix', matrix)} /></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar usuario</Button></div>
     </form>
   );
 }
 
-function PermissionEditor({ value, onChange }) {
+function PermissionEditor({ value, role, onChange }) {
   function toggle(moduleId, actionId) {
+    if (!isRoleActionAllowed(role, moduleId, actionId)) return;
     onChange({ ...value, [moduleId]: { ...(value[moduleId] || {}), [actionId]: !value[moduleId]?.[actionId] } });
   }
-  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por modulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[620px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Modulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => { const supported = !module.actions || module.actions.includes(action.id); return <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" checked={supported && Boolean(value[module.id]?.[action.id])} disabled={!supported} onChange={() => toggle(module.id, action.id)} /></td>; })}</tr>)}</tbody></table></div></div>;
+  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por modulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[620px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Modulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => { const supported = (!module.actions || module.actions.includes(action.id)) && isRoleActionAllowed(role, module.id, action.id); return <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" aria-label={`${module.label}: ${action.label}`} checked={supported && Boolean(value[module.id]?.[action.id])} disabled={!supported} onChange={() => toggle(module.id, action.id)} /></td>; })}</tr>)}</tbody></table></div></div>;
 }
 
 function PermissionsMatrix({ users, actions, setMessage }) {
   const [drafts, setDrafts] = useState(() => Object.fromEntries(users.map((user) => [user.id, user.permission_matrix || ROLE_PERMISSION_MATRIX[user.role] || {}])));
-  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
+  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} role={user.role} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
 }
 
 function viewPermissionsFromMatrix(matrix = {}, role = '') {

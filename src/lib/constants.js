@@ -65,6 +65,36 @@ export function buildPermissionMatrix(modules = [], actions = ['view']) {
   ]));
 }
 
+function withModulePermissions(matrix, moduleId, permissions) {
+  return {
+    ...matrix,
+    [moduleId]: {
+      ...(matrix[moduleId] || {}),
+      ...permissions
+    }
+  };
+}
+
+export function isRoleActionAllowed(role, moduleId, actionId) {
+  if (moduleId !== 'inventory' || role === 'Superadministrador') return true;
+  if (actionId === 'delete') return false;
+  if (role === 'Voluntario') return actionId === 'view';
+  if (role === 'Coordinadora' || role === 'Coordinador') {
+    return actionId === 'view' || actionId === 'create';
+  }
+  return true;
+}
+
+export function constrainRolePermissionMatrix(role, matrix = {}) {
+  return Object.fromEntries(Object.entries(matrix).map(([moduleId, actions]) => [
+    moduleId,
+    Object.fromEntries(Object.entries(actions || {}).map(([actionId, enabled]) => [
+      actionId,
+      Boolean(enabled) && isRoleActionAllowed(role, moduleId, actionId)
+    ]))
+  ]));
+}
+
 export const ROLE_PERMISSIONS = {
   Superadministrador: ['*'],
   Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'treasury', 'reports', 'users', 'settings'],
@@ -85,9 +115,27 @@ export const LEGACY_ROLE_PERMISSIONS = {
 
 export const ROLE_PERMISSION_MATRIX = {
   Superadministrador: buildPermissionMatrix(['*'], ['*']),
-  Presidenta: buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['view', 'create', 'edit', 'delete']),
+  Presidenta: withModulePermissions(
+    buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['view', 'create', 'edit', 'delete']),
+    'inventory',
+    { delete: false }
+  ),
   Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit']),
   Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['view', 'create', 'edit', 'delete']),
-  Coordinadora: buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
-  Voluntario: buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view'])
+  Coordinadora: withModulePermissions(
+    buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
+    'inventory',
+    { edit: false, delete: false }
+  ),
+  Voluntario: buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view']),
+  Administrador: withModulePermissions(
+    buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Administrador, ['view', 'create', 'edit', 'delete']),
+    'inventory',
+    { delete: false }
+  ),
+  Coordinador: withModulePermissions(
+    buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Coordinador, ['view', 'create', 'edit']),
+    'inventory',
+    { edit: false, delete: false }
+  )
 };

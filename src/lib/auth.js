@@ -1,4 +1,4 @@
-import { MODULES } from './constants';
+import { isRoleActionAllowed, MODULES } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
@@ -112,6 +112,7 @@ export function getFirstAccessibleModule(user) {
 export function canDo(user, moduleId, action = 'view') {
   if (!user) return false;
   if (user.role === 'Superadministrador') return true;
+  if (!isRoleActionAllowed(user.role, moduleId, action)) return false;
   if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
   return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
