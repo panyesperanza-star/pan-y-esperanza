@@ -75,12 +75,14 @@ const SEX_OPTIONS = ['Mujer', 'Hombre', 'No binario', 'Prefiere no indicar'];
 const MARITAL_STATUS_OPTIONS = ['Soltero/a', 'Casado/a', 'Pareja de hecho', 'Separado/a', 'Divorciado/a', 'Viudo/a'];
 const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'Derivación', 'Observación'];
 
-export function Beneficiaries({ data, actions, currentUser }) {
+export function Beneficiaries({ data, actions, currentUser, navigationTarget }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [situationFilter, setSituationFilter] = useState('Todas');
   const [editing, setEditing] = useState(null);
   const [profileId, setProfileId] = useState(null);
+  const [targetIds, setTargetIds] = useState([]);
+  const [targetLabel, setTargetLabel] = useState('');
 
   const canCreate = canDo(currentUser, 'beneficiaries', 'create');
   const canEdit = canDo(currentUser, 'beneficiaries', 'edit');
@@ -90,15 +92,50 @@ export function Beneficiaries({ data, actions, currentUser }) {
   const attendedCount = new Set(data.deliveries.filter(isActiveDelivery).map((item) => item.beneficiary_id).filter(Boolean)).size;
   const profile = data.beneficiaries.find((item) => item.id === profileId) || null;
 
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'beneficiaries') return;
+    const hasExplicitIds = Array.isArray(navigationTarget.beneficiaryIds);
+    const ids = new Set(hasExplicitIds ? navigationTarget.beneficiaryIds : []);
+    if (navigationTarget.familyId) {
+      data.beneficiaries
+        .filter((item) => item.family_id === navigationTarget.familyId)
+        .forEach((item) => ids.add(item.id));
+    }
+    if (!ids.size && !hasExplicitIds && navigationTarget.filter === 'critical-families') {
+      data.beneficiaries
+        .filter((item) => item.is_active && item.situation === 'Urgente')
+        .forEach((item) => ids.add(item.id));
+    }
+    if (!ids.size && navigationTarget.profileId) ids.add(navigationTarget.profileId);
+
+    setTargetIds([...ids]);
+    setTargetLabel(navigationTarget.label || targetLabelForBeneficiaries(navigationTarget.filter));
+    setQuery('');
+    if (navigationTarget.filter === 'critical-families') {
+      setStatusFilter('Activos');
+      setSituationFilter('Todas');
+    } else if (navigationTarget.filter === 'stale-help') {
+      setStatusFilter('Activos');
+      setSituationFilter('Todas');
+    } else if (!navigationTarget.filter && !navigationTarget.profileId && !navigationTarget.familyId) {
+      setStatusFilter('Todos');
+      setSituationFilter('Todas');
+    }
+    if (navigationTarget.profileId && data.beneficiaries.some((item) => item.id === navigationTarget.profileId)) {
+      setProfileId(navigationTarget.profileId);
+    }
+  }, [data.beneficiaries, navigationTarget]);
+
   const filtered = useMemo(() => {
     const needle = normalize(query);
     return data.beneficiaries.filter((item) => {
       const matchesQuery = normalize(`${item.full_name} ${item.document_id} ${item.code} ${item.phone} ${item.email}`).includes(needle);
       const matchesStatus = statusFilter === 'Todos' || (statusFilter === 'Activos' ? item.is_active : !item.is_active);
       const matchesSituation = situationFilter === 'Todas' || item.situation === situationFilter;
-      return matchesQuery && matchesStatus && matchesSituation;
+      const matchesTarget = !targetIds.length || targetIds.includes(item.id);
+      return matchesQuery && matchesStatus && matchesSituation && matchesTarget;
     });
-  }, [data.beneficiaries, query, situationFilter, statusFilter]);
+  }, [data.beneficiaries, query, situationFilter, statusFilter, targetIds]);
 
   async function save(form) {
     if (form.id) await actions.updateBeneficiary(form.id, form);
@@ -154,6 +191,14 @@ export function Beneficiaries({ data, actions, currentUser }) {
             </select>
           </label>
         </div>
+        {targetLabel && (
+          <div className="mt-3 flex flex-col gap-2 rounded-lg border border-brand-100 bg-brand-50 p-3 text-sm text-brand-700 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-semibold">Filtro del Centro de Operaciones: {targetLabel}</span>
+            <Button variant="secondary" onClick={() => { setTargetIds([]); setTargetLabel(''); }}>
+              Quitar filtro
+            </Button>
+          </div>
+        )}
         <p className="mt-3 text-xs font-medium text-slate-500">Mostrando {filtered.length} de {data.beneficiaries.length} registros</p>
       </section>
 
@@ -262,6 +307,13 @@ function SituationBadge({ value }) {
   if (['activa', 'inactiva'].includes(normalize(value))) return null;
   const tone = value === 'Urgente' ? 'bg-orange-50 text-orange-700 ring-orange-200' : value === 'Inactiva' ? 'bg-slate-100 text-slate-600 ring-slate-200' : value === 'Seguimiento' ? 'bg-blue-50 text-blue-700 ring-blue-200' : 'bg-brand-50 text-brand-700 ring-brand-100';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tone}`}>{value || 'Sin situación'}</span>;
+}
+
+function targetLabelForBeneficiaries(filter) {
+  if (filter === 'critical-families') return 'Familias criticas';
+  if (filter === 'stale-help') return 'Sin ayuda +30 dias';
+  if (filter === 'family-detail') return 'Expediente seleccionado';
+  return '';
 }
 
 function SocialSituationBadge({ value }) {

@@ -77,16 +77,17 @@ export function Dashboard({ data, currentUser, onNavigate }) {
     [data, today, secureSummary.pendingPasswordResets]
   );
 
-  function openModule(moduleId) {
+  function openModule(destination) {
+    const moduleId = getDestinationModule(destination);
     if (!moduleId || !canAccess(currentUser, moduleId)) return;
-    onNavigate?.(moduleId);
+    onNavigate?.(destination);
   }
 
-  const familyModule = canAccess(currentUser, 'families')
-    ? 'families'
-    : canAccess(currentUser, 'beneficiaries')
+  const familyModule = canAccess(currentUser, 'beneficiaries')
       ? 'beneficiaries'
-      : null;
+      : canAccess(currentUser, 'families')
+        ? 'families'
+        : null;
   const priorityCards = buildPriorityCards(operations, currentUser, familyModule);
   const quickItems = buildQuickItems(operations, currentUser, familyModule);
   const tasks = buildTasks(operations, currentUser, familyModule);
@@ -104,8 +105,8 @@ export function Dashboard({ data, currentUser, onNavigate }) {
         message={assistant.message}
         recommendation={assistant.recommendation}
         summaryItems={assistant.summaryItems}
-        onStart={() => openModule(assistant.primaryModule)}
-        disabled={!assistant.primaryModule}
+        onStart={() => openModule(assistant.primaryDestination)}
+        disabled={!assistant.primaryDestination}
       />
 
       {quickItems.length > 0 && (
@@ -139,7 +140,7 @@ export function Dashboard({ data, currentUser, onNavigate }) {
           {operations.priorityFamilies.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {operations.priorityFamilies.slice(0, FAMILY_LIMIT).map((family) => (
-                <FamilyPriorityCard key={family.id} family={family} moduleId={familyModule} onOpen={openModule} />
+                <FamilyPriorityCard key={family.id} family={family} destination={buildFamilyDetailDestination(family, familyModule)} onOpen={openModule} />
               ))}
             </div>
           ) : (
@@ -165,7 +166,7 @@ export function Dashboard({ data, currentUser, onNavigate }) {
                       <p>Stock: {formatNumber(item.stock)} {item.unit || ''}. Minimo: {formatNumber(item.low_stock_threshold)}.</p>
                     </>
                   )}
-                  onOpen={() => openModule('inventory')}
+                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'stock-critical' })}
                 />
                 <AlertList
                   title="Productos agotados"
@@ -178,7 +179,7 @@ export function Dashboard({ data, currentUser, onNavigate }) {
                       <p>{item.category || 'Sin categoria'} - {item.location || 'Sin ubicacion'}</p>
                     </>
                   )}
-                  onOpen={() => openModule('inventory')}
+                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'stock-critical' })}
                 />
                 <AlertList
                   title="Proximas caducidades"
@@ -191,7 +192,7 @@ export function Dashboard({ data, currentUser, onNavigate }) {
                       <p>{formatExpiry(item.expires_at, today)} - Lote {item.lot || '-'}</p>
                     </>
                   )}
-                  onOpen={() => openModule('inventory')}
+                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'expiring-soon' })}
                 />
               </div>
             </div>
@@ -275,7 +276,7 @@ function QuickTodayBar({ items, onOpen }) {
         <button
           key={item.title}
           type="button"
-          onClick={() => onOpen(item.moduleId)}
+          onClick={() => onOpen(item.destination || item.moduleId)}
           className={`focus-ring rounded-md border p-3 text-left shadow-panel transition hover:-translate-y-0.5 ${quickToneClasses(item.tone)}`}
         >
           <div className="flex items-center justify-between gap-2">
@@ -301,7 +302,7 @@ function PriorityDeck({ cards, onOpen }) {
     <div className="grid gap-4 lg:grid-cols-[1.05fr_1.4fr]">
       <button
         type="button"
-        onClick={() => onOpen(featured.moduleId)}
+        onClick={() => onOpen(featured.destination || featured.moduleId)}
         className={`focus-ring group min-h-56 rounded-md border p-5 text-left shadow-panel transition hover:-translate-y-0.5 ${priorityToneClasses(hasActivePriority ? featured.tone : 'green')}`}
       >
         <div className="flex items-start justify-between gap-4">
@@ -326,7 +327,7 @@ function PriorityCompactCard({ card, onOpen }) {
   return (
     <button
       type="button"
-      onClick={() => onOpen(card.moduleId)}
+      onClick={() => onOpen(card.destination || card.moduleId)}
       className={`focus-ring rounded-md border p-4 text-left shadow-panel transition hover:-translate-y-0.5 ${priorityToneClasses(tone)}`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -348,7 +349,7 @@ function TaskCard({ task, onOpen }) {
           <h4 className="mt-3 text-lg font-bold text-ink">{task.title}</h4>
           <p className="mt-1 text-sm text-slate-600">{task.detail}</p>
         </div>
-        <Button variant="secondary" onClick={() => onOpen(task.moduleId)} className="self-start whitespace-nowrap">
+        <Button variant="secondary" onClick={() => onOpen(task.destination || task.moduleId)} className="self-start whitespace-nowrap">
           {task.action}
         </Button>
       </div>
@@ -356,10 +357,18 @@ function TaskCard({ task, onOpen }) {
   );
 }
 
-function FamilyPriorityCard({ family, moduleId, onOpen }) {
+function FamilyPriorityCard({ family, destination, onOpen }) {
   const isCritical = family.priorityLevel === 'Critica';
   return (
-    <article className={`rounded-md border p-5 shadow-panel ${isCritical ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}>
+    <article
+      className={`cursor-pointer rounded-md border p-5 shadow-panel transition hover:-translate-y-0.5 ${isCritical ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(destination)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen(destination);
+      }}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{family.code || 'Unidad familiar'}</p>
@@ -377,7 +386,7 @@ function FamilyPriorityCard({ family, moduleId, onOpen }) {
         <strong>Motivo:</strong> {family.priorityReason}
       </div>
       <div className="mt-4 flex justify-end">
-        <Button variant={isCritical ? 'primary' : 'secondary'} onClick={() => onOpen(moduleId || family.moduleId)}>
+        <Button variant={isCritical ? 'primary' : 'secondary'} onClick={(event) => { event.stopPropagation(); onOpen(destination); }}>
           Ver expediente
         </Button>
       </div>
@@ -406,12 +415,12 @@ function AlertList({ title, icon: Icon, items, empty, renderItem, onOpen }) {
   );
 }
 
-function CommunicationCard({ title, value, detail, icon: Icon, moduleId, onOpen }) {
+function CommunicationCard({ title, value, detail, icon: Icon, moduleId, destination, onOpen }) {
   const active = Number(value) > 0;
   return (
     <button
       type="button"
-      onClick={() => onOpen(moduleId)}
+      onClick={() => onOpen(destination || moduleId)}
       className={`focus-ring rounded-md border p-4 text-left shadow-panel transition hover:-translate-y-0.5 ${active ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -443,14 +452,43 @@ function EmptyState({ title, text }) {
   );
 }
 
+function getDestinationModule(destination) {
+  if (typeof destination === 'string') return destination;
+  return destination?.moduleId || null;
+}
+
+function buildFamilyListDestination(families, moduleId, filter) {
+  return {
+    moduleId,
+    filter,
+    beneficiaryIds: families.flatMap((family) => family.beneficiaryIds || []),
+    label: 'Familias criticas'
+  };
+}
+
+function buildFamilyDetailDestination(family, moduleId) {
+  if (moduleId === 'beneficiaries' && family?.primaryBeneficiaryId) {
+    return {
+      moduleId: 'beneficiaries',
+      filter: 'family-detail',
+      profileId: family.primaryBeneficiaryId,
+      familyId: family.familyId,
+      beneficiaryIds: family.beneficiaryIds || [],
+      label: family.name
+    };
+  }
+  return { moduleId, filter: 'family-detail', familyId: family?.familyId, label: family?.name };
+}
+
 function buildPriorityCards(operations, currentUser, familyModule) {
   return [
     familyModule && {
-      title: 'Familias urgentes',
-      value: operations.urgentFamilies.length,
-      detail: `${operations.criticalFamilies.length} criticas, ${operations.priorityFamilies.length} priorizadas`,
+      title: 'Familias criticas',
+      value: operations.criticalFamilies.length,
+      detail: `${operations.urgentFamilies.length} urgentes, ${operations.priorityFamilies.length} priorizadas`,
       icon: ShieldAlert,
       moduleId: familyModule,
+      destination: buildFamilyListDestination(operations.criticalFamilies, familyModule, 'critical-families'),
       tone: 'red'
     },
     canAccess(currentUser, 'beneficiaries') && {
@@ -459,6 +497,12 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       detail: 'Beneficiarios activos sin ayuda reciente',
       icon: Clock3,
       moduleId: 'beneficiaries',
+      destination: {
+        moduleId: 'beneficiaries',
+        filter: 'stale-help',
+        beneficiaryIds: operations.staleBeneficiaries.map((item) => item.id),
+        label: `Sin ayuda +${STALE_HELP_DAYS} dias`
+      },
       tone: 'orange'
     },
     canAccess(currentUser, 'inventory') && {
@@ -467,6 +511,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       detail: `${operations.outOfStock.length} agotados`,
       icon: AlertTriangle,
       moduleId: 'inventory',
+      destination: { moduleId: 'inventory', filter: 'stock-critical' },
       tone: 'red'
     },
     canAccess(currentUser, 'inventory') && {
@@ -475,6 +520,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       detail: `Proximos ${EXPIRY_WINDOW_DAYS} dias`,
       icon: CalendarClock,
       moduleId: 'inventory',
+      destination: { moduleId: 'inventory', filter: 'expiring-soon' },
       tone: 'orange'
     },
     canAccess(currentUser, 'communications') && {
@@ -483,6 +529,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       detail: 'Comunicaciones no resueltas',
       icon: Mail,
       moduleId: 'communications',
+      destination: { moduleId: 'communications', filter: 'pending-emails' },
       tone: 'blue'
     },
     canAccess(currentUser, 'receipts') && {
@@ -491,6 +538,11 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       detail: 'Sin numero o firma',
       icon: FileText,
       moduleId: 'receipts',
+      destination: {
+        moduleId: 'receipts',
+        filter: 'pending-receipts',
+        receiptIds: operations.pendingReceipts.map((item) => item.id)
+      },
       tone: 'orange'
     }
   ].filter(Boolean);
@@ -503,6 +555,7 @@ function buildQuickItems(operations, currentUser, familyModule) {
       value: operations.criticalFamilies.length,
       icon: ShieldAlert,
       moduleId: familyModule,
+      destination: buildFamilyListDestination(operations.criticalFamilies, familyModule, 'critical-families'),
       tone: operations.criticalFamilies.length ? 'red' : 'green'
     },
     canAccess(currentUser, 'deliveries') && {
@@ -517,6 +570,7 @@ function buildQuickItems(operations, currentUser, familyModule) {
       value: operations.criticalStock.length,
       icon: Boxes,
       moduleId: 'inventory',
+      destination: { moduleId: 'inventory', filter: 'stock-critical' },
       tone: operations.criticalStock.length ? 'red' : 'green'
     },
     canAccess(currentUser, 'receipts') && {
@@ -524,6 +578,11 @@ function buildQuickItems(operations, currentUser, familyModule) {
       value: operations.pendingReceipts.length,
       icon: FileText,
       moduleId: 'receipts',
+      destination: {
+        moduleId: 'receipts',
+        filter: 'pending-receipts',
+        receiptIds: operations.pendingReceipts.map((item) => item.id)
+      },
       tone: operations.pendingReceipts.length ? 'orange' : 'green'
     },
     canAccess(currentUser, 'donations') && {
@@ -531,6 +590,11 @@ function buildQuickItems(operations, currentUser, familyModule) {
       value: operations.pendingDonations.length,
       icon: Gift,
       moduleId: 'donations',
+      destination: {
+        moduleId: 'donations',
+        filter: 'pending-donations',
+        donationIds: operations.pendingDonations.map((item) => item.id)
+      },
       tone: operations.pendingDonations.length ? 'orange' : 'green'
     }
   ].filter(Boolean);
@@ -543,7 +607,8 @@ function buildTasks(operations, currentUser, familyModule) {
       detail: pluralSummary(operations.criticalFamilies.length, 'familia critica requiere atencion', 'familias criticas requieren atencion'),
       priority: 'Critica',
       action: 'Ver familias',
-      moduleId: familyModule
+      moduleId: familyModule,
+      destination: buildFamilyListDestination(operations.criticalFamilies, familyModule, 'critical-families')
     },
     canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0 && {
       title: 'Registrar entregas pendientes',
@@ -557,21 +622,28 @@ function buildTasks(operations, currentUser, familyModule) {
       detail: pluralSummary(operations.criticalStock.length, 'producto esta bajo minimo', 'productos estan bajo minimo'),
       priority: operations.outOfStock.length ? 'Critica' : 'Alta',
       action: 'Abrir inventario',
-      moduleId: 'inventory'
+      moduleId: 'inventory',
+      destination: { moduleId: 'inventory', filter: 'stock-critical' }
     },
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && {
       title: 'Revisar productos proximos a caducar',
       detail: pluralSummary(operations.expiringSoon.length, 'producto vence pronto', 'productos vencen pronto'),
       priority: 'Alta',
       action: 'Abrir inventario',
-      moduleId: 'inventory'
+      moduleId: 'inventory',
+      destination: { moduleId: 'inventory', filter: 'expiring-soon' }
     },
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && {
       title: 'Enviar justificantes pendientes',
       detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revision', 'justificantes necesitan revision'),
       priority: 'Alta',
       action: 'Ver justificantes',
-      moduleId: 'receipts'
+      moduleId: 'receipts',
+      destination: {
+        moduleId: 'receipts',
+        filter: 'pending-receipts',
+        receiptIds: operations.pendingReceipts.map((item) => item.id)
+      }
     },
     canAccess(currentUser, 'beneficiaries') && operations.newBeneficiaries.length > 0 && {
       title: 'Revisar beneficiarios nuevos',
@@ -601,26 +673,42 @@ function buildAssistantState(operations, currentUser, familyModule) {
   return {
     message,
     recommendation: primary?.recommendation || 'Todo correcto por ahora.',
-    primaryModule: primary?.moduleId || null,
+    primaryDestination: primary?.destination || null,
     summaryItems: parts.length ? parts.map((item) => `${item}.`) : ['Todo correcto por ahora.']
   };
 }
 
 function getPrimaryAction(operations, currentUser, familyModule) {
   if (familyModule && operations.criticalFamilies.length > 0) {
-    return { moduleId: familyModule, recommendation: 'Empieza revisando la familia critica con mas riesgo.' };
+    return {
+      destination: buildFamilyDetailDestination(operations.criticalFamilies[0], familyModule),
+      recommendation: 'Empieza revisando la familia critica con mas riesgo.'
+    };
   }
   if (canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0) {
-    return { moduleId: 'deliveries', recommendation: 'Empieza por las entregas de hoy y deja registradas las acciones pendientes.' };
+    return { destination: { moduleId: 'deliveries' }, recommendation: 'Empieza por las entregas de hoy y deja registradas las acciones pendientes.' };
   }
   if (canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0) {
-    return { moduleId: 'inventory', recommendation: 'Empieza revisando el stock critico antes de preparar nuevas entregas.' };
+    return {
+      destination: { moduleId: 'inventory', filter: 'stock-critical' },
+      recommendation: 'Empieza revisando el stock critico antes de preparar nuevas entregas.'
+    };
   }
   if (canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0) {
-    return { moduleId: 'inventory', recommendation: 'Prioriza los productos proximos a caducar para evitar perdidas.' };
+    return {
+      destination: { moduleId: 'inventory', filter: 'expiring-soon' },
+      recommendation: 'Prioriza los productos proximos a caducar para evitar perdidas.'
+    };
   }
   if (canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0) {
-    return { moduleId: 'receipts', recommendation: 'Cierra los justificantes pendientes para mantener la documentacion al dia.' };
+    return {
+      destination: {
+        moduleId: 'receipts',
+        filter: 'pending-receipts',
+        receiptIds: operations.pendingReceipts.map((item) => item.id)
+      },
+      recommendation: 'Cierra los justificantes pendientes para mantener la documentacion al dia.'
+    };
   }
   return null;
 }
@@ -632,14 +720,20 @@ function buildCommunicationCards(operations, currentUser, secureSummary) {
       value: operations.pendingEmails.length,
       detail: describeList(operations.pendingEmails, (item) => item.subject || item.recipient),
       icon: Mail,
-      moduleId: 'communications'
+      moduleId: 'communications',
+      destination: { moduleId: 'communications', filter: 'pending-emails' }
     },
     canAccess(currentUser, 'receipts') && {
       title: 'Justificantes pendientes',
       value: operations.pendingReceipts.length,
       detail: describeList(operations.pendingReceipts, (item) => item.beneficiary_name || item.receipt_number),
       icon: FileText,
-      moduleId: 'receipts'
+      moduleId: 'receipts',
+      destination: {
+        moduleId: 'receipts',
+        filter: 'pending-receipts',
+        receiptIds: operations.pendingReceipts.map((item) => item.id)
+      }
     },
     canAccess(currentUser, 'users') && {
       title: 'Recuperaciones de contrasena',
@@ -804,6 +898,10 @@ function enrichFamilyGroup(group, activeDeliveries, latestDeliveryByBeneficiary,
   const situations = beneficiaries.map((item) => normalize(item.situation));
   const hasUrgentSituation = situations.some((item) => item.includes('urgente'));
   const hasPrioritySituation = situations.some((item) => item.includes('prioritario') || item.includes('vulnerable'));
+  const primaryBeneficiary = beneficiaries.find((item) => normalize(item.situation).includes('urgente'))
+    || beneficiaries.find((item) => normalize(item.situation).includes('prioritario'))
+    || beneficiaries[0]
+    || null;
   const reasons = [];
   let priorityScore = 0;
 
@@ -838,6 +936,9 @@ function enrichFamilyGroup(group, activeDeliveries, latestDeliveryByBeneficiary,
 
   return {
     ...group,
+    familyId: group.family?.id || primaryBeneficiary?.family_id || '',
+    beneficiaryIds: beneficiaries.map((item) => item.id).filter(Boolean),
+    primaryBeneficiaryId: primaryBeneficiary?.id || '',
     code: group.family?.family_code || beneficiaries[0]?.code || '',
     name: group.family?.responsible_name || beneficiaries[0]?.full_name || 'Familia sin nombre',
     membersCount,

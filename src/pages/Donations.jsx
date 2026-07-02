@@ -1,29 +1,61 @@
 import { Download, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { printDonationCertificatePdf } from '../lib/exporters';
-import { formatDate, todayISO } from '../lib/formatters';
+import { formatDate, normalize, todayISO } from '../lib/formatters';
 
-export function Donations({ data, actions, currentUser }) {
+export function Donations({ data, actions, currentUser, navigationTarget }) {
   const [open, setOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('Todas');
   const canCreate = canDo(currentUser, 'donations', 'create');
   const canDelete = canDo(currentUser, 'donations', 'delete');
+  const visibleDonations = useMemo(() => {
+    if (statusFilter === 'Pendientes') return data.donations.filter(isPendingDonation);
+    return data.donations;
+  }, [data.donations, statusFilter]);
+
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'donations') return;
+    if (navigationTarget.filter === 'pending-donations') setStatusFilter('Pendientes');
+    else if (!navigationTarget.filter) setStatusFilter('Todas');
+  }, [navigationTarget]);
+
   return (
     <>
       <PageHeader title="Donaciones" description="Registro de donaciones y certificados PDF." actions={canCreate ? <Button onClick={() => setOpen(true)}><Plus size={18} /> Nueva donacion</Button> : null} />
+      <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+        <label className="block max-w-xs">
+          <span className="sr-only">Filtrar donaciones</span>
+          <select className={inputClass} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option>Todas</option>
+            <option>Pendientes</option>
+          </select>
+        </label>
+      </section>
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Donante</th><th>Tipo donante</th><th>Donacion</th><th>Valor</th><th className="text-right pr-4">Acciones</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{data.donations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => actions.deleteDonation(item.id)}><Trash2 size={16} /> Eliminar</Button>}</div></td></tr>)}</tbody>
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Donante</th><th>Tipo donante</th><th>Donacion</th><th>Valor</th><th>Estado</th><th className="text-right pr-4">Acciones</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">{visibleDonations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td>{donationStatus(item)}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => actions.deleteDonation(item.id)}><Trash2 size={16} /> Eliminar</Button>}</div></td></tr>)}</tbody>
         </table>
+        {!visibleDonations.length && <p className="p-5 text-sm text-slate-500">No hay donaciones con los filtros seleccionados.</p>}
       </div>
       {open && <Modal title="Nueva donacion" onClose={() => setOpen(false)}><DonationForm onSubmit={async (payload) => { await actions.createDonation(payload); setOpen(false); }} /></Modal>}
     </>
   );
+}
+
+function isPendingDonation(donation) {
+  if (donation.is_pending === true) return true;
+  const status = normalize(donation.status || donation.state || donation.delivery_status || '');
+  return ['pendiente', 'pending', 'solicitada', 'comprometida'].includes(status);
+}
+
+function donationStatus(donation) {
+  return isPendingDonation(donation) ? 'Pendiente' : donation.status || donation.state || 'Registrada';
 }
 
 function DonationForm({ onSubmit }) {

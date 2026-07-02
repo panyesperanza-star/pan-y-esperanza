@@ -1,13 +1,13 @@
 import { Download, Mail, MessageCircle, Send } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
-import { formatDate, formatDateTime } from '../lib/formatters';
+import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
-export function Communications({ data, actions, currentUser }) {
+export function Communications({ data, actions, currentUser, navigationTarget }) {
   const organization = data.organization_settings?.[0] || {};
   const latestDeliveries = useMemo(() => {
     const byBeneficiary = new Map();
@@ -36,9 +36,21 @@ export function Communications({ data, actions, currentUser }) {
     attachReceipt: true
   });
   const [notice, setNotice] = useState('');
+  const [historyFilter, setHistoryFilter] = useState('Todos');
 
   const beneficiary = data.beneficiaries.find((item) => item.id === form.beneficiary_id);
   const latestDelivery = latestDeliveries.get(form.beneficiary_id);
+  const historyLogs = useMemo(() => {
+    const logs = data.email_logs || [];
+    if (historyFilter === 'Pendientes') return logs.filter(isPendingEmailLog);
+    return logs;
+  }, [data.email_logs, historyFilter]);
+
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'communications') return;
+    if (navigationTarget.filter === 'pending-emails') setHistoryFilter('Pendientes');
+    else if (!navigationTarget.filter) setHistoryFilter('Todos');
+  }, [navigationTarget]);
 
   function update(field, value) {
     setNotice('');
@@ -194,14 +206,20 @@ export function Communications({ data, actions, currentUser }) {
       </div>
 
       <section className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-        <h3 className="font-bold text-ink">Historial de comunicaciones</h3>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="font-bold text-ink">Historial de comunicaciones</h3>
+          <select className={`${inputClass} sm:w-56`} value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)}>
+            <option>Todos</option>
+            <option>Pendientes</option>
+          </select>
+        </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr><th className="px-4 py-3">Fecha</th><th>Destinatario</th><th>Asunto</th><th>Usuario</th><th>Adjuntos</th><th>Resultado</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(data.email_logs || []).map((log) => (
+              {historyLogs.map((log) => (
                 <tr key={log.id}>
                   <td className="px-4 py-3">{formatDateTime(log.sent_at)}</td>
                   <td>{log.recipient}</td>
@@ -211,7 +229,7 @@ export function Communications({ data, actions, currentUser }) {
                   <td>{log.result || '-'}</td>
                 </tr>
               ))}
-              {!(data.email_logs || []).length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="6">Sin comunicaciones registradas.</td></tr>}
+              {!historyLogs.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="6">Sin comunicaciones registradas.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -222,6 +240,12 @@ export function Communications({ data, actions, currentUser }) {
 
 function Metric({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-white p-4 shadow-panel"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-ink">{value}</p></div>;
+}
+
+function isPendingEmailLog(log) {
+  const status = normalize(log.status || '');
+  const result = normalize(log.result || '');
+  return status.includes('pendiente') || status.includes('pending') || result.includes('pendiente') || result.includes('pending');
 }
 
 export function normalizeWhatsAppPhone(value) {

@@ -10,7 +10,7 @@ import {
   Search,
   Trash2
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -22,7 +22,7 @@ import { formatDate, normalize, todayISO } from '../lib/formatters';
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
 const unitSuggestions = ['unidades', 'kg', 'litros', 'paquetes', 'cajas'];
 
-export function Inventory({ data, actions, currentUser }) {
+export function Inventory({ data, actions, currentUser, navigationTarget }) {
   const [productModal, setProductModal] = useState(null);
   const [movementType, setMovementType] = useState(null);
   const [search, setSearch] = useState('');
@@ -40,6 +40,16 @@ export function Inventory({ data, actions, currentUser }) {
     [data.inventory_items]
   );
   const summary = useMemo(() => calculateSummary(data.inventory_items), [data.inventory_items]);
+
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'inventory') return;
+    setSearch('');
+    setCategory('Todas');
+    if (navigationTarget.filter === 'stock-critical') setStatus('Stock critico');
+    else if (navigationTarget.filter === 'expiring-soon') setStatus('Caducidad proxima');
+    else if (!navigationTarget.filter) setStatus('Todos');
+  }, [navigationTarget]);
+
   const filteredItems = useMemo(() => {
     const query = normalize(search);
     return [...data.inventory_items]
@@ -134,8 +144,10 @@ export function Inventory({ data, actions, currentUser }) {
               <option>Todos</option>
               <option>Alertas</option>
               <option>Agotados</option>
+              <option>Stock critico</option>
               <option>Stock bajo</option>
               <option>Caducados</option>
+              <option>Caducidad proxima</option>
               <option>Caducidad próxima</option>
               <option>Correctos</option>
             </select>
@@ -461,8 +473,10 @@ function matchesStatus(item, status) {
   const labels = getItemSignals(item).map((signal) => signal.label);
   if (status === 'Alertas') return labels.length > 0;
   if (status === 'Agotados') return labels.includes('Agotado');
+  if (status === 'Stock critico') return labels.includes('Agotado') || labels.includes('Stock bajo');
   if (status === 'Stock bajo') return labels.includes('Stock bajo');
   if (status === 'Caducados') return labels.includes('Caducado');
+  if (status === 'Caducidad proxima') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
   if (status === 'Caducidad próxima') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
   if (status === 'Correctos') return labels.length === 0;
   return true;

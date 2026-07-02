@@ -1,5 +1,5 @@
 import { Archive, CalendarDays, Eye, FileText, Mail, RefreshCw } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -9,13 +9,14 @@ import { downloadReceiptsZip, exportDeliveriesSummaryPdf } from '../lib/exporter
 import { formatDate, todayISO } from '../lib/formatters';
 import { openStoredEmailAttachment, sendEmailViaApi } from '../lib/emailClient';
 
-export function Receipts({ data, actions }) {
+export function Receipts({ data, actions, navigationTarget }) {
   const [filters, setFilters] = useState({
     from: '',
     to: '',
     beneficiary: '',
     responsible: '',
-    helpType: ''
+    helpType: '',
+    status: 'Todos'
   });
   const [selected, setSelected] = useState([]);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -35,8 +36,20 @@ export function Receipts({ data, actions }) {
     if (filters.beneficiary && delivery.beneficiary_id !== filters.beneficiary) return false;
     if (filters.responsible && !String(delivery.responsible || '').toLowerCase().includes(filters.responsible.toLowerCase())) return false;
     if (filters.helpType && delivery.help_type !== filters.helpType) return false;
+    if (filters.status === 'Pendientes' && !isPendingReceipt(delivery)) return false;
     return true;
   }), [filters, receipts]);
+
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'receipts') return;
+    if (navigationTarget.filter === 'pending-receipts') {
+      setFilters({ from: '', to: '', beneficiary: '', responsible: '', helpType: '', status: 'Pendientes' });
+      setSelected(Array.isArray(navigationTarget.receiptIds) ? navigationTarget.receiptIds : []);
+    } else if (!navigationTarget.filter) {
+      setFilters({ from: '', to: '', beneficiary: '', responsible: '', helpType: '', status: 'Todos' });
+      setSelected([]);
+    }
+  }, [navigationTarget]);
 
   const stats = useMemo(() => {
     const today = todayISO();
@@ -251,7 +264,7 @@ export function Receipts({ data, actions }) {
       </div>
 
       <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-6">
           <FormField label="Fecha desde"><input className={inputClass} type="date" value={filters.from} onChange={(event) => update('from', event.target.value)} /></FormField>
           <FormField label="Fecha hasta"><input className={inputClass} type="date" value={filters.to} onChange={(event) => update('to', event.target.value)} /></FormField>
           <FormField label="Beneficiario">
@@ -265,6 +278,12 @@ export function Receipts({ data, actions }) {
             <select className={inputClass} value={filters.helpType} onChange={(event) => update('helpType', event.target.value)}>
               <option value="">Todas</option>
               {HELP_TYPES.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Estado">
+            <select className={inputClass} value={filters.status} onChange={(event) => update('status', event.target.value)}>
+              <option>Todos</option>
+              <option>Pendientes</option>
             </select>
           </FormField>
         </div>
@@ -509,16 +528,21 @@ function normalizeEmailError(error) {
   return message || 'Error al enviar el correo.';
 }
 
+function isPendingReceipt(delivery) {
+  return !delivery.has_receipt_number || !delivery.signature_data_url;
+}
+
 function withFallbackReceiptNumbers(deliveries) {
   const counters = {};
   return [...deliveries]
     .sort((a, b) => String(a.delivered_at).localeCompare(String(b.delivered_at)))
     .map((delivery) => {
-      if (delivery.receipt_number) return delivery;
+      if (delivery.receipt_number) return { ...delivery, has_receipt_number: true };
       const year = new Date(delivery.delivered_at || Date.now()).getFullYear();
       counters[year] = (counters[year] || 0) + 1;
       return {
         ...delivery,
+        has_receipt_number: false,
         receipt_number: `PE-${year}-${String(counters[year]).padStart(6, '0')}`
       };
     })

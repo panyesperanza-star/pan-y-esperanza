@@ -26,12 +26,16 @@ export default function App() {
   const [pathname, setPathname] = useState(window.location.pathname);
   const isDebugAdminRoute = pathname === '/debug/admin';
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
+  const [navigationTarget, setNavigationTarget] = useState(() => readNavigationTargetFromLocation());
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig || hasResetToken || !getStoredUser());
   const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
 
   useEffect(() => {
-    const handleHistoryChange = () => setPathname(window.location.pathname);
+    const handleHistoryChange = () => {
+      setPathname(window.location.pathname);
+      setNavigationTarget(readNavigationTargetFromLocation());
+    };
     window.addEventListener('popstate', handleHistoryChange);
     return () => window.removeEventListener('popstate', handleHistoryChange);
   }, []);
@@ -76,14 +80,18 @@ export default function App() {
     const nextPath = getModulePath(firstAccessibleModule);
     window.history.replaceState({}, '', nextPath);
     setPathname(nextPath);
+    setNavigationTarget({ moduleId: firstAccessibleModule, key: Date.now() });
     setActive(firstAccessibleModule);
   }, [currentUser, firstAccessibleModule, isDebugAdminRoute, pathname]);
 
-  function navigateTo(moduleId) {
+  function navigateTo(destination) {
+    const target = normalizeNavigationTarget(destination);
+    const moduleId = target.moduleId;
     if (!canAccess(currentUser, moduleId)) return;
-    const nextPath = getModulePath(moduleId);
+    const nextPath = buildNavigationPath(target);
     window.history.pushState({}, '', nextPath);
-    setPathname(nextPath);
+    setPathname(window.location.pathname);
+    setNavigationTarget({ ...target, key: Date.now() });
     setActive(moduleId);
   }
 
@@ -142,13 +150,13 @@ export default function App() {
   const pages = {
     dashboard: <Dashboard data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
-    beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} />,
-    communications: <Communications data={sorted} actions={actions} currentUser={currentUser} />,
+    beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     families: <Families data={sorted} actions={actions} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
-    receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} />,
-    inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} />,
-    donations: <Donations data={sorted} actions={actions} currentUser={currentUser} />,
+    receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
@@ -166,4 +174,33 @@ export default function App() {
       {pageContent}
     </Layout>
   );
+}
+
+function normalizeNavigationTarget(destination) {
+  if (typeof destination === 'string') return { moduleId: destination };
+  return destination && typeof destination === 'object' ? destination : { moduleId: 'dashboard' };
+}
+
+function buildNavigationPath(target) {
+  const params = new URLSearchParams();
+  if (target.filter) params.set('filter', target.filter);
+  if (target.profileId) params.set('profile', target.profileId);
+  if (target.familyId) params.set('family', target.familyId);
+  if (target.itemId) params.set('item', target.itemId);
+  const query = params.toString();
+  return `${getModulePath(target.moduleId)}${query ? `?${query}` : ''}`;
+}
+
+function readNavigationTargetFromLocation() {
+  const moduleId = getModuleByPath(window.location.pathname);
+  if (!moduleId) return null;
+  const params = new URLSearchParams(window.location.search);
+  return {
+    moduleId,
+    filter: params.get('filter') || '',
+    profileId: params.get('profile') || '',
+    familyId: params.get('family') || '',
+    itemId: params.get('item') || '',
+    key: Date.now()
+  };
 }
