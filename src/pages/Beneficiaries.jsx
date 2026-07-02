@@ -42,7 +42,7 @@ import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPh
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printBeneficiaryPdf, printDeliveryReceiptPdf } from '../lib/exporters';
-import { formatDate, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 import { DeliveryForm } from './Deliveries';
 
@@ -87,7 +87,7 @@ export function Beneficiaries({ data, actions, currentUser }) {
   const canDelete = canDo(currentUser, 'beneficiaries', 'delete');
   const activeCount = data.beneficiaries.filter((item) => item.is_active).length;
   const urgentCount = data.beneficiaries.filter((item) => item.is_active && item.situation === 'Urgente').length;
-  const attendedCount = new Set(data.deliveries.map((item) => item.beneficiary_id).filter(Boolean)).size;
+  const attendedCount = new Set(data.deliveries.filter(isActiveDelivery).map((item) => item.beneficiary_id).filter(Boolean)).size;
   const profile = data.beneficiaries.find((item) => item.id === profileId) || null;
 
   const filtered = useMemo(() => {
@@ -160,6 +160,7 @@ export function Beneficiaries({ data, actions, currentUser }) {
       <section className="space-y-3" aria-label="Listado de beneficiarios">
         {filtered.map((item) => {
           const deliveries = data.deliveries.filter((delivery) => delivery.beneficiary_id === item.id);
+          const activeDeliveries = deliveries.filter(isActiveDelivery);
           const family = data.families.find((entry) => entry.id === item.family_id);
           return (
             <article key={item.id} className="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-brand-100 hover:shadow-panel">
@@ -185,7 +186,7 @@ export function Beneficiaries({ data, actions, currentUser }) {
                 <div className="flex flex-wrap gap-2 lg:block">
                   <SituationBadge value={item.situation} />
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={14} /> Última ayuda: {formatDate(item.last_help_at)}</p>
-                  <p className="mt-1 text-xs text-slate-400">{deliveries.length} {deliveries.length === 1 ? 'entrega' : 'entregas'}</p>
+                  <p className="mt-1 text-xs text-slate-400">{activeDeliveries.length} {activeDeliveries.length === 1 ? 'entrega activa' : 'entregas activas'}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -470,7 +471,8 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
-  const valuation = calculateDeliveriesValue(deliveries, data.inventory_items);
+  const activeDeliveries = deliveries.filter(isActiveDelivery);
+  const valuation = calculateDeliveriesValue(activeDeliveries, data.inventory_items);
   const canCreateDelivery = canDo(currentUser, 'deliveries', 'create');
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
@@ -548,6 +550,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         beneficiary={beneficiary}
         family={family}
         canEdit={canEdit}
+        canDelete={canDelete}
         canCreateDelivery={canCreateDelivery}
         onEdit={onEdit}
         onWhatsApp={openWhatsApp}
@@ -560,7 +563,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
 
       <ProfileSummaryCards
         beneficiary={beneficiary}
-        deliveries={deliveries}
+        deliveries={activeDeliveries}
         documents={documents}
         incidents={incidents}
         valuation={valuation}
@@ -577,7 +580,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       </nav>
 
       <main className="bg-slate-50/70 p-5 sm:p-7">
-        {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} deliveries={deliveries} history={history} />}
+        {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} deliveries={activeDeliveries} history={history} />}
         {tab === 'personal' && <PersonalDataPanel beneficiary={beneficiary} />}
         {tab === 'family' && (
           <FamilyPanel
@@ -638,13 +641,13 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery, onPhotoChange }) {
+function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery, onPhotoChange }) {
   return (
     <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
       <div className="relative flex flex-col gap-6 pt-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
-          <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} onChange={onPhotoChange} />
+          <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} canDelete={canDelete} onChange={onPhotoChange} />
           <div className="min-w-0 pb-1">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge active={beneficiary.is_active} />
@@ -668,7 +671,7 @@ function CrmHeader({ beneficiary, family, canEdit, canCreateDelivery, onEdit, on
   );
 }
 
-function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
+function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [photo, setPhoto] = useState(null);
@@ -740,7 +743,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, onChange }) {
             <span className="sr-only">Hacer una foto</span>
             <input ref={cameraInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={working} onChange={selectPhoto} />
           </label>
-          {photo && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografía" title="Eliminar fotografía"><ImageOff size={17} /></button>}
+          {photo && canDelete && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografía" title="Eliminar fotografía"><ImageOff size={17} /></button>}
         </div>
       )}
       {error && <p className="absolute left-0 top-full z-20 mt-4 w-64 rounded-lg border border-red-200 bg-white p-2 text-xs font-semibold text-red-700 shadow-lg" role="alert">{error}</p>}
@@ -861,6 +864,10 @@ function getLatestDelivery(deliveries) {
   })[0];
 }
 
+function isActiveDelivery(delivery) {
+  return delivery.status !== 'Anulada';
+}
+
 function calculateDeliveriesValue(deliveries, inventoryItems = []) {
   let total = 0;
   let valuedCount = 0;
@@ -951,12 +958,13 @@ function DeliveriesPanel({ deliveries, beneficiary, allDeliveries }) {
       <SectionHeading icon={PackageCheck} title="Historial de entregas" description="Ayudas entregadas y justificantes asociados." />
       <div className="mt-4 space-y-3">
         {deliveries.map((delivery) => (
-          <article key={delivery.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <article key={delivery.id} className={`rounded-xl border bg-white p-4 shadow-sm ${isActiveDelivery(delivery) ? 'border-slate-200' : 'border-amber-200'}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-brand-50 p-2 text-brand-700"><PackageCheck size={17} /></span><div><h4 className="font-bold text-ink">{delivery.help_type || 'Ayuda entregada'}</h4><p className="text-xs text-slate-500">{formatDate(delivery.delivered_at)} · {delivery.receipt_number || 'Sin número de justificante'}</p></div></div>
+                <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-brand-50 p-2 text-brand-700"><PackageCheck size={17} /></span><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-bold text-ink">{delivery.help_type || 'Ayuda entregada'}</h4>{!isActiveDelivery(delivery) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Anulada</span>}</div><p className="text-xs text-slate-500">{formatDate(delivery.delivered_at)} · {delivery.receipt_number || 'Sin número de justificante'}</p></div></div>
                 <div className="mt-3 grid gap-1 text-sm text-slate-600 sm:grid-cols-2 sm:gap-x-8"><p><strong>Producto:</strong> {delivery.inventory_item_name || '-'}</p><p><strong>Cantidad:</strong> {delivery.quantity || '-'}</p><p><strong>Responsable:</strong> {delivery.responsible || '-'}</p><p><strong>Firma:</strong> {delivery.signature_data_url ? 'Disponible' : 'No disponible'}</p></div>
                 {delivery.notes && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{delivery.notes}</p>}
+                {!isActiveDelivery(delivery) && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p><strong>Motivo:</strong> {delivery.cancellation_reason || '-'}</p><p className="mt-1 text-xs"><strong>Anulada por:</strong> {delivery.cancelled_by_name || '-'} · {formatDateTime(delivery.cancelled_at)}</p></div>}
               </div>
               <Button variant="secondary" onClick={() => printDeliveryReceiptPdf(delivery, beneficiary, allDeliveries)}><Printer size={16} /> Justificante</Button>
             </div>

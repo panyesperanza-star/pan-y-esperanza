@@ -145,10 +145,10 @@ export default function App() {
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} />,
     families: <Families data={sorted} actions={actions} />,
-    deliveries: <Deliveries data={sorted} actions={actions} />,
+    deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} />,
-    inventory: <Inventory data={sorted} actions={actions} />,
-    donations: <Donations data={sorted} actions={actions} />,
+    inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} />,
+    donations: <Donations data={sorted} actions={actions} currentUser={currentUser} />,
     treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
@@ -157,7 +157,7 @@ export default function App() {
   };
 
   const selectedPage = active && canAccess(currentUser, active) ? active : firstAccessibleModule;
-  const pageContent = isDebugAdminRoute && canAccess(currentUser, 'users') ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
+  const pageContent = isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
   return (
     <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout}>

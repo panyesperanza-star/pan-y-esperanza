@@ -156,6 +156,11 @@ create table public.deliveries (
   signature_data_url text,
   responsible_signature_data_url text,
   notes text,
+  status text not null default 'Activa' check (status in ('Activa', 'Anulada')),
+  cancelled_at timestamptz,
+  cancelled_by uuid,
+  cancelled_by_name text,
+  cancellation_reason text,
   created_at timestamptz not null default now()
 );
 
@@ -304,6 +309,10 @@ create table public.app_users (
   created_by text,
   created_at timestamptz not null default now()
 );
+
+alter table public.deliveries
+  add constraint deliveries_cancelled_by_fkey
+  foreign key (cancelled_by) references public.app_users(id) on delete set null;
 
 create table public.password_reset_tokens (
   id uuid primary key default gen_random_uuid(),

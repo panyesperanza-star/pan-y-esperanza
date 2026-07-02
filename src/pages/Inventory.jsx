@@ -4,14 +4,16 @@ import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
+import { canDo } from '../lib/auth';
 import { formatDate, todayISO } from '../lib/formatters';
 
-export function Inventory({ data, actions }) {
+export function Inventory({ data, actions, currentUser }) {
   const [itemOpen, setItemOpen] = useState(false);
   const [movementType, setMovementType] = useState(null);
+  const canCreate = canDo(currentUser, 'inventory', 'create');
   return (
     <>
-      <PageHeader title="Inventario" description="Stock, alertas bajo minimo y movimientos de entrada/salida." actions={<><Button variant="secondary" onClick={() => setMovementType('Entrada')}><ArrowUpCircle size={18} /> Entrada</Button><Button variant="secondary" onClick={() => setMovementType('Salida')}><ArrowDownCircle size={18} /> Salida</Button><Button onClick={() => setItemOpen(true)}><Plus size={18} /> Producto</Button></>} />
+      <PageHeader title="Inventario" description="Stock, alertas bajo minimo y movimientos de entrada/salida." actions={canCreate ? <><Button variant="secondary" onClick={() => setMovementType('Entrada')}><ArrowUpCircle size={18} /> Entrada</Button><Button variant="secondary" onClick={() => setMovementType('Salida')}><ArrowDownCircle size={18} /> Salida</Button><Button onClick={() => setItemOpen(true)}><Plus size={18} /> Producto</Button></> : null} />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.inventory_items.map((item) => {
           const low = Number(item.stock) <= Number(item.low_stock_threshold);

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { canDo } from '../lib/auth';
 import { dataStore } from '../lib/dataStore';
 import { nextBeneficiaryCode, nextReceiptNumber, normalizeDocument } from '../lib/formatters';
-import { hasSupabaseConfig } from '../lib/supabase';
+import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
 
 export function useAppData(enabled = true, currentUser = null) {
@@ -62,6 +63,18 @@ export function useAppData(enabled = true, currentUser = null) {
     };
   }
 
+  function assertPermission(moduleId, actionId) {
+    if (!canDo(currentUser, moduleId, actionId)) {
+      throw new Error(`No tienes permiso para ${actionId === 'delete' ? 'eliminar' : 'realizar esta acción'} en este módulo.`);
+    }
+  }
+
+  function assertSuperadmin() {
+    if (currentUser?.role !== 'Superadministrador') {
+      throw new Error('Solo el Superadministrador puede eliminar entregas definitivamente.');
+    }
+  }
+
   async function readApiJson(response) {
     const text = await response.text();
     try {
@@ -113,6 +126,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteBeneficiaryDocument: async (id) => {
+      assertPermission('beneficiaries', 'delete');
       await dataStore.remove('beneficiary_documents', id);
       await reload();
     },
@@ -127,11 +141,13 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteBeneficiary: async (id) => {
+      assertPermission('beneficiaries', 'delete');
       await dataStore.remove('beneficiaries', id);
       await audit('Elimino beneficiario');
       await reload();
     },
     createDelivery: async (payload) => {
+      assertPermission('deliveries', 'create');
       const beneficiary = data.beneficiaries.find((item) => item.id === payload.beneficiary_id);
       const family = data.families.find((item) => item.id === beneficiary?.family_id);
       const item = data.inventory_items.find((entry) => entry.id === payload.inventory_item_id);
@@ -162,7 +178,51 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteDelivery: async (id) => {
+      assertSuperadmin();
       await dataStore.remove('deliveries', id);
+      await audit('Elimino definitivamente una entrega');
+      await reload();
+    },
+    cancelDelivery: async (id, reason) => {
+      if (!canDo(currentUser, 'deliveries', 'edit') && !canDo(currentUser, 'deliveries', 'create')) {
+        throw new Error('No tienes permiso para anular entregas.');
+      }
+      const cleanReason = String(reason || '').trim();
+      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulación válido.');
+      const delivery = data.deliveries.find((item) => item.id === id);
+      if (!delivery || delivery.status === 'Anulada') throw new Error('La entrega no existe o ya está anulada.');
+      if (hasSupabaseConfig) {
+        const { error: cancelError } = await supabase.rpc('cancel_delivery', { p_delivery_id: id, p_reason: cleanReason });
+        if (cancelError) throw cancelError;
+      } else {
+        const cancelledAt = new Date().toISOString();
+        const cancelledByName = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || 'Usuario';
+        await dataStore.update('deliveries', id, {
+          status: 'Anulada',
+          cancelled_at: cancelledAt,
+          cancelled_by: currentUser?.id || null,
+          cancelled_by_name: cancelledByName,
+          cancellation_reason: cleanReason
+        });
+        const item = data.inventory_items.find((entry) => entry.id === delivery.inventory_item_id);
+        if (item) {
+          await dataStore.update('inventory_items', item.id, { stock: Number(item.stock || 0) + Number(delivery.quantity || 0) });
+          await dataStore.create('inventory_movements', {
+            item_id: item.id,
+            item_name: item.name,
+            movement_type: 'Entrada',
+            quantity: Number(delivery.quantity || 0),
+            moved_at: cancelledAt,
+            responsible: cancelledByName,
+            notes: `Reversión por anulación de entrega: ${cleanReason}`
+          });
+        }
+        const lastActiveDelivery = data.deliveries
+          .filter((item) => item.id !== id && item.beneficiary_id === delivery.beneficiary_id && item.status !== 'Anulada')
+          .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)))[0];
+        await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
+      }
+      if (!hasSupabaseConfig) await audit(`Anulo entrega ${delivery.receipt_number || id}. Motivo: ${cleanReason}`);
       await reload();
     },
     createEmailLog: async (payload) => {
@@ -197,6 +257,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteDonation: async (id) => {
+      assertPermission('donations', 'delete');
       await dataStore.remove('donations', id);
       await reload();
     },
@@ -211,6 +272,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteTreasuryIncome: async (id) => {
+      assertPermission('treasury', 'delete');
       await dataStore.remove('treasury_incomes', id);
       await audit('Modifico tesoreria: elimino ingreso');
       await reload();
@@ -226,6 +288,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteTreasuryExpense: async (id) => {
+      assertPermission('treasury', 'delete');
       await dataStore.remove('treasury_expenses', id);
       await audit('Modifico tesoreria: elimino gasto');
       await reload();
@@ -239,6 +302,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteTreasuryLoan: async (id) => {
+      assertPermission('treasury', 'delete');
       await dataStore.remove('treasury_loans', id);
       await reload();
     },
@@ -251,6 +315,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteTreasuryAccount: async (id) => {
+      assertPermission('treasury', 'delete');
       await dataStore.remove('treasury_accounts', id);
       await reload();
     },
@@ -323,6 +388,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     deleteUser: async (id) => {
+      assertPermission('users', 'delete');
       const existing = data.app_users.find((user) => user.id === id);
       if (isLastActiveSuperadmin(id)) {
         throw new Error('No se puede eliminar al ultimo Superadministrador activo.');

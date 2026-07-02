@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getServerConfig, requireAdmin } from './_adminAuth.js';
+import { getServerConfig, hasAppPermission, requireAdmin } from './_adminAuth.js';
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -56,6 +56,11 @@ export default async function handler(request, response) {
 
     if (!action || !userId) {
       return sendJson(response, 400, { ok: false, code: 'INVALID_REQUEST', error: 'Accion e identificador de usuario son obligatorios.' });
+    }
+
+    const requiredAction = action === 'delete' ? 'delete' : 'edit';
+    if (!hasAppPermission(requester.profile, 'users', requiredAction)) {
+      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_ACTION', error: `No tiene permiso para ${requiredAction === 'delete' ? 'eliminar' : 'editar'} usuarios.` });
     }
 
     const { data: existing, error: existingError } = await admin.from('app_users').select('*').eq('id', userId).single();

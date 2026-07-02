@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
-import { canAccess, getUserStatus } from '../lib/auth';
+import { canAccess, canDo, getUserStatus } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
@@ -163,6 +163,9 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
   const activeUsers = users.filter((user) => getUserStatus(user) === 'Activo');
   const inactiveUsers = users.filter((user) => getUserStatus(user) === 'Inactivo');
   const blockedUsers = users.filter((user) => getUserStatus(user) === 'Bloqueado');
+  const canCreate = canDo(currentUser, 'users', 'create');
+  const canEdit = canDo(currentUser, 'users', 'edit');
+  const canDelete = canDo(currentUser, 'users', 'delete');
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -170,7 +173,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
           <h3 className="font-bold text-ink">Usuarios</h3>
           <p className="text-sm text-slate-500">Gestion de usuarios, permisos por accion, accesos y auditoria.</p>
         </div>
-        <Button onClick={() => setEditing(emptyUser(currentUser))}>Crear usuario</Button>
+        {canCreate && <Button onClick={() => setEditing(emptyUser(currentUser))}>Crear usuario</Button>}
       </div>
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <MiniStat label="Usuarios activos" value={activeUsers.length} />
@@ -180,19 +183,19 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant={section === 'users' ? 'primary' : 'secondary'} onClick={() => setSection('users')}>Usuarios</Button>
-        <Button variant={section === 'permissions' ? 'primary' : 'secondary'} onClick={() => setSection('permissions')}>Usuarios &gt; Permisos</Button>
+        {canEdit && <Button variant={section === 'permissions' ? 'primary' : 'secondary'} onClick={() => setSection('permissions')}>Usuarios &gt; Permisos</Button>}
         <Button variant={section === 'audit' ? 'primary' : 'secondary'} onClick={() => setSection('audit')}>Auditoria</Button>
       </div>
       {message && <p className="mb-4 rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-      {section === 'users' && <UsersTable users={users} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} />}
-      {section === 'permissions' && <PermissionsMatrix users={users} actions={actions} setMessage={setMessage} />}
+      {section === 'users' && <UsersTable users={users} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
+      {section === 'permissions' && canEdit && <PermissionsMatrix users={users} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
       {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await sendWelcomeEmail(payload, organization); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
 
-function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
+function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEdit, canDelete }) {
   const [filter, setFilter] = useState('active');
   const filtered = users.filter((user) => {
     const status = getUserStatus(user);
@@ -268,13 +271,13 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage }) {
                   <td>{user.created_by || '-'}</td>
                   <td className="pr-4">
                     <div className="flex flex-wrap justify-end gap-2">
-                      <Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button>
-                      <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contrasena temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contrasena temporal actualizada.'); } }}>Restablecer contrasena</Button>
-                      {status === 'Activo'
+                      {canEdit && <Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
+                      {canEdit && <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contrasena temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contrasena temporal actualizada.'); } }}>Restablecer contrasena</Button>}
+                      {canEdit && (status === 'Activo'
                         ? <Button variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
-                        : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>}
-                      {status !== 'Bloqueado' && <Button variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
-                      <Button variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>
+                        : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
+                      {canEdit && status !== 'Bloqueado' && <Button variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
+                      {canDelete && <Button variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>}
                     </div>
                   </td>
                 </tr>

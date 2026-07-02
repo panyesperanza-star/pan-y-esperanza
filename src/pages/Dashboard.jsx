@@ -5,24 +5,25 @@ import { getUserStatus } from '../lib/auth';
 import { formatDate } from '../lib/formatters';
 
 export function Dashboard({ data }) {
+  const activeDeliveries = data.deliveries.filter((item) => item.status !== 'Anulada');
   const activeBeneficiaries = data.beneficiaries.filter((item) => item.is_active).length;
   const activeFamilies = data.families.length;
   const minors = data.beneficiaries.reduce((total, item) => total + Number(item.minors_count || 0), 0);
   const lowStock = data.inventory_items.filter((item) => Number(item.stock) <= Number(item.low_stock_threshold));
   const month = new Date().toISOString().slice(0, 7);
-  const deliveriesThisMonth = data.deliveries.filter((item) => String(item.delivered_at || '').startsWith(month)).length;
+  const deliveriesThisMonth = activeDeliveries.filter((item) => String(item.delivered_at || '').startsWith(month)).length;
   const monthlyIncome = (data.treasury_incomes || []).filter((item) => String(item.income_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const monthlyExpenses = (data.treasury_expenses || []).filter((item) => String(item.expense_at || '').startsWith(month)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const pendingLoans = (data.treasury_loans || []).filter((item) => ['Pendiente', 'Pendiente de devolver', 'Parcialmente devuelto'].includes(item.status)).reduce((total, item) => total + Number(item.amount || 0), 0);
   const activeUsers = (data.app_users || []).filter((user) => getUserStatus(user) === 'Activo').length;
   const blockedUsers = (data.app_users || []).filter((user) => getUserStatus(user) !== 'Activo').length;
   const lastAccesses = [...(data.app_users || [])].filter((user) => user.last_access_at).sort((a, b) => String(b.last_access_at).localeCompare(String(a.last_access_at))).slice(0, 3);
-  const monthlyDeliveries = data.deliveries.reduce((acc, item) => {
+  const monthlyDeliveries = activeDeliveries.reduce((acc, item) => {
     const key = String(item.delivered_at || '').slice(0, 7) || 'Sin fecha';
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  const productTotals = data.deliveries.reduce((acc, item) => {
+  const productTotals = activeDeliveries.reduce((acc, item) => {
     const key = item.inventory_item_name || 'Sin producto';
     acc[key] = (acc[key] || 0) + Number(item.quantity || 0);
     return acc;
@@ -34,7 +35,7 @@ export function Dashboard({ data }) {
         <StatCard label="Beneficiarios activos" value={activeBeneficiaries} icon={HandHeart} />
         <StatCard label="Familias activas" value={activeFamilies} icon={Users} />
         <StatCard label="Menores atendidos" value={minors} icon={Users} />
-        <StatCard label="Entregas realizadas" value={data.deliveries.length} icon={PackageCheck} />
+        <StatCard label="Entregas realizadas" value={activeDeliveries.length} icon={PackageCheck} />
         <StatCard label="Entregas del mes" value={deliveriesThisMonth} icon={PackageCheck} />
         <StatCard label="Inventario bajo minimo" value={lowStock.length} icon={AlertTriangle} />
         <StatCard label="Ingresos del mes" value={`${monthlyIncome.toFixed(2)} EUR`} icon={HandCoins} />
@@ -47,7 +48,7 @@ export function Dashboard({ data }) {
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
           <h3 className="font-bold text-ink">Ultimas entregas</h3>
-          <div className="mt-3 space-y-3">{data.deliveries.slice(0, 6).map((item) => <div key={item.id} className="rounded-md bg-slate-50 p-3 text-sm"><strong>{formatDate(item.delivered_at)} · {item.beneficiary_name}</strong><p className="text-slate-600">{item.help_type} · {item.quantity} {item.inventory_item_name}</p></div>)}{!data.deliveries.length && <p className="text-sm text-slate-500">Sin entregas registradas.</p>}</div>
+          <div className="mt-3 space-y-3">{activeDeliveries.slice(0, 6).map((item) => <div key={item.id} className="rounded-md bg-slate-50 p-3 text-sm"><strong>{formatDate(item.delivered_at)} · {item.beneficiary_name}</strong><p className="text-slate-600">{item.help_type} · {item.quantity} {item.inventory_item_name}</p></div>)}{!activeDeliveries.length && <p className="text-sm text-slate-500">Sin entregas registradas.</p>}</div>
         </section>
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
           <h3 className="font-bold text-ink">Alertas de stock</h3>

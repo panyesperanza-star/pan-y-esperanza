@@ -4,7 +4,8 @@ import { PageHeader } from '../components/PageHeader';
 import { exportExcel, exportReportPdf } from '../lib/exporters';
 
 export function Reports({ data }) {
-  const monthly = data.deliveries.reduce((acc, item) => {
+  const activeDeliveries = data.deliveries.filter((item) => item.status !== 'Anulada');
+  const monthly = activeDeliveries.reduce((acc, item) => {
     const key = String(item.delivered_at || '').slice(0, 7) || 'Sin fecha';
     acc[key] = (acc[key] || 0) + 1;
     return acc;
@@ -20,7 +21,7 @@ export function Reports({ data }) {
         {[
           ['Beneficiarios', data.beneficiaries.length],
           ['Familias', data.families.length],
-          ['Entregas', data.deliveries.length],
+          ['Entregas', activeDeliveries.length],
           ['Inventario', data.inventory_items.length],
           ['Donaciones', data.donations.length],
           ['Voluntarios', data.volunteers.length]

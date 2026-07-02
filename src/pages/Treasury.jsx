@@ -5,6 +5,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
+import { canDo } from '../lib/auth';
 import { exportTreasuryExcel, exportTreasuryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 
@@ -15,11 +16,14 @@ const expenseCategories = ['Alimentacion', 'Higiene', 'Transporte', 'Alquiler', 
 export function Treasury({ data, actions, currentUser }) {
   const [tab, setTab] = useState('Ingresos');
   const [modal, setModal] = useState(null);
-  const canModify = ['Superadministrador', 'Tesorera', 'Tesorero'].includes(currentUser?.role);
+  const canCreate = canDo(currentUser, 'treasury', 'create');
+  const canEdit = canDo(currentUser, 'treasury', 'edit');
+  const canDelete = canDo(currentUser, 'treasury', 'delete');
+  const canModify = canCreate || canEdit || canDelete;
   const indicators = useMemo(() => calculateIndicators(data), [data]);
 
   const close = () => setModal(null);
-  const actionButton = canModify ? <Button onClick={() => setModal({ type: tab })}><Plus size={18} /> Nuevo registro</Button> : null;
+  const actionButton = canCreate ? <Button onClick={() => setModal({ type: tab })}><Plus size={18} /> Nuevo registro</Button> : null;
 
   return (
     <>
@@ -29,7 +33,7 @@ export function Treasury({ data, actions, currentUser }) {
         actions={['Informes'].includes(tab) ? null : actionButton}
       />
 
-      {!canModify && <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo solo lectura. Solo Superadministrador y Tesorera pueden modificar registros de tesoreria.</div>}
+      {!canModify && <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo solo lectura. Tu usuario no tiene permisos para crear, editar o eliminar registros de tesoreria.</div>}
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Saldo actual" value={money(indicators.currentBalance)} />
@@ -47,10 +51,10 @@ export function Treasury({ data, actions, currentUser }) {
         ))}
       </div>
 
-      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canModify={canModify} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={actions.deleteTreasuryIncome} />}
-      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canModify={canModify} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={actions.deleteTreasuryExpense} />}
-      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canModify={canModify} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={actions.deleteTreasuryLoan} />}
-      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canModify={canModify} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={actions.deleteTreasuryAccount} />}
+      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={actions.deleteTreasuryIncome} />}
+      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={actions.deleteTreasuryExpense} />}
+      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={actions.deleteTreasuryLoan} />}
+      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={actions.deleteTreasuryAccount} />}
       {tab === 'Informes' && <ReportsPanel data={data} indicators={indicators} />}
 
       {modal?.type === 'Ingresos' && <Modal title={modal.item ? 'Editar ingreso' : 'Nuevo ingreso'} onClose={close}><IncomeForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryIncome(modal.item.id, payload) : await actions.createTreasuryIncome(payload); close(); }} /></Modal>}
@@ -61,53 +65,54 @@ export function Treasury({ data, actions, currentUser }) {
   );
 }
 
-function IncomeTable({ rows, canModify, onEdit, onDelete }) {
+function IncomeTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
   return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Donante', 'Forma de pago', 'Documento', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.income_at), item.category || '-', item.concept, money(item.amount), item.donor || '-', item.payment_method || '-', item.document_name || '-', item.notes || '-'],
     item
-  }))} canModify={canModify} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function ExpenseTable({ rows, canModify, onEdit, onDelete }) {
+function ExpenseTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
   return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Proveedor', 'Responsable', 'Factura', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.expense_at), item.category || '-', item.concept, money(item.amount), item.supplier || '-', item.responsible || '-', item.invoice_name || '-', item.notes || '-'],
     item
-  }))} canModify={canModify} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function LoanTable({ rows, canModify, onEdit, onDelete }) {
+function LoanTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
   return <DataTable columns={['Persona', 'Fecha', 'Motivo', 'Importe', 'Estado', 'Fecha devolucion', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [item.person, formatDate(item.loan_at), item.concept, money(item.amount), item.status, formatDate(item.returned_at), item.notes || '-'],
     item
-  }))} canModify={canModify} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function AccountTable({ rows, canModify, onEdit, onDelete }) {
+function AccountTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
   return <DataTable columns={['Nombre', 'Tipo', 'Saldo', 'Banco', 'Cuenta', 'Movimientos', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [item.name, item.account_type, money(item.balance), item.bank_name || '-', item.account_number || '-', item.movements || '-', item.notes || '-'],
     item
-  }))} canModify={canModify} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function DataTable({ columns, rows, canModify, onEdit, onDelete }) {
+function DataTable({ columns, rows, canEdit, canDelete, onEdit, onDelete }) {
+  const hasActions = canEdit || canDelete;
   return (
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
       <table className="w-full min-w-[920px] text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-          <tr>{columns.map((column) => <th key={column} className="px-4 py-3">{column}</th>)}{canModify && <th className="px-4 py-3 text-right">Acciones</th>}</tr>
+          <tr>{columns.map((column) => <th key={column} className="px-4 py-3">{column}</th>)}{hasActions && <th className="px-4 py-3 text-right">Acciones</th>}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => (
             <tr key={row.id}>
               {row.cells.map((cell, index) => <td key={`${row.id}-${index}`} className="px-4 py-3">{cell}</td>)}
-              {canModify && <td className="px-4 py-3"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => onEdit(row.item)}><Pencil size={16} /></Button><Button variant="danger" onClick={() => onDelete(row.id)}><Trash2 size={16} /></Button></div></td>}
+              {hasActions && <td className="px-4 py-3"><div className="flex justify-end gap-2">{canEdit && <Button variant="secondary" onClick={() => onEdit(row.item)}><Pencil size={16} /> Editar</Button>}{canDelete && <Button variant="danger" onClick={() => onDelete(row.id)}><Trash2 size={16} /> Eliminar</Button>}</div></td>}
             </tr>
           ))}
-          {!rows.length && <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={columns.length + (canModify ? 1 : 0)}>No hay registros.</td></tr>}
+          {!rows.length && <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={columns.length + (hasActions ? 1 : 0)}>No hay registros.</td></tr>}
         </tbody>
       </table>
     </div>

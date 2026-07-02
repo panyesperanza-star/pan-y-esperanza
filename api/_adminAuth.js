@@ -1,5 +1,14 @@
 export const ADMIN_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Administrador'];
 
+export function hasAppPermission(user, moduleId, actionId) {
+  if (user?.role === 'Superadministrador') return true;
+  const matrix = user?.permission_matrix;
+  if (matrix && typeof matrix === 'object' && !Array.isArray(matrix) && Object.keys(matrix).length) {
+    return Boolean(matrix[moduleId]?.[actionId]);
+  }
+  return actionId === 'view' && Array.isArray(user?.permissions) && (user.permissions.includes('*') || user.permissions.includes(moduleId));
+}
+
 export function cleanJwtCredential(value) {
   return String(value || '')
     .trim()

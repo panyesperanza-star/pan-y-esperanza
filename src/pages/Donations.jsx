@@ -4,18 +4,21 @@ import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
+import { canDo } from '../lib/auth';
 import { printDonationCertificatePdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 
-export function Donations({ data, actions }) {
+export function Donations({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
+  const canCreate = canDo(currentUser, 'donations', 'create');
+  const canDelete = canDo(currentUser, 'donations', 'delete');
   return (
     <>
-      <PageHeader title="Donaciones" description="Registro de donaciones y certificados PDF." actions={<Button onClick={() => setOpen(true)}><Plus size={18} /> Nueva donacion</Button>} />
+      <PageHeader title="Donaciones" description="Registro de donaciones y certificados PDF." actions={canCreate ? <Button onClick={() => setOpen(true)}><Plus size={18} /> Nueva donacion</Button> : null} />
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Donante</th><th>Tipo donante</th><th>Donacion</th><th>Valor</th><th className="text-right pr-4">Acciones</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{data.donations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button><Button variant="danger" onClick={() => actions.deleteDonation(item.id)}><Trash2 size={16} /></Button></div></td></tr>)}</tbody>
+          <tbody className="divide-y divide-slate-100">{data.donations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => actions.deleteDonation(item.id)}><Trash2 size={16} /> Eliminar</Button>}</div></td></tr>)}</tbody>
         </table>
       </div>
       {open && <Modal title="Nueva donacion" onClose={() => setOpen(false)}><DonationForm onSubmit={async (payload) => { await actions.createDonation(payload); setOpen(false); }} /></Modal>}

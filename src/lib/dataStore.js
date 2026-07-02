@@ -33,6 +33,7 @@ const DATE_FIELDS = new Set([
   'uploaded_at',
   'expires_at',
   'delivered_at',
+  'cancelled_at',
   'reception_at',
   'sent_at',
   'donated_at',

@@ -1,22 +1,32 @@
-import { Eraser, PackagePlus, PenLine, Printer, Trash2 } from 'lucide-react';
+import { Ban, Eraser, PackagePlus, PenLine, Printer, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
+import { canDo } from '../lib/auth';
 import { HELP_TYPES } from '../lib/constants';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
-import { formatDate, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, todayISO } from '../lib/formatters';
 
-export function Deliveries({ data, actions }) {
+export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(null);
+  const canCreate = canDo(currentUser, 'deliveries', 'create');
+  const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
+  const canDeletePermanently = currentUser?.role === 'Superadministrador';
+
+  async function deletePermanently(item) {
+    if (!window.confirm(`¿Eliminar definitivamente la entrega ${item.receipt_number || ''}? Esta acción no se puede deshacer.`)) return;
+    await actions.deleteDelivery(item.id);
+  }
 
   return (
     <>
       <PageHeader
         title="Entregas"
         description="Cada entrega actualiza el historial del beneficiario, la ultima ayuda, el stock y el justificante firmado."
-        actions={<Button onClick={() => setOpen(true)}><PackagePlus size={18} /> Registrar entrega</Button>}
+        actions={canCreate ? <Button onClick={() => setOpen(true)}><PackagePlus size={18} /> Registrar entrega</Button> : null}
       />
 
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
@@ -33,14 +43,16 @@ export function Deliveries({ data, actions }) {
               <th>Producto</th>
               <th>Receptor</th>
               <th>Firma</th>
+              <th>Estado</th>
               <th className="text-right pr-4">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {data.deliveries.map((item) => {
               const beneficiary = data.beneficiaries.find((entry) => entry.id === item.beneficiary_id);
+              const isCancelled = item.status === 'Anulada';
               return (
-                <tr key={item.id}>
+                <tr key={item.id} className={isCancelled ? 'bg-slate-50 text-slate-500' : ''}>
                   <td className="px-4 py-3">{formatDate(item.delivered_at)}</td>
                   <td>{item.receipt_number || '-'}</td>
                   <td>{item.beneficiary_name}</td>
@@ -51,12 +63,17 @@ export function Deliveries({ data, actions }) {
                   <td>{item.inventory_item_name}</td>
                   <td>{item.receiver_name || '-'}</td>
                   <td>{item.signature_data_url ? 'Disponible' : 'No'}</td>
+                  <td>
+                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${isCancelled ? 'bg-red-50 text-red-700' : 'bg-brand-50 text-brand-700'}`}>{isCancelled ? 'Anulada' : 'Activa'}</span>
+                    {isCancelled && <p className="mt-1 max-w-xs text-xs">{item.cancellation_reason} · {item.cancelled_by_name || 'Usuario'} · {formatDateTime(item.cancelled_at)}</p>}
+                  </td>
                   <td className="pr-4">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => printDeliveryReceiptPdf(item, beneficiary, data.deliveries)}>
                         <Printer size={16} /> Imprimir justificante de entrega
                       </Button>
-                      <Button variant="danger" onClick={() => actions.deleteDelivery(item.id)}><Trash2 size={16} /></Button>
+                      {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
+                      {canDeletePermanently && <Button variant="danger" onClick={() => deletePermanently(item)}><Trash2 size={16} /> Eliminar definitivamente</Button>}
                     </div>
                   </td>
                 </tr>
@@ -71,7 +88,25 @@ export function Deliveries({ data, actions }) {
           <DeliveryForm data={data} onSubmit={async (payload) => { await actions.createDelivery(payload); setOpen(false); }} />
         </Modal>
       )}
+      {cancelling && (
+        <Modal title="Anular entrega" onClose={() => setCancelling(null)}>
+          <CancellationForm delivery={cancelling} onSubmit={async (reason) => { await actions.cancelDelivery(cancelling.id, reason); setCancelling(null); }} />
+        </Modal>
+      )}
     </>
+  );
+}
+
+function CancellationForm({ delivery, onSubmit }) {
+  const [reason, setReason] = useState('');
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); onSubmit(reason.trim()); }}>
+      <p className="mb-4 text-sm text-slate-600">La entrega {delivery.receipt_number || ''} se conservará en el historial y su salida de inventario será revertida.</p>
+      <FormField label="Motivo de la anulación">
+        <textarea className={inputClass} rows="4" required minLength="5" value={reason} onChange={(event) => setReason(event.target.value)} />
+      </FormField>
+      <div className="mt-4 flex justify-end"><Button type="submit" variant="danger"><Ban size={16} /> Confirmar anulación</Button></div>
+    </form>
   );
 }
 

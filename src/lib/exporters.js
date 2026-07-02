@@ -230,6 +230,7 @@ function getReceiptProductRows(delivery) {
 
 export async function exportReportPdf(data) {
   const doc = new jsPDF();
+  const activeDeliveries = data.deliveries.filter((item) => item.status !== 'Anulada');
   const treasuryIncome = (data.treasury_incomes || []).reduce((total, item) => total + Number(item.amount || 0), 0);
   const treasuryExpenses = (data.treasury_expenses || []).reduce((total, item) => total + Number(item.amount || 0), 0);
   await addOfficialLogo(doc, 14, 10, 34, 18);
@@ -241,7 +242,7 @@ export async function exportReportPdf(data) {
     body: [
       ['Beneficiarios activos', data.beneficiaries.filter((item) => item.is_active).length],
       ['Familias', data.families?.length || 0],
-      ['Entregas registradas', data.deliveries.length],
+      ['Entregas registradas', activeDeliveries.length],
       ['Productos inventario', data.inventory_items.length],
       ['Donaciones', data.donations?.length || 0],
       ['Ingresos tesoreria', formatMoney(treasuryIncome)],

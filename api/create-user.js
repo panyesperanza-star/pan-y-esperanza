@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getServerConfig, requireAdmin } from './_adminAuth.js';
+import { getServerConfig, hasAppPermission, requireAdmin } from './_adminAuth.js';
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -58,6 +58,10 @@ export default async function handler(request, response) {
         step: requester.step,
         details: requester.details
       });
+    }
+
+    if (!hasAppPermission(requester.profile, 'users', 'create')) {
+      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_ACTION', error: 'No tiene permiso para crear usuarios.' });
     }
 
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
