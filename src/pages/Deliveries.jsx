@@ -11,6 +11,8 @@ import { printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
+const DELETE_DELIVERY_BLOCKED_MESSAGE = 'Esta entrega no puede eliminarse definitivamente porque tiene información relacionada. Utilice Anular entrega.';
+
 export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(null);
@@ -143,7 +145,19 @@ export function Deliveries({ data, actions, currentUser }) {
                         <MessageCircle size={16} /> WhatsApp
                       </Button>
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
-                      {canDeleteThisDelivery && <Button variant="danger" onClick={() => deletePermanently(item)}><Trash2 size={16} /> Eliminar definitivamente</Button>}
+                      {canDeletePermanently && (
+                        <div className="flex max-w-[280px] flex-col items-end gap-1">
+                          <Button
+                            variant="danger"
+                            disabled={!canDeleteThisDelivery}
+                            onClick={() => canDeleteThisDelivery && deletePermanently(item)}
+                            title={canDeleteThisDelivery ? 'Eliminar definitivamente' : DELETE_DELIVERY_BLOCKED_MESSAGE}
+                          >
+                            <Trash2 size={16} /> Eliminar definitivamente
+                          </Button>
+                          {!canDeleteThisDelivery && <p className="text-right text-xs font-semibold text-red-700">{DELETE_DELIVERY_BLOCKED_MESSAGE}</p>}
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
