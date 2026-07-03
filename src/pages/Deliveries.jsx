@@ -23,7 +23,13 @@ export function Deliveries({ data, actions, currentUser }) {
 
   async function deletePermanently(item) {
     if (!window.confirm(`¿Eliminar definitivamente la entrega ${item.receipt_number || ''}? Esta acción no se puede deshacer.`)) return;
-    await actions.deleteDelivery(item.id);
+    setNotice('');
+    try {
+      await actions.deleteDelivery(item.id);
+      setNotice('Entrega eliminada definitivamente.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo eliminar definitivamente la entrega.');
+    }
   }
 
   async function sendDeliveryEmail(item, beneficiary) {
@@ -108,6 +114,7 @@ export function Deliveries({ data, actions, currentUser }) {
             {data.deliveries.map((item) => {
               const beneficiary = data.beneficiaries.find((entry) => entry.id === item.beneficiary_id);
               const isCancelled = item.status === 'Anulada';
+              const canDeleteThisDelivery = canDeletePermanently && canDeleteDeliveryPermanently(item, data);
               return (
                 <tr key={item.id} className={isCancelled ? 'bg-slate-50 text-slate-500' : ''}>
                   <td className="px-4 py-3">{formatDate(item.delivered_at)}</td>
@@ -136,7 +143,7 @@ export function Deliveries({ data, actions, currentUser }) {
                         <MessageCircle size={16} /> WhatsApp
                       </Button>
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
-                      {canDeletePermanently && <Button variant="danger" onClick={() => deletePermanently(item)}><Trash2 size={16} /> Eliminar definitivamente</Button>}
+                      {canDeleteThisDelivery && <Button variant="danger" onClick={() => deletePermanently(item)}><Trash2 size={16} /> Eliminar definitivamente</Button>}
                     </div>
                   </td>
                 </tr>
@@ -346,4 +353,28 @@ function toDateTimeLocal(value) {
   const date = value ? new Date(value) : new Date();
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function canDeleteDeliveryPermanently(delivery, data) {
+  if (!delivery) return false;
+  const hasSocialEvent = (data.social_value_events || []).some((event) => (
+    event.event_type === 'delivery'
+    && (
+      (event.source_module === 'deliveries' && event.source_record_id === delivery.id)
+      || (
+        event.source_module === 'beneficiaries'
+        && event.source_record_id === delivery.beneficiary_id
+        && event.social_value_at === delivery.delivered_at
+      )
+    )
+  ));
+  const hasEmailLog = (data.email_logs || []).some((log) => (
+    Array.isArray(log.receipt_ids) && log.receipt_ids.includes(delivery.id)
+  ));
+  return !delivery.inventory_item_id
+    && !delivery.receipt_number
+    && !delivery.signature_data_url
+    && !delivery.responsible_signature_data_url
+    && !hasSocialEvent
+    && !hasEmailLog;
 }

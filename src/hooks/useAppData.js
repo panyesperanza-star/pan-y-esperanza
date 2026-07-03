@@ -1037,6 +1037,100 @@ export function useAppData(enabled = true, currentUser = null) {
     return result;
   }
 
+  function isMissingCancelDeliveryRpcError(error) {
+    const text = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+    return text.includes('pgrst202')
+      || text.includes('could not find the function')
+      || text.includes('cancel_delivery')
+      || text.includes('schema cache');
+  }
+
+  function deliverySocialEventMatches(delivery, event) {
+    if (!delivery || event?.event_type !== 'delivery') return false;
+    if (event.source_module === 'deliveries' && event.source_record_id === delivery.id) return true;
+    return event.source_module === 'beneficiaries'
+      && event.source_record_id === delivery.beneficiary_id
+      && event.social_value_at === delivery.delivered_at;
+  }
+
+  async function voidDeliverySocialValueEvents(delivery, reason) {
+    const socialEvents = activeAccountingRows(data.social_value_events || [])
+      .filter((event) => deliverySocialEventMatches(delivery, event));
+    for (const socialEvent of socialEvents) {
+      const updated = await dataStore.update('social_value_events', socialEvent.id, {
+        status: 'voided',
+        voided_at: new Date().toISOString(),
+        void_reason: reason,
+        updated_at: new Date().toISOString()
+      });
+      await accountingAuditTrail('social_value_events', socialEvent.id, 'void_delivery', socialEvent, updated);
+    }
+  }
+
+  function canDeleteDeliveryPermanently(delivery) {
+    if (!delivery || currentUser?.role !== 'Superadministrador') return false;
+    const hasSocialEvent = (data.social_value_events || []).some((event) => deliverySocialEventMatches(delivery, event));
+    const hasEmailLog = (data.email_logs || []).some((log) => {
+      const receiptIds = Array.isArray(log.receipt_ids) ? log.receipt_ids : [];
+      return receiptIds.includes(delivery.id);
+    });
+    return !delivery.inventory_item_id
+      && !delivery.receipt_number
+      && !delivery.signature_data_url
+      && !delivery.responsible_signature_data_url
+      && !hasSocialEvent
+      && !hasEmailLog;
+  }
+
+  async function cancelDeliveryWithoutRpc(delivery, cleanReason) {
+    if (currentUser?.role !== 'Superadministrador') {
+      throw new Error('La funcion de anulacion no esta disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperacion segura.');
+    }
+
+    const cancelledAt = new Date().toISOString();
+    const cancelledByName = currentUserName();
+    const item = data.inventory_items.find((entry) => entry.id === delivery.inventory_item_id);
+
+    if (hasSupabaseConfig && item) {
+      const { error } = await supabase.rpc('register_inventory_movement', {
+        p_item_id: item.id,
+        p_moved_at: cancelledAt.slice(0, 10),
+        p_movement_type: 'Entrada',
+        p_notes: `Reversion por anulacion de entrega: ${cleanReason}`,
+        p_quantity: Number(delivery.quantity || 0),
+        p_responsible: cancelledByName
+      });
+      if (error) throw error;
+    } else if (item) {
+      await dataStore.update('inventory_items', item.id, { stock: Number(item.stock || 0) + Number(delivery.quantity || 0) });
+      await dataStore.create('inventory_movements', {
+        item_id: item.id,
+        item_name: item.name,
+        movement_type: 'Entrada',
+        quantity: Number(delivery.quantity || 0),
+        moved_at: cancelledAt,
+        responsible: cancelledByName,
+        notes: `Reversion por anulacion de entrega: ${cleanReason}`
+      });
+    }
+
+    const updatedDelivery = await dataStore.update('deliveries', delivery.id, {
+      status: 'Anulada',
+      cancelled_at: cancelledAt,
+      cancelled_by: currentUser?.id || null,
+      cancelled_by_name: cancelledByName,
+      cancellation_reason: cleanReason
+    });
+    await voidDeliverySocialValueEvents(delivery, cleanReason);
+
+    const lastActiveDelivery = data.deliveries
+      .filter((item) => item.id !== delivery.id && item.beneficiary_id === delivery.beneficiary_id && item.status !== 'Anulada')
+      .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)))[0];
+    await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
+    await audit(`Anulo entrega ${delivery.receipt_number || delivery.id}. Motivo: ${cleanReason}`);
+    return updatedDelivery;
+  }
+
   const actions = useMemo(() => ({
     reloadData: reload,
     createBeneficiary: async (payload) => {
@@ -1118,6 +1212,10 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     deleteDelivery: async (id) => {
       assertSuperadmin();
+      const delivery = data.deliveries.find((item) => item.id === id);
+      if (!canDeleteDeliveryPermanently(delivery)) {
+        throw new Error('No se puede eliminar definitivamente una entrega con inventario, justificante, valor social o comunicaciones vinculadas. Anulala para conservar el historial.');
+      }
       await dataStore.remove('deliveries', id);
       await audit('Elimino definitivamente una entrega');
       await reload();
@@ -1132,7 +1230,10 @@ export function useAppData(enabled = true, currentUser = null) {
       if (!delivery || delivery.status === 'Anulada') throw new Error('La entrega no existe o ya está anulada.');
       if (hasSupabaseConfig) {
         const { error: cancelError } = await supabase.rpc('cancel_delivery', { p_delivery_id: id, p_reason: cleanReason });
-        if (cancelError) throw cancelError;
+        if (cancelError) {
+          if (isMissingCancelDeliveryRpcError(cancelError)) await cancelDeliveryWithoutRpc(delivery, cleanReason);
+          else throw cancelError;
+        }
       } else {
         const cancelledAt = new Date().toISOString();
         const cancelledByName = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || 'Usuario';
@@ -1160,6 +1261,7 @@ export function useAppData(enabled = true, currentUser = null) {
           .filter((item) => item.id !== id && item.beneficiary_id === delivery.beneficiary_id && item.status !== 'Anulada')
           .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)))[0];
         await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
+        await voidDeliverySocialValueEvents(delivery, cleanReason);
       }
       if (!hasSupabaseConfig) await audit(`Anulo entrega ${delivery.receipt_number || id}. Motivo: ${cleanReason}`);
       await reload();
