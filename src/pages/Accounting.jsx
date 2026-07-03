@@ -153,14 +153,17 @@ export function Accounting({ data, actions, currentUser }) {
         </div>
         {report.recentMovements.length ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[940px] text-left text-sm">
+            <table className="w-full min-w-[1280px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-5 py-3">Fecha</th>
                   <th>Tipo</th>
                   <th>Concepto</th>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Valor unitario</th>
                   <th>Persona/proveedor/donante</th>
-                  <th>Importe o valor</th>
+                  <th>Valor total estimado</th>
                   <th>Estado</th>
                   <th className="pr-5">Metodo</th>
                 </tr>
@@ -171,6 +174,9 @@ export function Accounting({ data, actions, currentUser }) {
                     <td className="whitespace-nowrap px-5 py-4 text-slate-600">{formatDate(movement.date)}</td>
                     <td className="py-4"><TypeBadge type={movement.type} /></td>
                     <td className="max-w-[260px] py-4 font-semibold text-ink">{movement.concept}</td>
+                    <td className="py-4 text-slate-600">{movement.product || '-'}</td>
+                    <td className="py-4 text-slate-600">{formatMovementQuantity(movement)}</td>
+                    <td className="py-4 text-slate-600">{formatMovementUnitValue(movement)}</td>
                     <td className="py-4 text-slate-600">{movement.contact}</td>
                     <td className={`py-4 font-bold ${movement.direction === 'out' ? 'text-red-700' : movement.direction === 'social' ? 'text-cyan-800' : 'text-emerald-700'}`}>
                       {formatMovementAmount(movement)}
@@ -276,6 +282,10 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
   const accounts = report.financialAccounts || [];
   const inventoryItems = data.inventory_items || [];
   const beneficiaries = data.beneficiaries || [];
+  const inventoryUnitValues = useMemo(
+    () => buildInventoryUnitValueMap(inventoryItems, activeRecords(asArray(data.social_value_events))),
+    [data.social_value_events, inventoryItems]
+  );
   const pendingLoans = useMemo(() => activeRecords(asArray(data.loan_records)).map((loan) => ({
     ...loan,
     outstanding: loanOutstanding(loan, activeRecords(asArray(data.loan_movements)))
@@ -313,6 +323,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
     inventory_expires_at: '',
     inventory_location: '',
     inventory_unit: 'unidades',
+    inventory_unit_value: '',
     inventory_low_stock_threshold: 0,
     quantity: 1,
     loan_id: pendingLoans[0]?.id || '',
@@ -342,7 +353,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
   const selectedDebt = pendingDebts.find((debt) => debt.id === form.debt_id);
   const needsAccount = ACCOUNT_OPERATION_TYPES.has(form.operation_type);
   const needsInventory = INVENTORY_OPERATION_TYPES.has(form.operation_type);
-  const needsAmount = form.operation_type !== 'void';
+  const needsAmount = form.operation_type !== 'void' && form.operation_type !== 'donation_in_kind';
   const cannotSubmit = (needsAccount && !accounts.length)
     || (form.operation_type === 'transfer' && accounts.length < 2)
     || (form.operation_type === 'loan_repayment' && !pendingLoans.length)
@@ -351,7 +362,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
     || (form.operation_type === 'void' && !activeMovements.length);
 
   function update(field, value) {
-    setForm((state) => ({ ...state, [field]: value }));
+    setForm((state) => (typeof field === 'object' ? { ...state, ...field } : { ...state, [field]: value }));
   }
 
   function changeOperationType(value) {
@@ -361,7 +372,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
       operation_type: value,
       document_type: nextDocumentType,
       concept: '',
-      amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : state.amount,
+      amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : value === 'donation_in_kind' ? '' : state.amount,
       loan_id: pendingLoans[0]?.id || state.loan_id,
       debt_id: pendingDebts[0]?.id || state.debt_id,
       target_movement_id: value === 'correction' ? correctableMovements[0]?.id || '' : value === 'void' ? activeMovements[0]?.id || '' : state.target_movement_id
@@ -394,9 +405,19 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
           allow_negative_balance: form.allow_negative_balance
         });
       } else {
+        const donationUnitValue = form.operation_type === 'donation_in_kind'
+          ? resolveDonationUnitValue(form, inventoryItems, inventoryUnitValues)
+          : null;
+        if (form.operation_type === 'donation_in_kind' && donationUnitValue === null) {
+          throw new Error('Indica el valor unitario estimado de la donacion en especie.');
+        }
+        const computedAmount = donationUnitValue === null
+          ? Number(form.amount || 0)
+          : roundCurrency(Number(form.quantity || 0) * donationUnitValue);
         await onSubmit({
           ...form,
-          amount: Number(form.amount || 0),
+          amount: computedAmount,
+          inventory_unit_value: donationUnitValue ?? Number(form.inventory_unit_value || 0),
           quantity: Number(form.quantity || 0),
           inventory_low_stock_threshold: Number(form.inventory_low_stock_threshold || 0)
         });
@@ -487,7 +508,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
       <ContactFields form={form} update={update} beneficiaries={beneficiaries} />
 
       {needsInventory && (
-        <InventoryOperationFields form={form} update={update} items={inventoryItems} />
+        <InventoryOperationFields form={form} update={update} items={inventoryItems} operationType={form.operation_type} inventoryUnitValues={inventoryUnitValues} />
       )}
 
       {form.operation_type === 'supplier_debt' && (
@@ -734,17 +755,31 @@ function ContactFields({ form, update, beneficiaries }) {
   return null;
 }
 
-function InventoryOperationFields({ form, update, items }) {
+function InventoryOperationFields({ form, update, items, operationType, inventoryUnitValues }) {
   const selectedItem = items.find((item) => item.id === form.inventory_item_id);
   const showNewItem = form.inventory_item_mode === 'new' || !items.length;
+  const matchedExistingItem = showNewItem ? findInventoryItemByNameAndLot(items, form.inventory_name, form.inventory_lot) : null;
+  const valueSourceItem = showNewItem ? matchedExistingItem : selectedItem;
+  const automaticUnitValue = valueSourceItem ? positiveNumberOrNull(inventoryUnitValues.get(valueSourceItem.id)) : null;
+  const typedUnitValue = positiveNumberOrNull(form.inventory_unit_value);
+  const effectiveUnitValue = automaticUnitValue ?? typedUnitValue;
+  const estimatedTotal = effectiveUnitValue !== null && positiveNumberOrNull(form.quantity) !== null
+    ? roundCurrency(Number(form.quantity || 0) * effectiveUnitValue)
+    : null;
+  const needsSocialValue = operationType === 'donation_in_kind';
+  const mustAskUnitValue = needsSocialValue && automaticUnitValue === null;
   return (
     <>
       <FormField label="Producto" required>
         <select className={inputClass} required value={showNewItem ? 'new' : form.inventory_item_id} onChange={(event) => {
-          if (event.target.value === 'new') update('inventory_item_mode', 'new');
+          if (event.target.value === 'new') update({ inventory_item_mode: 'new', inventory_item_id: '', inventory_unit_value: '' });
           else {
-            update('inventory_item_mode', 'existing');
-            update('inventory_item_id', event.target.value);
+            const nextUnitValue = positiveNumberOrNull(inventoryUnitValues.get(event.target.value));
+            update({
+              inventory_item_mode: 'existing',
+              inventory_item_id: event.target.value,
+              inventory_unit_value: nextUnitValue ?? ''
+            });
           }
         }}>
           {items.map((item) => <option key={item.id} value={item.id}>{item.name}{item.lot ? ` - ${item.lot}` : ''} - {item.stock} {item.unit}</option>)}
@@ -764,6 +799,29 @@ function InventoryOperationFields({ form, update, items }) {
           <FormField label="Ubicacion"><input className={inputClass} value={form.inventory_location} onChange={(event) => update('inventory_location', event.target.value)} /></FormField>
           <FormField label="Unidad" required><input className={inputClass} required value={form.inventory_unit} onChange={(event) => update('inventory_unit', event.target.value)} /></FormField>
           <FormField label="Stock minimo"><input className={inputClass} type="number" step="0.01" min="0" value={form.inventory_low_stock_threshold} onChange={(event) => update('inventory_low_stock_threshold', event.target.value)} /></FormField>
+        </>
+      )}
+      {needsSocialValue && (
+        <>
+          {matchedExistingItem && (
+            <div className="rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm font-semibold text-cyan-900 sm:col-span-2">
+              {matchedExistingItem.name}{matchedExistingItem.lot ? ` - ${matchedExistingItem.lot}` : ''} ya existe. Se actualizara su stock.
+            </div>
+          )}
+          {automaticUnitValue !== null ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+              <p className="text-xs font-bold uppercase text-slate-500">Valor unitario estimado</p>
+              <p className="mt-1 text-lg font-bold text-ink">{formatMoney(automaticUnitValue)} / {valueSourceItem?.unit || form.inventory_unit || 'unidad'}</p>
+            </div>
+          ) : (
+            <FormField label="Valor unitario estimado" required>
+              <input className={inputClass} type="number" step="0.01" min="0.01" required={mustAskUnitValue} value={form.inventory_unit_value} onChange={(event) => update('inventory_unit_value', event.target.value)} />
+            </FormField>
+          )}
+          <div className="rounded-md border border-slate-200 bg-white p-3 sm:col-span-2">
+            <p className="text-xs font-bold uppercase text-slate-500">Valor total estimado</p>
+            <p className="mt-1 text-lg font-bold text-cyan-800">{estimatedTotal !== null ? formatMoney(estimatedTotal) : 'Pendiente de valorar'}</p>
+          </div>
         </>
       )}
     </>
@@ -1098,10 +1156,15 @@ function AreaGroup({ group }) {
 }
 
 function buildAccountingReport(data = {}) {
-  const accountingEvents = activeRecords(asArray(data.accounting_events));
-  const financialAccounts = activeRecords(asArray(data.financial_accounts));
   const rawAccountingEvents = asArray(data.accounting_events);
   const rawCashBankMovements = asArray(data.cash_bank_movements);
+  const rawSocialValueEvents = asArray(data.social_value_events);
+  const rawDeliveries = asArray(data.deliveries);
+  const rawInventoryItems = asArray(data.inventory_items);
+  const eventsById = new Map(rawAccountingEvents.map((event) => [event.id, event]));
+
+  const accountingEvents = activeRecords(rawAccountingEvents);
+  const financialAccounts = activeRecords(asArray(data.financial_accounts));
   const cashBankMovements = activeRecords(rawCashBankMovements);
   const accountingDocuments = activeRecords(asArray(data.accounting_documents));
   const accountingContacts = asArray(data.accounting_contacts);
@@ -1109,12 +1172,15 @@ function buildAccountingReport(data = {}) {
   const loanMovements = activeRecords(asArray(data.loan_movements));
   const debtRecords = activeRecords(asArray(data.debt_records));
   const debtMovements = activeRecords(asArray(data.debt_movements));
-  const socialValueEvents = activeRecords(asArray(data.social_value_events));
+  const socialValueEvents = activeRecords(rawSocialValueEvents).filter((event) => !isVoided(eventsById.get(event.accounting_event_id)));
   const treasuryAccounts = activeRecords(asArray(data.treasury_accounts));
   const treasuryIncomes = activeRecords(asArray(data.treasury_incomes));
   const treasuryExpenses = activeRecords(asArray(data.treasury_expenses));
   const treasuryLoans = activeRecords(asArray(data.treasury_loans));
   const donations = activeRecords(asArray(data.donations));
+  const inventoryItems = activeRecords(rawInventoryItems);
+  const inventoryItemsById = new Map(inventoryItems.map((item) => [item.id, item]));
+  const inventoryUnitValues = buildInventoryUnitValueMap(inventoryItems, socialValueEvents);
 
   const accountRows = financialAccounts.length ? financialAccounts : treasuryAccounts.map(normalizeTreasuryAccount);
   const cashAccounts = accountRows.filter(isCashAccount);
@@ -1145,14 +1211,23 @@ function buildAccountingReport(data = {}) {
     + treasuryIncomes.filter((item) => !hasAnyFile(item, ['document_name', 'document_path', 'file_name', 'file_path'])).length;
   const pendingDocuments = accountingDocuments.filter((document) => !hasAttachedFile(document)).length + movementWithoutDocs + treasuryDocsPending;
 
-  const socialReceivedFromEvents = sumBy(socialValueEvents.filter((item) => item.value_type === 'received'), (item) => Number(item.amount || 0));
-  const socialDelivered = sumBy(socialValueEvents.filter((item) => item.value_type === 'delivered'), (item) => Number(item.amount || 0));
-  const donationSocialReceived = socialValueEvents.length ? 0 : sumBy(donations, (item) => Number(item.estimated_value || 0));
+  const receivedSocialEvents = socialValueEvents.filter((item) => item.value_type === 'received');
+  const deliveredSocialEvents = socialValueEvents.filter((item) => item.value_type === 'delivered');
+  const representedDonationIds = sourceRecordIdSet(receivedSocialEvents, 'donations');
+  const representedDeliveryIds = sourceRecordIdSet(deliveredSocialEvents, 'deliveries');
+  const deliverySocialRows = buildDeliverySocialRows(
+    activeRecords(rawDeliveries),
+    inventoryItemsById,
+    inventoryUnitValues,
+    representedDeliveryIds
+  );
+  const socialReceivedFromEvents = sumBy(receivedSocialEvents, (item) => Number(item.amount || 0));
+  const donationSocialReceived = sumBy(donations.filter((item) => !representedDonationIds.has(item.id)), (item) => Number(item.estimated_value || 0));
   const socialReceived = socialReceivedFromEvents + donationSocialReceived;
+  const socialDelivered = sumBy(deliveredSocialEvents, (item) => Number(item.amount || 0)) + sumBy(deliverySocialRows, (item) => Number(item.amount || 0));
 
   const contactsById = new Map(accountingContacts.map((contact) => [contact.id, contact]));
   const accountsById = new Map(financialAccounts.map((account) => [account.id, account]));
-  const eventsById = new Map(rawAccountingEvents.map((event) => [event.id, event]));
   const firstMovementByEvent = new Map();
   rawCashBankMovements.forEach((movement) => {
     if (movement.accounting_event_id && !firstMovementByEvent.has(movement.accounting_event_id)) firstMovementByEvent.set(movement.accounting_event_id, movement);
@@ -1166,13 +1241,17 @@ function buildAccountingReport(data = {}) {
     debtRecords,
     debtMovements,
     socialValueEvents,
+    deliverySocialRows,
     treasuryIncomes,
     treasuryExpenses,
     treasuryLoans,
     donations,
+    representedDonationIds,
     contactsById,
     accountsById,
     eventsById,
+    inventoryItemsById,
+    inventoryUnitValues,
     firstMovementByEvent,
     useTreasuryFallback: usingTreasuryFallback
   });
@@ -1218,7 +1297,7 @@ function buildAccountingReport(data = {}) {
       tickets: accountingDocuments.filter((document) => normalize(document.document_type) === 'ticket').length,
       contracts: accountingDocuments.filter((document) => normalize(document.document_type) === 'contract' || normalize(document.document_type) === 'contrato').length,
       proofs: accountingDocuments.filter((document) => normalize(document.document_type) === 'proof' || normalize(document.document_type) === 'justificante').length,
-      socialEvents: socialValueEvents.length + donations.length
+      socialEvents: receivedSocialEvents.length + donations.filter((item) => !representedDonationIds.has(item.id)).length
     }
   };
 }
@@ -1243,19 +1322,25 @@ function buildRecentMovements(context) {
     debtRecords,
     debtMovements,
     socialValueEvents,
+    deliverySocialRows,
     treasuryIncomes,
     treasuryExpenses,
     treasuryLoans,
     donations,
+    representedDonationIds,
     contactsById,
     accountsById,
     eventsById,
+    inventoryItemsById,
+    inventoryUnitValues,
     firstMovementByEvent,
     useTreasuryFallback
   } = context;
   const rows = [];
+  const socialAccountingEventIds = new Set(socialValueEvents.map((event) => event.accounting_event_id).filter(Boolean));
 
   accountingEvents.forEach((event) => {
+    if (event.event_type === 'donation_in_kind' && (socialAccountingEventIds.has(event.id) || event.source_module === 'donations')) return;
     const movement = firstMovementByEvent.get(event.id);
     const account = accountsById.get(event.financial_account_id || movement?.financial_account_id);
     rows.push({
@@ -1345,6 +1430,9 @@ function buildRecentMovements(context) {
   });
 
   socialValueEvents.forEach((event) => {
+    const item = inventoryItemsById.get(event.inventory_item_id);
+    const quantity = positiveNumberOrNull(event.quantity);
+    const unitValue = socialEventUnitValue(event, inventoryUnitValues);
     rows.push({
       key: `social-${event.id}`,
       date: event.social_value_at || event.created_at,
@@ -1354,9 +1442,15 @@ function buildRecentMovements(context) {
       amount: Number(event.amount || 0),
       direction: 'social',
       status: statusLabel(event.status),
-      method: event.event_type === 'in_kind_donation' ? 'Especie' : 'Valor social'
+      method: event.event_type === 'in_kind_donation' ? 'Especie' : 'Valor social',
+      product: item?.name || event.product_name || '',
+      quantity,
+      unit: event.unit || item?.unit || '',
+      unitValue
     });
   });
+
+  deliverySocialRows.forEach((row) => rows.push(row));
 
   if (useTreasuryFallback) {
     treasuryIncomes.forEach((income) => rows.push({
@@ -1394,8 +1488,7 @@ function buildRecentMovements(context) {
     }));
   }
 
-  if (!socialValueEvents.length) {
-    donations.forEach((donation) => rows.push({
+  donations.filter((donation) => !representedDonationIds.has(donation.id)).forEach((donation) => rows.push({
       key: `donation-social-${donation.id}`,
       date: donation.donated_at || donation.created_at,
       type: 'Donacion en especie',
@@ -1404,13 +1497,108 @@ function buildRecentMovements(context) {
       amount: Number(donation.estimated_value || 0),
       direction: 'social',
       status: donation.status || donation.state || 'Registrada',
-      method: 'Especie'
+      method: 'Especie',
+      product: donation.donation_type || ''
     }));
-  }
 
   return rows
     .filter((row) => row.date)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function sourceRecordIdSet(events, moduleName) {
+  const normalizedModule = normalize(moduleName);
+  return new Set(events
+    .filter((event) => event.source_record_id && normalize(event.source_module) === normalizedModule)
+    .map((event) => event.source_record_id));
+}
+
+function buildDeliverySocialRows(deliveries, inventoryItemsById, inventoryUnitValues, representedDeliveryIds) {
+  return deliveries
+    .filter((delivery) => !representedDeliveryIds.has(delivery.id))
+    .map((delivery) => {
+      const item = inventoryItemsById.get(delivery.inventory_item_id);
+      const value = deliveryValueDetails(delivery, item, inventoryUnitValues);
+      return {
+        key: `delivery-social-${delivery.id}`,
+        date: delivery.delivered_at || delivery.created_at,
+        type: 'Valor social entregado',
+        concept: delivery.help_type || 'Ayuda entregada',
+        contact: delivery.beneficiary_name || '-',
+        amount: value.total || 0,
+        direction: 'social',
+        status: delivery.status || 'Activa',
+        method: 'Entrega',
+        product: delivery.inventory_item_name || item?.name || '',
+        quantity: value.quantity,
+        unit: item?.unit || delivery.unit || '',
+        unitValue: value.unitValue,
+        source_record_id: delivery.id
+      };
+    });
+}
+
+function deliveryValueDetails(delivery, item, inventoryUnitValues) {
+  const quantity = positiveNumberOrNull(delivery.quantity);
+  const explicitTotal = positiveNumberOrNull(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
+  if (explicitTotal !== null) {
+    return {
+      total: explicitTotal,
+      quantity,
+      unitValue: quantity !== null ? roundCurrency(explicitTotal / quantity) : null
+    };
+  }
+  const unitValue = positiveNumberOrNull(delivery.unit_value, delivery.estimated_unit_value, inventoryUnitValues.get(delivery.inventory_item_id), item?.unit_value, item?.estimated_unit_value, item?.economic_value, item?.price, item?.cost);
+  return {
+    total: quantity !== null && unitValue !== null ? roundCurrency(quantity * unitValue) : 0,
+    quantity,
+    unitValue
+  };
+}
+
+function buildInventoryUnitValueMap(items, socialValueEvents = []) {
+  const values = new Map();
+  items.forEach((item) => {
+    const explicit = inventoryItemUnitValue(item);
+    if (explicit !== null) values.set(item.id, explicit);
+  });
+  [...socialValueEvents]
+    .filter((event) => event.value_type === 'received' && event.inventory_item_id)
+    .sort((a, b) => String(b.social_value_at || b.created_at || '').localeCompare(String(a.social_value_at || a.created_at || '')))
+    .forEach((event) => {
+      if (values.has(event.inventory_item_id)) return;
+      const unitValue = socialEventUnitValue(event, values);
+      if (unitValue !== null) values.set(event.inventory_item_id, unitValue);
+    });
+  return values;
+}
+
+function inventoryItemUnitValue(item) {
+  return positiveNumberOrNull(item?.unit_value, item?.estimated_unit_value, item?.economic_value, item?.price, item?.cost);
+}
+
+function socialEventUnitValue(event, inventoryUnitValues) {
+  const direct = positiveNumberOrNull(event.unit_value, event.estimated_unit_value);
+  if (direct !== null) return direct;
+  const quantity = positiveNumberOrNull(event.quantity);
+  const amount = positiveNumberOrNull(event.amount);
+  if (quantity !== null && amount !== null) return roundCurrency(amount / quantity);
+  return positiveNumberOrNull(inventoryUnitValues.get(event.inventory_item_id));
+}
+
+function findInventoryItemByNameAndLot(items, name, lot) {
+  const normalizedName = normalize(name);
+  const normalizedLot = normalize(lot);
+  if (!normalizedName) return null;
+  return items.find((item) => normalize(item.name) === normalizedName && normalize(item.lot) === normalizedLot) || null;
+}
+
+function resolveDonationUnitValue(form, items, inventoryUnitValues) {
+  const item = form.inventory_item_mode === 'new'
+    ? findInventoryItemByNameAndLot(items, form.inventory_name, form.inventory_lot)
+    : items.find((entry) => entry.id === form.inventory_item_id);
+  const automaticValue = item ? positiveNumberOrNull(inventoryUnitValues.get(item.id)) : null;
+  return automaticValue ?? positiveNumberOrNull(form.inventory_unit_value, form.unit_value, form.estimated_unit_value);
 }
 
 function buildAreaGroups(report) {
@@ -1508,7 +1696,13 @@ function activeRecords(rows) {
 
 function isVoided(item) {
   const status = normalize(item?.status || item?.state || '');
-  return status.includes('void') || status.includes('anulad') || status.includes('cancel');
+  return status.includes('void')
+    || status.includes('anulad')
+    || status.includes('cancel')
+    || status.includes('correct')
+    || status.includes('corregid')
+    || status.includes('revers')
+    || status.includes('revert');
 }
 
 function normalizeTreasuryAccount(account) {
@@ -1710,8 +1904,32 @@ function formatMovementAmount(movement) {
   return `${prefix}${formatMoney(movement.amount)}`;
 }
 
+function formatMovementQuantity(movement) {
+  const quantity = positiveNumberOrNull(movement.quantity);
+  if (quantity === null) return '-';
+  return `${quantity.toLocaleString('es-ES', { maximumFractionDigits: 2 })}${movement.unit ? ` ${movement.unit}` : ''}`;
+}
+
+function formatMovementUnitValue(movement) {
+  const unitValue = positiveNumberOrNull(movement.unitValue);
+  return unitValue === null ? '-' : formatMoney(unitValue);
+}
+
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+}
+
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function positiveNumberOrNull(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
 }
 
 function toDateTimeInputValue(value) {

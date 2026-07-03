@@ -210,6 +210,42 @@ export function useAppData(enabled = true, currentUser = null) {
     return amount;
   }
 
+  function positiveNumberOrNull(...values) {
+    for (const value of values) {
+      if (value === null || value === undefined || value === '') continue;
+      const number = Number(value);
+      if (Number.isFinite(number) && number > 0) return number;
+    }
+    return null;
+  }
+
+  function roundCurrency(value) {
+    return Math.round(Number(value || 0) * 100) / 100;
+  }
+
+  function inventoryItemUnitValue(item) {
+    return positiveNumberOrNull(item?.unit_value, item?.estimated_unit_value, item?.economic_value, item?.price, item?.cost);
+  }
+
+  function latestSocialUnitValueForItem(itemId) {
+    if (!itemId) return null;
+    const event = activeAccountingRows(data.social_value_events || [])
+      .filter((entry) => entry.value_type === 'received' && entry.inventory_item_id === itemId)
+      .sort((a, b) => String(b.social_value_at || b.created_at || '').localeCompare(String(a.social_value_at || a.created_at || '')))[0];
+    const quantity = positiveNumberOrNull(event?.quantity);
+    const amount = positiveNumberOrNull(event?.amount);
+    return quantity !== null && amount !== null ? roundCurrency(amount / quantity) : null;
+  }
+
+  function resolveInventoryUnitValueForOperation(payload, item, quantity) {
+    const automaticValue = inventoryItemUnitValue(item) ?? latestSocialUnitValueForItem(item?.id);
+    if (automaticValue !== null) return automaticValue;
+    const explicitUnitValue = positiveNumberOrNull(payload.inventory_unit_value, payload.unit_value, payload.estimated_unit_value);
+    if (explicitUnitValue !== null) return explicitUnitValue;
+    const legacyTotal = positiveNumberOrNull(payload.amount, payload.estimated_value);
+    return legacyTotal !== null && quantity > 0 ? roundCurrency(legacyTotal / quantity) : null;
+  }
+
   function accountMovementType(account, direction) {
     return `${isCashAccount(account) ? 'cash' : 'bank'}_${direction}`;
   }
@@ -217,7 +253,13 @@ export function useAppData(enabled = true, currentUser = null) {
   function activeAccountingRows(rows = []) {
     return rows.filter((item) => {
       const status = normalize(item?.status || item?.state || '');
-      return !status.includes('void') && !status.includes('anulad') && !status.includes('cancel');
+      return !status.includes('void')
+        && !status.includes('anulad')
+        && !status.includes('cancel')
+        && !status.includes('correct')
+        && !status.includes('corregid')
+        && !status.includes('revers')
+        && !status.includes('revert');
     });
   }
 
@@ -564,7 +606,6 @@ export function useAppData(enabled = true, currentUser = null) {
       return;
     }
     if (operationType === 'donation_in_kind') {
-      const amount = assertPositiveNumber(payload.amount || payload.estimated_value, 'El valor estimado');
       const quantity = assertPositiveNumber(payload.quantity, 'La cantidad');
       const date = operationDate(payload.operation_at);
       const donorName = cleanText(payload.donor_name || payload.contact_name);
@@ -576,6 +617,9 @@ export function useAppData(enabled = true, currentUser = null) {
         address: payload.contact_address
       });
       const item = await resolveInventoryItemForOperation(payload, donorName);
+      const unitValue = resolveInventoryUnitValueForOperation(payload, item, quantity);
+      if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donacion en especie.');
+      const amount = roundCurrency(quantity * unitValue);
       const title = cleanText(payload.concept) || `Donacion en especie: ${item.name}`;
       const event = await createAccountingEvent({
         event_type: 'donation_in_kind',
