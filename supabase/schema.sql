@@ -566,7 +566,13 @@ as $$
        or lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
       and u.is_active = true
       and coalesce(u.status, 'Activo') = 'Activo'
-      and public.can_app_permission('inventory', action_id)
+      and (
+        public.can_app_permission('inventory', action_id)
+        or (
+          action_id in ('create', 'edit')
+          and public.can_app_permission('accounting', 'create')
+        )
+      )
       and case
         when u.role = 'Superadministrador' then action_id in ('view', 'create', 'edit', 'delete')
         when action_id = 'delete' then false

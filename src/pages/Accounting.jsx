@@ -12,11 +12,11 @@ import {
   HandCoins,
   Landmark,
   PackageCheck,
+  Plus,
   Receipt,
   RefreshCw,
   Scale,
   ShieldCheck,
-  Upload,
   Wallet
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -27,16 +27,25 @@ import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
-const QUICK_ACTIONS = [
-  { label: 'Registrar gasto', icon: ArrowDownCircle, tone: 'border-red-200 bg-red-50 text-red-700' },
-  { label: 'Registrar ingreso', icon: ArrowUpCircle, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  { label: 'Registrar prestamo', icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700' },
-  { label: 'Registrar devolucion', icon: RefreshCw, tone: 'border-blue-200 bg-blue-50 text-blue-700' },
-  { label: 'Registrar deuda', icon: Receipt, tone: 'border-orange-200 bg-orange-50 text-orange-700' },
-  { label: 'Registrar donacion monetaria', icon: Banknote, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  { label: 'Registrar donacion en especie', icon: Gift, tone: 'border-pink-200 bg-pink-50 text-pink-700' },
-  { label: 'Subir factura/ticket', icon: Upload, tone: 'border-slate-200 bg-slate-50 text-slate-700' }
+const OPERATION_TYPES = [
+  { value: 'income', label: 'Ingreso', icon: ArrowUpCircle, tone: 'bg-emerald-50 text-emerald-700' },
+  { value: 'expense', label: 'Gasto', icon: ArrowDownCircle, tone: 'bg-red-50 text-red-700' },
+  { value: 'donation_money', label: 'Donacion monetaria', icon: Banknote, tone: 'bg-emerald-50 text-emerald-700' },
+  { value: 'donation_in_kind', label: 'Donacion en especie', icon: Gift, tone: 'bg-pink-50 text-pink-700' },
+  { value: 'inventory_purchase', label: 'Compra de inventario', icon: PackageCheck, tone: 'bg-cyan-50 text-cyan-700' },
+  { value: 'economic_help', label: 'Ayuda economica', icon: HandCoins, tone: 'bg-amber-50 text-amber-700' },
+  { value: 'loan_received', label: 'Prestamo recibido', icon: HandCoins, tone: 'bg-violet-50 text-violet-700' },
+  { value: 'loan_repayment', label: 'Devolucion de prestamo', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
+  { value: 'supplier_debt', label: 'Deuda con proveedor', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
+  { value: 'debt_payment', label: 'Pago de deuda', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
+  { value: 'transfer', label: 'Transferencia entre cuentas', icon: RefreshCw, tone: 'bg-slate-100 text-slate-700' },
+  { value: 'correction', label: 'Correccion', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
+  { value: 'void', label: 'Anulacion', icon: AlertTriangle, tone: 'bg-red-50 text-red-700' }
 ];
+
+const MONEY_OUT_OPERATION_TYPES = new Set(['expense', 'inventory_purchase', 'economic_help', 'loan_repayment', 'debt_payment']);
+const ACCOUNT_OPERATION_TYPES = new Set(['income', 'expense', 'donation_money', 'inventory_purchase', 'economic_help', 'loan_received', 'loan_repayment', 'debt_payment']);
+const INVENTORY_OPERATION_TYPES = new Set(['donation_in_kind', 'inventory_purchase']);
 
 export function Accounting({ data, actions, currentUser }) {
   const [modal, setModal] = useState(null);
@@ -46,15 +55,6 @@ export function Accounting({ data, actions, currentUser }) {
   const report = useMemo(() => buildAccountingReport(data), [data]);
   const areaGroups = useMemo(() => buildAreaGroups(report), [report]);
   const isSuperadmin = currentUser?.role === 'Superadministrador';
-
-  function openQuickAction(label) {
-    const mapping = {
-      'Registrar gasto': { type: 'movement', movementType: 'bank_out', title: 'Registrar pago bancario' },
-      'Registrar ingreso': { type: 'movement', movementType: 'bank_in', title: 'Registrar ingreso bancario' },
-      'Subir factura/ticket': { type: 'future', title: label }
-    };
-    setModal(mapping[label] || { type: 'future', title: label });
-  }
 
   return (
     <>
@@ -117,6 +117,8 @@ export function Accounting({ data, actions, currentUser }) {
         </div>
       </section>
 
+      <EconomicOperationPanel canCreate={canCreate} onOpen={() => setModal({ type: 'economic-operation' })} />
+
       <CashBankWorkspace
         report={report}
         canCreate={canCreate}
@@ -146,8 +148,8 @@ export function Accounting({ data, actions, currentUser }) {
 
       <section className="mt-6 rounded-md border border-slate-200 bg-white shadow-panel">
         <div className="border-b border-slate-200 p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Ultimos movimientos</p>
-          <h3 className="text-xl font-bold text-ink">Actividad contable reciente</h3>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Linea temporal economica</p>
+          <h3 className="text-xl font-bold text-ink">Todas las operaciones ordenadas por fecha</h3>
         </div>
         {report.recentMovements.length ? (
           <div className="overflow-x-auto">
@@ -185,20 +187,6 @@ export function Accounting({ data, actions, currentUser }) {
         )}
       </section>
 
-      {canCreate && (
-        <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-          <div className="mb-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Acciones rapidas</p>
-            <h3 className="text-xl font-bold text-ink">Registrar operaciones sin duplicar datos</h3>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {QUICK_ACTIONS.map((action) => (
-              <QuickActionButton key={action.label} action={action} onClick={() => openQuickAction(action.label)} />
-            ))}
-          </div>
-        </section>
-      )}
-
       <section className="mt-6">
         <div className="mb-4">
           <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Areas contables agrupadas</p>
@@ -211,6 +199,29 @@ export function Accounting({ data, actions, currentUser }) {
         </div>
       </section>
 
+      {modal?.type === 'economic-operation' && (
+        <Modal title="Nueva operacion economica" onClose={() => setModal(null)}>
+          <EconomicOperationForm
+            data={data}
+            report={report}
+            currentUser={currentUser}
+            isSuperadmin={isSuperadmin}
+            onSubmit={async (payload) => {
+              await actions.registerEconomicOperation(payload);
+              setModal(null);
+            }}
+            onCorrect={async (movement, payload) => {
+              await actions.correctCashBankMovement(movement.id, payload);
+              setModal(null);
+            }}
+            onVoid={async (movement, reason) => {
+              await actions.voidCashBankMovement(movement.id, reason);
+              setModal(null);
+            }}
+          />
+        </Modal>
+      )}
+
       {modal?.type === 'account' && (
         <Modal title={modal.item ? 'Editar cuenta' : modal.title || 'Nueva cuenta'} onClose={() => setModal(null)}>
           <FinancialAccountForm
@@ -219,61 +230,6 @@ export function Accounting({ data, actions, currentUser }) {
             onSubmit={async (payload) => {
               if (modal.item) await actions.updateFinancialAccount(modal.item.id, payload);
               else await actions.createFinancialAccount(payload);
-              setModal(null);
-            }}
-          />
-        </Modal>
-      )}
-
-      {modal?.type === 'movement' && (
-        <Modal title={modal.title || movementTypeLabel(modal.movementType)} onClose={() => setModal(null)}>
-          <CashBankMovementForm
-            accounts={report.financialAccounts}
-            movementType={modal.movementType}
-            isSuperadmin={isSuperadmin}
-            onSubmit={async (payload) => {
-              await actions.registerCashBankMovement({ ...payload, movement_type: modal.movementType });
-              setModal(null);
-            }}
-          />
-        </Modal>
-      )}
-
-      {modal?.type === 'transfer' && (
-        <Modal title="Transferencia entre cuentas" onClose={() => setModal(null)}>
-          <TransferForm
-            accounts={report.financialAccounts}
-            isSuperadmin={isSuperadmin}
-            onSubmit={async (payload) => {
-              await actions.registerBankTransfer(payload);
-              setModal(null);
-            }}
-          />
-        </Modal>
-      )}
-
-      {modal?.type === 'correct-movement' && (
-        <Modal title="Corregir movimiento" onClose={() => setModal(null)}>
-          <CashBankMovementForm
-            accounts={report.financialAccounts}
-            movementType={modal.item.movement_type}
-            movement={modal.item}
-            isCorrection
-            isSuperadmin={isSuperadmin}
-            onSubmit={async (payload) => {
-              await actions.correctCashBankMovement(modal.item.id, payload);
-              setModal(null);
-            }}
-          />
-        </Modal>
-      )}
-
-      {modal?.type === 'void-movement' && (
-        <Modal title="Anular movimiento" onClose={() => setModal(null)}>
-          <VoidMovementForm
-            movement={modal.item}
-            onSubmit={async (reason) => {
-              await actions.voidCashBankMovement(modal.item.id, reason);
               setModal(null);
             }}
           />
@@ -291,21 +247,278 @@ export function Accounting({ data, actions, currentUser }) {
           />
         </Modal>
       )}
-
-      {modal?.type === 'future' && (
-        <Modal title={modal.title} onClose={() => setModal(null)}>
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-5">
-            <p className="text-lg font-bold text-ink">Disponible en la siguiente fase.</p>
-            <p className="mt-2 text-sm text-slate-600">
-              En Fase 3.2 quedan cerrados Caja y Bancos. Este flujo se activara cuando toque su bloque correspondiente.
-            </p>
-          </div>
-          <div className="mt-5 flex justify-end">
-            <Button onClick={() => setModal(null)}>Entendido</Button>
-          </div>
-        </Modal>
-      )}
     </>
+  );
+}
+
+function EconomicOperationPanel({ canCreate, onOpen }) {
+  return (
+    <section className="mt-6 rounded-md border border-brand-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Motor unico de operaciones economicas</p>
+          <h3 className="text-xl font-bold text-ink">Toda la contabilidad empieza aqui</h3>
+          <p className="mt-1 text-sm text-slate-600">El sistema genera movimientos, documentos, contactos, inventario, eventos y auditoria desde una sola entrada.</p>
+        </div>
+        {canCreate ? (
+          <Button className="min-h-[56px] justify-center px-6 text-base uppercase" onClick={onOpen}>
+            <Plus size={22} /> Nueva operacion
+          </Button>
+        ) : (
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubmit, onCorrect, onVoid }) {
+  const accounts = report.financialAccounts || [];
+  const inventoryItems = data.inventory_items || [];
+  const beneficiaries = data.beneficiaries || [];
+  const pendingLoans = useMemo(() => activeRecords(asArray(data.loan_records)).map((loan) => ({
+    ...loan,
+    outstanding: loanOutstanding(loan, activeRecords(asArray(data.loan_movements)))
+  })).filter((loan) => loan.outstanding > 0), [data.loan_movements, data.loan_records]);
+  const pendingDebts = useMemo(() => activeRecords(asArray(data.debt_records)).map((debt) => ({
+    ...debt,
+    outstanding: debtOutstanding(debt, activeRecords(asArray(data.debt_movements)))
+  })).filter((debt) => debt.outstanding > 0), [data.debt_movements, data.debt_records]);
+  const activeMovements = useMemo(() => (report.cashBankTimeline || []).filter((row) => row.raw?.status === 'active'), [report.cashBankTimeline]);
+  const correctableMovements = activeMovements.filter((row) => !String(row.raw?.movement_type || '').startsWith('transfer_'));
+  const responsible = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || '';
+  const [form, setForm] = useState(() => ({
+    operation_type: 'income',
+    operation_at: toDateTimeInputValue().slice(0, 10),
+    amount: '',
+    concept: '',
+    financial_account_id: accounts[0]?.id || '',
+    payment_method: 'Transferencia',
+    reference: '',
+    contact_name: '',
+    supplier_name: '',
+    donor_name: '',
+    donor_kind: 'Particular',
+    lender_name: '',
+    beneficiary_id: beneficiaries[0]?.id || '',
+    beneficiary_name: '',
+    contact_document_id: '',
+    contact_email: '',
+    contact_phone: '',
+    inventory_item_mode: inventoryItems.length ? 'existing' : 'new',
+    inventory_item_id: inventoryItems[0]?.id || '',
+    inventory_name: '',
+    inventory_category: 'Alimentos',
+    inventory_lot: '',
+    inventory_expires_at: '',
+    inventory_location: '',
+    inventory_unit: 'unidades',
+    inventory_low_stock_threshold: 0,
+    quantity: 1,
+    loan_id: pendingLoans[0]?.id || '',
+    debt_id: pendingDebts[0]?.id || '',
+    from_account_id: accounts[0]?.id || '',
+    to_account_id: accounts[1]?.id || '',
+    target_movement_id: activeMovements[0]?.id || '',
+    correction_reason: '',
+    void_reason: '',
+    due_at: '',
+    document_type: 'receipt',
+    document_number: '',
+    document_name: '',
+    document_data_url: '',
+    document_notes: '',
+    notes: '',
+    responsible,
+    allow_negative_balance: false
+  }));
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const operation = OPERATION_TYPES.find((item) => item.value === form.operation_type) || OPERATION_TYPES[0];
+  const OperationIcon = operation.icon;
+  const selectedMovement = activeMovements.find((row) => row.id === form.target_movement_id);
+  const selectedLoan = pendingLoans.find((loan) => loan.id === form.loan_id);
+  const selectedDebt = pendingDebts.find((debt) => debt.id === form.debt_id);
+  const needsAccount = ACCOUNT_OPERATION_TYPES.has(form.operation_type);
+  const needsInventory = INVENTORY_OPERATION_TYPES.has(form.operation_type);
+  const needsAmount = form.operation_type !== 'void';
+  const cannotSubmit = (needsAccount && !accounts.length)
+    || (form.operation_type === 'transfer' && accounts.length < 2)
+    || (form.operation_type === 'loan_repayment' && !pendingLoans.length)
+    || (form.operation_type === 'debt_payment' && !pendingDebts.length)
+    || (form.operation_type === 'correction' && !correctableMovements.length)
+    || (form.operation_type === 'void' && !activeMovements.length);
+
+  function update(field, value) {
+    setForm((state) => ({ ...state, [field]: value }));
+  }
+
+  function changeOperationType(value) {
+    const nextDocumentType = defaultDocumentTypeForOperation(value);
+    setForm((state) => ({
+      ...state,
+      operation_type: value,
+      document_type: nextDocumentType,
+      concept: '',
+      amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : state.amount,
+      loan_id: pendingLoans[0]?.id || state.loan_id,
+      debt_id: pendingDebts[0]?.id || state.debt_id,
+      target_movement_id: value === 'correction' ? correctableMovements[0]?.id || '' : value === 'void' ? activeMovements[0]?.id || '' : state.target_movement_id
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      if (form.operation_type === 'void') {
+        if (!selectedMovement) throw new Error('Selecciona un movimiento para anular.');
+        await onVoid(selectedMovement.raw, form.void_reason);
+      } else if (form.operation_type === 'correction') {
+        if (!selectedMovement) throw new Error('Selecciona un movimiento para corregir.');
+        await onCorrect(selectedMovement.raw, {
+          financial_account_id: selectedMovement.raw.financial_account_id,
+          movement_datetime: `${form.operation_at}T09:00`,
+          amount: Number(form.amount || selectedMovement.raw.amount || 0),
+          reason: form.concept || selectedMovement.raw.notes || selectedMovement.concept,
+          reference: form.reference,
+          payment_method: form.payment_method,
+          document_name: form.document_name,
+          document_data_url: form.document_data_url,
+          document_type: form.document_type || defaultDocumentTypeForMovement(selectedMovement.raw.movement_type),
+          document_number: form.document_number,
+          document_notes: form.document_notes,
+          correction_reason: form.correction_reason,
+          allow_negative_balance: form.allow_negative_balance
+        });
+      } else {
+        await onSubmit({
+          ...form,
+          amount: Number(form.amount || 0),
+          quantity: Number(form.quantity || 0),
+          inventory_low_stock_threshold: Number(form.inventory_low_stock_threshold || 0)
+        });
+      }
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo registrar la operacion.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      <FormError message={error} />
+      <div className={`flex items-start gap-3 rounded-md p-4 sm:col-span-2 ${operation.tone}`}>
+        <span className="rounded-md bg-white/70 p-2"><OperationIcon size={21} /></span>
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide">Nueva operacion</p>
+          <p className="mt-1 text-lg font-bold text-ink">{operation.label}</p>
+        </div>
+      </div>
+
+      <FormField label="Tipo de operacion" required>
+        <select className={inputClass} required value={form.operation_type} onChange={(event) => changeOperationType(event.target.value)}>
+          {OPERATION_TYPES.filter((item) => item.value !== 'void' || isSuperadmin).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </FormField>
+      <FormField label="Fecha" required><input className={inputClass} type="date" required value={form.operation_at} onChange={(event) => update('operation_at', event.target.value)} /></FormField>
+
+      {cannotSubmit && <OperationBlocker type={form.operation_type} />}
+
+      {form.operation_type === 'transfer' ? (
+        <>
+          <AccountSelect label="Cuenta origen" accounts={accounts} value={form.from_account_id} onChange={(value) => update('from_account_id', value)} />
+          <AccountSelect label="Cuenta destino" accounts={accounts} value={form.to_account_id} onChange={(value) => update('to_account_id', value)} />
+        </>
+      ) : needsAccount && (
+        <AccountSelect label="Cuenta" accounts={accounts} value={form.financial_account_id} onChange={(value) => update('financial_account_id', value)} />
+      )}
+
+      {form.operation_type === 'loan_repayment' && (
+        <FormField label="Prestamo pendiente" required>
+          <select className={inputClass} required value={form.loan_id} onChange={(event) => {
+            const loan = pendingLoans.find((item) => item.id === event.target.value);
+            setForm((state) => ({ ...state, loan_id: event.target.value, amount: loan?.outstanding || state.amount }));
+          }}>
+            {pendingLoans.map((loan) => <option key={loan.id} value={loan.id}>{loan.reason} - {formatMoney(loan.outstanding)}</option>)}
+          </select>
+        </FormField>
+      )}
+
+      {form.operation_type === 'debt_payment' && (
+        <FormField label="Deuda pendiente" required>
+          <select className={inputClass} required value={form.debt_id} onChange={(event) => {
+            const debt = pendingDebts.find((item) => item.id === event.target.value);
+            setForm((state) => ({ ...state, debt_id: event.target.value, amount: debt?.outstanding || state.amount }));
+          }}>
+            {pendingDebts.map((debt) => <option key={debt.id} value={debt.id}>{debt.reason} - {formatMoney(debt.outstanding)}</option>)}
+          </select>
+        </FormField>
+      )}
+
+      {form.operation_type === 'correction' && (
+        <MovementSelect label="Movimiento a corregir" rows={correctableMovements} value={form.target_movement_id} onChange={(value) => update('target_movement_id', value)} />
+      )}
+
+      {form.operation_type === 'void' && (
+        <>
+          <MovementSelect label="Movimiento a anular" rows={activeMovements} value={form.target_movement_id} onChange={(value) => update('target_movement_id', value)} />
+          <div className="sm:col-span-2"><FormField label="Motivo de anulacion" required><textarea className={inputClass} rows="3" required value={form.void_reason} onChange={(event) => update('void_reason', event.target.value)} /></FormField></div>
+        </>
+      )}
+
+      {needsAmount && (
+        <FormField label={amountLabelForOperation(form.operation_type)} required>
+          <input className={inputClass} type="number" step="0.01" min="0.01" required value={form.amount} onChange={(event) => update('amount', event.target.value)} />
+          {selectedLoan && form.operation_type === 'loan_repayment' && <p className="mt-1 text-xs text-slate-500">Pendiente: {formatMoney(selectedLoan.outstanding)}</p>}
+          {selectedDebt && form.operation_type === 'debt_payment' && <p className="mt-1 text-xs text-slate-500">Pendiente: {formatMoney(selectedDebt.outstanding)}</p>}
+        </FormField>
+      )}
+
+      {form.operation_type !== 'void' && (
+        <FormField label={form.operation_type === 'transfer' ? 'Motivo' : 'Concepto'} required>
+          <input className={inputClass} required value={form.concept} onChange={(event) => update('concept', event.target.value)} />
+        </FormField>
+      )}
+
+      <ContactFields form={form} update={update} beneficiaries={beneficiaries} />
+
+      {needsInventory && (
+        <InventoryOperationFields form={form} update={update} items={inventoryItems} />
+      )}
+
+      {form.operation_type === 'supplier_debt' && (
+        <FormField label="Vencimiento"><input className={inputClass} type="date" value={form.due_at} onChange={(event) => update('due_at', event.target.value)} /></FormField>
+      )}
+
+      {form.operation_type !== 'void' && (
+        <>
+          {(needsAccount || form.operation_type === 'transfer' || form.operation_type === 'correction') && (
+            <>
+              <FormField label="Metodo"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
+              <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
+            </>
+          )}
+          <FormField label="Tipo de documento"><select className={inputClass} value={form.document_type} onChange={(event) => update('document_type', event.target.value)}><option value="invoice">Factura</option><option value="ticket">Ticket</option><option value="receipt">Recibo</option><option value="contract">Contrato</option><option value="proof">Justificante</option><option value="other">Otro</option></select></FormField>
+          <FormField label="Numero de documento"><input className={inputClass} value={form.document_number} onChange={(event) => update('document_number', event.target.value)} /></FormField>
+          <FileAttachmentField form={form} setForm={setForm} />
+          <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+        </>
+      )}
+
+      {form.operation_type === 'correction' && (
+        <div className="sm:col-span-2"><FormField label="Motivo de correccion" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => update('correction_reason', event.target.value)} /></FormField></div>
+      )}
+
+      {isSuperadmin && (MONEY_OUT_OPERATION_TYPES.has(form.operation_type) || form.operation_type === 'transfer' || form.operation_type === 'correction') && <NegativeBalanceToggle form={form} setForm={setForm} />}
+
+      <div className="flex justify-end sm:col-span-2">
+        <Button type="submit" disabled={saving || cannotSubmit}>{saving ? 'Registrando...' : submitLabelForOperation(form.operation_type)}</Button>
+      </div>
+    </form>
   );
 }
 
@@ -362,22 +575,10 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
                 <h4 className="font-bold text-ink">Movimientos de Caja y Bancos</h4>
                 <p className="text-sm text-slate-500">Linea temporal unica, incluyendo activos, corregidos y anulados.</p>
               </div>
-              {canCreate && (
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="subtle" onClick={() => onOpen({ type: 'movement', movementType: 'cash_in', title: 'Entrada de efectivo' })}><ArrowUpCircle size={16} /> Entrada caja</Button>
-                  <Button variant="secondary" onClick={() => onOpen({ type: 'movement', movementType: 'cash_out', title: 'Salida de efectivo' })}><ArrowDownCircle size={16} /> Salida caja</Button>
-                  <Button variant="subtle" onClick={() => onOpen({ type: 'movement', movementType: 'bank_in', title: 'Ingreso bancario' })}><ArrowUpCircle size={16} /> Ingreso banco</Button>
-                  <Button variant="secondary" onClick={() => onOpen({ type: 'movement', movementType: 'bank_out', title: 'Pago bancario' })}><ArrowDownCircle size={16} /> Pago banco</Button>
-                  <Button onClick={() => onOpen({ type: 'transfer' })}><RefreshCw size={16} /> Transferir</Button>
-                </div>
-              )}
             </div>
           </div>
           <CashBankTimeline
             rows={report.cashBankTimeline}
-            canEdit={canEdit}
-            canDelete={canDelete}
-            onOpen={onOpen}
           />
         </div>
       </div>
@@ -416,7 +617,7 @@ function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, onOpen 
   );
 }
 
-function CashBankTimeline({ rows, canEdit, canDelete, onOpen }) {
+function CashBankTimeline({ rows }) {
   if (!rows.length) {
     return <div className="p-4"><EmptyState icon={ClipboardList} title="No hay movimientos de Caja o Bancos." detail="Crea una caja o cuenta bancaria y registra la primera operacion." /></div>;
   }
@@ -432,36 +633,140 @@ function CashBankTimeline({ rows, canEdit, canDelete, onOpen }) {
             <th>Importe</th>
             <th>Estado</th>
             <th>Usuario</th>
-            {(canEdit || canDelete) && <th className="pr-4 text-right">Acciones</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => {
-            const canCorrect = canEdit && row.status === 'active' && !String(row.movement_type || '').startsWith('transfer_');
-            const canVoid = canDelete && row.status === 'active';
-            return (
-              <tr key={row.id} className="align-top">
-                <td className="px-4 py-3 text-slate-600">{row.created_at ? formatDateTime(row.created_at) : formatDate(row.date)}</td>
-                <td className="py-3 font-semibold text-ink">{row.accountName}</td>
-                <td className="py-3"><TypeBadge type={row.type} /></td>
-                <td className="max-w-[280px] py-3 text-slate-700">{row.concept}</td>
-                <td className={`py-3 font-bold ${row.direction === 'out' ? 'text-red-700' : 'text-emerald-700'}`}>{formatMovementAmount(row)}</td>
-                <td className="py-3"><StatusBadge status={statusLabel(row.status)} /></td>
-                <td className="py-3 text-slate-600">{row.userName}</td>
-                {(canEdit || canDelete) && (
-                  <td className="pr-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      {canCorrect && <Button variant="secondary" onClick={() => onOpen({ type: 'correct-movement', item: row.raw })}>Corregir</Button>}
-                      {canVoid && <Button variant="danger" onClick={() => onOpen({ type: 'void-movement', item: row.raw })}>Anular</Button>}
-                    </div>
-                  </td>
-                )}
-              </tr>
-            );
-          })}
+          {rows.map((row) => (
+            <tr key={row.id} className="align-top">
+              <td className="px-4 py-3 text-slate-600">{row.created_at ? formatDateTime(row.created_at) : formatDate(row.date)}</td>
+              <td className="py-3 font-semibold text-ink">{row.accountName}</td>
+              <td className="py-3"><TypeBadge type={row.type} /></td>
+              <td className="max-w-[280px] py-3 text-slate-700">{row.concept}</td>
+              <td className={`py-3 font-bold ${row.direction === 'out' ? 'text-red-700' : 'text-emerald-700'}`}>{formatMovementAmount(row)}</td>
+              <td className="py-3"><StatusBadge status={statusLabel(row.status)} /></td>
+              <td className="py-3 text-slate-600">{row.userName}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function OperationBlocker({ type }) {
+  const messages = {
+    transfer: 'Necesitas al menos dos cuentas activas para transferir.',
+    loan_repayment: 'No hay prestamos pendientes para devolver.',
+    debt_payment: 'No hay deudas pendientes para pagar.',
+    correction: 'No hay movimientos activos corregibles.',
+    void: 'No hay movimientos activos para anular.'
+  };
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 sm:col-span-2">
+      {messages[type] || 'Crea primero una cuenta activa de Caja o Banco.'}
+    </div>
+  );
+}
+
+function AccountSelect({ label, accounts, value, onChange }) {
+  return (
+    <FormField label={label} required>
+      <select className={inputClass} required value={value} onChange={(event) => onChange(event.target.value)}>
+        {accounts.map((account) => <option key={account.id} value={account.id}>{account.name} - {formatMoney(account.current_balance)}</option>)}
+      </select>
+    </FormField>
+  );
+}
+
+function MovementSelect({ label, rows, value, onChange }) {
+  return (
+    <div className="sm:col-span-2">
+      <FormField label={label} required>
+        <select className={inputClass} required value={value} onChange={(event) => onChange(event.target.value)}>
+          {rows.map((row) => <option key={row.id} value={row.id}>{formatDate(row.date)} - {row.accountName} - {row.type} - {formatMoney(row.amount)}</option>)}
+        </select>
+      </FormField>
+    </div>
+  );
+}
+
+function ContactFields({ form, update, beneficiaries }) {
+  if (form.operation_type === 'income') {
+    return <FormField label="Persona u origen"><input className={inputClass} value={form.contact_name} onChange={(event) => update('contact_name', event.target.value)} /></FormField>;
+  }
+  if (form.operation_type === 'expense' || form.operation_type === 'inventory_purchase' || form.operation_type === 'supplier_debt') {
+    return (
+      <>
+        <FormField label="Proveedor" required><input className={inputClass} required value={form.supplier_name} onChange={(event) => update('supplier_name', event.target.value)} /></FormField>
+        <FormField label="Documento proveedor"><input className={inputClass} value={form.contact_document_id} onChange={(event) => update('contact_document_id', event.target.value)} /></FormField>
+      </>
+    );
+  }
+  if (form.operation_type === 'donation_money' || form.operation_type === 'donation_in_kind') {
+    return (
+      <>
+        <FormField label="Donante" required><input className={inputClass} required value={form.donor_name} onChange={(event) => update('donor_name', event.target.value)} /></FormField>
+        <FormField label="Tipo de donante"><select className={inputClass} value={form.donor_kind} onChange={(event) => update('donor_kind', event.target.value)}><option>Particular</option><option>Empresa</option><option>Entidad</option><option>Anonimo</option></select></FormField>
+      </>
+    );
+  }
+  if (form.operation_type === 'loan_received') {
+    return (
+      <>
+        <FormField label="Prestamista" required><input className={inputClass} required value={form.lender_name} onChange={(event) => update('lender_name', event.target.value)} /></FormField>
+        <FormField label="Documento prestamista"><input className={inputClass} value={form.contact_document_id} onChange={(event) => update('contact_document_id', event.target.value)} /></FormField>
+      </>
+    );
+  }
+  if (form.operation_type === 'economic_help') {
+    return (
+      <>
+        <FormField label="Beneficiario">
+          <select className={inputClass} value={form.beneficiary_id} onChange={(event) => update('beneficiary_id', event.target.value)}>
+            <option value="">Sin ficha vinculada</option>
+            {beneficiaries.map((beneficiary) => <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.full_name}</option>)}
+          </select>
+        </FormField>
+        {!form.beneficiary_id && <FormField label="Nombre beneficiario" required><input className={inputClass} required value={form.beneficiary_name} onChange={(event) => update('beneficiary_name', event.target.value)} /></FormField>}
+      </>
+    );
+  }
+  return null;
+}
+
+function InventoryOperationFields({ form, update, items }) {
+  const selectedItem = items.find((item) => item.id === form.inventory_item_id);
+  const showNewItem = form.inventory_item_mode === 'new' || !items.length;
+  return (
+    <>
+      <FormField label="Producto" required>
+        <select className={inputClass} required value={showNewItem ? 'new' : form.inventory_item_id} onChange={(event) => {
+          if (event.target.value === 'new') update('inventory_item_mode', 'new');
+          else {
+            update('inventory_item_mode', 'existing');
+            update('inventory_item_id', event.target.value);
+          }
+        }}>
+          {items.map((item) => <option key={item.id} value={item.id}>{item.name}{item.lot ? ` - ${item.lot}` : ''} - {item.stock} {item.unit}</option>)}
+          <option value="new">Nuevo producto o lote</option>
+        </select>
+      </FormField>
+      <FormField label="Cantidad" required>
+        <input className={inputClass} type="number" step="0.01" min="0.01" required value={form.quantity} onChange={(event) => update('quantity', event.target.value)} />
+        {selectedItem && !showNewItem && <p className="mt-1 text-xs text-slate-500">Unidad: {selectedItem.unit}</p>}
+      </FormField>
+      {showNewItem && (
+        <>
+          <FormField label="Nombre producto" required><input className={inputClass} required value={form.inventory_name} onChange={(event) => update('inventory_name', event.target.value)} /></FormField>
+          <FormField label="Categoria" required><input className={inputClass} required value={form.inventory_category} onChange={(event) => update('inventory_category', event.target.value)} /></FormField>
+          <FormField label="Lote"><input className={inputClass} value={form.inventory_lot} onChange={(event) => update('inventory_lot', event.target.value)} /></FormField>
+          <FormField label="Caducidad"><input className={inputClass} type="date" value={form.inventory_expires_at} onChange={(event) => update('inventory_expires_at', event.target.value)} /></FormField>
+          <FormField label="Ubicacion"><input className={inputClass} value={form.inventory_location} onChange={(event) => update('inventory_location', event.target.value)} /></FormField>
+          <FormField label="Unidad" required><input className={inputClass} required value={form.inventory_unit} onChange={(event) => update('inventory_unit', event.target.value)} /></FormField>
+          <FormField label="Stock minimo"><input className={inputClass} type="number" step="0.01" min="0" value={form.inventory_low_stock_threshold} onChange={(event) => update('inventory_low_stock_threshold', event.target.value)} /></FormField>
+        </>
+      )}
+    </>
   );
 }
 
@@ -767,20 +1072,6 @@ function StatusBadge({ status }) {
       ? 'bg-orange-50 text-orange-700'
       : 'bg-emerald-50 text-emerald-700';
   return <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${tone}`}>{status}</span>;
-}
-
-function QuickActionButton({ action, onClick }) {
-  const Icon = action.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`focus-ring flex min-h-[96px] items-start justify-between gap-4 rounded-md border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-panel ${action.tone}`}
-    >
-      <span className="font-bold">{action.label}</span>
-      <Icon size={22} />
-    </button>
-  );
 }
 
 function AreaGroup({ group }) {
@@ -1119,8 +1410,7 @@ function buildRecentMovements(context) {
 
   return rows
     .filter((row) => row.date)
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .slice(0, 10);
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
 function buildAreaGroups(report) {
@@ -1364,6 +1654,42 @@ function accountTypeLabel(type) {
     other: 'Otra cuenta'
   };
   return labels[type] || type || 'Cuenta';
+}
+
+function defaultDocumentTypeForOperation(type) {
+  const labels = {
+    income: 'receipt',
+    expense: 'ticket',
+    donation_money: 'receipt',
+    donation_in_kind: 'receipt',
+    inventory_purchase: 'invoice',
+    economic_help: 'proof',
+    loan_received: 'contract',
+    loan_repayment: 'proof',
+    supplier_debt: 'invoice',
+    debt_payment: 'proof',
+    transfer: 'proof',
+    correction: 'proof'
+  };
+  return labels[type] || 'proof';
+}
+
+function defaultDocumentTypeForMovement(type) {
+  return String(type || '').endsWith('_out') ? 'ticket' : 'receipt';
+}
+
+function amountLabelForOperation(type) {
+  if (type === 'donation_in_kind') return 'Valor estimado';
+  if (type === 'transfer') return 'Importe a transferir';
+  if (type === 'loan_repayment') return 'Importe devuelto';
+  if (type === 'debt_payment') return 'Importe pagado';
+  return 'Importe';
+}
+
+function submitLabelForOperation(type) {
+  if (type === 'void') return 'Anular movimiento';
+  if (type === 'correction') return 'Guardar correccion';
+  return 'Registrar operacion';
 }
 
 function contactName(contact) {
