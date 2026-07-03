@@ -347,6 +347,11 @@ export function useAppData(enabled = true, currentUser = null) {
       if (!item) throw new Error('Selecciona un producto de inventario.');
       return item;
     }
+    const existing = (data.inventory_items || []).find((entry) => (
+      normalize(entry.name) === normalize(payload.inventory_name)
+      && normalize(entry.lot) === normalize(payload.inventory_lot)
+    ));
+    if (existing) return existing;
     const itemPayload = sanitizeInventoryItemPayload({
       name: payload.inventory_name,
       category: payload.inventory_category || 'Alimentos',

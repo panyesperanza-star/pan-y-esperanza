@@ -566,13 +566,7 @@ as $$
        or lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
       and u.is_active = true
       and coalesce(u.status, 'Activo') = 'Activo'
-      and (
-        public.can_app_permission('inventory', action_id)
-        or (
-          action_id in ('create', 'edit')
-          and public.can_app_permission('accounting', 'create')
-        )
-      )
+      and public.can_app_permission('inventory', action_id)
       and case
         when u.role = 'Superadministrador' then action_id in ('view', 'create', 'edit', 'delete')
         when action_id = 'delete' then false
@@ -601,6 +595,8 @@ declare
   v_item public.inventory_items;
   v_movement public.inventory_movements;
   v_user_name text;
+  v_can_inventory_create boolean;
+  v_can_accounting_entry boolean;
 begin
   select * into v_user
   from public.app_users u
@@ -610,12 +606,19 @@ begin
     and coalesce(u.status, 'Activo') = 'Activo'
   limit 1;
 
-  if v_user.id is null or not public.can_inventory_action('create') then
+  if v_user.id is null then
     raise exception 'No tienes permiso para registrar movimientos de inventario';
   end if;
 
   if p_movement_type is null or p_movement_type not in ('Entrada', 'Salida') then
     raise exception 'Tipo de movimiento no valido';
+  end if;
+
+  v_can_inventory_create := public.can_inventory_action('create');
+  v_can_accounting_entry := p_movement_type = 'Entrada' and public.can_app_permission('accounting', 'create');
+
+  if not (v_can_inventory_create or v_can_accounting_entry) then
+    raise exception 'No tienes permiso para registrar movimientos de inventario';
   end if;
 
   if p_quantity is null or p_quantity <= 0 then
@@ -736,6 +739,10 @@ using (public.can_inventory_action('view'));
 create policy "inventory_items_insert_by_permission"
 on public.inventory_items for insert to authenticated
 with check (public.can_inventory_action('edit') and stock = 0);
+
+create policy "inventory_items_insert_by_accounting_operation"
+on public.inventory_items for insert to authenticated
+with check (public.can_app_permission('accounting', 'create') and stock = 0);
 
 create policy "inventory_items_update_by_permission"
 on public.inventory_items for update to authenticated
