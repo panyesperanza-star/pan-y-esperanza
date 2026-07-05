@@ -8,10 +8,12 @@ import {
   FileText,
   Gift,
   HandHeart,
+  HandCoins,
   KeyRound,
   Mail,
   PackageCheck,
   Play,
+  Receipt,
   ShieldAlert,
   UserCheck,
   Users
@@ -523,6 +525,24 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       destination: { moduleId: 'inventory', filter: 'expiring-soon' },
       tone: 'orange'
     },
+    canAccess(currentUser, 'accounting') && {
+      title: 'Deudas vencidas',
+      value: operations.overdueDebts.length,
+      detail: formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0)),
+      icon: Receipt,
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'overdue-debts' },
+      tone: operations.overdueDebts.length ? 'red' : 'green'
+    },
+    canAccess(currentUser, 'accounting') && {
+      title: 'Prestamos pendientes',
+      value: operations.pendingLoans.length,
+      detail: formatMoney(operations.pendingLoanAmount),
+      icon: HandCoins,
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'pending-loans' },
+      tone: operations.pendingLoans.length ? 'orange' : 'green'
+    },
     canAccess(currentUser, 'communications') && {
       title: 'Correos pendientes',
       value: operations.pendingEmails.length,
@@ -585,6 +605,22 @@ function buildQuickItems(operations, currentUser, familyModule) {
       },
       tone: operations.pendingReceipts.length ? 'orange' : 'green'
     },
+    canAccess(currentUser, 'accounting') && {
+      title: 'Deudas vencidas',
+      value: operations.overdueDebts.length,
+      icon: Receipt,
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'overdue-debts' },
+      tone: operations.overdueDebts.length ? 'red' : 'green'
+    },
+    canAccess(currentUser, 'accounting') && {
+      title: 'Pagos proximos',
+      value: operations.upcomingDebtPayments.length,
+      icon: CalendarClock,
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'upcoming-debt-payments' },
+      tone: operations.upcomingDebtPayments.length ? 'orange' : 'green'
+    },
     canAccess(currentUser, 'donations') && {
       title: 'Donaciones pendientes',
       value: operations.pendingDonations.length,
@@ -645,6 +681,30 @@ function buildTasks(operations, currentUser, familyModule) {
         receiptIds: operations.pendingReceipts.map((item) => item.id)
       }
     },
+    canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && {
+      title: 'Revisar deudas vencidas',
+      detail: `${pluralSummary(operations.overdueDebts.length, 'deuda vencida requiere pago o revision', 'deudas vencidas requieren pago o revision')} Total: ${formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0))}.`,
+      priority: 'Critica',
+      action: 'Abrir contabilidad',
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'overdue-debts' }
+    },
+    canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && {
+      title: 'Preparar pagos proximos',
+      detail: pluralSummary(operations.upcomingDebtPayments.length, 'pago vence en los proximos dias', 'pagos vencen en los proximos dias'),
+      priority: 'Alta',
+      action: 'Abrir contabilidad',
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'upcoming-debt-payments' }
+    },
+    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && {
+      title: 'Revisar prestamos pendientes',
+      detail: `Pendiente de devolver: ${formatMoney(operations.pendingLoanAmount)}.`,
+      priority: 'Media',
+      action: 'Abrir contabilidad',
+      moduleId: 'accounting',
+      destination: { moduleId: 'accounting', filter: 'pending-loans' }
+    },
     canAccess(currentUser, 'beneficiaries') && operations.newBeneficiaries.length > 0 && {
       title: 'Revisar beneficiarios nuevos',
       detail: pluralSummary(operations.newBeneficiaries.length, 'beneficiario nuevo hoy', 'beneficiarios nuevos hoy'),
@@ -663,6 +723,9 @@ function buildAssistantState(operations, currentUser, familyModule) {
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && pluralLabel(operations.criticalStock.length, 'producto critico', 'productos criticos'),
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
+    canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
+    canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
+    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'prestamo pendiente', 'prestamos pendientes'),
     canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donacion pendiente', 'donaciones pendientes')
   ].filter(Boolean);
   const userName = displayUserName(currentUser);
@@ -708,6 +771,18 @@ function getPrimaryAction(operations, currentUser, familyModule) {
         receiptIds: operations.pendingReceipts.map((item) => item.id)
       },
       recommendation: 'Cierra los justificantes pendientes para mantener la documentacion al dia.'
+    };
+  }
+  if (canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0) {
+    return {
+      destination: { moduleId: 'accounting', filter: 'overdue-debts' },
+      recommendation: 'Revisa las deudas vencidas y registra pagos o acuerdos desde Contabilidad.'
+    };
+  }
+  if (canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0) {
+    return {
+      destination: { moduleId: 'accounting', filter: 'upcoming-debt-payments' },
+      recommendation: 'Prepara los pagos proximos para evitar vencimientos.'
     };
   }
   return null;
@@ -767,6 +842,16 @@ function buildSummaryCards(operations, data, currentUser) {
       value: operations.criticalStock.length,
       icon: AlertTriangle
     },
+    canAccess(currentUser, 'accounting') && {
+      label: 'Prestamos pendientes',
+      value: operations.pendingLoans.length,
+      icon: HandCoins
+    },
+    canAccess(currentUser, 'accounting') && {
+      label: 'Deudas vencidas',
+      value: operations.overdueDebts.length,
+      icon: Receipt
+    },
     canAccess(currentUser, 'communications') && {
       label: 'Correos enviados',
       value: (data.email_logs || []).length,
@@ -808,6 +893,27 @@ function buildOperations(data, today, pendingPasswordResets) {
   const todayDeliveries = activeDeliveries.filter((item) => toDateKey(item.delivered_at) === today);
   const newBeneficiaries = activeBeneficiaries.filter((item) => toDateKey(item.joined_at || item.created_at) === today);
   const pendingDonations = (data.donations || []).filter(isPendingDonation);
+  const accountingEventsById = new Map((data.accounting_events || []).map((event) => [event.id, event]));
+  const loanRecords = activeAccountingRows(data.loan_records || [], accountingEventsById);
+  const loanRecordIds = new Set(loanRecords.map((loan) => loan.id));
+  const loanMovements = activeAccountingRows(data.loan_movements || [], accountingEventsById).filter((movement) => loanRecordIds.has(movement.loan_id));
+  const debtRecords = activeAccountingRows(data.debt_records || [], accountingEventsById);
+  const debtRecordIds = new Set(debtRecords.map((debt) => debt.id));
+  const debtMovements = activeAccountingRows(data.debt_movements || [], accountingEventsById).filter((movement) => debtRecordIds.has(movement.debt_id));
+  const pendingLoans = loanRecords
+    .map((loan) => ({ ...loan, outstanding: loanOutstanding(loan, loanMovements) }))
+    .filter((loan) => loan.outstanding > 0);
+  const pendingDebts = debtRecords
+    .map((debt) => ({ ...debt, outstanding: debtOutstanding(debt, debtMovements) }))
+    .filter((debt) => debt.outstanding > 0);
+  const overdueDebts = pendingDebts.filter((debt) => {
+    const days = daysBetween(today, debt.due_at);
+    return debt.due_at && Number.isFinite(days) && days < 0;
+  });
+  const upcomingDebtPayments = pendingDebts.filter((debt) => {
+    const days = daysBetween(today, debt.due_at);
+    return debt.due_at && Number.isFinite(days) && days >= 0 && days <= 14;
+  });
 
   return {
     activeDeliveries,
@@ -825,6 +931,12 @@ function buildOperations(data, today, pendingPasswordResets) {
     todayDeliveries,
     newBeneficiaries,
     pendingDonations,
+    pendingLoans,
+    pendingLoanAmount: pendingLoans.reduce((total, loan) => total + Number(loan.outstanding || 0), 0),
+    pendingDebts,
+    pendingDebtAmount: pendingDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0),
+    overdueDebts,
+    upcomingDebtPayments,
     pendingPasswordResets,
     summary: buildSummary(data, activeDeliveries, today)
   };
@@ -985,6 +1097,35 @@ function isPendingDonation(donation) {
   return ['pendiente', 'pending', 'solicitada', 'comprometida'].includes(status);
 }
 
+function activeAccountingRows(rows, eventsById) {
+  return rows.filter((row) => !isInactiveAccounting(row) && !isInactiveAccounting(eventsById.get(row.accounting_event_id)));
+}
+
+function isInactiveAccounting(row) {
+  const status = normalize(row?.status || row?.state || '');
+  return status.includes('void')
+    || status.includes('anulad')
+    || status.includes('cancel')
+    || status.includes('correct')
+    || status.includes('corregid')
+    || status.includes('revers')
+    || status.includes('revert');
+}
+
+function loanOutstanding(loan, movements) {
+  const paid = movements
+    .filter((movement) => movement.loan_id === loan.id && movement.movement_type !== 'loan_received')
+    .reduce((total, movement) => total + Number(movement.amount || 0), 0);
+  return Math.max(0, Number(loan.principal_amount || 0) - paid);
+}
+
+function debtOutstanding(debt, movements) {
+  const paid = movements
+    .filter((movement) => movement.debt_id === debt.id)
+    .reduce((total, movement) => total + Number(movement.amount || 0), 0);
+  return Math.max(0, Number(debt.original_amount || 0) - paid);
+}
+
 function daysBetween(from, to) {
   if (!from || !to) return Number.NaN;
   const start = new Date(toDateKey(from));
@@ -1068,6 +1209,10 @@ function formatExpiry(value, today) {
 function formatNumber(value) {
   const number = Number(value || 0);
   return Number.isInteger(number) ? String(number) : number.toFixed(2);
+}
+
+function formatMoney(value) {
+  return `${Number(value || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 }
 
 function sentenceCase(value) {

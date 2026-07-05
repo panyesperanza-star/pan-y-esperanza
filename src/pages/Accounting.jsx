@@ -5,6 +5,7 @@ import {
   Banknote,
   BarChart3,
   Building2,
+  CalendarClock,
   CheckCircle2,
   ClipboardList,
   FileText,
@@ -27,7 +28,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
-import { formatDate, formatDateTime, normalize } from '../lib/formatters';
+import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
 const OPERATION_TYPES = [
   { value: 'income', label: 'Ingreso', icon: ArrowUpCircle, tone: 'bg-emerald-50 text-emerald-700' },
@@ -132,6 +133,12 @@ export function Accounting({ data, actions, currentUser }) {
         onOpen={setModal}
       />
 
+      <LoansDebtsWorkspace
+        report={report}
+        canCreate={canCreate}
+        onOpenOperation={(operation) => setModal({ type: 'economic-operation', ...operation })}
+      />
+
       <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -217,6 +224,9 @@ export function Accounting({ data, actions, currentUser }) {
             report={report}
             currentUser={currentUser}
             isSuperadmin={isSuperadmin}
+            initialOperationType={modal.operationType}
+            initialLoanId={modal.loanId}
+            initialDebtId={modal.debtId}
             onSubmit={async (payload) => {
               await actions.registerEconomicOperation(payload);
               setModal(null);
@@ -305,7 +315,7 @@ function EconomicOperationPanel({ canCreate, onOpen }) {
   );
 }
 
-function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubmit, onCorrect, onVoid }) {
+function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', onSubmit, onCorrect, onVoid }) {
   const accounts = report.financialAccounts || [];
   const inventoryItems = data.inventory_items || [];
   const beneficiaries = data.beneficiaries || [];
@@ -313,21 +323,30 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
     () => buildInventoryUnitValueMap(inventoryItems, activeRecords(asArray(data.social_value_events))),
     [data.social_value_events, inventoryItems]
   );
+  const eventsById = useMemo(() => new Map(asArray(data.accounting_events).map((event) => [event.id, event])), [data.accounting_events]);
   const pendingLoans = useMemo(() => activeRecords(asArray(data.loan_records)).map((loan) => ({
     ...loan,
-    outstanding: loanOutstanding(loan, activeRecords(asArray(data.loan_movements)))
-  })).filter((loan) => loan.outstanding > 0), [data.loan_movements, data.loan_records]);
+    outstanding: loanOutstanding(loan, activeAccountingRecords(asArray(data.loan_movements), eventsById))
+  })).filter((loan) => !isVoided(eventsById.get(loan.accounting_event_id)) && loan.outstanding > 0), [data.loan_movements, data.loan_records, eventsById]);
   const pendingDebts = useMemo(() => activeRecords(asArray(data.debt_records)).map((debt) => ({
     ...debt,
-    outstanding: debtOutstanding(debt, activeRecords(asArray(data.debt_movements)))
-  })).filter((debt) => debt.outstanding > 0), [data.debt_movements, data.debt_records]);
+    outstanding: debtOutstanding(debt, activeAccountingRecords(asArray(data.debt_movements), eventsById))
+  })).filter((debt) => !isVoided(eventsById.get(debt.accounting_event_id)) && debt.outstanding > 0), [data.debt_movements, data.debt_records, eventsById]);
   const activeMovements = useMemo(() => (report.cashBankTimeline || []).filter((row) => row.raw?.status === 'active'), [report.cashBankTimeline]);
-  const correctableMovements = activeMovements.filter((row) => !String(row.raw?.movement_type || '').startsWith('transfer_'));
+  const correctableMovements = activeMovements.filter((row) => !String(row.raw?.movement_type || '').startsWith('transfer_') && !['loan', 'debt'].includes(row.eventType));
   const responsible = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || '';
+  const initialType = OPERATION_TYPES.some((item) => item.value === initialOperationType) ? initialOperationType : 'income';
+  const initialLoan = pendingLoans.find((loan) => loan.id === initialLoanId) || pendingLoans[0];
+  const initialDebt = pendingDebts.find((debt) => debt.id === initialDebtId) || pendingDebts[0];
+  const initialAmount = initialType === 'loan_repayment'
+    ? initialLoan?.outstanding || ''
+    : initialType === 'debt_payment'
+      ? initialDebt?.outstanding || ''
+      : '';
   const [form, setForm] = useState(() => ({
-    operation_type: 'income',
+    operation_type: initialType,
     operation_at: toDateTimeInputValue().slice(0, 10),
-    amount: '',
+    amount: initialAmount,
     concept: '',
     financial_account_id: accounts[0]?.id || '',
     payment_method: 'Transferencia',
@@ -353,15 +372,15 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
     inventory_unit_value: '',
     inventory_low_stock_threshold: 0,
     quantity: 1,
-    loan_id: pendingLoans[0]?.id || '',
-    debt_id: pendingDebts[0]?.id || '',
+    loan_id: initialLoan?.id || '',
+    debt_id: initialDebt?.id || '',
     from_account_id: accounts[0]?.id || '',
     to_account_id: accounts[1]?.id || '',
     target_movement_id: activeMovements[0]?.id || '',
     correction_reason: '',
     void_reason: '',
     due_at: '',
-    document_type: 'receipt',
+    document_type: defaultDocumentTypeForOperation(initialType),
     document_number: '',
     document_name: '',
     document_data_url: '',
@@ -700,6 +719,183 @@ function CashBankTimeline({ rows }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
+  const loans = report.loanSummaries || [];
+  const debts = report.debtSummaries || [];
+  const contactCards = [...(report.loanContactCards || []), ...(report.debtContactCards || [])];
+
+  return (
+    <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Prestamos y deudas</p>
+          <h3 className="text-xl font-bold text-ink">Compromisos calculados automaticamente</h3>
+          <p className="mt-1 text-sm text-slate-600">Importe recibido, devuelto, pagado y pendiente se derivan del historial de movimientos activos.</p>
+        </div>
+        {canCreate ? (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'loan_received' })}><HandCoins size={17} /> Registrar prestamo</Button>
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'supplier_debt' })}><Receipt size={17} /> Registrar deuda</Button>
+          </div>
+        ) : (
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>
+        )}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <CommitmentColumn
+          title="Prestamos"
+          icon={HandCoins}
+          rows={loans}
+          emptyTitle="No hay prestamos registrados."
+          emptyDetail="Cuando registres un prestamo desde Nueva operacion aparecera aqui con su saldo."
+          canCreate={canCreate}
+          actionLabel="Registrar devolucion"
+          onAction={(loan) => onOpenOperation({ operationType: 'loan_repayment', loanId: loan.id })}
+          renderMeta={(loan) => (
+            <>
+              <MetricPill label="Prestado" value={formatMoney(loan.principal)} />
+              <MetricPill label="Devuelto" value={formatMoney(loan.repaid)} />
+              <MetricPill label="Pendiente" value={formatMoney(loan.outstanding)} strong />
+            </>
+          )}
+        />
+        <CommitmentColumn
+          title="Deudas"
+          icon={Receipt}
+          rows={debts}
+          emptyTitle="No hay deudas registradas."
+          emptyDetail="Las deudas con proveedor o persona se registran desde Nueva operacion."
+          canCreate={canCreate}
+          actionLabel="Registrar pago"
+          onAction={(debt) => onOpenOperation({ operationType: 'debt_payment', debtId: debt.id })}
+          renderMeta={(debt) => (
+            <>
+              <MetricPill label="Importe" value={formatMoney(debt.original)} />
+              <MetricPill label="Pagado" value={formatMoney(debt.paid)} />
+              <MetricPill label="Saldo" value={formatMoney(debt.outstanding)} strong />
+            </>
+          )}
+        />
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Ficha del contacto</p>
+            <h4 className="font-bold text-ink">Prestamistas, proveedores y personas vinculadas</h4>
+          </div>
+          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{contactCards.length}</span>
+        </div>
+        {contactCards.length ? (
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {contactCards.map((contact) => (
+              <ContactCommitmentCard key={contact.key} contact={contact} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Building2} title="No hay fichas con compromisos." detail="Al crear prestamos o deudas, cada contacto tendra su resumen e historial." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CommitmentColumn({ title, icon: Icon, rows, emptyTitle, emptyDetail, canCreate, actionLabel, onAction, renderMeta }) {
+  return (
+    <section className="rounded-md border border-slate-200 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-md bg-slate-100 p-2 text-slate-700"><Icon size={18} /></span>
+          <h4 className="font-bold text-ink">{title}</h4>
+        </div>
+        <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{rows.length}</span>
+      </div>
+      {rows.length ? (
+        <div className="grid gap-3">
+          {rows.map((row) => (
+            <article key={row.id} className={`rounded-md border p-4 ${row.outstanding > 0 ? 'border-slate-200 bg-white' : 'border-emerald-100 bg-emerald-50'}`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-bold text-ink">{row.reason}</p>
+                    <StatusBadge status={row.statusLabel} />
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{row.contactName} · {formatDate(row.date)}</p>
+                  {row.dueAt && (
+                    <p className={`mt-1 text-xs font-semibold ${row.isOverdue ? 'text-red-700' : 'text-slate-500'}`}>
+                      Vence: {formatDate(row.dueAt)}
+                    </p>
+                  )}
+                </div>
+                {canCreate && row.outstanding > 0 && (
+                  <Button variant="secondary" onClick={() => onAction(row)}><RefreshCw size={16} /> {actionLabel}</Button>
+                )}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {renderMeta(row)}
+              </div>
+              {row.history.length > 0 && (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs font-bold uppercase text-slate-500">Historial</p>
+                  <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                    {row.history.slice(0, 4).map((item) => (
+                      <p key={item.key}>{formatDate(item.date)} · {item.label} · {formatMoney(item.amount)}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState icon={Icon} title={emptyTitle} detail={emptyDetail} />
+      )}
+    </section>
+  );
+}
+
+function MetricPill({ label, value, strong = false }) {
+  return (
+    <div className={`rounded-md px-3 py-2 ${strong ? 'bg-ink text-white' : 'bg-slate-50 text-slate-700'}`}>
+      <p className={`text-xs font-bold uppercase ${strong ? 'text-white/70' : 'text-slate-500'}`}>{label}</p>
+      <p className="mt-1 font-bold">{value}</p>
+    </div>
+  );
+}
+
+function ContactCommitmentCard({ contact }) {
+  return (
+    <article className="rounded-md border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{contact.kind}</p>
+          <h5 className="mt-1 font-bold text-ink">{contact.name}</h5>
+        </div>
+        <span className={`rounded-md p-2 ${contact.tone}`}><contact.icon size={18} /></span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {contact.metrics.map((metric) => (
+          <div key={metric.label} className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-slate-500">{metric.label}</span>
+            <strong className="text-ink">{metric.value}</strong>
+          </div>
+        ))}
+      </div>
+      {contact.history.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-xs font-bold uppercase text-slate-500">Historial completo</p>
+          <div className="mt-2 grid max-h-40 gap-1 overflow-y-auto pr-1 text-xs text-slate-600">
+            {contact.history.map((item) => (
+              <p key={item.key}>{formatDate(item.date)} · {item.label} · {formatMoney(item.amount)}</p>
+            ))}
+          </div>
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -1208,10 +1404,12 @@ function buildAccountingReport(data = {}) {
   const cashBankMovements = activeRecords(rawCashBankMovements);
   const accountingDocuments = activeRecords(asArray(data.accounting_documents));
   const accountingContacts = asArray(data.accounting_contacts);
-  const loanRecords = activeRecords(asArray(data.loan_records));
-  const loanMovements = activeRecords(asArray(data.loan_movements));
-  const debtRecords = activeRecords(asArray(data.debt_records));
-  const debtMovements = activeRecords(asArray(data.debt_movements));
+  const loanRecords = activeAccountingRecords(asArray(data.loan_records), eventsById);
+  const loanRecordIds = new Set(loanRecords.map((loan) => loan.id));
+  const loanMovements = activeAccountingRecords(asArray(data.loan_movements), eventsById).filter((movement) => loanRecordIds.has(movement.loan_id));
+  const debtRecords = activeAccountingRecords(asArray(data.debt_records), eventsById);
+  const debtRecordIds = new Set(debtRecords.map((debt) => debt.id));
+  const debtMovements = activeAccountingRecords(asArray(data.debt_movements), eventsById).filter((movement) => debtRecordIds.has(movement.debt_id));
   const socialValueEvents = activeRecords(rawSocialValueEvents).filter((event) => !isVoided(eventsById.get(event.accounting_event_id)));
   const treasuryAccounts = activeRecords(asArray(data.treasury_accounts));
   const treasuryIncomes = activeRecords(asArray(data.treasury_incomes));
@@ -1221,6 +1419,13 @@ function buildAccountingReport(data = {}) {
   const inventoryItems = activeRecords(rawInventoryItems);
   const inventoryItemsById = new Map(inventoryItems.map((item) => [item.id, item]));
   const inventoryUnitValues = buildInventoryUnitValueMap(inventoryItems, socialValueEvents);
+  const contactsById = new Map(accountingContacts.map((contact) => [contact.id, contact]));
+  const accountsById = new Map(financialAccounts.map((account) => [account.id, account]));
+  const today = todayISO();
+  const loanSummaries = buildLoanSummaries(loanRecords, loanMovements, contactsById, accountsById);
+  const debtSummaries = buildDebtSummaries(debtRecords, debtMovements, contactsById, accountsById, today);
+  const loanContactCards = buildLoanContactCards(loanSummaries);
+  const debtContactCards = buildDebtContactCards(debtSummaries);
 
   const accountRows = financialAccounts.length ? financialAccounts : treasuryAccounts.map(normalizeTreasuryAccount);
   const cashAccounts = accountRows.filter(isCashAccount);
@@ -1233,12 +1438,14 @@ function buildAccountingReport(data = {}) {
   const realBalance = usingTreasuryFallback ? cashBalance + bankBalance + treasuryIncomeTotal - treasuryExpenseTotal : cashBalance + bankBalance;
 
   const pendingLoanRows = loanRecords.length
-    ? loanRecords.map((loan) => ({ ...loan, outstanding: loanOutstanding(loan, loanMovements) })).filter((loan) => loan.outstanding > 0)
+    ? loanSummaries.filter((loan) => loan.outstanding > 0)
     : treasuryLoans.filter(isPendingTreasuryLoan).map((loan) => ({ ...loan, outstanding: Number(loan.amount || 0) }));
   const pendingLoanAmount = sumBy(pendingLoanRows, (loan) => loan.outstanding);
 
-  const pendingDebtRows = debtRecords.map((debt) => ({ ...debt, outstanding: debtOutstanding(debt, debtMovements) })).filter((debt) => debt.outstanding > 0);
+  const pendingDebtRows = debtSummaries.filter((debt) => debt.outstanding > 0);
   const pendingDebtAmount = sumBy(pendingDebtRows, (debt) => debt.outstanding);
+  const overdueDebtRows = debtSummaries.filter((debt) => debt.isOverdue);
+  const upcomingDebtRows = debtSummaries.filter((debt) => debt.isUpcoming);
   const pendingInvoiceRows = accountingDocuments.filter(isPendingInvoice);
   const treasuryPendingInvoiceRows = treasuryExpenses.filter((item) => !hasAnyFile(item, ['invoice_name', 'invoice_path', 'file_name', 'file_path']));
   const pendingInvoiceCount = pendingInvoiceRows.length + treasuryPendingInvoiceRows.length;
@@ -1266,8 +1473,6 @@ function buildAccountingReport(data = {}) {
   const socialReceived = socialReceivedFromEvents + donationSocialReceived;
   const socialDelivered = sumBy(deliveredSocialEvents, (item) => Number(item.amount || 0)) + sumBy(deliverySocialRows, (item) => Number(item.amount || 0));
 
-  const contactsById = new Map(accountingContacts.map((contact) => [contact.id, contact]));
-  const accountsById = new Map(financialAccounts.map((account) => [account.id, account]));
   const firstMovementByEvent = new Map();
   rawCashBankMovements.forEach((movement) => {
     if (movement.accounting_event_id && !firstMovementByEvent.has(movement.accounting_event_id)) firstMovementByEvent.set(movement.accounting_event_id, movement);
@@ -1301,6 +1506,8 @@ function buildAccountingReport(data = {}) {
     pendingInvoices: pendingInvoiceCount,
     pendingLoanRows,
     pendingDebtRows,
+    overdueDebtRows,
+    upcomingDebtRows,
     movementWithoutDocs: movementWithoutDocs + treasuryDocsPending,
     cashImbalances: accountRows.filter(isCashImbalanced),
     unreconciledBanks: bankAccounts.filter(isBankUnreconciled)
@@ -1316,6 +1523,8 @@ function buildAccountingReport(data = {}) {
     pendingLoanAmount,
     pendingDebts: pendingDebtRows.length,
     pendingDebtAmount,
+    overdueDebts: overdueDebtRows.length,
+    upcomingDebtPayments: upcomingDebtRows.length,
     pendingInvoices: pendingInvoiceCount,
     pendingDebtAndInvoiceAmount: pendingDebtAmount + pendingInvoiceAmount,
     pendingDocuments,
@@ -1325,6 +1534,10 @@ function buildAccountingReport(data = {}) {
     alerts,
     recentMovements,
     cashBankTimeline,
+    loanSummaries,
+    debtSummaries,
+    loanContactCards,
+    debtContactCards,
     financialAccounts,
     usingTreasuryFallback,
     metrics: {
@@ -1342,10 +1555,12 @@ function buildAccountingReport(data = {}) {
   };
 }
 
-function buildAlerts({ pendingInvoices, pendingLoanRows, pendingDebtRows, movementWithoutDocs, cashImbalances, unreconciledBanks }) {
+function buildAlerts({ pendingInvoices, pendingLoanRows, pendingDebtRows, overdueDebtRows, upcomingDebtRows, movementWithoutDocs, cashImbalances, unreconciledBanks }) {
   const alerts = [];
   if (pendingInvoices > 0) alerts.push({ title: 'Facturas pendientes', detail: `${pendingInvoices} facturas o tickets pendientes de adjuntar o revisar.`, icon: Receipt, tone: 'border-orange-200 bg-orange-50 text-orange-700' });
   if (pendingLoanRows.length > 0) alerts.push({ title: 'Prestamos pendientes', detail: `${pendingLoanRows.length} prestamos pendientes de devolver.`, icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700' });
+  if (overdueDebtRows.length > 0) alerts.push({ title: 'Deudas vencidas', detail: `${overdueDebtRows.length} deudas han superado su fecha de vencimiento.`, icon: AlertTriangle, tone: 'border-red-200 bg-red-50 text-red-700' });
+  if (upcomingDebtRows.length > 0) alerts.push({ title: 'Pagos proximos', detail: `${upcomingDebtRows.length} pagos vencen en los proximos 14 dias.`, icon: CalendarClock, tone: 'border-amber-200 bg-amber-50 text-amber-800' });
   if (pendingDebtRows.length > 0) alerts.push({ title: 'Deudas pendientes', detail: `${pendingDebtRows.length} deudas activas con saldo pendiente.`, icon: Building2, tone: 'border-red-200 bg-red-50 text-red-700' });
   if (movementWithoutDocs > 0) alerts.push({ title: 'Movimientos sin documento adjunto', detail: `${movementWithoutDocs} movimientos necesitan factura, ticket o justificante.`, icon: FileText, tone: 'border-slate-200 bg-slate-50 text-slate-700' });
   if (cashImbalances.length > 0) alerts.push({ title: 'Caja descuadrada', detail: `${cashImbalances.length} cajas requieren revision de saldo.`, icon: Wallet, tone: 'border-red-200 bg-red-50 text-red-700' });
@@ -1378,9 +1593,16 @@ function buildRecentMovements(context) {
   } = context;
   const rows = [];
   const socialAccountingEventIds = new Set(socialValueEvents.map((event) => event.accounting_event_id).filter(Boolean));
+  const commitmentAccountingEventIds = new Set([
+    ...loanRecords.map((loan) => loan.accounting_event_id),
+    ...loanMovements.map((movement) => movement.accounting_event_id),
+    ...debtRecords.map((debt) => debt.accounting_event_id),
+    ...debtMovements.map((movement) => movement.accounting_event_id)
+  ].filter(Boolean));
 
   accountingEvents.forEach((event) => {
     if (event.event_type === 'donation_in_kind' && (socialAccountingEventIds.has(event.id) || event.source_module === 'donations')) return;
+    if (commitmentAccountingEventIds.has(event.id)) return;
     const movement = firstMovementByEvent.get(event.id);
     const account = accountsById.get(event.financial_account_id || movement?.financial_account_id);
     rows.push({
@@ -1412,25 +1634,28 @@ function buildRecentMovements(context) {
   });
 
   loanRecords.forEach((loan) => {
+    const receivedMovement = loanMovements.find((movement) => movement.loan_id === loan.id && movement.movement_type === 'loan_received');
+    const outstanding = loanOutstanding(loan, loanMovements);
     rows.push({
       key: `loan-${loan.id}`,
       date: loan.loan_at || loan.created_at,
-      type: 'Prestamo',
+      type: 'Prestamo recibido',
       concept: loan.reason || loan.notes || 'Prestamo registrado',
       contact: contactName(contactsById.get(loan.contact_id)),
       amount: Number(loan.principal_amount || 0),
       direction: 'in',
-      status: statusLabel(loan.status),
-      method: 'Caja/banco'
+      status: statusLabel(loanStatusFromOutstanding(Number(loan.principal_amount || 0), outstanding)),
+      method: accountMethod(accountsById.get(receivedMovement?.financial_account_id), receivedMovement?.movement_type)
     });
   });
 
   loanMovements.forEach((movement) => {
+    if (movement.movement_type === 'loan_received') return;
     const loan = loanRecords.find((item) => item.id === movement.loan_id);
     rows.push({
       key: `loan-movement-${movement.id}`,
       date: movement.payment_at || movement.created_at,
-      type: movement.movement_type === 'loan_received' ? 'Prestamo recibido' : 'Devolucion',
+      type: movement.movement_type === 'full_repayment' ? 'Devolucion total' : 'Devolucion parcial',
       concept: movement.notes || loan?.reason || 'Movimiento de prestamo',
       contact: contactName(contactsById.get(loan?.contact_id)),
       amount: Number(movement.amount || 0),
@@ -1441,15 +1666,16 @@ function buildRecentMovements(context) {
   });
 
   debtRecords.forEach((debt) => {
+    const outstanding = debtOutstanding(debt, debtMovements);
     rows.push({
       key: `debt-${debt.id}`,
       date: debt.debt_at || debt.created_at,
-      type: 'Deuda',
+      type: 'Deuda registrada',
       concept: debt.reason || debt.notes || 'Deuda registrada',
       contact: contactName(contactsById.get(debt.contact_id)),
       amount: Number(debt.original_amount || 0),
-      direction: 'out',
-      status: statusLabel(debt.status),
+      direction: 'neutral',
+      status: statusLabel(debtStatusFromOutstanding(Number(debt.original_amount || 0), outstanding)),
       method: 'Pendiente'
     });
   });
@@ -1459,7 +1685,7 @@ function buildRecentMovements(context) {
     rows.push({
       key: `debt-movement-${movement.id}`,
       date: movement.payment_at || movement.created_at,
-      type: 'Pago de deuda',
+      type: movement.movement_type === 'full_payment' ? 'Pago total de deuda' : 'Pago parcial de deuda',
       concept: movement.notes || debt?.reason || 'Movimiento de deuda',
       contact: contactName(contactsById.get(debt?.contact_id)),
       amount: Number(movement.amount || 0),
@@ -1713,6 +1939,7 @@ function buildCashBankTimeline(movements, eventsById, accountsById) {
         date: movement.movement_at || movement.created_at,
         created_at: movement.created_at,
         movement_type: movement.movement_type,
+        eventType: event?.event_type || '',
         type: movementTypeLabel(movement.movement_type),
         concept: movement.notes || event?.title || movement.reference || 'Movimiento caja/banco',
         accountName: account?.name || 'Cuenta no encontrada',
@@ -1732,6 +1959,10 @@ function asArray(value) {
 
 function activeRecords(rows) {
   return rows.filter((item) => !isVoided(item));
+}
+
+function activeAccountingRecords(rows, eventsById) {
+  return rows.filter((item) => !isVoided(item) && !isVoided(eventsById.get(item.accounting_event_id)));
 }
 
 function isVoided(item) {
@@ -1764,16 +1995,188 @@ function accountBalance(account) {
   return Number(account?.opening_balance || 0);
 }
 
+function buildLoanSummaries(records, movements, contactsById, accountsById) {
+  return records.map((loan) => {
+    const relatedMovements = movements.filter((movement) => movement.loan_id === loan.id);
+    const principal = Number(loan.principal_amount || 0);
+    const repaid = loanRepaidAmount(loan, relatedMovements);
+    const outstanding = loanOutstanding(loan, relatedMovements);
+    const receivedMovement = relatedMovements.find((movement) => movement.movement_type === 'loan_received');
+    const status = loanStatusFromOutstanding(principal, outstanding);
+    const history = [
+      {
+        key: `loan-open-${loan.id}`,
+        date: loan.loan_at || loan.created_at,
+        label: 'Prestamo recibido',
+        amount: principal,
+        kind: 'received'
+      },
+      ...relatedMovements
+        .filter((movement) => movement.movement_type !== 'loan_received')
+        .map((movement) => ({
+          key: `loan-movement-${movement.id}`,
+          date: movement.payment_at || movement.created_at,
+          label: movement.movement_type === 'full_repayment' ? 'Devolucion total' : 'Devolucion parcial',
+          amount: Number(movement.amount || 0),
+          kind: 'payment'
+        }))
+    ].filter((item) => item.date).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return {
+      id: loan.id,
+      raw: loan,
+      contactId: loan.contact_id,
+      contactName: contactName(contactsById.get(loan.contact_id)),
+      reason: loan.reason || loan.notes || 'Prestamo registrado',
+      date: loan.loan_at || loan.created_at,
+      principal,
+      repaid,
+      outstanding,
+      status,
+      statusLabel: statusLabel(status),
+      accountName: accountMethod(accountsById.get(receivedMovement?.financial_account_id), receivedMovement?.movement_type),
+      history
+    };
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function buildDebtSummaries(records, movements, contactsById, accountsById, today) {
+  return records.map((debt) => {
+    const relatedMovements = movements.filter((movement) => movement.debt_id === debt.id);
+    const original = Number(debt.original_amount || 0);
+    const paid = debtPaidAmount(debt, relatedMovements);
+    const outstanding = debtOutstanding(debt, relatedMovements);
+    const daysToDue = daysUntil(debt.due_at, today);
+    const status = debtStatusFromOutstanding(original, outstanding);
+    const history = [
+      {
+        key: `debt-open-${debt.id}`,
+        date: debt.debt_at || debt.created_at,
+        label: 'Deuda registrada',
+        amount: original,
+        kind: 'debt'
+      },
+      ...relatedMovements.map((movement) => ({
+        key: `debt-movement-${movement.id}`,
+        date: movement.payment_at || movement.created_at,
+        label: movement.movement_type === 'full_payment' ? 'Pago total' : 'Pago parcial',
+        amount: Number(movement.amount || 0),
+        kind: 'payment',
+        accountName: accountMethod(accountsById.get(movement.financial_account_id), movement.movement_type)
+      }))
+    ].filter((item) => item.date).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return {
+      id: debt.id,
+      raw: debt,
+      contactId: debt.contact_id,
+      contactName: contactName(contactsById.get(debt.contact_id)),
+      reason: debt.reason || debt.notes || 'Deuda registrada',
+      date: debt.debt_at || debt.created_at,
+      dueAt: debt.due_at || '',
+      original,
+      paid,
+      outstanding,
+      status,
+      statusLabel: statusLabel(status),
+      isOverdue: outstanding > 0 && Boolean(debt.due_at) && Number.isFinite(daysToDue) && daysToDue < 0,
+      isUpcoming: outstanding > 0 && Boolean(debt.due_at) && Number.isFinite(daysToDue) && daysToDue >= 0 && daysToDue <= 14,
+      history
+    };
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function buildLoanContactCards(loans) {
+  const groups = groupByContact(loans, 'Prestamista');
+  return groups.map((group) => {
+    const borrowed = sumBy(group.rows, (loan) => loan.principal);
+    const repaid = sumBy(group.rows, (loan) => loan.repaid);
+    const pending = sumBy(group.rows, (loan) => loan.outstanding);
+    return {
+      key: `loan-contact-${group.key}`,
+      kind: 'Prestamista',
+      name: group.name,
+      icon: HandCoins,
+      tone: 'bg-violet-50 text-violet-700',
+      metrics: [
+        { label: 'Prestado', value: formatMoney(borrowed) },
+        { label: 'Devuelto', value: formatMoney(repaid) },
+        { label: 'Pendiente', value: formatMoney(pending) }
+      ],
+      history: group.history
+    };
+  });
+}
+
+function buildDebtContactCards(debts) {
+  const groups = groupByContact(debts, 'Proveedor/persona');
+  return groups.map((group) => {
+    const pending = sumBy(group.rows, (debt) => debt.outstanding);
+    const paymentHistory = group.history.filter((item) => item.kind === 'payment');
+    const lastPayment = paymentHistory[0]?.date || '';
+    return {
+      key: `debt-contact-${group.key}`,
+      kind: 'Proveedor/persona',
+      name: group.name,
+      icon: Receipt,
+      tone: 'bg-orange-50 text-orange-700',
+      metrics: [
+        { label: 'Facturas/deudas', value: group.rows.length },
+        { label: 'Pendiente', value: formatMoney(pending) },
+        { label: 'Ultimo pago', value: lastPayment ? formatDate(lastPayment) : '-' }
+      ],
+      history: group.history
+    };
+  });
+}
+
+function groupByContact(rows, fallbackName) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = row.contactId || row.contactName || fallbackName;
+    if (!groups.has(key)) groups.set(key, { key, name: row.contactName || fallbackName, rows: [], history: [] });
+    const group = groups.get(key);
+    group.rows.push(row);
+    group.history.push(...row.history.map((item) => ({ ...item, key: `${row.id}-${item.key}` })));
+  });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    history: group.history.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  })).sort((a, b) => sumBy(b.rows, (row) => row.outstanding) - sumBy(a.rows, (row) => row.outstanding));
+}
+
 function loanOutstanding(loan, movements) {
-  if (normalize(loan.status).includes('repaid') || normalize(loan.status).includes('devuelto total')) return 0;
-  const paid = sumBy(movements.filter((movement) => movement.loan_id === loan.id && movement.movement_type !== 'loan_received'), (movement) => Number(movement.amount || 0));
+  const paid = loanRepaidAmount(loan, movements);
   return Math.max(0, Number(loan.principal_amount || 0) - paid);
 }
 
+function loanRepaidAmount(loan, movements) {
+  return sumBy(movements.filter((movement) => movement.loan_id === loan.id && movement.movement_type !== 'loan_received'), (movement) => Number(movement.amount || 0));
+}
+
 function debtOutstanding(debt, movements) {
-  if (normalize(debt.status).includes('paid') || normalize(debt.status).includes('pagad')) return 0;
-  const paid = sumBy(movements.filter((movement) => movement.debt_id === debt.id), (movement) => Number(movement.amount || 0));
+  const paid = debtPaidAmount(debt, movements);
   return Math.max(0, Number(debt.original_amount || 0) - paid);
+}
+
+function debtPaidAmount(debt, movements) {
+  return sumBy(movements.filter((movement) => movement.debt_id === debt.id), (movement) => Number(movement.amount || 0));
+}
+
+function loanStatusFromOutstanding(principal, outstanding) {
+  if (outstanding <= 0) return 'repaid';
+  return outstanding >= Number(principal || 0) ? 'active' : 'partially_repaid';
+}
+
+function debtStatusFromOutstanding(original, outstanding) {
+  if (outstanding <= 0) return 'paid';
+  return outstanding >= Number(original || 0) ? 'active' : 'partially_paid';
+}
+
+function daysUntil(targetDate, today) {
+  if (!targetDate || !today) return Number.NaN;
+  const target = new Date(String(targetDate).slice(0, 10));
+  const current = new Date(String(today).slice(0, 10));
+  if (Number.isNaN(target.getTime()) || Number.isNaN(current.getTime())) return Number.NaN;
+  return Math.floor((target.getTime() - current.getTime()) / 86400000);
 }
 
 function isPendingTreasuryLoan(loan) {

@@ -386,20 +386,33 @@ export function useAppData(enabled = true, currentUser = null) {
     return `${isCashAccount(account) ? 'cash' : 'bank'}_${direction}`;
   }
 
+  function inactiveAccountingStatus(value) {
+    const status = normalize(value || '');
+    return status.includes('void')
+      || status.includes('anulad')
+      || status.includes('cancel')
+      || status.includes('correct')
+      || status.includes('corregid')
+      || status.includes('revers')
+      || status.includes('revert');
+  }
+
+  function accountingEventForRow(row) {
+    if (!row?.accounting_event_id) return null;
+    return (data.accounting_events || []).find((event) => event.id === row.accounting_event_id) || null;
+  }
+
+  function isActiveAccountingRow(row) {
+    return !inactiveAccountingStatus(row?.status || row?.state)
+      && !inactiveAccountingStatus(accountingEventForRow(row)?.status);
+  }
+
   function activeAccountingRows(rows = []) {
-    return rows.filter((item) => {
-      const status = normalize(item?.status || item?.state || '');
-      return !status.includes('void')
-        && !status.includes('anulad')
-        && !status.includes('cancel')
-        && !status.includes('correct')
-        && !status.includes('corregid')
-        && !status.includes('revers')
-        && !status.includes('revert');
-    });
+    return rows.filter(isActiveAccountingRow);
   }
 
   function outstandingLoanAmount(loan) {
+    if (!isActiveAccountingRow(loan)) return 0;
     const paid = activeAccountingRows(data.loan_movements || [])
       .filter((movement) => movement.loan_id === loan.id && movement.movement_type !== 'loan_received')
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
@@ -407,6 +420,7 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   function outstandingDebtAmount(debt) {
+    if (!isActiveAccountingRow(debt)) return 0;
     const paid = activeAccountingRows(data.debt_movements || [])
       .filter((movement) => movement.debt_id === debt.id)
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
@@ -869,9 +883,10 @@ export function useAppData(enabled = true, currentUser = null) {
       return;
     }
     if (operationType === 'loan_repayment') {
-      const loan = (data.loan_records || []).find((item) => item.id === payload.loan_id);
+      const loan = activeAccountingRows(data.loan_records || []).find((item) => item.id === payload.loan_id);
       if (!loan) throw new Error('Selecciona un prestamo pendiente.');
       const outstanding = outstandingLoanAmount(loan);
+      if (outstanding <= 0) throw new Error('Este prestamo no tiene saldo pendiente.');
       const amount = assertPositiveNumber(payload.amount);
       if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente del prestamo: ${outstanding.toFixed(2)} EUR.`);
       const date = operationDate(payload.operation_at);
@@ -971,9 +986,10 @@ export function useAppData(enabled = true, currentUser = null) {
       return;
     }
     if (operationType === 'debt_payment') {
-      const debt = (data.debt_records || []).find((item) => item.id === payload.debt_id);
+      const debt = activeAccountingRows(data.debt_records || []).find((item) => item.id === payload.debt_id);
       if (!debt) throw new Error('Selecciona una deuda pendiente.');
       const outstanding = outstandingDebtAmount(debt);
+      if (outstanding <= 0) throw new Error('Esta deuda no tiene saldo pendiente.');
       const amount = assertPositiveNumber(payload.amount);
       if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente de la deuda: ${outstanding.toFixed(2)} EUR.`);
       const date = operationDate(payload.operation_at);
@@ -1250,6 +1266,112 @@ export function useAppData(enabled = true, currentUser = null) {
     await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
     await audit(`Anulo entrega ${delivery.receipt_number || delivery.id}. Motivo: ${cleanReason}`);
     return updatedDelivery;
+  }
+
+  function isActiveAccountingRowAfterEventVoid(row, voidedEventId) {
+    if (!row || row.accounting_event_id === voidedEventId) return false;
+    return isActiveAccountingRow(row);
+  }
+
+  function loanStatusFromPaidAmount(loan, paid) {
+    const principal = Number(loan?.principal_amount || 0);
+    if (principal <= 0 || paid <= 0) return 'active';
+    return paid >= principal ? 'repaid' : 'partially_repaid';
+  }
+
+  function debtStatusFromPaidAmount(debt, paid) {
+    const total = Number(debt?.original_amount || 0);
+    if (total <= 0 || paid <= 0) return 'active';
+    return paid >= total ? 'paid' : 'partially_paid';
+  }
+
+  async function syncLoanStatusAfterEventVoid(loan, voidedEventId, voidedAt) {
+    if (!loan || loan.accounting_event_id === voidedEventId || inactiveAccountingStatus(loan.status)) return;
+    const paid = (data.loan_movements || [])
+      .filter((movement) => movement.loan_id === loan.id
+        && movement.movement_type !== 'loan_received'
+        && isActiveAccountingRowAfterEventVoid(movement, voidedEventId))
+      .reduce((total, movement) => total + Number(movement.amount || 0), 0);
+    const nextStatus = loanStatusFromPaidAmount(loan, paid);
+    if (loan.status === nextStatus) return;
+    const updated = await dataStore.update('loan_records', loan.id, {
+      status: nextStatus,
+      updated_at: voidedAt
+    });
+    await accountingAuditTrail('loan_records', loan.id, 'sync_status_after_void', loan, updated);
+  }
+
+  async function syncDebtStatusAfterEventVoid(debt, voidedEventId, voidedAt) {
+    if (!debt || debt.accounting_event_id === voidedEventId || inactiveAccountingStatus(debt.status)) return;
+    const paid = (data.debt_movements || [])
+      .filter((movement) => movement.debt_id === debt.id && isActiveAccountingRowAfterEventVoid(movement, voidedEventId))
+      .reduce((total, movement) => total + Number(movement.amount || 0), 0);
+    const nextStatus = debtStatusFromPaidAmount(debt, paid);
+    if (debt.status === nextStatus) return;
+    const updated = await dataStore.update('debt_records', debt.id, {
+      status: nextStatus,
+      updated_at: voidedAt
+    });
+    await accountingAuditTrail('debt_records', debt.id, 'sync_status_after_void', debt, updated);
+  }
+
+  async function voidRelatedLoanDebtEntries(eventId, cleanReason) {
+    if (!eventId) return;
+    const voidedAt = new Date().toISOString();
+    const affectedLoanIds = new Set();
+    const affectedDebtIds = new Set();
+
+    for (const movement of (data.loan_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await dataStore.update('loan_movements', movement.id, {
+        status: 'voided',
+        voided_at: voidedAt,
+        void_reason: cleanReason,
+        updated_at: voidedAt
+      });
+      await accountingAuditTrail('loan_movements', movement.id, 'void_related_event', movement, updated);
+      affectedLoanIds.add(movement.loan_id);
+    }
+
+    for (const loan of (data.loan_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await dataStore.update('loan_records', loan.id, {
+        status: 'voided',
+        voided_at: voidedAt,
+        void_reason: cleanReason,
+        updated_at: voidedAt
+      });
+      await accountingAuditTrail('loan_records', loan.id, 'void_related_event', loan, updated);
+      affectedLoanIds.delete(loan.id);
+    }
+
+    for (const loanId of affectedLoanIds) {
+      await syncLoanStatusAfterEventVoid((data.loan_records || []).find((loan) => loan.id === loanId), eventId, voidedAt);
+    }
+
+    for (const movement of (data.debt_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await dataStore.update('debt_movements', movement.id, {
+        status: 'voided',
+        voided_at: voidedAt,
+        void_reason: cleanReason,
+        updated_at: voidedAt
+      });
+      await accountingAuditTrail('debt_movements', movement.id, 'void_related_event', movement, updated);
+      affectedDebtIds.add(movement.debt_id);
+    }
+
+    for (const debt of (data.debt_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await dataStore.update('debt_records', debt.id, {
+        status: 'voided',
+        voided_at: voidedAt,
+        void_reason: cleanReason,
+        updated_at: voidedAt
+      });
+      await accountingAuditTrail('debt_records', debt.id, 'void_related_event', debt, updated);
+      affectedDebtIds.delete(debt.id);
+    }
+
+    for (const debtId of affectedDebtIds) {
+      await syncDebtStatusAfterEventVoid((data.debt_records || []).find((debt) => debt.id === debtId), eventId, voidedAt);
+    }
   }
 
   const actions = useMemo(() => ({
@@ -1590,6 +1712,10 @@ export function useAppData(enabled = true, currentUser = null) {
       if (String(original.movement_type || '').startsWith('transfer_')) {
         throw new Error('Para corregir una transferencia, anula la transferencia y registra una nueva.');
       }
+      const linkedEvent = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      if (['loan', 'debt'].includes(linkedEvent?.event_type)) {
+        throw new Error('Para corregir un prestamo o deuda, anula el movimiento y registra la operacion correcta desde Nueva operacion.');
+      }
       const correctionReason = String(payload?.correction_reason || '').trim();
       if (correctionReason.length < 5) throw new Error('Indica un motivo de correccion valido.');
       const account = findFinancialAccount(original.financial_account_id);
@@ -1608,7 +1734,7 @@ export function useAppData(enabled = true, currentUser = null) {
         updated_at: new Date().toISOString()
       });
       await accountingAuditTrail('cash_bank_movements', original.id, 'mark_corrected', previousMovement, correctedOriginal);
-      const previousEvent = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      const previousEvent = linkedEvent;
       if (previousEvent) {
         const updatedEvent = await dataStore.update('accounting_events', previousEvent.id, {
           status: 'corrected',
@@ -1664,6 +1790,7 @@ export function useAppData(enabled = true, currentUser = null) {
           updated_at: new Date().toISOString()
         });
         await accountingAuditTrail('accounting_events', event.id, 'void', event, updatedEvent);
+        await voidRelatedLoanDebtEntries(event.id, cleanReason);
       }
       await audit(`Contabilidad: anulo movimiento ${id}`.trim());
       await reload();

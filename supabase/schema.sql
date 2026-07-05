@@ -632,6 +632,11 @@ as $$
           else action_id = 'view' and u.permissions ? module_id
         end
       )
+      and case
+        when module_id = 'accounting' and action_id = 'delete' then u.role = 'Superadministrador'
+        when module_id = 'accounting' and u.role in ('Voluntario', 'Coordinadora', 'Coordinador') then action_id = 'view'
+        else true
+      end
   )
 $$;
 

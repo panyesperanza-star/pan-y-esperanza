@@ -82,7 +82,7 @@ export function isRoleActionAllowed(role, moduleId, actionId) {
   if (moduleId === 'accounting') {
     if (actionId === 'delete') return role === 'Superadministrador';
     if (role === 'Voluntario') return actionId === 'view';
-    if (role === 'Coordinadora' || role === 'Coordinador') return actionId === 'view' || actionId === 'create';
+    if (role === 'Coordinadora' || role === 'Coordinador') return actionId === 'view';
     return true;
   }
   if (moduleId !== 'inventory' || role === 'Superadministrador') return true;
@@ -132,7 +132,11 @@ export const ROLE_PERMISSION_MATRIX = {
   Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit']),
   Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['view', 'create', 'edit', 'delete']),
   Coordinadora: withModulePermissions(
-    buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
+    withModulePermissions(
+      buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
+      'accounting',
+      { create: false, edit: false, delete: false }
+    ),
     'inventory',
     { edit: false, delete: false }
   ),
@@ -143,7 +147,11 @@ export const ROLE_PERMISSION_MATRIX = {
     { delete: false }
   ),
   Coordinador: withModulePermissions(
-    buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Coordinador, ['view', 'create', 'edit']),
+    withModulePermissions(
+      buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Coordinador, ['view', 'create', 'edit']),
+      'accounting',
+      { create: false, edit: false, delete: false }
+    ),
     'inventory',
     { edit: false, delete: false }
   )
