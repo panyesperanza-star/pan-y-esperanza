@@ -2,10 +2,11 @@ import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { HELP_TYPES } from '../lib/constants';
 import { normalizeEmailError, sendEmailViaApi } from '../lib/emailClient';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
@@ -20,8 +21,9 @@ export function Deliveries({ data, actions, currentUser }) {
   const [busyAction, setBusyAction] = useState('');
   const canCreate = canDo(currentUser, 'deliveries', 'create');
   const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
-  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries');
   const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'deliveries', organization);
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries', organization);
 
   function requestDeletePermanently(item) {
     setDeleteTarget({
@@ -46,6 +48,17 @@ export function Deliveries({ data, actions, currentUser }) {
       setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
     } catch (error) {
       setNotice(error.message || 'No se pudo enviar la solicitud de eliminacion.');
+    }
+  }
+
+  async function deletePermanently(item) {
+    setNotice('');
+    try {
+      await actions.deleteDelivery(item.id);
+      setDeleteTarget(null);
+      setNotice('Entrega eliminada definitivamente.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo eliminar definitivamente la entrega.');
     }
   }
 
@@ -163,14 +176,14 @@ export function Deliveries({ data, actions, currentUser }) {
                         </>
                       )}
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
-                      {canRequestDeletion && (
+                      {(canDeleteDirectly || canRequestDeletion) && (
                         <Button
                           variant="danger"
                           className="whitespace-nowrap"
                           onClick={() => requestDeletePermanently(item)}
-                          title="Solicitar eliminacion definitiva"
+                          title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}
                         >
-                          <Trash2 size={16} /> Solicitar eliminacion
+                          <Trash2 size={16} /> {canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion'}
                         </Button>
                       )}
                     </div>
@@ -193,13 +206,22 @@ export function Deliveries({ data, actions, currentUser }) {
         </Modal>
       )}
       {deleteTarget && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeleteTarget(null)}>
-          <DeletionRequestForm
-            recordLabel={deleteTarget.item.receipt_number ? `Entrega ${deleteTarget.item.receipt_number}` : `Entrega ${deleteTarget.item.id}`}
-            relations={deleteTarget.relations}
-            onCancel={() => setDeleteTarget(null)}
-            onSubmit={(payload) => sendDeletionRequest(deleteTarget.item, payload)}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeleteTarget(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={deleteTarget.item.receipt_number ? `Entrega ${deleteTarget.item.receipt_number}` : `Entrega ${deleteTarget.item.id}`}
+              relations={deleteTarget.relations}
+              onCancel={() => setDeleteTarget(null)}
+              onConfirm={() => deletePermanently(deleteTarget.item)}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={deleteTarget.item.receipt_number ? `Entrega ${deleteTarget.item.receipt_number}` : `Entrega ${deleteTarget.item.id}`}
+              relations={deleteTarget.relations}
+              onCancel={() => setDeleteTarget(null)}
+              onSubmit={(payload) => sendDeletionRequest(deleteTarget.item, payload)}
+            />
+          )}
         </Modal>
       )}
     </>

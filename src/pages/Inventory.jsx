@@ -13,11 +13,12 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
@@ -35,8 +36,10 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
 
   const canRegisterMovements = canDo(currentUser, 'inventory', 'create');
   const canManageProducts = canDo(currentUser, 'inventory', 'edit');
-  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'inventory');
-  const hasProductActions = canManageProducts || canRequestDeletion;
+  const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'inventory', organization);
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'inventory', organization);
+  const hasProductActions = canManageProducts || canDeleteDirectly || canRequestDeletion;
   const categories = useMemo(
     () => ['Todas', ...new Set(data.inventory_items.map((item) => item.category).filter(Boolean))],
     [data.inventory_items]
@@ -77,6 +80,19 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         notes: payload.notes,
         relations: buildInventoryRelationWarnings(item, data)
       });
+      setDeletionTarget(null);
+    } catch (error) {
+      setPageError(normalizeInventoryError(error));
+    } finally {
+      setDeletingId('');
+    }
+  }
+
+  async function deleteProductPermanently(item) {
+    setPageError('');
+    setDeletingId(item.id);
+    try {
+      await actions.deleteInventoryItem(item.id);
       setDeletionTarget(null);
     } catch (error) {
       setPageError(normalizeInventoryError(error));
@@ -213,12 +229,12 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                             <Pencil size={16} />
                           </Button>
                         )}
-                        {canRequestDeletion && (
+                        {(canDeleteDirectly || canRequestDeletion) && (
                           <Button
                             variant="danger"
                             className="h-9 w-9 px-0"
-                            aria-label={`Solicitar eliminacion de ${item.name}`}
-                            title="Solicitar eliminacion definitiva"
+                            aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminacion de'} ${item.name}`}
+                            title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}
                             disabled={deletingId === item.id}
                             onClick={() => setDeletionTarget({ item, relations: buildInventoryRelationWarnings(item, data) })}
                           >
@@ -304,13 +320,22 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </Modal>
       )}
       {deletionTarget && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
-          <DeletionRequestForm
-            recordLabel={`${deletionTarget.item.name}${deletionTarget.item.lot ? ` - Lote ${deletionTarget.item.lot}` : ''}`}
-            relations={deletionTarget.relations}
-            onCancel={() => setDeletionTarget(null)}
-            onSubmit={(payload) => deleteProduct(deletionTarget.item, payload)}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={`${deletionTarget.item.name}${deletionTarget.item.lot ? ` - Lote ${deletionTarget.item.lot}` : ''}`}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onConfirm={() => deleteProductPermanently(deletionTarget.item)}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={`${deletionTarget.item.name}${deletionTarget.item.lot ? ` - Lote ${deletionTarget.item.lot}` : ''}`}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onSubmit={(payload) => deleteProduct(deletionTarget.item, payload)}
+            />
+          )}
         </Modal>
       )}
     </>

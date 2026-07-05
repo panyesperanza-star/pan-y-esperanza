@@ -22,10 +22,11 @@ import {
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const OPERATION_TYPES = [
@@ -52,7 +53,9 @@ export function Accounting({ data, actions, currentUser }) {
   const [modal, setModal] = useState(null);
   const canCreate = canDo(currentUser, 'accounting', 'create');
   const canEdit = canDo(currentUser, 'accounting', 'edit');
-  const canDelete = canRequestDefinitiveDeletion(currentUser, 'accounting');
+  const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'accounting', organization);
+  const canDelete = canDeleteDirectly || canRequestDefinitiveDeletion(currentUser, 'accounting', organization);
   const report = useMemo(() => buildAccountingReport(data), [data]);
   const areaGroups = useMemo(() => buildAreaGroups(report), [report]);
   const isSuperadmin = currentUser?.role === 'Superadministrador';
@@ -125,6 +128,7 @@ export function Accounting({ data, actions, currentUser }) {
         canCreate={canCreate}
         canEdit={canEdit}
         canDelete={canDelete}
+        canDeleteDirectly={canDeleteDirectly}
         onOpen={setModal}
       />
 
@@ -244,24 +248,36 @@ export function Accounting({ data, actions, currentUser }) {
       )}
 
       {modal?.type === 'delete-account' && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setModal(null)}>
-          <DeletionRequestForm
-            recordLabel={modal.item.name || 'Cuenta contable'}
-            relations={buildFinancialAccountDeletionRelations(modal.item, data)}
-            onCancel={() => setModal(null)}
-            onSubmit={async (payload) => {
-              await actions.createDeletionRequest({
-                module: 'financial_accounts',
-                record_type: 'financial_account',
-                record_id: modal.item.id,
-                record_label: modal.item.name || 'Cuenta contable',
-                reason: payload.reason,
-                notes: payload.notes,
-                relations: buildFinancialAccountDeletionRelations(modal.item, data)
-              });
-              setModal(null);
-            }}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setModal(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={modal.item.name || 'Cuenta contable'}
+              relations={buildFinancialAccountDeletionRelations(modal.item, data)}
+              onCancel={() => setModal(null)}
+              onConfirm={async () => {
+                await actions.deleteFinancialAccount(modal.item.id);
+                setModal(null);
+              }}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={modal.item.name || 'Cuenta contable'}
+              relations={buildFinancialAccountDeletionRelations(modal.item, data)}
+              onCancel={() => setModal(null)}
+              onSubmit={async (payload) => {
+                await actions.createDeletionRequest({
+                  module: 'financial_accounts',
+                  record_type: 'financial_account',
+                  record_id: modal.item.id,
+                  record_label: modal.item.name || 'Cuenta contable',
+                  reason: payload.reason,
+                  notes: payload.notes,
+                  relations: buildFinancialAccountDeletionRelations(modal.item, data)
+                });
+                setModal(null);
+              }}
+            />
+          )}
         </Modal>
       )}
     </>
@@ -554,7 +570,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, onSubm
   );
 }
 
-function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
+function CashBankWorkspace({ report, canCreate, canEdit, canDelete, canDeleteDirectly, onOpen }) {
   const cashAccounts = report.financialAccounts.filter(isCashAccount);
   const bankAccounts = report.financialAccounts.filter((account) => !isCashAccount(account));
 
@@ -588,6 +604,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
             emptyText="No hay cajas creadas todavia."
             canEdit={canEdit}
             canDelete={canDelete}
+            canDeleteDirectly={canDeleteDirectly}
             onOpen={onOpen}
           />
           <AccountColumn
@@ -596,6 +613,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
             emptyText="No hay cuentas bancarias creadas todavia."
             canEdit={canEdit}
             canDelete={canDelete}
+            canDeleteDirectly={canDeleteDirectly}
             onOpen={onOpen}
           />
         </div>
@@ -618,7 +636,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, onOpen }) {
   );
 }
 
-function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, onOpen }) {
+function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, canDeleteDirectly, onOpen }) {
   return (
     <section className="rounded-md border border-slate-200 p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -638,7 +656,7 @@ function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, onOpen 
             {(canEdit || canDelete) && (
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 {canEdit && <Button variant="secondary" onClick={() => onOpen({ type: 'account', item: account })}>Editar</Button>}
-                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>Solicitar eliminacion</Button>}
+                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>{canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion'}</Button>}
               </div>
             )}
           </article>

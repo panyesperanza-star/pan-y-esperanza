@@ -35,10 +35,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
@@ -89,7 +90,9 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
   const canCreate = canDo(currentUser, 'beneficiaries', 'create');
   const canEdit = canDo(currentUser, 'beneficiaries', 'edit');
   const canDelete = canDo(currentUser, 'beneficiaries', 'delete');
-  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'beneficiaries');
+  const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'beneficiaries', organization);
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'beneficiaries', organization);
   const activeCount = data.beneficiaries.filter((item) => item.is_active).length;
   const urgentCount = data.beneficiaries.filter((item) => item.is_active && item.situation === 'Urgente').length;
   const attendedCount = new Set(data.deliveries.filter(isActiveDelivery).map((item) => item.beneficiary_id).filter(Boolean)).size;
@@ -163,6 +166,11 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
       notes: payload.notes,
       relations: buildBeneficiaryRelationWarnings(item, data)
     });
+    setDeletionTarget(null);
+  }
+
+  async function deletePermanently(item) {
+    await actions.deleteBeneficiary(item.id);
     setDeletionTarget(null);
   }
 
@@ -256,7 +264,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
                   <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Ver ficha <ChevronRight size={15} /></Button>
                   <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Imprimir ficha de ${item.full_name}`} title="Imprimir ficha"><Printer size={17} /></button>
                   {canEdit && <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => setEditing(item)} aria-label={`Editar a ${item.full_name}`} title="Editar"><Edit3 size={17} /></button>}
-                  {canRequestDeletion && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`Solicitar eliminacion de ${item.full_name}`} title="Solicitar eliminacion definitiva"><Trash2 size={17} /></button>}
+                  {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminacion de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}><Trash2 size={17} /></button>}
                 </div>
               </div>
             </article>
@@ -295,13 +303,22 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
         </Modal>
       )}
       {deletionTarget && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
-          <DeletionRequestForm
-            recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
-            relations={deletionTarget.relations}
-            onCancel={() => setDeletionTarget(null)}
-            onSubmit={(payload) => sendDeletionRequest(deletionTarget.item, payload)}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onConfirm={() => deletePermanently(deletionTarget.item)}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onSubmit={(payload) => sendDeletionRequest(deletionTarget.item, payload)}
+            />
+          )}
         </Modal>
       )}
     </>

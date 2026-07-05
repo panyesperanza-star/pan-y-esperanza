@@ -122,11 +122,31 @@ export function canDo(user, moduleId, action = 'view') {
   return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
 
-export function canRequestDefinitiveDeletion(user, moduleId) {
+export function canRequestDefinitiveDeletion(user, moduleId, organization = null) {
   if (!user || isSystemSuperadmin(user)) return false;
   const role = String(user.role || '').trim().toLowerCase();
+  if (role === 'superadministrador' && isOwnerAssociation(organization)) return false;
   if (role === 'superadministrador' || role === 'administrador') return true;
   return canDo(user, moduleId, 'delete');
+}
+
+export function canDeleteDefinitively(user, moduleId, organization = null) {
+  if (!user || isSystemSuperadmin(user)) return false;
+  return String(user.role || '').trim().toLowerCase() === 'superadministrador'
+    && isOwnerAssociation(organization)
+    && canDo(user, moduleId, 'delete');
+}
+
+export function isOwnerAssociation(organization = null) {
+  const id = String(organization?.id || '').trim().toLowerCase();
+  const slug = String(organization?.slug || organization?.association_slug || '').trim().toLowerCase();
+  const name = normalizeOwnerName(organization?.name || organization?.association_name || '');
+  return organization?.is_owner_association === true
+    || organization?.is_provider_owner === true
+    || organization?.owner_association === true
+    || slug === 'pan-y-esperanza'
+    || (id === 'main' && name === 'pan y esperanza')
+    || name === 'pan y esperanza';
 }
 
 export function isSystemSuperadmin(user) {
@@ -135,6 +155,15 @@ export function isSystemSuperadmin(user) {
     || role === 'superadministrador del sistema'
     || role === 'superadministrador sistema'
     || role === 'system superadmin';
+}
+
+function normalizeOwnerName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 function hasPermissionMatrix(user) {

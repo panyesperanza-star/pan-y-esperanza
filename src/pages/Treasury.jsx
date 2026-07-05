@@ -2,11 +2,12 @@ import { Download, FileSpreadsheet, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { exportTreasuryExcel, exportTreasuryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 
@@ -21,7 +22,9 @@ export function Treasury({ data, actions, currentUser }) {
   const [notice, setNotice] = useState('');
   const canCreate = canDo(currentUser, 'treasury', 'create');
   const canEdit = canDo(currentUser, 'treasury', 'edit');
-  const canDelete = canRequestDefinitiveDeletion(currentUser, 'treasury');
+  const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'treasury', organization);
+  const canDelete = canDeleteDirectly || canRequestDefinitiveDeletion(currentUser, 'treasury', organization);
   const canModify = canCreate || canEdit || canDelete;
   const indicators = useMemo(() => calculateIndicators(data), [data]);
 
@@ -40,6 +43,12 @@ export function Treasury({ data, actions, currentUser }) {
     });
     setDeletionTarget(null);
     setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
+  }
+
+  async function deletePermanently() {
+    await deletionTarget.deleteAction(deletionTarget.item.id);
+    setDeletionTarget(null);
+    setNotice('Registro eliminado definitivamente.');
   }
 
   return (
@@ -69,10 +78,10 @@ export function Treasury({ data, actions, currentUser }) {
         ))}
       </div>
 
-      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_incomes', 'treasury_income', item, item.concept || 'Ingreso de tesoreria'))} />}
-      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_expenses', 'treasury_expense', item, item.concept || 'Gasto de tesoreria'))} />}
-      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Prestamo de tesoreria'))} />}
-      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_accounts', 'treasury_account', item, item.name || 'Cuenta de tesoreria'))} />}
+      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_incomes', 'treasury_income', item, item.concept || 'Ingreso de tesoreria', actions.deleteTreasuryIncome))} />}
+      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_expenses', 'treasury_expense', item, item.concept || 'Gasto de tesoreria', actions.deleteTreasuryExpense))} />}
+      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Prestamo de tesoreria', actions.deleteTreasuryLoan))} />}
+      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_accounts', 'treasury_account', item, item.name || 'Cuenta de tesoreria', actions.deleteTreasuryAccount))} />}
       {tab === 'Informes' && <ReportsPanel data={data} indicators={indicators} />}
 
       {modal?.type === 'Ingresos' && <Modal title={modal.item ? 'Editar ingreso' : 'Nuevo ingreso'} onClose={close}><IncomeForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryIncome(modal.item.id, payload) : await actions.createTreasuryIncome(payload); close(); }} /></Modal>}
@@ -80,52 +89,61 @@ export function Treasury({ data, actions, currentUser }) {
       {modal?.type === 'Prestamos' && <Modal title={modal.item ? 'Editar prestamo' : 'Nuevo prestamo'} onClose={close}><LoanForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryLoan(modal.item.id, payload) : await actions.createTreasuryLoan(payload); close(); }} /></Modal>}
       {modal?.type === 'Caja y bancos' && <Modal title={modal.item ? 'Editar cuenta' : 'Nueva cuenta'} onClose={close}><AccountForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryAccount(modal.item.id, payload) : await actions.createTreasuryAccount(payload); close(); }} /></Modal>}
       {deletionTarget && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
-          <DeletionRequestForm
-            recordLabel={deletionTarget.record_label}
-            relations={deletionTarget.relations}
-            onCancel={() => setDeletionTarget(null)}
-            onSubmit={sendDeletionRequest}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={deletionTarget.record_label}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onConfirm={deletePermanently}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={deletionTarget.record_label}
+              relations={deletionTarget.relations}
+              onCancel={() => setDeletionTarget(null)}
+              onSubmit={sendDeletionRequest}
+            />
+          )}
         </Modal>
       )}
     </>
   );
 }
 
-function IncomeTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
+function IncomeTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
   return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Donante', 'Forma de pago', 'Documento', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.income_at), item.category || '-', item.concept, money(item.amount), item.donor || '-', item.payment_method || '-', item.document_name || '-', item.notes || '-'],
     item
-  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function ExpenseTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
+function ExpenseTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
   return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Proveedor', 'Responsable', 'Factura', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.expense_at), item.category || '-', item.concept, money(item.amount), item.supplier || '-', item.responsible || '-', item.invoice_name || '-', item.notes || '-'],
     item
-  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function LoanTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
+function LoanTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
   return <DataTable columns={['Persona', 'Fecha', 'Motivo', 'Importe', 'Estado', 'Fecha devolucion', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [item.person, formatDate(item.loan_at), item.concept, money(item.amount), item.status, formatDate(item.returned_at), item.notes || '-'],
     item
-  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function AccountTable({ rows, canEdit, canDelete, onEdit, onDelete }) {
+function AccountTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
   return <DataTable columns={['Nombre', 'Tipo', 'Saldo', 'Banco', 'Cuenta', 'Movimientos', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [item.name, item.account_type, money(item.balance), item.bank_name || '-', item.account_number || '-', item.movements || '-', item.notes || '-'],
     item
-  }))} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />;
+  }))} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={onEdit} onDelete={onDelete} />;
 }
 
-function buildTreasuryDeletionTarget(module, recordType, item, label) {
+function buildTreasuryDeletionTarget(module, recordType, item, label, deleteAction) {
   const relations = [];
   const amount = item.amount ?? item.balance;
   if (amount !== undefined && amount !== null && amount !== '') relations.push(`Importe/saldo: ${money(amount)}`);
@@ -138,11 +156,12 @@ function buildTreasuryDeletionTarget(module, recordType, item, label) {
     record_type: recordType,
     item,
     record_label: label,
-    relations
+    relations,
+    deleteAction
   };
 }
 
-function DataTable({ columns, rows, canEdit, canDelete, onEdit, onDelete }) {
+function DataTable({ columns, rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
   const hasActions = canEdit || canDelete;
   return (
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
@@ -154,7 +173,7 @@ function DataTable({ columns, rows, canEdit, canDelete, onEdit, onDelete }) {
           {rows.map((row) => (
             <tr key={row.id}>
               {row.cells.map((cell, index) => <td key={`${row.id}-${index}`} className="px-4 py-3">{cell}</td>)}
-              {hasActions && <td className="px-4 py-3"><div className="flex justify-end gap-2">{canEdit && <Button variant="secondary" onClick={() => onEdit(row.item)}><Pencil size={16} /> Editar</Button>}{canDelete && <Button variant="danger" onClick={() => onDelete(row.item)}><Trash2 size={16} /> Solicitar</Button>}</div></td>}
+              {hasActions && <td className="px-4 py-3"><div className="flex justify-end gap-2">{canEdit && <Button variant="secondary" onClick={() => onEdit(row.item)}><Pencil size={16} /> Editar</Button>}{canDelete && <Button variant="danger" onClick={() => onDelete(row.item)}><Trash2 size={16} /> {canDeleteDirectly ? 'Eliminar' : 'Solicitar'}</Button>}</div></td>}
             </tr>
           ))}
           {!rows.length && <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={columns.length + (hasActions ? 1 : 0)}>No hay registros.</td></tr>}

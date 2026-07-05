@@ -2,10 +2,11 @@ import { Download, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
+import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { printDonationCertificatePdf } from '../lib/exporters';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
@@ -15,7 +16,9 @@ export function Donations({ data, actions, currentUser, navigationTarget }) {
   const [deletionTarget, setDeletionTarget] = useState(null);
   const [notice, setNotice] = useState('');
   const canCreate = canDo(currentUser, 'donations', 'create');
-  const canDelete = canRequestDefinitiveDeletion(currentUser, 'donations');
+  const organization = data.organization_settings?.[0] || {};
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'donations', organization);
+  const canDelete = canDeleteDirectly || canRequestDefinitiveDeletion(currentUser, 'donations', organization);
   const visibleDonations = useMemo(() => {
     if (statusFilter === 'Pendientes') return data.donations.filter(isPendingDonation);
     return data.donations;
@@ -41,6 +44,12 @@ export function Donations({ data, actions, currentUser, navigationTarget }) {
     setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
   }
 
+  async function deletePermanently(item) {
+    await actions.deleteDonation(item.id);
+    setDeletionTarget(null);
+    setNotice('Donacion eliminada definitivamente.');
+  }
+
   return (
     <>
       <PageHeader title="Donaciones" description="Registro de donaciones y certificados PDF." actions={canCreate ? <Button onClick={() => setOpen(true)}><Plus size={18} /> Nueva donacion</Button> : null} />
@@ -57,19 +66,28 @@ export function Donations({ data, actions, currentUser, navigationTarget }) {
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Donante</th><th>Tipo donante</th><th>Donacion</th><th>Valor</th><th>Estado</th><th className="text-right pr-4">Acciones</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{visibleDonations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td>{donationStatus(item)}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => setDeletionTarget(item)}><Trash2 size={16} /> Solicitar</Button>}</div></td></tr>)}</tbody>
+          <tbody className="divide-y divide-slate-100">{visibleDonations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td>{donationStatus(item)}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => setDeletionTarget(item)}><Trash2 size={16} /> {canDeleteDirectly ? 'Eliminar' : 'Solicitar'}</Button>}</div></td></tr>)}</tbody>
         </table>
         {!visibleDonations.length && <p className="p-5 text-sm text-slate-500">No hay donaciones con los filtros seleccionados.</p>}
       </div>
       {open && <Modal title="Nueva donacion" onClose={() => setOpen(false)}><DonationForm onSubmit={async (payload) => { await actions.createDonation(payload); setOpen(false); }} /></Modal>}
       {deletionTarget && (
-        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
-          <DeletionRequestForm
-            recordLabel={`${deletionTarget.donor || 'Donacion'} - ${deletionTarget.donation_type || ''}`.trim()}
-            relations={buildDonationRelationWarnings(deletionTarget)}
-            onCancel={() => setDeletionTarget(null)}
-            onSubmit={(payload) => sendDeletionRequest(deletionTarget, payload)}
-          />
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+          {canDeleteDirectly ? (
+            <DirectDeletionForm
+              recordLabel={`${deletionTarget.donor || 'Donacion'} - ${deletionTarget.donation_type || ''}`.trim()}
+              relations={buildDonationRelationWarnings(deletionTarget)}
+              onCancel={() => setDeletionTarget(null)}
+              onConfirm={() => deletePermanently(deletionTarget)}
+            />
+          ) : (
+            <DeletionRequestForm
+              recordLabel={`${deletionTarget.donor || 'Donacion'} - ${deletionTarget.donation_type || ''}`.trim()}
+              relations={buildDonationRelationWarnings(deletionTarget)}
+              onCancel={() => setDeletionTarget(null)}
+              onSubmit={(payload) => sendDeletionRequest(deletionTarget, payload)}
+            />
+          )}
         </Modal>
       )}
     </>

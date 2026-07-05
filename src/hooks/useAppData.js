@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { canDo, canRequestDefinitiveDeletion, isSystemSuperadmin } from '../lib/auth';
+import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion, isSystemSuperadmin } from '../lib/auth';
 import { constrainRolePermissionMatrix } from '../lib/constants';
 import { dataStore } from '../lib/dataStore';
 import { sendEmailViaApi } from '../lib/emailClient';
@@ -150,7 +150,10 @@ export function useAppData(enabled = true, currentUser = null) {
     if (isSystemSuperadmin(currentUser)) {
       throw new Error('El Superadministrador del sistema debe resolver solicitudes desde el panel del proveedor.');
     }
-    if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId))) {
+    if (canDeleteDefinitively(currentUser, permissionModuleForDeletion(moduleId), data.organization_settings?.[0] || {})) {
+      throw new Error('Pan y Esperanza puede eliminar definitivamente este registro sin enviar solicitud.');
+    }
+    if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId), data.organization_settings?.[0] || {})) {
       throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este modulo.');
     }
   }
@@ -185,10 +188,14 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function providerEmail() {
     const organization = data.organization_settings?.[0] || {};
-    return organization.system_provider_email
-      || organization.provider_email
-      || import.meta.env.VITE_SYSTEM_PROVIDER_EMAIL
+    const systemOwner = (data.app_users || []).find((user) => isSystemSuperadmin(user));
+    return import.meta.env.VITE_SYSTEM_PROVIDER_EMAIL
       || import.meta.env.VITE_PROVIDER_EMAIL
+      || organization.system_provider_email
+      || organization.provider_email
+      || organization.platform_owner_email
+      || systemOwner?.email
+      || 'elizabeth@panyesperanza.org'
       || '';
   }
 
