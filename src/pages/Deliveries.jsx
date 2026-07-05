@@ -11,7 +11,7 @@ import { printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
-const DELETE_DELIVERY_BLOCKED_MESSAGE = 'Esta entrega no puede eliminarse definitivamente porque tiene información relacionada. Utilice Anular entrega.';
+const DELETE_DELIVERY_BLOCKED_LABEL = '🔒 No eliminable (tiene información relacionada)';
 
 export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
@@ -118,7 +118,7 @@ export function Deliveries({ data, actions, currentUser }) {
               const isCancelled = item.status === 'Anulada';
               const canDeleteThisDelivery = canDeletePermanently && canDeleteDeliveryPermanently(item, data);
               return (
-                <tr key={item.id} className={isCancelled ? 'bg-slate-50 text-slate-500' : ''}>
+                <tr key={item.id} className={isCancelled ? 'bg-slate-50/80 text-slate-600' : ''}>
                   <td className="px-4 py-3">{formatDate(item.delivered_at)}</td>
                   <td>{item.receipt_number || '-'}</td>
                   <td>{item.beneficiary_name}</td>
@@ -130,33 +130,35 @@ export function Deliveries({ data, actions, currentUser }) {
                   <td>{item.receiver_name || '-'}</td>
                   <td>{item.signature_data_url ? 'Disponible' : 'No'}</td>
                   <td>
-                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${isCancelled ? 'bg-red-50 text-red-700' : 'bg-brand-50 text-brand-700'}`}>{isCancelled ? 'Anulada' : 'Activa'}</span>
+                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${isCancelled ? 'bg-red-100 text-red-800 ring-1 ring-red-200' : 'bg-brand-50 text-brand-700'}`}>{isCancelled ? 'Anulada' : 'Activa'}</span>
                     {isCancelled && <p className="mt-1 max-w-xs text-xs">{item.cancellation_reason} · {item.cancelled_by_name || 'Usuario'} · {formatDateTime(item.cancelled_at)}</p>}
                   </td>
                   <td className="pr-4">
                     <div className="flex flex-wrap justify-end gap-2">
-                      <Button variant="secondary" onClick={() => printDeliveryReceiptPdf(item, beneficiary, data.deliveries)} title="Descargar PDF">
-                        <Download size={16} /> PDF
-                      </Button>
-                      <Button variant="secondary" disabled={busyAction === `email-${item.id}`} onClick={() => sendDeliveryEmail(item, beneficiary)} title="Enviar email">
-                        <Mail size={16} /> Email
-                      </Button>
-                      <Button variant="secondary" onClick={() => sendDeliveryWhatsApp(item, beneficiary)} title="Enviar WhatsApp">
-                        <MessageCircle size={16} /> WhatsApp
-                      </Button>
+                      {!isCancelled && (
+                        <>
+                          <Button variant="secondary" onClick={() => printDeliveryReceiptPdf(item, beneficiary, data.deliveries)} title="Descargar PDF">
+                            <Download size={16} /> PDF
+                          </Button>
+                          <Button variant="secondary" disabled={busyAction === `email-${item.id}`} onClick={() => sendDeliveryEmail(item, beneficiary)} title="Enviar email">
+                            <Mail size={16} /> Email
+                          </Button>
+                          <Button variant="secondary" onClick={() => sendDeliveryWhatsApp(item, beneficiary)} title="Enviar WhatsApp">
+                            <MessageCircle size={16} /> WhatsApp
+                          </Button>
+                        </>
+                      )}
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
                       {canDeletePermanently && (
-                        <div className="flex max-w-[280px] flex-col items-end gap-1">
-                          <Button
-                            variant="danger"
-                            disabled={!canDeleteThisDelivery}
-                            onClick={() => canDeleteThisDelivery && deletePermanently(item)}
-                            title={canDeleteThisDelivery ? 'Eliminar definitivamente' : DELETE_DELIVERY_BLOCKED_MESSAGE}
-                          >
-                            <Trash2 size={16} /> Eliminar definitivamente
-                          </Button>
-                          {!canDeleteThisDelivery && <p className="text-right text-xs font-semibold text-red-700">{DELETE_DELIVERY_BLOCKED_MESSAGE}</p>}
-                        </div>
+                        <Button
+                          variant={canDeleteThisDelivery ? 'danger' : 'secondary'}
+                          disabled={!canDeleteThisDelivery}
+                          className={`whitespace-nowrap ${canDeleteThisDelivery ? '' : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100 disabled:opacity-100'}`}
+                          onClick={() => canDeleteThisDelivery && deletePermanently(item)}
+                          title={canDeleteThisDelivery ? 'Eliminar definitivamente' : DELETE_DELIVERY_BLOCKED_LABEL}
+                        >
+                          {canDeleteThisDelivery ? <><Trash2 size={16} /> Eliminar definitivamente</> : DELETE_DELIVERY_BLOCKED_LABEL}
+                        </Button>
                       )}
                     </div>
                   </td>
