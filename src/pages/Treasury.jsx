@@ -15,16 +15,16 @@ const tabs = ['Ingresos', 'Gastos', 'Prestamos', 'Caja y bancos', 'Informes'];
 const incomeCategories = ['Donaciones', 'Subvenciones', 'Cuotas', 'Otros'];
 const expenseCategories = ['Alimentacion', 'Higiene', 'Transporte', 'Alquiler', 'Material', 'Otros'];
 
-export function Treasury({ data, actions, currentUser }) {
+export function Treasury({ data, actions, currentUser, embedded = false, permissionModule = 'treasury' }) {
   const [tab, setTab] = useState('Ingresos');
   const [modal, setModal] = useState(null);
   const [deletionTarget, setDeletionTarget] = useState(null);
   const [notice, setNotice] = useState('');
-  const canCreate = canDo(currentUser, 'treasury', 'create');
-  const canEdit = canDo(currentUser, 'treasury', 'edit');
+  const canCreate = canDo(currentUser, permissionModule, 'create');
+  const canEdit = canDo(currentUser, permissionModule, 'edit');
   const organization = data.organization_settings?.[0] || {};
-  const canDeleteDirectly = canDeleteDefinitively(currentUser, 'treasury', organization);
-  const canDelete = canDeleteDirectly || canRequestDefinitiveDeletion(currentUser, 'treasury', organization);
+  const canDeleteDirectly = canDeleteDefinitively(currentUser, permissionModule, organization);
+  const canDelete = canDeleteDirectly || canRequestDefinitiveDeletion(currentUser, permissionModule, organization);
   const canModify = canCreate || canEdit || canDelete;
   const indicators = useMemo(() => calculateIndicators(data), [data]);
 
@@ -51,16 +51,10 @@ export function Treasury({ data, actions, currentUser }) {
     setNotice('Registro eliminado definitivamente.');
   }
 
-  return (
+  const content = (
     <>
-      <PageHeader
-        title="Tesoreria"
-        description="Control de ingresos, gastos, prestamos adelantados, caja y bancos."
-        actions={['Informes'].includes(tab) ? null : actionButton}
-      />
-
       {notice && <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">{notice}</div>}
-      {!canModify && <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo solo lectura. Tu usuario no tiene permisos para crear, editar o eliminar registros de tesoreria.</div>}
+      {!canModify && <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo solo lectura. Tu usuario no tiene permisos para crear, editar o eliminar estos registros.</div>}
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Saldo actual" value={money(indicators.currentBalance)} />
@@ -107,6 +101,33 @@ export function Treasury({ data, actions, currentUser }) {
           )}
         </Modal>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Tesoreria integrada</p>
+            <h3 className="text-xl font-bold text-ink">Registros historicos dentro de Contabilidad</h3>
+            <p className="mt-1 text-sm text-slate-600">Ingresos, gastos, prestamos, caja, bancos e informes heredados, sin entrada independiente en el menu.</p>
+          </div>
+          {['Informes'].includes(tab) ? null : actionButton}
+        </div>
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Tesoreria"
+        description="Control de ingresos, gastos, prestamos adelantados, caja y bancos."
+        actions={['Informes'].includes(tab) ? null : actionButton}
+      />
+      {content}
     </>
   );
 }

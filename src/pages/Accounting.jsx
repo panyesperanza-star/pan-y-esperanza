@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Wallet
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
@@ -29,6 +29,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
+import { Treasury } from './Treasury';
 
 const OPERATION_TYPES = [
   { value: 'income', label: 'Ingreso', icon: ArrowUpCircle, tone: 'bg-emerald-50 text-emerald-700' },
@@ -50,8 +51,14 @@ const MONEY_OUT_OPERATION_TYPES = new Set(['expense', 'inventory_purchase', 'eco
 const ACCOUNT_OPERATION_TYPES = new Set(['income', 'expense', 'donation_money', 'inventory_purchase', 'economic_help', 'loan_received', 'loan_repayment', 'debt_payment']);
 const INVENTORY_OPERATION_TYPES = new Set(['donation_in_kind', 'inventory_purchase']);
 
-export function Accounting({ data, actions, currentUser }) {
+export function Accounting({ data, actions, currentUser, navigationTarget }) {
   const [modal, setModal] = useState(null);
+  const summaryRef = useRef(null);
+  const cashBankRef = useRef(null);
+  const loansDebtsRef = useRef(null);
+  const alertsRef = useRef(null);
+  const timelineRef = useRef(null);
+  const treasuryRef = useRef(null);
   const canCreate = canDo(currentUser, 'accounting', 'create');
   const canEdit = canDo(currentUser, 'accounting', 'edit');
   const organization = data.organization_settings?.[0] || {};
@@ -60,6 +67,24 @@ export function Accounting({ data, actions, currentUser }) {
   const report = useMemo(() => buildAccountingReport(data), [data]);
   const areaGroups = useMemo(() => buildAreaGroups(report), [report]);
   const isSuperadmin = currentUser?.role === 'Superadministrador';
+  const sectionRefs = {
+    summary: summaryRef,
+    cashBank: cashBankRef,
+    loansDebts: loansDebtsRef,
+    alerts: alertsRef,
+    timeline: timelineRef,
+    treasury: treasuryRef
+  };
+
+  function scrollToAccountingSection(sectionId) {
+    sectionRefs[sectionId]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  useEffect(() => {
+    const sectionId = sectionForAccountingFilter(navigationTarget?.filter);
+    if (!sectionId) return;
+    window.setTimeout(() => scrollToAccountingSection(sectionId), 50);
+  }, [navigationTarget?.key, navigationTarget?.filter]);
 
   return (
     <>
@@ -69,7 +94,7 @@ export function Accounting({ data, actions, currentUser }) {
         actions={<PermissionBadges canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
       />
 
-      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <section ref={summaryRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Estado economico</p>
@@ -124,22 +149,26 @@ export function Accounting({ data, actions, currentUser }) {
 
       <EconomicOperationPanel canCreate={canCreate} onOpen={() => setModal({ type: 'economic-operation' })} />
 
-      <CashBankWorkspace
-        report={report}
-        canCreate={canCreate}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        canDeleteDirectly={canDeleteDirectly}
-        onOpen={setModal}
-      />
+      <div ref={cashBankRef}>
+        <CashBankWorkspace
+          report={report}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          canDeleteDirectly={canDeleteDirectly}
+          onOpen={setModal}
+        />
+      </div>
 
-      <LoansDebtsWorkspace
-        report={report}
-        canCreate={canCreate}
-        onOpenOperation={(operation) => setModal({ type: 'economic-operation', ...operation })}
-      />
+      <div ref={loansDebtsRef}>
+        <LoansDebtsWorkspace
+          report={report}
+          canCreate={canCreate}
+          onOpenOperation={(operation) => setModal({ type: 'economic-operation', ...operation })}
+        />
+      </div>
 
-      <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <section ref={alertsRef} className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Alertas economicas</p>
@@ -150,7 +179,7 @@ export function Accounting({ data, actions, currentUser }) {
         {report.alerts.length ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {report.alerts.map((alert) => (
-              <AlertCard key={alert.title} alert={alert} />
+              <AlertCard key={alert.title} alert={alert} onOpen={scrollToAccountingSection} />
             ))}
           </div>
         ) : (
@@ -158,7 +187,7 @@ export function Accounting({ data, actions, currentUser }) {
         )}
       </section>
 
-      <section className="mt-6 rounded-md border border-slate-200 bg-white shadow-panel">
+      <section ref={timelineRef} className="mt-6 rounded-md border border-slate-200 bg-white shadow-panel">
         <div className="border-b border-slate-200 p-5">
           <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Linea temporal economica</p>
           <h3 className="text-xl font-bold text-ink">Todas las operaciones ordenadas por fecha</h3>
@@ -204,6 +233,10 @@ export function Accounting({ data, actions, currentUser }) {
           <EmptyState icon={ClipboardList} title="No hay movimientos registrados todavia." detail="Cuando se registren ingresos, gastos, prestamos, deudas o valor social apareceran aqui." />
         )}
       </section>
+
+      <div ref={treasuryRef}>
+        <Treasury data={data} actions={actions} currentUser={currentUser} embedded permissionModule="accounting" />
+      </div>
 
       <section className="mt-6">
         <div className="mb-4">
@@ -1341,10 +1374,11 @@ function SocialCard({ label, value, icon: Icon }) {
   );
 }
 
-function AlertCard({ alert }) {
+function AlertCard({ alert, onOpen }) {
   const Icon = alert.icon;
-  return (
-    <article className={`rounded-md border p-4 ${alert.tone}`}>
+  const className = `rounded-md border p-4 text-left transition ${alert.target ? 'hover:-translate-y-0.5 hover:shadow-panel' : ''} ${alert.tone}`;
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="font-bold text-ink">{alert.title}</h4>
@@ -1352,6 +1386,14 @@ function AlertCard({ alert }) {
         </div>
         <Icon size={21} />
       </div>
+    </>
+  );
+  if (alert.target) {
+    return <button type="button" className={className} onClick={() => onOpen?.(alert.target)}>{content}</button>;
+  }
+  return (
+    <article className={className}>
+      {content}
     </article>
   );
 }
@@ -1365,6 +1407,16 @@ function buildFinancialAccountDeletionRelations(account, data) {
   if (events.length) relations.push(`Eventos contables: ${events.length}`);
   if (account?.iban) relations.push('IBAN registrado');
   return relations;
+}
+
+function sectionForAccountingFilter(filter) {
+  const normalized = normalize(filter);
+  if (['pending-loans', 'overdue-debts', 'upcoming-debt-payments', 'pending-debts', 'loans-debts'].includes(normalized)) return 'loansDebts';
+  if (['cash-bank', 'cash', 'bank', 'bank-reconciliation', 'cash-imbalance'].includes(normalized)) return 'cashBank';
+  if (['pending-documents', 'pending-invoices', 'timeline', 'movements'].includes(normalized)) return 'timeline';
+  if (['treasury', 'legacy-treasury', 'historical-treasury'].includes(normalized)) return 'treasury';
+  if (['alerts', 'economic-alerts'].includes(normalized)) return 'alerts';
+  return '';
 }
 
 function EmptyState({ icon: Icon, title, detail }) {
@@ -1580,14 +1632,14 @@ function buildAccountingReport(data = {}) {
 
 function buildAlerts({ pendingInvoices, pendingLoanRows, pendingDebtRows, overdueDebtRows, upcomingDebtRows, movementWithoutDocs, cashImbalances, unreconciledBanks }) {
   const alerts = [];
-  if (pendingInvoices > 0) alerts.push({ title: 'Facturas pendientes', detail: `${pendingInvoices} facturas o tickets pendientes de adjuntar o revisar.`, icon: Receipt, tone: 'border-orange-200 bg-orange-50 text-orange-700' });
-  if (pendingLoanRows.length > 0) alerts.push({ title: 'Prestamos pendientes', detail: `${pendingLoanRows.length} prestamos pendientes de devolver.`, icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700' });
-  if (overdueDebtRows.length > 0) alerts.push({ title: 'Deudas vencidas', detail: `${overdueDebtRows.length} deudas han superado su fecha de vencimiento.`, icon: AlertTriangle, tone: 'border-red-200 bg-red-50 text-red-700' });
-  if (upcomingDebtRows.length > 0) alerts.push({ title: 'Pagos proximos', detail: `${upcomingDebtRows.length} pagos vencen en los proximos 14 dias.`, icon: CalendarClock, tone: 'border-amber-200 bg-amber-50 text-amber-800' });
-  if (pendingDebtRows.length > 0) alerts.push({ title: 'Deudas pendientes', detail: `${pendingDebtRows.length} deudas activas con saldo pendiente.`, icon: Building2, tone: 'border-red-200 bg-red-50 text-red-700' });
-  if (movementWithoutDocs > 0) alerts.push({ title: 'Movimientos sin documento adjunto', detail: `${movementWithoutDocs} movimientos necesitan factura, ticket o justificante.`, icon: FileText, tone: 'border-slate-200 bg-slate-50 text-slate-700' });
-  if (cashImbalances.length > 0) alerts.push({ title: 'Caja descuadrada', detail: `${cashImbalances.length} cajas requieren revision de saldo.`, icon: Wallet, tone: 'border-red-200 bg-red-50 text-red-700' });
-  if (unreconciledBanks.length > 0) alerts.push({ title: 'Bancos sin conciliar', detail: `${unreconciledBanks.length} cuentas bancarias pendientes de conciliacion.`, icon: Landmark, tone: 'border-blue-200 bg-blue-50 text-blue-700' });
+  if (pendingInvoices > 0) alerts.push({ title: 'Facturas pendientes', detail: `${pendingInvoices} facturas o tickets pendientes de adjuntar o revisar.`, icon: Receipt, tone: 'border-orange-200 bg-orange-50 text-orange-700', target: 'timeline' });
+  if (pendingLoanRows.length > 0) alerts.push({ title: 'Prestamos pendientes', detail: `${pendingLoanRows.length} prestamos pendientes de devolver.`, icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700', target: 'loansDebts' });
+  if (overdueDebtRows.length > 0) alerts.push({ title: 'Deudas vencidas', detail: `${overdueDebtRows.length} deudas han superado su fecha de vencimiento.`, icon: AlertTriangle, tone: 'border-red-200 bg-red-50 text-red-700', target: 'loansDebts' });
+  if (upcomingDebtRows.length > 0) alerts.push({ title: 'Pagos proximos', detail: `${upcomingDebtRows.length} pagos vencen en los proximos 14 dias.`, icon: CalendarClock, tone: 'border-amber-200 bg-amber-50 text-amber-800', target: 'loansDebts' });
+  if (pendingDebtRows.length > 0) alerts.push({ title: 'Deudas pendientes', detail: `${pendingDebtRows.length} deudas activas con saldo pendiente.`, icon: Building2, tone: 'border-red-200 bg-red-50 text-red-700', target: 'loansDebts' });
+  if (movementWithoutDocs > 0) alerts.push({ title: 'Movimientos sin documento adjunto', detail: `${movementWithoutDocs} movimientos necesitan factura, ticket o justificante.`, icon: FileText, tone: 'border-slate-200 bg-slate-50 text-slate-700', target: 'timeline' });
+  if (cashImbalances.length > 0) alerts.push({ title: 'Caja descuadrada', detail: `${cashImbalances.length} cajas requieren revision de saldo.`, icon: Wallet, tone: 'border-red-200 bg-red-50 text-red-700', target: 'cashBank' });
+  if (unreconciledBanks.length > 0) alerts.push({ title: 'Bancos sin conciliar', detail: `${unreconciledBanks.length} cuentas bancarias pendientes de conciliacion.`, icon: Landmark, tone: 'border-blue-200 bg-blue-50 text-blue-700', target: 'cashBank' });
   return alerts;
 }
 

@@ -159,7 +159,7 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   function permissionModuleForDeletion(moduleId) {
-    if (String(moduleId || '').startsWith('treasury_')) return 'treasury';
+    if (String(moduleId || '').startsWith('treasury_')) return 'accounting';
     if (moduleId === 'financial_accounts') return 'accounting';
     return moduleId;
   }
@@ -1796,61 +1796,75 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createTreasuryIncome: async (payload) => {
+      assertPermission('accounting', 'create');
       await dataStore.create('treasury_incomes', payload);
-      await audit(`Modifico tesoreria: ingreso ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: registro historico de ingreso ${payload.concept || ''}`.trim());
       await reload();
     },
     updateTreasuryIncome: async (id, payload) => {
+      assertPermission('accounting', 'edit');
       await dataStore.update('treasury_incomes', id, payload);
-      await audit(`Modifico tesoreria: ingreso ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: actualizo ingreso historico ${payload.concept || ''}`.trim());
       await reload();
     },
     deleteTreasuryIncome: async (id) => {
-      assertPermission('treasury', 'delete');
+      assertPermission('accounting', 'delete');
       await dataStore.remove('treasury_incomes', id);
-      await audit('Modifico tesoreria: elimino ingreso');
+      await audit('Contabilidad: elimino ingreso historico');
       await reload();
     },
     createTreasuryExpense: async (payload) => {
+      assertPermission('accounting', 'create');
       await dataStore.create('treasury_expenses', payload);
-      await audit(`Modifico tesoreria: gasto ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: registro historico de gasto ${payload.concept || ''}`.trim());
       await reload();
     },
     updateTreasuryExpense: async (id, payload) => {
+      assertPermission('accounting', 'edit');
       await dataStore.update('treasury_expenses', id, payload);
-      await audit(`Modifico tesoreria: gasto ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: actualizo gasto historico ${payload.concept || ''}`.trim());
       await reload();
     },
     deleteTreasuryExpense: async (id) => {
-      assertPermission('treasury', 'delete');
+      assertPermission('accounting', 'delete');
       await dataStore.remove('treasury_expenses', id);
-      await audit('Modifico tesoreria: elimino gasto');
+      await audit('Contabilidad: elimino gasto historico');
       await reload();
     },
     createTreasuryLoan: async (payload) => {
+      assertPermission('accounting', 'create');
       await dataStore.create('treasury_loans', payload);
+      await audit(`Contabilidad: registro historico de prestamo ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     updateTreasuryLoan: async (id, payload) => {
+      assertPermission('accounting', 'edit');
       await dataStore.update('treasury_loans', id, payload);
+      await audit(`Contabilidad: actualizo prestamo historico ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     deleteTreasuryLoan: async (id) => {
-      assertPermission('treasury', 'delete');
+      assertPermission('accounting', 'delete');
       await dataStore.remove('treasury_loans', id);
+      await audit('Contabilidad: elimino prestamo historico');
       await reload();
     },
     createTreasuryAccount: async (payload) => {
+      assertPermission('accounting', 'create');
       await dataStore.create('treasury_accounts', payload);
+      await audit(`Contabilidad: registro cuenta historica ${payload.name || ''}`.trim());
       await reload();
     },
     updateTreasuryAccount: async (id, payload) => {
+      assertPermission('accounting', 'edit');
       await dataStore.update('treasury_accounts', id, payload);
+      await audit(`Contabilidad: actualizo cuenta historica ${payload.name || ''}`.trim());
       await reload();
     },
     deleteTreasuryAccount: async (id) => {
-      assertPermission('treasury', 'delete');
+      assertPermission('accounting', 'delete');
       await dataStore.remove('treasury_accounts', id);
+      await audit('Contabilidad: elimino cuenta historica');
       await reload();
     },
     createVolunteer: async (payload) => {

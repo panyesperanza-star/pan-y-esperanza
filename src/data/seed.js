@@ -135,7 +135,7 @@ export const seedData = {
   roles: [
     { id: 'superadmin', name: 'Superadministrador', modules: ['*'] },
     { id: 'president', name: 'Presidenta', modules: ['*'] },
-    { id: 'treasurer', name: 'Tesorera', modules: ['donations', 'accounting', 'treasury', 'reports', 'receipts'] },
+    { id: 'treasurer', name: 'Tesorera', modules: ['donations', 'accounting', 'reports', 'receipts'] },
     { id: 'secretary', name: 'Secretaria', modules: ['beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
     { id: 'volunteer', name: 'Voluntario', modules: ['beneficiaries', 'deliveries', 'inventory', 'accounting'] },
     { id: 'viewer', name: 'Consulta', modules: ['dashboard', 'reports'] }

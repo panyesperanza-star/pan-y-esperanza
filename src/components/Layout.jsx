@@ -1,11 +1,11 @@
-import { Boxes, Building2, Calculator, DatabaseBackup, FileText, Gift, HandCoins, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
+import { Boxes, Building2, Calculator, DatabaseBackup, FileText, Gift, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { MODULES } from '../lib/constants';
 import { canAccess } from '../lib/auth';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 
-const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, treasury: HandCoins, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
+const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
 
 export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, children }) {
   const [open, setOpen] = useState(false);

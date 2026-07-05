@@ -10,7 +10,6 @@ export const MODULES = [
   { id: 'inventory', label: 'Inventario', path: '/inventory' },
   { id: 'donations', label: 'Donaciones', path: '/donations' },
   { id: 'accounting', label: 'Contabilidad', path: '/accounting' },
-  { id: 'treasury', label: 'TESORERIA', path: '/treasury' },
   { id: 'volunteers', label: 'Voluntarios', path: '/volunteers' },
   { id: 'reports', label: 'Informes', path: '/reports' },
   { id: 'users', label: 'Usuarios', path: '/users' },
@@ -21,6 +20,7 @@ export const MODULES = [
 
 export function getModuleByPath(pathname) {
   const normalized = pathname !== '/' ? pathname.replace(/\/$/, '') : pathname;
+  if (normalized === '/treasury') return 'accounting';
   return MODULES.find((module) => module.path === normalized)?.id || null;
 }
 
@@ -41,7 +41,6 @@ export const PERMISSION_MODULES = [
   { id: 'inventory', label: 'Inventario' },
   { id: 'donations', label: 'Donaciones' },
   { id: 'accounting', label: 'Contabilidad' },
-  { id: 'treasury', label: 'Tesoreria' },
   { id: 'volunteers', label: 'Voluntarios' },
   { id: 'reports', label: 'Informes' },
   { id: 'users', label: 'Usuarios' },
@@ -106,9 +105,9 @@ export function constrainRolePermissionMatrix(role, matrix = {}) {
 
 export const ROLE_PERMISSIONS = {
   Superadministrador: ['*'],
-  Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'accounting', 'treasury', 'reports', 'users', 'settings'],
+  Presidenta: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'donations', 'accounting', 'reports', 'users', 'settings'],
   Secretaria: ['beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
-  Tesorera: ['donations', 'accounting', 'treasury', 'reports', 'receipts', 'communications'],
+  Tesorera: ['donations', 'accounting', 'reports', 'receipts', 'communications'],
   Coordinadora: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'accounting', 'reports'],
   Voluntario: ['beneficiaries', 'communications', 'deliveries', 'inventory', 'accounting']
 };
@@ -118,7 +117,7 @@ export const LEGACY_ROLE_PERMISSIONS = {
   Secretario: ROLE_PERMISSIONS.Secretaria,
   Tesorero: ROLE_PERMISSIONS.Tesorera,
   Administrador: ROLE_PERMISSIONS.Presidenta,
-  Coordinador: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'accounting', 'treasury', 'reports'],
+  Coordinador: ['beneficiaries', 'communications', 'families', 'deliveries', 'receipts', 'inventory', 'accounting', 'reports'],
   Consulta: ['reports']
 };
 

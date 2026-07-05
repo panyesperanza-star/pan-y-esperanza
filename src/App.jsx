@@ -20,7 +20,6 @@ import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
-import { Treasury } from './pages/Treasury';
 import { Volunteers } from './pages/Volunteers';
 
 export default function App() {
@@ -70,6 +69,15 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
+    const normalizedPathname = pathname !== '/' ? pathname.replace(/\/$/, '') : pathname;
+    if (normalizedPathname === '/treasury' && canAccess(currentUser, 'accounting')) {
+      const nextPath = `/accounting${window.location.search || ''}`;
+      window.history.replaceState({}, '', nextPath);
+      setPathname('/accounting');
+      setNavigationTarget({ ...readNavigationTargetFromLocation(), key: Date.now() });
+      setActive('accounting');
+      return;
+    }
     const requestedModule = isDebugAdminRoute ? 'users' : getModuleByPath(pathname);
     if (requestedModule && canAccess(currentUser, requestedModule)) {
       setActive(requestedModule);
@@ -166,8 +174,7 @@ export default function App() {
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} />,
-    treasury: <Treasury data={sorted} actions={actions} currentUser={currentUser} />,
+    accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
     backup: <Backup data={sorted} actions={actions} />,
