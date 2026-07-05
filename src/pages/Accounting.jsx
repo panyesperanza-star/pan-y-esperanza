@@ -218,7 +218,7 @@ export function Accounting({ data, actions, currentUser }) {
       </section>
 
       {modal?.type === 'economic-operation' && (
-        <Modal title="Nueva operacion economica" onClose={() => setModal(null)}>
+        <Modal title={modal.title || 'Nueva operacion economica'} onClose={() => setModal(null)}>
           <EconomicOperationForm
             data={data}
             report={report}
@@ -227,6 +227,7 @@ export function Accounting({ data, actions, currentUser }) {
             initialOperationType={modal.operationType}
             initialLoanId={modal.loanId}
             initialDebtId={modal.debtId}
+            contextLabel={modal.contextLabel}
             onSubmit={async (payload) => {
               await actions.registerEconomicOperation(payload);
               setModal(null);
@@ -315,7 +316,7 @@ function EconomicOperationPanel({ canCreate, onOpen }) {
   );
 }
 
-function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', onSubmit, onCorrect, onVoid }) {
+function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', contextLabel = 'Nueva operacion', onSubmit, onCorrect, onVoid }) {
   const accounts = report.financialAccounts || [];
   const inventoryItems = data.inventory_items || [];
   const beneficiaries = data.beneficiaries || [];
@@ -481,7 +482,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initia
       <div className={`flex items-start gap-3 rounded-md p-4 sm:col-span-2 ${operation.tone}`}>
         <span className="rounded-md bg-white/70 p-2"><OperationIcon size={21} /></span>
         <div>
-          <p className="text-sm font-bold uppercase tracking-wide">Nueva operacion</p>
+          <p className="text-sm font-bold uppercase tracking-wide">{contextLabel}</p>
           <p className="mt-1 text-lg font-bold text-ink">{operation.label}</p>
         </div>
       </div>
@@ -725,6 +726,8 @@ function CashBankTimeline({ rows }) {
 function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
   const loans = report.loanSummaries || [];
   const debts = report.debtSummaries || [];
+  const firstPendingLoan = loans.find((loan) => loan.outstanding > 0);
+  const firstPendingDebt = debts.find((debt) => debt.outstanding > 0);
   const contactCards = [...(report.loanContactCards || []), ...(report.debtContactCards || [])];
 
   return (
@@ -736,9 +739,29 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
           <p className="mt-1 text-sm text-slate-600">Importe recibido, devuelto, pagado y pendiente se derivan del historial de movimientos activos.</p>
         </div>
         {canCreate ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'loan_received' })}><HandCoins size={17} /> Registrar prestamo</Button>
-            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'supplier_debt' })}><Receipt size={17} /> Registrar deuda</Button>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'loan_received', title: 'Registrar prestamo', contextLabel: 'Prestamos y deudas' })}>
+              <HandCoins size={17} /> Registrar prestamo
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!firstPendingLoan}
+              title={!firstPendingLoan ? 'No hay prestamos pendientes de devolver.' : ''}
+              onClick={() => firstPendingLoan && onOpenOperation({ operationType: 'loan_repayment', loanId: firstPendingLoan.id, title: 'Registrar devolucion de prestamo', contextLabel: 'Prestamos y deudas' })}
+            >
+              <RefreshCw size={17} /> Registrar devolucion
+            </Button>
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'supplier_debt', title: 'Registrar deuda', contextLabel: 'Prestamos y deudas' })}>
+              <Receipt size={17} /> Registrar deuda
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!firstPendingDebt}
+              title={!firstPendingDebt ? 'No hay deudas pendientes de pagar.' : ''}
+              onClick={() => firstPendingDebt && onOpenOperation({ operationType: 'debt_payment', debtId: firstPendingDebt.id, title: 'Registrar pago de deuda', contextLabel: 'Prestamos y deudas' })}
+            >
+              <RefreshCw size={17} /> Registrar pago de deuda
+            </Button>
           </div>
         ) : (
           <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>
@@ -751,13 +774,13 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
           icon={HandCoins}
           rows={loans}
           emptyTitle="No hay prestamos registrados."
-          emptyDetail="Cuando registres un prestamo desde Nueva operacion aparecera aqui con su saldo."
+          emptyDetail="Cuando registres un prestamo desde este bloque aparecera aqui con su saldo."
           canCreate={canCreate}
           actionLabel="Registrar devolucion"
-          onAction={(loan) => onOpenOperation({ operationType: 'loan_repayment', loanId: loan.id })}
+          onAction={(loan) => onOpenOperation({ operationType: 'loan_repayment', loanId: loan.id, title: 'Registrar devolucion de prestamo', contextLabel: 'Prestamos y deudas' })}
           renderMeta={(loan) => (
             <>
-              <MetricPill label="Prestado" value={formatMoney(loan.principal)} />
+              <MetricPill label="Importe original" value={formatMoney(loan.principal)} />
               <MetricPill label="Devuelto" value={formatMoney(loan.repaid)} />
               <MetricPill label="Pendiente" value={formatMoney(loan.outstanding)} strong />
             </>
@@ -768,13 +791,13 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
           icon={Receipt}
           rows={debts}
           emptyTitle="No hay deudas registradas."
-          emptyDetail="Las deudas con proveedor o persona se registran desde Nueva operacion."
+          emptyDetail="Las deudas con proveedor o persona se registran desde este bloque."
           canCreate={canCreate}
           actionLabel="Registrar pago"
-          onAction={(debt) => onOpenOperation({ operationType: 'debt_payment', debtId: debt.id })}
+          onAction={(debt) => onOpenOperation({ operationType: 'debt_payment', debtId: debt.id, title: 'Registrar pago de deuda', contextLabel: 'Prestamos y deudas' })}
           renderMeta={(debt) => (
             <>
-              <MetricPill label="Importe" value={formatMoney(debt.original)} />
+              <MetricPill label="Importe original" value={formatMoney(debt.original)} />
               <MetricPill label="Pagado" value={formatMoney(debt.paid)} />
               <MetricPill label="Saldo" value={formatMoney(debt.outstanding)} strong />
             </>
@@ -824,7 +847,7 @@ function CommitmentColumn({ title, icon: Icon, rows, emptyTitle, emptyDetail, ca
                     <p className="font-bold text-ink">{row.reason}</p>
                     <StatusBadge status={row.statusLabel} />
                   </div>
-                  <p className="mt-1 text-sm text-slate-600">{row.contactName} · {formatDate(row.date)}</p>
+                  <p className="mt-1 text-sm text-slate-600">{row.contactName} - {formatDate(row.date)}</p>
                   {row.dueAt && (
                     <p className={`mt-1 text-xs font-semibold ${row.isOverdue ? 'text-red-700' : 'text-slate-500'}`}>
                       Vence: {formatDate(row.dueAt)}
@@ -840,10 +863,10 @@ function CommitmentColumn({ title, icon: Icon, rows, emptyTitle, emptyDetail, ca
               </div>
               {row.history.length > 0 && (
                 <div className="mt-3 border-t border-slate-100 pt-3">
-                  <p className="text-xs font-bold uppercase text-slate-500">Historial</p>
-                  <div className="mt-2 grid gap-1 text-xs text-slate-600">
-                    {row.history.slice(0, 4).map((item) => (
-                      <p key={item.key}>{formatDate(item.date)} · {item.label} · {formatMoney(item.amount)}</p>
+                  <p className="text-xs font-bold uppercase text-slate-500">Historial completo</p>
+                  <div className="mt-2 grid max-h-44 gap-1 overflow-y-auto pr-1 text-xs text-slate-600">
+                    {row.history.map((item) => (
+                      <p key={item.key}>{formatDate(item.date)} - {item.label} - {formatMoney(item.amount)}</p>
                     ))}
                   </div>
                 </div>
@@ -890,7 +913,7 @@ function ContactCommitmentCard({ contact }) {
           <p className="text-xs font-bold uppercase text-slate-500">Historial completo</p>
           <div className="mt-2 grid max-h-40 gap-1 overflow-y-auto pr-1 text-xs text-slate-600">
             {contact.history.map((item) => (
-              <p key={item.key}>{formatDate(item.date)} · {item.label} · {formatMoney(item.amount)}</p>
+              <p key={item.key}>{formatDate(item.date)} - {item.label} - {formatMoney(item.amount)}</p>
             ))}
           </div>
         </div>
