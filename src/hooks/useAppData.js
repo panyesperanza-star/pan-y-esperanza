@@ -1067,21 +1067,6 @@ export function useAppData(enabled = true, currentUser = null) {
     }
   }
 
-  function canDeleteDeliveryPermanently(delivery) {
-    if (!delivery || currentUser?.role !== 'Superadministrador') return false;
-    const hasSocialEvent = (data.social_value_events || []).some((event) => deliverySocialEventMatches(delivery, event));
-    const hasEmailLog = (data.email_logs || []).some((log) => {
-      const receiptIds = Array.isArray(log.receipt_ids) ? log.receipt_ids : [];
-      return receiptIds.includes(delivery.id);
-    });
-    return !delivery.inventory_item_id
-      && !delivery.receipt_number
-      && !delivery.signature_data_url
-      && !delivery.responsible_signature_data_url
-      && !hasSocialEvent
-      && !hasEmailLog;
-  }
-
   async function cancelDeliveryWithoutRpc(delivery, cleanReason) {
     if (currentUser?.role !== 'Superadministrador') {
       throw new Error('La funcion de anulacion no esta disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperacion segura.');
@@ -1212,10 +1197,6 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     deleteDelivery: async (id) => {
       assertSuperadmin();
-      const delivery = data.deliveries.find((item) => item.id === id);
-      if (!canDeleteDeliveryPermanently(delivery)) {
-        throw new Error('No se puede eliminar definitivamente una entrega con inventario, justificante, valor social o comunicaciones vinculadas. Anulala para conservar el historial.');
-      }
       await dataStore.remove('deliveries', id);
       await audit('Elimino definitivamente una entrega');
       await reload();

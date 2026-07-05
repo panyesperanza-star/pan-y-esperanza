@@ -11,11 +11,10 @@ import { printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
-const DELETE_DELIVERY_BLOCKED_LABEL = '🔒 No eliminable (tiene información relacionada)';
-
 export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const canCreate = canDo(currentUser, 'deliveries', 'create');
@@ -23,11 +22,18 @@ export function Deliveries({ data, actions, currentUser }) {
   const canDeletePermanently = currentUser?.role === 'Superadministrador';
   const organization = data.organization_settings?.[0] || {};
 
+  function requestDeletePermanently(item) {
+    setDeleteTarget({
+      item,
+      relations: buildDeliveryRelationWarnings(item, data)
+    });
+  }
+
   async function deletePermanently(item) {
-    if (!window.confirm(`¿Eliminar definitivamente la entrega ${item.receipt_number || ''}? Esta acción no se puede deshacer.`)) return;
     setNotice('');
     try {
       await actions.deleteDelivery(item.id);
+      setDeleteTarget(null);
       setNotice('Entrega eliminada definitivamente.');
     } catch (error) {
       setNotice(error.message || 'No se pudo eliminar definitivamente la entrega.');
@@ -116,7 +122,6 @@ export function Deliveries({ data, actions, currentUser }) {
             {data.deliveries.map((item) => {
               const beneficiary = data.beneficiaries.find((entry) => entry.id === item.beneficiary_id);
               const isCancelled = item.status === 'Anulada';
-              const canDeleteThisDelivery = canDeletePermanently && canDeleteDeliveryPermanently(item, data);
               return (
                 <tr key={item.id} className={isCancelled ? 'bg-slate-50/80 text-slate-600' : ''}>
                   <td className="px-4 py-3">{formatDate(item.delivered_at)}</td>
@@ -151,13 +156,12 @@ export function Deliveries({ data, actions, currentUser }) {
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
                       {canDeletePermanently && (
                         <Button
-                          variant={canDeleteThisDelivery ? 'danger' : 'secondary'}
-                          disabled={!canDeleteThisDelivery}
-                          className={`whitespace-nowrap ${canDeleteThisDelivery ? '' : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100 disabled:opacity-100'}`}
-                          onClick={() => canDeleteThisDelivery && deletePermanently(item)}
-                          title={canDeleteThisDelivery ? 'Eliminar definitivamente' : DELETE_DELIVERY_BLOCKED_LABEL}
+                          variant="danger"
+                          className="whitespace-nowrap"
+                          onClick={() => requestDeletePermanently(item)}
+                          title="Eliminar definitivamente"
                         >
-                          {canDeleteThisDelivery ? <><Trash2 size={16} /> Eliminar definitivamente</> : DELETE_DELIVERY_BLOCKED_LABEL}
+                          <Trash2 size={16} /> Eliminar definitivamente
                         </Button>
                       )}
                     </div>
@@ -179,7 +183,47 @@ export function Deliveries({ data, actions, currentUser }) {
           <CancellationForm delivery={cancelling} onSubmit={async (reason) => { await actions.cancelDelivery(cancelling.id, reason); setCancelling(null); }} />
         </Modal>
       )}
+      {deleteTarget && (
+        <Modal title="Confirmar eliminación definitiva" onClose={() => setDeleteTarget(null)}>
+          <DeleteDeliveryConfirmationForm
+            delivery={deleteTarget.item}
+            relations={deleteTarget.relations}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={() => deletePermanently(deleteTarget.item)}
+          />
+        </Modal>
+      )}
     </>
+  );
+}
+
+function DeleteDeliveryConfirmationForm({ delivery, relations, onCancel, onConfirm }) {
+  const [confirmation, setConfirmation] = useState('');
+  const canConfirm = confirmation === 'ELIMINAR';
+  return (
+    <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); if (canConfirm) onConfirm(); }}>
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+        <p className="font-bold">Esta accion eliminara definitivamente la entrega {delivery.receipt_number || delivery.id}.</p>
+        <p className="mt-1">No se podra recuperar desde el historial.</p>
+      </div>
+      {relations.length ? (
+        <div>
+          <p className="text-sm font-bold text-ink">Informacion relacionada que se eliminara o quedara desvinculada:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+            {relations.map((relation) => <li key={relation}>{relation}</li>)}
+          </ul>
+        </div>
+      ) : (
+        <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">No se han detectado relaciones asociadas a esta entrega.</p>
+      )}
+      <FormField label="Escribe ELIMINAR para confirmar">
+        <input className={inputClass} autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+      </FormField>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" variant="danger" disabled={!canConfirm}><Trash2 size={16} /> Eliminar definitivamente</Button>
+      </div>
+    </form>
   );
 }
 
@@ -371,9 +415,10 @@ function toDateTimeLocal(value) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function canDeleteDeliveryPermanently(delivery, data) {
-  if (!delivery) return false;
-  const hasSocialEvent = (data.social_value_events || []).some((event) => (
+function buildDeliveryRelationWarnings(delivery, data) {
+  if (!delivery) return [];
+  const relations = [];
+  const socialEvents = (data.social_value_events || []).filter((event) => (
     event.event_type === 'delivery'
     && (
       (event.source_module === 'deliveries' && event.source_record_id === delivery.id)
@@ -384,13 +429,21 @@ function canDeleteDeliveryPermanently(delivery, data) {
       )
     )
   ));
-  const hasEmailLog = (data.email_logs || []).some((log) => (
+  const emailLogs = (data.email_logs || []).filter((log) => (
     Array.isArray(log.receipt_ids) && log.receipt_ids.includes(delivery.id)
   ));
-  return !delivery.inventory_item_id
-    && !delivery.receipt_number
-    && !delivery.signature_data_url
-    && !delivery.responsible_signature_data_url
-    && !hasSocialEvent
-    && !hasEmailLog;
+
+  if (delivery.beneficiary_id) relations.push(`Beneficiario: ${delivery.beneficiary_name || delivery.beneficiary_id}`);
+  if (delivery.family_id || delivery.family_name) relations.push(`Familia: ${delivery.family_name || delivery.family_id}`);
+  if (delivery.inventory_item_id) relations.push(`Inventario: ${delivery.inventory_item_name || delivery.inventory_item_id}`);
+  if (delivery.inventory_item_id && Number(delivery.quantity || 0) > 0) relations.push(`Movimiento de inventario: ${delivery.quantity} unidades vinculadas a esta entrega`);
+  if (delivery.receipt_number) relations.push(`Justificante: ${delivery.receipt_number}`);
+  if (delivery.signature_data_url) relations.push('Firma digital del receptor');
+  if (delivery.responsible_signature_data_url) relations.push('Firma digital del responsable');
+  if (delivery.receiver_name || delivery.receiver_document_id) relations.push(`Datos del receptor: ${delivery.receiver_name || delivery.receiver_document_id}`);
+  if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'} vinculado${socialEvents.length === 1 ? '' : 's'}`);
+  if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length} registro${emailLogs.length === 1 ? '' : 's'} vinculado${emailLogs.length === 1 ? '' : 's'}`);
+  if (delivery.status === 'Anulada') relations.push('Historial de anulacion conservado en la entrega');
+
+  return relations;
 }
