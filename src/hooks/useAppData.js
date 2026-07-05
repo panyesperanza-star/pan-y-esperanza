@@ -43,10 +43,32 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   function sanitizeBeneficiaryPayload(payload) {
+    const {
+      __family_mode,
+      __new_family,
+      __new_family_enabled,
+      ...beneficiaryPayload
+    } = payload || {};
     return {
-      ...payload,
-      document_id: normalizeDocument(payload.document_id),
-      family_id: payload.family_id || null
+      ...beneficiaryPayload,
+      document_id: normalizeDocument(beneficiaryPayload.document_id),
+      family_id: beneficiaryPayload.family_id || null
+    };
+  }
+
+  function sanitizeFamilyPayload(payload) {
+    return {
+      family_code: String(payload?.family_code || '').trim(),
+      responsible_name: String(payload?.responsible_name || '').trim(),
+      address: String(payload?.address || '').trim(),
+      phone: String(payload?.phone || '').trim(),
+      email: String(payload?.email || '').trim(),
+      dependents_count: Number(payload?.dependents_count || 0),
+      status: payload?.status || 'Activa',
+      notes: String(payload?.notes || '').trim(),
+      archived_at: payload?.archived_at || null,
+      archive_reason: String(payload?.archive_reason || '').trim(),
+      updated_at: new Date().toISOString()
     };
   }
 
@@ -1456,11 +1478,45 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createFamily: async (payload) => {
-      await dataStore.create('families', payload);
+      assertPermission('families', 'create');
+      const createdAt = payload?.created_at || new Date().toISOString();
+      const created = await dataStore.create('families', {
+        ...sanitizeFamilyPayload(payload),
+        created_at: createdAt,
+        updated_at: payload?.updated_at || createdAt
+      });
+      await audit(`Creo familia ${created.family_code || created.responsible_name || ''}`.trim());
       await reload();
+      return created;
     },
     updateFamily: async (id, payload) => {
-      await dataStore.update('families', id, payload);
+      assertPermission('families', 'edit');
+      const updated = await dataStore.update('families', id, sanitizeFamilyPayload(payload));
+      await audit(`Edito familia ${updated.family_code || updated.responsible_name || ''}`.trim());
+      await reload();
+      return updated;
+    },
+    archiveFamily: async (id, payload = {}) => {
+      assertPermission('families', 'edit');
+      const family = data.families.find((item) => item.id === id);
+      if (!family) throw new Error('La familia no existe.');
+      const archived = await dataStore.update('families', id, {
+        status: 'Archivada',
+        archived_at: new Date().toISOString(),
+        archive_reason: String(payload.reason || payload.archive_reason || '').trim(),
+        updated_at: new Date().toISOString()
+      });
+      await audit(`Archivo familia ${family.family_code || family.responsible_name || id}`.trim());
+      await reload();
+      return archived;
+    },
+    deleteFamily: async (id) => {
+      if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar familias.');
+      const members = (data.beneficiaries || []).filter((item) => item.family_id === id);
+      if (members.length) throw new Error('Esta familia tiene miembros asociados.');
+      const family = data.families.find((item) => item.id === id);
+      await dataStore.remove('families', id);
+      await audit(`Elimino familia ${family?.family_code || id}`.trim());
       await reload();
     },
     createBeneficiaryDocument: async (payload) => {

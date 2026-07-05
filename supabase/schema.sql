@@ -43,6 +43,7 @@ create table public.beneficiaries (
   code text not null unique default public.next_beneficiary_code(),
   full_name text not null,
   family_id uuid,
+  family_relationship text,
   document_id text unique,
   address_full text,
   postal_code text,
@@ -96,13 +97,18 @@ create table public.families (
   phone text,
   email text,
   dependents_count integer not null default 0,
+  status text not null default 'Activa',
   notes text,
-  created_at timestamptz not null default now()
+  archived_at timestamptz,
+  archive_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table public.social_history (
   id uuid primary key default gen_random_uuid(),
   beneficiary_id uuid references public.beneficiaries(id) on delete cascade,
+  family_id uuid references public.families(id) on delete cascade,
   date date not null default current_date,
   entry_type text,
   notes text,
@@ -112,6 +118,7 @@ create table public.social_history (
 create table public.beneficiary_documents (
   id uuid primary key default gen_random_uuid(),
   beneficiary_id uuid references public.beneficiaries(id) on delete cascade,
+  family_id uuid references public.families(id) on delete cascade,
   document_type text not null,
   file_name text,
   file_data_url text,
@@ -384,6 +391,7 @@ end;
 $$;
 
 create trigger beneficiaries_updated_at before update on public.beneficiaries for each row execute function public.set_updated_at();
+create trigger families_updated_at before update on public.families for each row execute function public.set_updated_at();
 create trigger inventory_items_updated_at before update on public.inventory_items for each row execute function public.set_updated_at();
 
 create or replace function public.apply_delivery_effects()
@@ -609,6 +617,9 @@ create policy "beneficiary_photos_delete_by_permission" on storage.objects for d
 );
 
 create index beneficiaries_search_idx on public.beneficiaries (full_name, document_id, code);
+create index beneficiaries_family_idx on public.beneficiaries (family_id);
+create index beneficiary_documents_family_idx on public.beneficiary_documents (family_id, uploaded_at desc);
+create index social_history_family_idx on public.social_history (family_id, date desc);
 create index deliveries_beneficiary_idx on public.deliveries (beneficiary_id, delivered_at desc);
 create index inventory_low_stock_idx on public.inventory_items (stock, low_stock_threshold);
 create index treasury_incomes_date_idx on public.treasury_incomes (income_at desc);

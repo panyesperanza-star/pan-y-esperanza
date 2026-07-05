@@ -67,6 +67,7 @@ const emptyBeneficiary = {
   minors_count: 0,
   situation: 'Activa',
   requested_help: 'Alimentos',
+  family_relationship: '',
   notes: '',
   joined_at: todayISO(),
   is_active: true,
@@ -144,8 +145,25 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
   }, [data.beneficiaries, query, situationFilter, statusFilter, targetIds]);
 
   async function save(form) {
-    if (form.id) await actions.updateBeneficiary(form.id, form);
-    else await actions.createBeneficiary(form);
+    const { __family_mode, __new_family, ...beneficiaryPayload } = form;
+    const payload = { ...beneficiaryPayload };
+    if (__family_mode === 'none') payload.family_id = '';
+    if (__family_mode === 'new') {
+      const createdFamily = await actions.createFamily({
+        ...__new_family,
+        family_code: __new_family?.family_code || nextFamilyCode(data.families),
+        responsible_name: __new_family?.responsible_name || payload.full_name,
+        address: __new_family?.address || payload.address_full,
+        phone: __new_family?.phone || payload.phone,
+        email: __new_family?.email || payload.email,
+        dependents_count: Number(__new_family?.dependents_count ?? payload.minors_count ?? 0),
+        status: 'Activa'
+      });
+      payload.family_id = createdFamily?.id || __new_family?.id || '';
+    }
+    if (payload.family_id && !payload.family_relationship) payload.family_relationship = 'Responsable';
+    if (form.id) await actions.updateBeneficiary(form.id, payload);
+    else await actions.createBeneficiary(payload);
     setEditing(null);
   }
 
@@ -401,8 +419,30 @@ function initials(name) {
   return String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
+function nextFamilyCode(families = []) {
+  const last = families.reduce((max, family) => {
+    const match = String(family.family_code || '').match(/FAM-(\d+)/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `FAM-${String(last + 1).padStart(4, '0')}`;
+}
+
 function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel }) {
-  const [form, setForm] = useState(() => ({ ...emptyBeneficiary, ...initial, family_id: initial.family_id || '' }));
+  const [form, setForm] = useState(() => ({
+    ...emptyBeneficiary,
+    ...initial,
+    family_id: initial.family_id || '',
+    __family_mode: initial.family_id ? 'existing' : 'none',
+    __new_family: {
+      family_code: nextFamilyCode(families),
+      responsible_name: initial.full_name || '',
+      address: initial.address_full || '',
+      phone: initial.phone || '',
+      email: initial.email || '',
+      dependents_count: initial.minors_count || 0,
+      notes: ''
+    }
+  }));
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -421,6 +461,34 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
   };
 
   const errorClass = (field) => (fieldErrors[field] ? ' border-red-500 focus:ring-red-500' : '');
+
+  function updateFamilyMode(value) {
+    setForm((current) => ({
+      ...current,
+      __family_mode: value,
+      family_id: value === 'none' ? '' : value === 'existing' ? current.family_id || families[0]?.id || '' : '',
+      family_relationship: value === 'none' ? '' : current.family_relationship || 'Responsable',
+      __new_family: {
+        ...current.__new_family,
+        family_code: current.__new_family?.family_code || nextFamilyCode(families),
+        responsible_name: current.__new_family?.responsible_name || current.full_name,
+        address: current.__new_family?.address || current.address_full,
+        phone: current.__new_family?.phone || current.phone,
+        email: current.__new_family?.email || current.email,
+        dependents_count: current.__new_family?.dependents_count ?? current.minors_count ?? 0
+      }
+    }));
+  }
+
+  function updateNewFamily(field, value) {
+    setForm((current) => ({
+      ...current,
+      __new_family: {
+        ...current.__new_family,
+        [field]: value
+      }
+    }));
+  }
 
   function validateUniqueFields() {
     const documentId = normalizeDocument(form.document_id);
@@ -444,6 +512,17 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     event.preventDefault();
     setFormError('');
     if (!validateUniqueFields()) return;
+    if (form.__family_mode === 'existing' && !form.family_id) {
+      setFormError('Selecciona una familia existente o cambia a crear una nueva.');
+      return;
+    }
+    if (form.__family_mode === 'new') {
+      const duplicateFamily = families.find((family) => normalize(family.family_code) === normalize(form.__new_family?.family_code));
+      if (duplicateFamily) {
+        setFormError('Ya existe una familia con ese codigo.');
+        return;
+      }
+    }
     setSaving(true);
     try {
       await onSubmit(form);
@@ -518,15 +597,45 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         </FormField>
       </FormSection>
 
-      <FormSection icon={Users} title="Unidad familiar" description="Vinculación y composición familiar actual.">
-        <div className="sm:col-span-2">
-          <FormField label="Familia vinculada">
-            <select className={inputClass} value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
-              <option value="">Sin familia vinculada</option>
-              {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} · {family.responsible_name}</option>)}
+      <FormSection icon={Users} title="Unidad familiar" description="Vinculacion y composicion familiar actual.">
+        <FormField label="Pertenece a una familia?">
+          <select className={inputClass} value={form.__family_mode === 'none' ? 'No' : 'Si'} onChange={(event) => updateFamilyMode(event.target.value === 'Si' ? (families.length ? 'existing' : 'new') : 'none')}>
+            <option>No</option>
+            <option>Si</option>
+          </select>
+        </FormField>
+        {form.__family_mode !== 'none' && (
+          <FormField label="Relacion familiar">
+            <input className={inputClass} value={form.family_relationship || ''} onChange={(event) => update('family_relationship', event.target.value)} placeholder="Responsable, hijo/a, pareja..." />
+          </FormField>
+        )}
+        {form.__family_mode !== 'none' && (
+          <FormField label="Modo de vinculacion">
+            <select className={inputClass} value={form.__family_mode} onChange={(event) => updateFamilyMode(event.target.value)}>
+              <option value="existing" disabled={!families.length}>Seleccionar familia existente</option>
+              <option value="new">Crear nueva familia</option>
             </select>
           </FormField>
-        </div>
+        )}
+        {form.__family_mode === 'existing' && (
+          <FormField label="Familia existente">
+            <select className={inputClass} required value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
+              <option value="">Selecciona una familia</option>
+              {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
+            </select>
+          </FormField>
+        )}
+        {form.__family_mode === 'new' && (
+          <div className="grid gap-4 rounded-xl border border-brand-100 bg-brand-50/40 p-4 sm:col-span-2 sm:grid-cols-2">
+            <FormField label="Codigo familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
+            <FormField label="Responsable"><input className={inputClass} required value={form.__new_family.responsible_name || ''} onChange={(event) => updateNewFamily('responsible_name', event.target.value)} /></FormField>
+            <div className="sm:col-span-2"><FormField label="Direccion familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
+            <FormField label="Telefono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
+            <FormField label="Email familiar"><input className={inputClass} type="email" value={form.__new_family.email || ''} onChange={(event) => updateNewFamily('email', event.target.value)} /></FormField>
+            <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.__new_family.dependents_count ?? 0} onChange={(event) => updateNewFamily('dependents_count', Number(event.target.value))} /></FormField>
+            <div className="sm:col-span-2"><FormField label="Observaciones familiares"><textarea className={inputClass} rows="3" value={form.__new_family.notes || ''} onChange={(event) => updateNewFamily('notes', event.target.value)} /></FormField></div>
+          </div>
+        )}
         <FormField label="Miembros de la unidad familiar">
           <input className={inputClass} type="number" min="1" value={form.family_members ?? 1} onChange={(event) => update('family_members', Number(event.target.value))} />
         </FormField>
@@ -747,8 +856,8 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
           <QuickFamilyForm
             beneficiary={beneficiary}
             onSubmit={async (payload) => {
-              await actions.createFamily(payload);
-              await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, family_id: payload.id });
+              const createdFamily = await actions.createFamily(payload);
+              await actions.updateBeneficiary(beneficiary.id, { ...beneficiary, family_id: createdFamily?.id || payload.id, family_relationship: beneficiary.family_relationship || 'Responsable' });
               setFamilyOpen(false);
               setNotice('Unidad familiar creada y vinculada correctamente.');
             }}

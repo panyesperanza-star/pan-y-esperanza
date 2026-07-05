@@ -169,7 +169,7 @@ export default function App() {
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    families: <Families data={sorted} actions={actions} />,
+    families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,

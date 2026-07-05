@@ -1,6 +1,9 @@
 import { todayISO } from '../lib/formatters';
 import { ROLE_PERMISSION_MATRIX } from '../lib/constants';
 
+const demoFamilyId = crypto.randomUUID();
+const demoBeneficiaryMariaId = crypto.randomUUID();
+
 export const seedData = {
   organization_settings: [
     {
@@ -18,20 +21,22 @@ export const seedData = {
   ],
   families: [
     {
-      id: crypto.randomUUID(),
+      id: demoFamilyId,
       family_code: 'FAM-0001',
       responsible_name: 'Maria Lopez Garcia',
       address: 'Calle Mayor 12, 2B, Madrid',
       phone: '600 111 222',
       email: 'maria.lopez@example.org',
       dependents_count: 1,
+      status: 'Urgente',
       notes: 'Unidad familiar con prioridad social.'
     }
   ],
   beneficiaries: [
     {
-      id: crypto.randomUUID(),
-      family_id: '',
+      id: demoBeneficiaryMariaId,
+      family_id: demoFamilyId,
+      family_relationship: 'Responsable',
       code: 'PYE-00001',
       full_name: 'Maria Lopez Garcia',
       document_id: '12345678A',
@@ -57,6 +62,7 @@ export const seedData = {
     {
       id: crypto.randomUUID(),
       family_id: '',
+      family_relationship: '',
       code: 'PYE-00002',
       full_name: 'Ahmed Benali',
       document_id: 'Y1234567B',
@@ -84,7 +90,8 @@ export const seedData = {
   beneficiary_documents: [
     {
       id: crypto.randomUUID(),
-      beneficiary_id: '',
+      beneficiary_id: demoBeneficiaryMariaId,
+      family_id: demoFamilyId,
       document_type: 'DNI/NIE / NIE O PASAPORTE',
       file_name: 'pendiente.pdf',
       file_data_url: '',

@@ -81,6 +81,7 @@ const DATE_FIELDS = new Set([
   'happened_at',
   'requested_at',
   'resolved_at',
+  'archived_at',
   'last_access_at',
   'created_at',
   'updated_at'
@@ -149,6 +150,12 @@ async function create(table, payload) {
       if (retry.error) throw retry.error;
       return retry.data;
     }
+    if (error && shouldRetryWithoutFamilyFields(table, error, cleanPayload)) {
+      const fallbackPayload = withoutFamilyIntegrationFields(table, cleanPayload);
+      const retry = await supabase.from(table).insert(fallbackPayload).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
     if (error) throw error;
     return data;
   }
@@ -165,6 +172,12 @@ async function update(table, id, payload) {
     const { data, error } = await supabase.from(table).update(cleanPayload).eq('id', id).select().single();
     if (error && shouldRetryWithoutUserStatus(table, error, cleanPayload)) {
       const fallbackPayload = withoutStatus(cleanPayload);
+      const retry = await supabase.from(table).update(fallbackPayload).eq('id', id).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
+    if (error && shouldRetryWithoutFamilyFields(table, error, cleanPayload)) {
+      const fallbackPayload = withoutFamilyIntegrationFields(table, cleanPayload);
       const retry = await supabase.from(table).update(fallbackPayload).eq('id', id).select().single();
       if (retry.error) throw retry.error;
       return retry.data;
@@ -230,6 +243,30 @@ function withoutEmailHistoryFields(payload) {
   const { provider_id, status, receipt_ids, ...fallback } = payload;
   if (provider_id) fallback.result = `${fallback.result || 'Correo enviado correctamente.'} Resend: ${provider_id}`;
   return fallback;
+}
+
+function shouldRetryWithoutFamilyFields(table, error, payload) {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  const hasFamilyField = ['status', 'archived_at', 'archive_reason', 'updated_at', 'family_relationship', 'family_id'].some((field) => Object.hasOwn(payload, field));
+  return ['families', 'beneficiaries', 'beneficiary_documents', 'social_history'].includes(table)
+    && hasFamilyField
+    && (error?.code === 'PGRST204' || message.includes('column'));
+}
+
+function withoutFamilyIntegrationFields(table, payload) {
+  if (table === 'families') {
+    const { status, archived_at, archive_reason, updated_at, ...fallback } = payload;
+    return fallback;
+  }
+  if (table === 'beneficiaries') {
+    const { family_relationship, ...fallback } = payload;
+    return fallback;
+  }
+  if (table === 'beneficiary_documents' || table === 'social_history') {
+    const { family_id, ...fallback } = payload;
+    return fallback;
+  }
+  return payload;
 }
 
 function isMissingTableError(error) {
