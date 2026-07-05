@@ -298,7 +298,7 @@ create table public.app_users (
   last_name text,
   email text not null unique,
   phone text,
-  role text not null check (role in ('Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
+  role text not null check (role in ('Superadministrador', 'Superadministrador del sistema', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
   position text,
   status text not null default 'Activo' check (status in ('Activo', 'Inactivo', 'Bloqueado')),
   is_active boolean not null default true,
@@ -308,6 +308,32 @@ create table public.app_users (
   last_access_at timestamptz,
   created_by text,
   created_at timestamptz not null default now()
+);
+
+create table public.deletion_requests (
+  id uuid primary key default gen_random_uuid(),
+  association_id text not null,
+  association_name text not null,
+  module text not null,
+  record_type text not null,
+  record_id text not null,
+  record_label text,
+  requester_id uuid references public.app_users(id) on delete set null,
+  requester_name text,
+  requester_email text,
+  requested_at timestamptz not null default now(),
+  reason text not null,
+  notes text,
+  status text not null default 'Pendiente' check (status in ('Pendiente', 'Aprobada', 'Rechazada')),
+  resolved_at timestamptz,
+  resolved_by uuid references public.app_users(id) on delete set null,
+  resolved_by_name text,
+  resolved_by_email text,
+  resolution_reason text,
+  relations_snapshot jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint deletion_requests_reason_check check (char_length(trim(reason)) >= 5)
 );
 
 alter table public.deliveries
@@ -339,7 +365,7 @@ as $$
     select 1
     from public.app_users
     where is_active = true
-      and role in ('Superadministrador', 'Tesorera', 'Tesorero')
+      and role in ('Superadministrador', 'Superadministrador del sistema', 'Tesorera', 'Tesorero')
       and (
         auth_user_id = auth.uid()
         or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
@@ -405,6 +431,7 @@ alter table public.volunteer_history enable row level security;
 alter table public.roles enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.app_users enable row level security;
+alter table public.deletion_requests enable row level security;
 alter table public.password_reset_tokens enable row level security;
 
 create policy "authenticated_read_beneficiaries" on public.beneficiaries for select to authenticated using (true);
@@ -484,24 +511,80 @@ as $$
   )
 $$;
 
+create or replace function public.is_system_superadmin_role(role_name text)
+returns boolean
+language sql
+immutable
+as $$
+  select lower(trim(coalesce(role_name, ''))) in (
+    'superadministrador del sistema',
+    'superadministrador sistema',
+    'system superadmin'
+  )
+$$;
+
+create or replace function public.is_system_superadmin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.app_users u
+    where (u.auth_user_id = auth.uid()
+       or lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
+      and public.is_system_superadmin_role(u.role)
+      and u.is_active = true
+      and coalesce(u.status, 'Activo') = 'Activo'
+  )
+$$;
+
 create policy "app_users_select_self_or_admin" on public.app_users for select to authenticated using (
-  public.is_app_admin()
-  or auth_user_id = auth.uid()
-  or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  public.is_system_superadmin()
+  or (
+    not public.is_system_superadmin_role(role)
+    and (
+      public.is_app_admin()
+      or auth_user_id = auth.uid()
+      or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  )
 );
-create policy "app_users_insert_admin" on public.app_users for insert to authenticated with check (public.is_app_admin());
+create policy "app_users_insert_admin" on public.app_users for insert to authenticated with check (
+  public.is_system_superadmin()
+  or (public.is_app_admin() and not public.is_system_superadmin_role(role))
+);
 create policy "app_users_update_self_or_admin" on public.app_users for update to authenticated using (
-  public.is_app_admin()
-  or auth_user_id = auth.uid()
-  or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  public.is_system_superadmin()
+  or (
+    not public.is_system_superadmin_role(role)
+    and (
+      public.is_app_admin()
+      or auth_user_id = auth.uid()
+      or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  )
 ) with check (
-  public.is_app_admin()
-  or auth_user_id = auth.uid()
-  or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  public.is_system_superadmin()
+  or (
+    not public.is_system_superadmin_role(role)
+    and (
+      public.is_app_admin()
+      or auth_user_id = auth.uid()
+      or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    )
+  )
 );
-create policy "app_users_delete_admin" on public.app_users for delete to authenticated using (public.is_app_admin());
+create policy "app_users_delete_admin" on public.app_users for delete to authenticated using (
+  public.is_system_superadmin()
+  or (public.is_app_admin() and not public.is_system_superadmin_role(role))
+);
 grant execute on function public.current_app_user() to authenticated;
 grant execute on function public.is_app_admin() to authenticated;
+grant execute on function public.is_system_superadmin_role(text) to authenticated;
+grant execute on function public.is_system_superadmin() to authenticated;
 
 create policy "authenticated_read_documentos" on storage.objects for select to authenticated using (bucket_id = 'documentos');
 create policy "authenticated_write_documentos" on storage.objects for all to authenticated using (bucket_id = 'documentos') with check (bucket_id = 'documentos');
@@ -551,6 +634,13 @@ as $$
       )
   )
 $$;
+
+create policy "deletion_requests_select_scoped" on public.deletion_requests for select to authenticated using (public.is_system_superadmin() or requester_id = (public.current_app_user()).id or public.can_app_permission('settings', 'view') or public.can_app_permission('users', 'view'));
+create policy "deletion_requests_insert_requester" on public.deletion_requests for insert to authenticated with check (not public.is_system_superadmin() and status = 'Pendiente' and requester_id = (public.current_app_user()).id);
+create policy "deletion_requests_update_system_superadmin" on public.deletion_requests for update to authenticated using (public.is_system_superadmin()) with check (public.is_system_superadmin());
+create policy "deletion_requests_no_delete" on public.deletion_requests for delete to authenticated using (false);
+grant select, insert, update on public.deletion_requests to authenticated;
+revoke delete on public.deletion_requests from authenticated;
 
 create or replace function public.can_inventory_action(action_id text)
 returns boolean
@@ -751,7 +841,7 @@ with check (public.can_inventory_action('edit'));
 
 create policy "inventory_items_delete_superadmin_only"
 on public.inventory_items for delete to authenticated
-using (public.can_inventory_action('delete'));
+using (public.can_inventory_action('delete') or public.is_system_superadmin());
 
 drop policy if exists "authenticated_read_inventory_movements" on public.inventory_movements;
 drop policy if exists "authenticated_write_inventory_movements" on public.inventory_movements;
@@ -972,7 +1062,7 @@ drop policy if exists "deliveries_delete_superadmin_only" on public.deliveries;
 drop policy if exists "authenticated_write_deliveries" on public.deliveries;
 create policy "deliveries_delete_superadmin_only"
 on public.deliveries for delete to authenticated
-using (public.is_app_superadmin());
+using (public.is_app_superadmin() or public.is_system_superadmin());
 
 revoke all on function public.cancel_delivery(uuid, text) from public;
 revoke all on function public.is_app_superadmin() from public;

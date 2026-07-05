@@ -34,10 +34,11 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
+import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
@@ -83,10 +84,12 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
   const [profileId, setProfileId] = useState(null);
   const [targetIds, setTargetIds] = useState([]);
   const [targetLabel, setTargetLabel] = useState('');
+  const [deletionTarget, setDeletionTarget] = useState(null);
 
   const canCreate = canDo(currentUser, 'beneficiaries', 'create');
   const canEdit = canDo(currentUser, 'beneficiaries', 'edit');
   const canDelete = canDo(currentUser, 'beneficiaries', 'delete');
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'beneficiaries');
   const activeCount = data.beneficiaries.filter((item) => item.is_active).length;
   const urgentCount = data.beneficiaries.filter((item) => item.is_active && item.situation === 'Urgente').length;
   const attendedCount = new Set(data.deliveries.filter(isActiveDelivery).map((item) => item.beneficiary_id).filter(Boolean)).size;
@@ -143,9 +146,24 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
     setEditing(null);
   }
 
-  async function removeBeneficiary(item) {
-    const confirmed = window.confirm(`¿Eliminar definitivamente el registro de ${item.full_name}? Esta acción eliminará también su información relacionada.`);
-    if (confirmed) await actions.deleteBeneficiary(item.id);
+  function removeBeneficiary(item) {
+    setDeletionTarget({
+      item,
+      relations: buildBeneficiaryRelationWarnings(item, data)
+    });
+  }
+
+  async function sendDeletionRequest(item, payload) {
+    await actions.createDeletionRequest({
+      module: 'beneficiaries',
+      record_type: 'beneficiary',
+      record_id: item.id,
+      record_label: item.full_name || item.code || item.id,
+      reason: payload.reason,
+      notes: payload.notes,
+      relations: buildBeneficiaryRelationWarnings(item, data)
+    });
+    setDeletionTarget(null);
   }
 
   return (
@@ -238,7 +256,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
                   <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Ver ficha <ChevronRight size={15} /></Button>
                   <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Imprimir ficha de ${item.full_name}`} title="Imprimir ficha"><Printer size={17} /></button>
                   {canEdit && <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => setEditing(item)} aria-label={`Editar a ${item.full_name}`} title="Editar"><Edit3 size={17} /></button>}
-                  {canDelete && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`Eliminar a ${item.full_name}`} title="Eliminar"><Trash2 size={17} /></button>}
+                  {canRequestDeletion && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`Solicitar eliminacion de ${item.full_name}`} title="Solicitar eliminacion definitiva"><Trash2 size={17} /></button>}
                 </div>
               </div>
             </article>
@@ -273,6 +291,16 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
               setProfileId(null);
               setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries), family_id: familyId });
             }}
+          />
+        </Modal>
+      )}
+      {deletionTarget && (
+        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
+          <DeletionRequestForm
+            recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
+            relations={deletionTarget.relations}
+            onCancel={() => setDeletionTarget(null)}
+            onSubmit={(payload) => sendDeletionRequest(deletionTarget.item, payload)}
           />
         </Modal>
       )}
@@ -314,6 +342,27 @@ function targetLabelForBeneficiaries(filter) {
   if (filter === 'stale-help') return 'Sin ayuda +30 dias';
   if (filter === 'family-detail') return 'Expediente seleccionado';
   return '';
+}
+
+function buildBeneficiaryRelationWarnings(beneficiary, data) {
+  if (!beneficiary) return [];
+  const relations = [];
+  const deliveries = (data.deliveries || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const documents = (data.beneficiary_documents || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const history = (data.social_history || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const socialEvents = (data.social_value_events || []).filter((item) => item.source_record_id === beneficiary.id || deliveries.some((delivery) => delivery.id === item.source_record_id));
+  const emailLogs = (data.email_logs || []).filter((log) => (
+    Array.isArray(log.receipt_ids) && deliveries.some((delivery) => log.receipt_ids.includes(delivery.id))
+  ));
+
+  if (beneficiary.family_id) relations.push(`Familia vinculada: ${beneficiary.family_id}`);
+  if (deliveries.length) relations.push(`Entregas: ${deliveries.length}`);
+  if (documents.length) relations.push(`Documentos: ${documents.length}`);
+  if (history.length) relations.push(`Historial social: ${history.length}`);
+  if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
+  if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length}`);
+  if (beneficiary.profile_photo) relations.push('Fotografia de perfil');
+  return relations;
 }
 
 function SocialSituationBadge({ value }) {

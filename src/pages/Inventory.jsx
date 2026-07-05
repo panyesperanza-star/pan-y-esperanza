@@ -12,11 +12,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
@@ -30,11 +31,12 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
   const [status, setStatus] = useState('Todos');
   const [pageError, setPageError] = useState('');
   const [deletingId, setDeletingId] = useState('');
+  const [deletionTarget, setDeletionTarget] = useState(null);
 
   const canRegisterMovements = canDo(currentUser, 'inventory', 'create');
   const canManageProducts = canDo(currentUser, 'inventory', 'edit');
-  const canDeleteProducts = canDo(currentUser, 'inventory', 'delete');
-  const hasProductActions = canManageProducts || canDeleteProducts;
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'inventory');
+  const hasProductActions = canManageProducts || canRequestDeletion;
   const categories = useMemo(
     () => ['Todas', ...new Set(data.inventory_items.map((item) => item.category).filter(Boolean))],
     [data.inventory_items]
@@ -62,13 +64,20 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
       .sort(compareInventoryItems);
   }, [category, data.inventory_items, search, status]);
 
-  async function deleteProduct(item) {
-    const confirmed = window.confirm(`¿Eliminar definitivamente "${item.name}"? Esta acción no se puede deshacer.`);
-    if (!confirmed) return;
+  async function deleteProduct(item, payload) {
     setPageError('');
     setDeletingId(item.id);
     try {
-      await actions.deleteInventoryItem(item.id);
+      await actions.createDeletionRequest({
+        module: 'inventory',
+        record_type: 'inventory_item',
+        record_id: item.id,
+        record_label: `${item.name}${item.lot ? ` - Lote ${item.lot}` : ''}`,
+        reason: payload.reason,
+        notes: payload.notes,
+        relations: buildInventoryRelationWarnings(item, data)
+      });
+      setDeletionTarget(null);
     } catch (error) {
       setPageError(normalizeInventoryError(error));
     } finally {
@@ -102,7 +111,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         )}
       />
 
-      {!canRegisterMovements && !canManageProducts && !canDeleteProducts && (
+      {!canRegisterMovements && !canManageProducts && !canRequestDeletion && (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
           Modo solo lectura.
         </div>
@@ -204,14 +213,14 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                             <Pencil size={16} />
                           </Button>
                         )}
-                        {canDeleteProducts && (
+                        {canRequestDeletion && (
                           <Button
                             variant="danger"
                             className="h-9 w-9 px-0"
-                            aria-label={`Eliminar ${item.name}`}
-                            title="Eliminar producto"
+                            aria-label={`Solicitar eliminacion de ${item.name}`}
+                            title="Solicitar eliminacion definitiva"
                             disabled={deletingId === item.id}
-                            onClick={() => deleteProduct(item)}
+                            onClick={() => setDeletionTarget({ item, relations: buildInventoryRelationWarnings(item, data) })}
                           >
                             <Trash2 size={16} />
                           </Button>
@@ -291,6 +300,16 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
               await actions.createInventoryMovement(payload);
               setMovementType(null);
             }}
+          />
+        </Modal>
+      )}
+      {deletionTarget && (
+        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
+          <DeletionRequestForm
+            recordLabel={`${deletionTarget.item.name}${deletionTarget.item.lot ? ` - Lote ${deletionTarget.item.lot}` : ''}`}
+            relations={deletionTarget.relations}
+            onCancel={() => setDeletionTarget(null)}
+            onSubmit={(payload) => deleteProduct(deletionTarget.item, payload)}
           />
         </Modal>
       )}
@@ -480,6 +499,22 @@ function matchesStatus(item, status) {
   if (status === 'Caducidad próxima') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
   if (status === 'Correctos') return labels.length === 0;
   return true;
+}
+
+function buildInventoryRelationWarnings(item, data) {
+  if (!item) return [];
+  const relations = [];
+  const movements = (data.inventory_movements || []).filter((movement) => movement.item_id === item.id);
+  const deliveries = (data.deliveries || []).filter((delivery) => delivery.inventory_item_id === item.id);
+  const socialEvents = (data.social_value_events || []).filter((event) => event.inventory_item_id === item.id);
+  const donations = (data.donations || []).filter((donation) => donation.inventory_item_id === item.id);
+
+  if (Number(item.stock || 0) > 0) relations.push(`Stock actual: ${formatQuantity(item.stock)} ${item.unit || ''}`.trim());
+  if (movements.length) relations.push(`Movimientos de inventario: ${movements.length}`);
+  if (deliveries.length) relations.push(`Entregas vinculadas: ${deliveries.length}`);
+  if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
+  if (donations.length) relations.push(`Donaciones vinculadas: ${donations.length}`);
+  return relations;
 }
 
 function compareInventoryItems(a, b) {

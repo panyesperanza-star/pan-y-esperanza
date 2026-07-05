@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion, isSystemSuperadmin } from '../lib/auth';
 import { constrainRolePermissionMatrix } from '../lib/constants';
 import { dataStore } from '../lib/dataStore';
+import { sendEmailViaApi } from '../lib/emailClient';
 import { nextBeneficiaryCode, nextReceiptNumber, normalize, normalizeDocument } from '../lib/formatters';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
@@ -139,6 +140,27 @@ export function useAppData(enabled = true, currentUser = null) {
     }
   }
 
+  function assertSystemSuperadmin() {
+    if (!isSystemSuperadmin(currentUser)) {
+      throw new Error('Solo el Superadministrador del sistema puede resolver solicitudes de eliminacion.');
+    }
+  }
+
+  function assertDeletionRequester(moduleId) {
+    if (isSystemSuperadmin(currentUser)) {
+      throw new Error('El Superadministrador del sistema debe resolver solicitudes desde el panel del proveedor.');
+    }
+    if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId))) {
+      throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este modulo.');
+    }
+  }
+
+  function permissionModuleForDeletion(moduleId) {
+    if (String(moduleId || '').startsWith('treasury_')) return 'treasury';
+    if (moduleId === 'financial_accounts') return 'accounting';
+    return moduleId;
+  }
+
   function assertAccountingSuperadmin() {
     if (currentUser?.role !== 'Superadministrador') {
       throw new Error('Solo el Superadministrador puede anular o eliminar registros contables.');
@@ -151,6 +173,113 @@ export function useAppData(enabled = true, currentUser = null) {
       created_by_name: currentUserName(),
       created_by_email: currentUser?.email || ''
     };
+  }
+
+  function associationMeta() {
+    const organization = data.organization_settings?.[0] || {};
+    return {
+      association_id: organization.id || 'main',
+      association_name: organization.name || 'Asociacion sin nombre'
+    };
+  }
+
+  function providerEmail() {
+    const organization = data.organization_settings?.[0] || {};
+    return organization.system_provider_email
+      || organization.provider_email
+      || import.meta.env.VITE_SYSTEM_PROVIDER_EMAIL
+      || import.meta.env.VITE_PROVIDER_EMAIL
+      || '';
+  }
+
+  async function notifyDeletionRequestProvider(request) {
+    const to = providerEmail();
+    if (!to) {
+      await audit(`Solicitud de eliminacion ${request.id} creada sin correo de proveedor configurado`);
+      return;
+    }
+    await sendEmailViaApi({
+      to,
+      subject: `Solicitud de eliminacion pendiente - ${request.association_name}`,
+      message: [
+        'Se ha recibido una solicitud de eliminacion definitiva.',
+        '',
+        `Asociacion: ${request.association_name}`,
+        `Usuario: ${request.requester_name || request.requester_email || '-'}`,
+        `Registro solicitado: ${request.record_label || request.record_id}`,
+        `Modulo: ${request.module}`,
+        `Motivo: ${request.reason}`,
+        request.notes ? `Observaciones: ${request.notes}` : ''
+      ].filter(Boolean).join('\n'),
+      organization: data.organization_settings?.[0] || {}
+    });
+  }
+
+  async function notifyDeletionRequestRejected(request, resolutionReason) {
+    if (!request?.requester_email) return;
+    await sendEmailViaApi({
+      to: request.requester_email,
+      subject: `Solicitud de eliminacion rechazada - ${request.record_label || request.record_id}`,
+      message: [
+        'La solicitud de eliminacion definitiva ha sido rechazada por el proveedor del sistema.',
+        '',
+        `Registro: ${request.record_label || request.record_id}`,
+        `Motivo de la solicitud: ${request.reason}`,
+        `Motivo del rechazo: ${resolutionReason}`
+      ].join('\n'),
+      organization: data.organization_settings?.[0] || {}
+    });
+  }
+
+  async function trySendDeletionEmail(sender, auditMessage) {
+    try {
+      await sender();
+    } catch (error) {
+      console.warn('[eliminaciones] No se pudo enviar notificacion:', error);
+      await audit(`${auditMessage}: ${error.message || 'error de correo'}`);
+    }
+  }
+
+  async function executeApprovedDeletionRequest(request) {
+    const moduleId = request.module;
+    const recordId = request.record_id;
+    if (moduleId === 'deliveries') {
+      await dataStore.remove('deliveries', recordId);
+      return 'entrega';
+    }
+    if (moduleId === 'beneficiaries') {
+      await dataStore.remove('beneficiaries', recordId);
+      return 'beneficiario';
+    }
+    if (moduleId === 'inventory') {
+      await dataStore.remove('inventory_items', recordId);
+      return 'producto de inventario';
+    }
+    if (moduleId === 'donations') {
+      await dataStore.remove('donations', recordId);
+      return 'donacion';
+    }
+    if (moduleId === 'treasury_incomes') {
+      await dataStore.remove('treasury_incomes', recordId);
+      return 'ingreso de tesoreria';
+    }
+    if (moduleId === 'treasury_expenses') {
+      await dataStore.remove('treasury_expenses', recordId);
+      return 'gasto de tesoreria';
+    }
+    if (moduleId === 'treasury_loans') {
+      await dataStore.remove('treasury_loans', recordId);
+      return 'prestamo de tesoreria';
+    }
+    if (moduleId === 'treasury_accounts') {
+      await dataStore.remove('treasury_accounts', recordId);
+      return 'cuenta de tesoreria';
+    }
+    if (moduleId === 'financial_accounts') {
+      await dataStore.remove('financial_accounts', recordId);
+      return 'cuenta contable';
+    }
+    throw new Error(`El modulo ${moduleId} todavia no tiene ejecutor de eliminacion definitiva.`);
   }
 
   async function accountingAuditTrail(tableName, recordId, action, previousData, nextData) {
@@ -1118,6 +1247,76 @@ export function useAppData(enabled = true, currentUser = null) {
 
   const actions = useMemo(() => ({
     reloadData: reload,
+    createDeletionRequest: async (payload) => {
+      const moduleId = String(payload?.module || '').trim();
+      assertDeletionRequester(moduleId);
+      const reason = String(payload?.reason || '').trim();
+      if (reason.length < 5) throw new Error('Indica un motivo valido para solicitar la eliminacion.');
+      const recordId = String(payload?.record_id || '').trim();
+      if (!recordId) throw new Error('No se ha indicado el registro que se desea eliminar.');
+      const existingPending = (data.deletion_requests || []).find((request) => (
+        request.status === 'Pendiente'
+        && request.module === moduleId
+        && String(request.record_id) === recordId
+      ));
+      if (existingPending) throw new Error('Ya existe una solicitud pendiente para este registro.');
+      const association = associationMeta();
+      const created = await dataStore.create('deletion_requests', {
+        ...association,
+        module: moduleId,
+        record_type: payload.record_type || moduleId,
+        record_id: recordId,
+        record_label: payload.record_label || recordId,
+        requester_id: currentUser?.id || null,
+        requester_name: currentUserName(),
+        requester_email: currentUser?.email || '',
+        requested_at: new Date().toISOString(),
+        reason,
+        notes: String(payload?.notes || '').trim(),
+        status: 'Pendiente',
+        relations_snapshot: Array.isArray(payload?.relations) ? payload.relations : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      await audit(`Solicito eliminacion definitiva de ${created.record_label || created.record_id}. Motivo: ${reason}`);
+      await trySendDeletionEmail(
+        () => notifyDeletionRequestProvider(created),
+        `Fallo notificacion al proveedor para solicitud ${created.id}`
+      );
+      await reload();
+      return created;
+    },
+    resolveDeletionRequest: async (id, payload) => {
+      assertSystemSuperadmin();
+      const request = (data.deletion_requests || []).find((item) => item.id === id);
+      if (!request) throw new Error('La solicitud no existe.');
+      if (request.status !== 'Pendiente') throw new Error('La solicitud ya esta resuelta.');
+      const decision = payload?.decision === 'Aprobada' ? 'Aprobada' : 'Rechazada';
+      const resolutionReason = String(payload?.resolution_reason || '').trim();
+      if (resolutionReason.length < 5) throw new Error('Indica un motivo de resolucion valido.');
+      let deletedRecordType = '';
+      if (decision === 'Aprobada') {
+        deletedRecordType = await executeApprovedDeletionRequest(request);
+      }
+      const resolved = await dataStore.update('deletion_requests', id, {
+        status: decision,
+        resolved_at: new Date().toISOString(),
+        resolved_by: currentUser?.id || null,
+        resolved_by_name: currentUserName(),
+        resolved_by_email: currentUser?.email || '',
+        resolution_reason: resolutionReason,
+        updated_at: new Date().toISOString()
+      });
+      await audit(`${decision === 'Aprobada' ? 'Aprobo y ejecuto' : 'Rechazo'} solicitud de eliminacion ${request.record_label || request.record_id}. Motivo: ${resolutionReason}`);
+      if (decision === 'Rechazada') {
+        await trySendDeletionEmail(
+          () => notifyDeletionRequestRejected(resolved, resolutionReason),
+          `Fallo notificacion de rechazo para solicitud ${id}`
+        );
+      }
+      await reload();
+      return { request: resolved, deletedRecordType };
+    },
     createBeneficiary: async (payload) => {
       dataStore.assertUniqueDocument(data.beneficiaries, payload);
       await dataStore.create('beneficiaries', {

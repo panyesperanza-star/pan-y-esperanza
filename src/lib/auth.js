@@ -2,6 +2,7 @@ import { isRoleActionAllowed, MODULES } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
+export const SYSTEM_SUPERADMIN_ROLE = 'Superadministrador del sistema';
 
 export function getStoredUser() {
   const raw = localStorage.getItem(SESSION_KEY);
@@ -100,6 +101,8 @@ export function isUserActive(user) {
 
 export function canAccess(user, moduleId) {
   if (!user) return false;
+  if (moduleId === 'provider') return isSystemSuperadmin(user);
+  if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
   if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.view);
   return Array.isArray(user.permissions) && user.permissions.includes(moduleId);
@@ -111,10 +114,27 @@ export function getFirstAccessibleModule(user) {
 
 export function canDo(user, moduleId, action = 'view') {
   if (!user) return false;
+  if (moduleId === 'provider') return isSystemSuperadmin(user);
+  if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
   if (!isRoleActionAllowed(user.role, moduleId, action)) return false;
   if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
   return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
+}
+
+export function canRequestDefinitiveDeletion(user, moduleId) {
+  if (!user || isSystemSuperadmin(user)) return false;
+  const role = String(user.role || '').trim().toLowerCase();
+  if (role === 'superadministrador' || role === 'administrador') return true;
+  return canDo(user, moduleId, 'delete');
+}
+
+export function isSystemSuperadmin(user) {
+  const role = String(user?.role || '').trim().toLowerCase();
+  return role === SYSTEM_SUPERADMIN_ROLE.toLowerCase()
+    || role === 'superadministrador del sistema'
+    || role === 'superadministrador sistema'
+    || role === 'system superadmin';
 }
 
 function hasPermissionMatrix(user) {

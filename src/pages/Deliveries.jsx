@@ -1,10 +1,11 @@
 import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
+import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { HELP_TYPES } from '../lib/constants';
 import { normalizeEmailError, sendEmailViaApi } from '../lib/emailClient';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
@@ -19,7 +20,7 @@ export function Deliveries({ data, actions, currentUser }) {
   const [busyAction, setBusyAction] = useState('');
   const canCreate = canDo(currentUser, 'deliveries', 'create');
   const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
-  const canDeletePermanently = currentUser?.role === 'Superadministrador';
+  const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries');
   const organization = data.organization_settings?.[0] || {};
 
   function requestDeletePermanently(item) {
@@ -29,14 +30,22 @@ export function Deliveries({ data, actions, currentUser }) {
     });
   }
 
-  async function deletePermanently(item) {
+  async function sendDeletionRequest(item, payload) {
     setNotice('');
     try {
-      await actions.deleteDelivery(item.id);
+      await actions.createDeletionRequest({
+        module: 'deliveries',
+        record_type: 'delivery',
+        record_id: item.id,
+        record_label: item.receipt_number ? `Entrega ${item.receipt_number}` : `Entrega ${item.id}`,
+        reason: payload.reason,
+        notes: payload.notes,
+        relations: buildDeliveryRelationWarnings(item, data)
+      });
       setDeleteTarget(null);
-      setNotice('Entrega eliminada definitivamente.');
+      setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
     } catch (error) {
-      setNotice(error.message || 'No se pudo eliminar definitivamente la entrega.');
+      setNotice(error.message || 'No se pudo enviar la solicitud de eliminacion.');
     }
   }
 
@@ -154,14 +163,14 @@ export function Deliveries({ data, actions, currentUser }) {
                         </>
                       )}
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
-                      {canDeletePermanently && (
+                      {canRequestDeletion && (
                         <Button
                           variant="danger"
                           className="whitespace-nowrap"
                           onClick={() => requestDeletePermanently(item)}
-                          title="Eliminar definitivamente"
+                          title="Solicitar eliminacion definitiva"
                         >
-                          <Trash2 size={16} /> Eliminar definitivamente
+                          <Trash2 size={16} /> Solicitar eliminacion
                         </Button>
                       )}
                     </div>
@@ -184,46 +193,16 @@ export function Deliveries({ data, actions, currentUser }) {
         </Modal>
       )}
       {deleteTarget && (
-        <Modal title="Confirmar eliminación definitiva" onClose={() => setDeleteTarget(null)}>
-          <DeleteDeliveryConfirmationForm
-            delivery={deleteTarget.item}
+        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeleteTarget(null)}>
+          <DeletionRequestForm
+            recordLabel={deleteTarget.item.receipt_number ? `Entrega ${deleteTarget.item.receipt_number}` : `Entrega ${deleteTarget.item.id}`}
             relations={deleteTarget.relations}
             onCancel={() => setDeleteTarget(null)}
-            onConfirm={() => deletePermanently(deleteTarget.item)}
+            onSubmit={(payload) => sendDeletionRequest(deleteTarget.item, payload)}
           />
         </Modal>
       )}
     </>
-  );
-}
-
-function DeleteDeliveryConfirmationForm({ delivery, relations, onCancel, onConfirm }) {
-  const [confirmation, setConfirmation] = useState('');
-  const canConfirm = confirmation === 'ELIMINAR';
-  return (
-    <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); if (canConfirm) onConfirm(); }}>
-      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-        <p className="font-bold">Esta accion eliminara definitivamente la entrega {delivery.receipt_number || delivery.id}.</p>
-        <p className="mt-1">No se podra recuperar desde el historial.</p>
-      </div>
-      {relations.length ? (
-        <div>
-          <p className="text-sm font-bold text-ink">Informacion relacionada que se eliminara o quedara desvinculada:</p>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-            {relations.map((relation) => <li key={relation}>{relation}</li>)}
-          </ul>
-        </div>
-      ) : (
-        <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">No se han detectado relaciones asociadas a esta entrega.</p>
-      )}
-      <FormField label="Escribe ELIMINAR para confirmar">
-        <input className={inputClass} autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
-      </FormField>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit" variant="danger" disabled={!canConfirm}><Trash2 size={16} /> Eliminar definitivamente</Button>
-      </div>
-    </form>
   );
 }
 

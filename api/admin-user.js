@@ -68,12 +68,19 @@ export default async function handler(request, response) {
       return sendJson(response, 404, { ok: false, code: 'USER_NOT_FOUND', error: 'Usuario no encontrado.' });
     }
 
+    if (isSystemSuperadminRole(existing.role)) {
+      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'El Superadministrador del sistema no se gestiona desde una asociacion.' });
+    }
+
     if ((action === 'delete' || action === 'deactivate' || action === 'block') && await isLastActiveSuperadmin(admin, existing)) {
       return sendJson(response, 400, { ok: false, code: 'LAST_SUPERADMIN', error: 'No se puede bloquear, desactivar o eliminar al ultimo Superadministrador activo.' });
     }
 
     if (action === 'update') {
       const payload = sanitizeProfile(body.user || {});
+      if (isSystemSuperadminRole(payload.role)) {
+        return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'El Superadministrador del sistema no se gestiona desde una asociacion.' });
+      }
       delete payload.id;
       delete payload.auth_user_id;
       const normalized = normalizeStatus(payload);
@@ -171,6 +178,13 @@ function sanitizeProfile(user) {
 function normalizeStatus(payload) {
   const status = payload.status || (payload.is_active === false ? 'Inactivo' : 'Activo');
   return { ...payload, status, is_active: status === 'Activo' };
+}
+
+function isSystemSuperadminRole(role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized === 'superadministrador del sistema'
+    || normalized === 'superadministrador sistema'
+    || normalized === 'system superadmin';
 }
 
 async function syncAuthUser(admin, user) {

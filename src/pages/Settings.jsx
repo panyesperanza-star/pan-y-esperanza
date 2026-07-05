@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
-import { canAccess, canDo, getUserStatus } from '../lib/auth';
+import { canAccess, canDo, getUserStatus, isSystemSuperadmin } from '../lib/auth';
 import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
 import { getApiHeaders } from '../lib/apiAuth';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
@@ -160,9 +160,10 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
   const [editing, setEditing] = useState(null);
   const [section, setSection] = useState('users');
   const [message, setMessage] = useState('');
-  const activeUsers = users.filter((user) => getUserStatus(user) === 'Activo');
-  const inactiveUsers = users.filter((user) => getUserStatus(user) === 'Inactivo');
-  const blockedUsers = users.filter((user) => getUserStatus(user) === 'Bloqueado');
+  const associationUsers = users.filter((user) => !isSystemSuperadmin(user));
+  const activeUsers = associationUsers.filter((user) => getUserStatus(user) === 'Activo');
+  const inactiveUsers = associationUsers.filter((user) => getUserStatus(user) === 'Inactivo');
+  const blockedUsers = associationUsers.filter((user) => getUserStatus(user) === 'Bloqueado');
   const canCreate = canDo(currentUser, 'users', 'create');
   const canEdit = canDo(currentUser, 'users', 'edit');
   const canDelete = canDo(currentUser, 'users', 'delete');
@@ -187,8 +188,8 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
         <Button variant={section === 'audit' ? 'primary' : 'secondary'} onClick={() => setSection('audit')}>Auditoria</Button>
       </div>
       {message && <p className="mb-4 rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-      {section === 'users' && <UsersTable users={users} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
-      {section === 'permissions' && canEdit && <PermissionsMatrix users={users} actions={actions} setMessage={setMessage} />}
+      {section === 'users' && <UsersTable users={associationUsers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
+      {section === 'permissions' && canEdit && <PermissionsMatrix users={associationUsers} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
       {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await sendWelcomeEmail(payload, organization); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>

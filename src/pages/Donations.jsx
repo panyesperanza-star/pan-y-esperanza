@@ -1,18 +1,21 @@
 import { Download, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { printDonationCertificatePdf } from '../lib/exporters';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 export function Donations({ data, actions, currentUser, navigationTarget }) {
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Todas');
+  const [deletionTarget, setDeletionTarget] = useState(null);
+  const [notice, setNotice] = useState('');
   const canCreate = canDo(currentUser, 'donations', 'create');
-  const canDelete = canDo(currentUser, 'donations', 'delete');
+  const canDelete = canRequestDefinitiveDeletion(currentUser, 'donations');
   const visibleDonations = useMemo(() => {
     if (statusFilter === 'Pendientes') return data.donations.filter(isPendingDonation);
     return data.donations;
@@ -24,9 +27,24 @@ export function Donations({ data, actions, currentUser, navigationTarget }) {
     else if (!navigationTarget.filter) setStatusFilter('Todas');
   }, [navigationTarget]);
 
+  async function sendDeletionRequest(item, payload) {
+    await actions.createDeletionRequest({
+      module: 'donations',
+      record_type: 'donation',
+      record_id: item.id,
+      record_label: `${item.donor || 'Donacion'} - ${item.donation_type || ''}`.trim(),
+      reason: payload.reason,
+      notes: payload.notes,
+      relations: buildDonationRelationWarnings(item)
+    });
+    setDeletionTarget(null);
+    setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
+  }
+
   return (
     <>
       <PageHeader title="Donaciones" description="Registro de donaciones y certificados PDF." actions={canCreate ? <Button onClick={() => setOpen(true)}><Plus size={18} /> Nueva donacion</Button> : null} />
+      {notice && <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">{notice}</div>}
       <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
         <label className="block max-w-xs">
           <span className="sr-only">Filtrar donaciones</span>
@@ -39,13 +57,31 @@ export function Donations({ data, actions, currentUser, navigationTarget }) {
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th>Donante</th><th>Tipo donante</th><th>Donacion</th><th>Valor</th><th>Estado</th><th className="text-right pr-4">Acciones</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">{visibleDonations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td>{donationStatus(item)}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => actions.deleteDonation(item.id)}><Trash2 size={16} /> Eliminar</Button>}</div></td></tr>)}</tbody>
+          <tbody className="divide-y divide-slate-100">{visibleDonations.map((item) => <tr key={item.id}><td className="px-4 py-3">{formatDate(item.donated_at)}</td><td>{item.donor}</td><td>{item.donor_kind}</td><td>{item.donation_type}</td><td>{item.estimated_value} EUR</td><td>{donationStatus(item)}</td><td className="pr-4"><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => printDonationCertificatePdf(item, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>{canDelete && <Button variant="danger" onClick={() => setDeletionTarget(item)}><Trash2 size={16} /> Solicitar</Button>}</div></td></tr>)}</tbody>
         </table>
         {!visibleDonations.length && <p className="p-5 text-sm text-slate-500">No hay donaciones con los filtros seleccionados.</p>}
       </div>
       {open && <Modal title="Nueva donacion" onClose={() => setOpen(false)}><DonationForm onSubmit={async (payload) => { await actions.createDonation(payload); setOpen(false); }} /></Modal>}
+      {deletionTarget && (
+        <Modal title="Solicitar eliminacion definitiva" onClose={() => setDeletionTarget(null)}>
+          <DeletionRequestForm
+            recordLabel={`${deletionTarget.donor || 'Donacion'} - ${deletionTarget.donation_type || ''}`.trim()}
+            relations={buildDonationRelationWarnings(deletionTarget)}
+            onCancel={() => setDeletionTarget(null)}
+            onSubmit={(payload) => sendDeletionRequest(deletionTarget, payload)}
+          />
+        </Modal>
+      )}
     </>
   );
+}
+
+function buildDonationRelationWarnings(donation) {
+  const relations = [];
+  if (donation?.estimated_value) relations.push(`Valor estimado: ${donation.estimated_value} EUR`);
+  if (donation?.donor) relations.push(`Donante: ${donation.donor}`);
+  if (donation?.status || donation?.state) relations.push(`Estado: ${donation.status || donation.state}`);
+  return relations;
 }
 
 function isPendingDonation(donation) {

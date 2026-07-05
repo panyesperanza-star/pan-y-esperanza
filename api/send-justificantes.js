@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
 import autoTableModule from 'jspdf-autotable';
 
-const MAIL_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
+const MAIL_ROLES = ['Superadministrador', 'Superadministrador del sistema', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
 const autoTable = typeof autoTableModule === 'function' ? autoTableModule : autoTableModule.default;
 const MAX_RESEND_ATTACHMENTS_BYTES = 35 * 1024 * 1024;
 

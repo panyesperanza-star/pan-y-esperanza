@@ -2,7 +2,7 @@ import { AlertTriangle, Database } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, refreshCurrentUser, signIn, signOut } from './lib/auth';
+import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, isSystemSuperadmin, refreshCurrentUser, signIn, signOut } from './lib/auth';
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Accounting } from './pages/Accounting';
@@ -16,6 +16,7 @@ import { Donations } from './pages/Donations';
 import { Families } from './pages/Families';
 import { Inventory } from './pages/Inventory';
 import { Login } from './pages/Login';
+import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
@@ -116,6 +117,7 @@ export default function App() {
       loan_records: [...(data.loan_records || [])].sort((a, b) => String(b.loan_at || b.created_at).localeCompare(String(a.loan_at || a.created_at))),
       debt_records: [...(data.debt_records || [])].sort((a, b) => String(b.debt_at || b.created_at).localeCompare(String(a.debt_at || a.created_at))),
       social_value_events: [...(data.social_value_events || [])].sort((a, b) => String(b.social_value_at || b.created_at).localeCompare(String(a.social_value_at || a.created_at))),
+      deletion_requests: [...(data.deletion_requests || [])].sort((a, b) => String(b.requested_at || b.created_at).localeCompare(String(a.requested_at || a.created_at))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -169,6 +171,7 @@ export default function App() {
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
     backup: <Backup data={sorted} actions={actions} />,
+    provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
     users: <Settings key="users" data={sorted} actions={actions} currentUser={currentUser} initialTab="users" />
   };
 
@@ -176,7 +179,7 @@ export default function App() {
   const pageContent = isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
   return (
-    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout}>
+    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={!isSystemSuperadmin(currentUser)}>
       {!hasSupabaseConfig && <div className="mb-5 flex gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><Database size={18} /> Modo demo local activo. Configura Supabase para usar PostgreSQL.</div>}
       {error && <div className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={18} /> {error}</div>}
       {pageContent}

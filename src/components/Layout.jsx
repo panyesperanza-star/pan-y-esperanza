@@ -1,13 +1,13 @@
-import { Boxes, Building2, Calculator, DatabaseBackup, FileText, Gift, HandCoins, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, Users, UserRoundCheck, X } from 'lucide-react';
+import { Boxes, Building2, Calculator, DatabaseBackup, FileText, Gift, HandCoins, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { MODULES } from '../lib/constants';
 import { canAccess } from '../lib/auth';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 
-const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, treasury: HandCoins, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup };
+const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, treasury: HandCoins, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
 
-export function Layout({ active, setActive, onReset, currentUser, onLogout, children }) {
+export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, children }) {
   const [open, setOpen] = useState(false);
   const modules = MODULES.filter((module) => canAccess(currentUser, module.id));
   const nav = (
@@ -28,7 +28,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, chil
         <div className="flex h-16 items-center justify-between px-4">
           <button className="focus-ring rounded-md p-2" onClick={() => setOpen(true)} aria-label="Menu"><Menu size={22} /></button>
           <BrandLogo className="h-10 w-auto" showText={false} />
-          <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /></Button>
+          {showReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /></Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /></Button>
         </div>
       </header>
@@ -41,7 +41,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, chil
         </div>
         <div className="mt-8">{nav}</div>
         <div className="absolute bottom-5 left-5 right-5 grid gap-2">
-          <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>
+          {showReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Cerrar sesion</Button>
         </div>
       </aside>

@@ -113,6 +113,7 @@ export const seedData = {
   debt_records: [],
   debt_movements: [],
   social_value_events: [],
+  deletion_requests: [],
   accounting_audit_trail: [],
   treasury_incomes: [
     { id: crypto.randomUUID(), income_at: todayISO(), category: 'Donaciones', concept: 'Donacion economica inicial', amount: 600, donor: 'Empresa Solidaria SL', payment_method: 'Transferencia', notes: 'Ingreso de ejemplo para tesoreria.', document_name: '' }

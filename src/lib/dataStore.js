@@ -23,6 +23,7 @@ const TABLES = [
   'debt_records',
   'debt_movements',
   'social_value_events',
+  'deletion_requests',
   'accounting_audit_trail',
   'treasury_incomes',
   'treasury_expenses',
@@ -45,6 +46,7 @@ const OPTIONAL_TABLES = new Set([
   'debt_records',
   'debt_movements',
   'social_value_events',
+  'deletion_requests',
   'accounting_audit_trail'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
@@ -77,6 +79,8 @@ const DATE_FIELDS = new Set([
   'returned_at',
   'moved_at',
   'happened_at',
+  'requested_at',
+  'resolved_at',
   'last_access_at',
   'created_at',
   'updated_at'

@@ -15,7 +15,8 @@ export const MODULES = [
   { id: 'reports', label: 'Informes', path: '/reports' },
   { id: 'users', label: 'Usuarios', path: '/users' },
   { id: 'settings', label: 'Configuracion', path: '/settings' },
-  { id: 'backup', label: 'Copias', path: '/backup' }
+  { id: 'backup', label: 'Copias', path: '/backup' },
+  { id: 'provider', label: 'Panel del proveedor', path: '/provider' }
 ];
 
 export function getModuleByPath(pathname) {

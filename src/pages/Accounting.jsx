@@ -21,10 +21,11 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { canDo } from '../lib/auth';
+import { canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const OPERATION_TYPES = [
@@ -51,7 +52,7 @@ export function Accounting({ data, actions, currentUser }) {
   const [modal, setModal] = useState(null);
   const canCreate = canDo(currentUser, 'accounting', 'create');
   const canEdit = canDo(currentUser, 'accounting', 'edit');
-  const canDelete = canDo(currentUser, 'accounting', 'delete');
+  const canDelete = canRequestDefinitiveDeletion(currentUser, 'accounting');
   const report = useMemo(() => buildAccountingReport(data), [data]);
   const areaGroups = useMemo(() => buildAreaGroups(report), [report]);
   const isSuperadmin = currentUser?.role === 'Superadministrador';
@@ -243,11 +244,21 @@ export function Accounting({ data, actions, currentUser }) {
       )}
 
       {modal?.type === 'delete-account' && (
-        <Modal title="Eliminar cuenta sin relaciones" onClose={() => setModal(null)}>
-          <DeleteAccountForm
-            account={modal.item}
-            onSubmit={async () => {
-              await actions.deleteFinancialAccount(modal.item.id);
+        <Modal title="Solicitar eliminacion definitiva" onClose={() => setModal(null)}>
+          <DeletionRequestForm
+            recordLabel={modal.item.name || 'Cuenta contable'}
+            relations={buildFinancialAccountDeletionRelations(modal.item, data)}
+            onCancel={() => setModal(null)}
+            onSubmit={async (payload) => {
+              await actions.createDeletionRequest({
+                module: 'financial_accounts',
+                record_type: 'financial_account',
+                record_id: modal.item.id,
+                record_label: modal.item.name || 'Cuenta contable',
+                reason: payload.reason,
+                notes: payload.notes,
+                relations: buildFinancialAccountDeletionRelations(modal.item, data)
+              });
               setModal(null);
             }}
           />
@@ -627,7 +638,7 @@ function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, onOpen 
             {(canEdit || canDelete) && (
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 {canEdit && <Button variant="secondary" onClick={() => onOpen({ type: 'account', item: account })}>Editar</Button>}
-                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>Eliminar vacia</Button>}
+                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>Solicitar eliminacion</Button>}
               </div>
             )}
           </article>
@@ -1106,6 +1117,17 @@ function AlertCard({ alert }) {
       </div>
     </article>
   );
+}
+
+function buildFinancialAccountDeletionRelations(account, data) {
+  const relations = [];
+  const movements = (data.cash_bank_movements || []).filter((movement) => movement.financial_account_id === account?.id);
+  const events = (data.accounting_events || []).filter((event) => event.financial_account_id === account?.id);
+  if (account?.current_balance || account?.opening_balance) relations.push(`Saldo: ${formatMoney(account.current_balance ?? account.opening_balance)}`);
+  if (movements.length) relations.push(`Movimientos: ${movements.length}`);
+  if (events.length) relations.push(`Eventos contables: ${events.length}`);
+  if (account?.iban) relations.push('IBAN registrado');
+  return relations;
 }
 
 function EmptyState({ icon: Icon, title, detail }) {
