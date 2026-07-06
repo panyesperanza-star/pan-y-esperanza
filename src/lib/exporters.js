@@ -78,45 +78,48 @@ export async function printSocialAttentionReportPdf({
   drawInstitutionalPageHeader(doc, reportContext);
   let y = 34;
 
-  y = drawInstitutionalSectionTitle(doc, '1. IDENTIFICACIÓN', y);
+  y = drawInstitutionalSectionTitle(doc, '1. PRESENTACIÓN', y, reportContext);
+  y = drawReportParagraph(doc, buildInstitutionalPresentationText(orgName), y, { context: reportContext, lead: true });
+
+  y = drawInstitutionalSectionTitle(doc, '2. IDENTIFICACIÓN', y + 8, reportContext);
   y = drawIdentificationNarrative(doc, beneficiary, family, familyStats, y, reportContext);
 
-  y = drawInstitutionalSectionTitle(doc, '2. CONTEXTO FAMILIAR', y + 7);
+  y = drawInstitutionalSectionTitle(doc, '3. CONTEXTO FAMILIAR', y + 8, reportContext);
   y = drawReportParagraph(doc, buildFamilyContextText(beneficiary, family, familyMembers, familyStats), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '3. MOTIVO DE LA ATENCIÓN', y + 7);
-  const attentionReason = buildAttentionReasonText(beneficiary, history);
-  y = attentionReason
-    ? drawReportParagraph(doc, attentionReason, y, { context: reportContext })
-    : drawManualCompletionLines(doc, y, 5, 'Espacio reservado para completar el motivo de la atención cuando no constan observaciones suficientes en el expediente.', reportContext);
+  y = drawInstitutionalSectionTitle(doc, '4. MOTIVO DE LA ATENCIÓN', y + 8, reportContext);
+  y = drawReportParagraph(doc, buildAttentionReasonText(beneficiary, history), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '4. HISTORIAL DE INTERVENCIÓN', y + 7);
+  y = drawInstitutionalSectionTitle(doc, '5. HISTORIA DE LA INTERVENCIÓN', y + 8, reportContext);
   drawInterventionChronology(doc, timeline, y, reportContext);
 
   doc.addPage();
   drawInstitutionalPageHeader(doc, reportContext);
   y = 34;
 
-  y = drawInstitutionalSectionTitle(doc, '5. EVOLUCIÓN DEL EXPEDIENTE', y);
+  y = drawInstitutionalSectionTitle(doc, '6. EVOLUCIÓN', y, reportContext);
   y = drawReportParagraph(doc, buildSocialInterventionSummary(beneficiary, timeline), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '6. SITUACIÓN ACTUAL', y + 8);
+  y = drawInstitutionalSectionTitle(doc, '7. SITUACIÓN ACTUAL', y + 10, reportContext);
   y = drawReportParagraph(doc, buildCurrentSituationText(beneficiary, timeline, latestAttention), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '7. OBSERVACIONES', y + 8);
+  y = drawInstitutionalSectionTitle(doc, '8. RECURSOS MOVILIZADOS', y + 10, reportContext);
+  y = drawMobilizedResources(doc, buildMobilizedResources(timeline), y, reportContext);
+
+  y = drawInstitutionalSectionTitle(doc, '9. OBSERVACIONES', y + 10, reportContext);
   y = drawReportObservations(doc, getReportObservations(beneficiary, family, timeline), y, reportContext);
 
   doc.addPage();
   drawInstitutionalPageHeader(doc, reportContext);
   y = 42;
 
-  y = drawInstitutionalSectionTitle(doc, '8. VALORACIÓN DE LA ENTIDAD', y);
+  y = drawInstitutionalSectionTitle(doc, '10. VALORACIÓN DE LA ENTIDAD', y, reportContext);
   y = drawReportParagraph(doc, buildEntityAssessmentText(beneficiary, timeline), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '9. CONCLUSIÓN', y + 14);
-  y = drawReportParagraph(doc, buildSocialAttentionConclusion(beneficiary), y, { context: reportContext });
+  y = drawInstitutionalSectionTitle(doc, '11. CONCLUSIÓN', y + 16, reportContext);
+  y = drawReportParagraph(doc, buildSocialAttentionConclusion(beneficiary, timeline), y, { context: reportContext });
 
-  y = drawInstitutionalSectionTitle(doc, '10. FIRMAS', y + 18);
+  y = drawInstitutionalSectionTitle(doc, '12. RESPONSABLE', y + 18, reportContext);
   drawInstitutionalSignature(doc, responsible, generatedAt, y, reportContext);
 
   drawSocialAttentionFooterOnAllPages(doc);
@@ -619,7 +622,8 @@ function drawInstitutionalPageHeader(doc, { orgName, beneficiary, generatedAt })
   doc.setTextColor(23, 33, 27);
 }
 
-function drawInstitutionalSectionTitle(doc, title, y) {
+function drawInstitutionalSectionTitle(doc, title, y, context = null) {
+  if (context) y = ensureInstitutionalSpace(doc, y, 16, context);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11.2);
   doc.setTextColor(23, 33, 27);
@@ -674,7 +678,7 @@ function drawReportParagraph(doc, text, y, options = {}) {
   const context = options.context || null;
   const x = options.x || 14;
   const width = options.width || 182;
-  const lineHeight = options.lineHeight || 5.6;
+  const lineHeight = options.lineHeight || (options.lead ? 6.2 : 5.8);
   const gap = options.gap ?? 5;
   const lines = doc.splitTextToSize(String(text || '-'), width);
   let index = 0;
@@ -683,7 +687,7 @@ function drawReportParagraph(doc, text, y, options = {}) {
     const maxLines = Math.max(1, Math.floor((262 - y) / lineHeight));
     const chunk = lines.slice(index, index + maxLines);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(options.fontSize || 10);
+    doc.setFontSize(options.fontSize || (options.lead ? 10.4 : 10));
     doc.setTextColor(45, 56, 49);
     doc.text(chunk, x, y, { lineHeightFactor: 1.35 });
     y += chunk.length * lineHeight + gap;
@@ -693,22 +697,6 @@ function drawReportParagraph(doc, text, y, options = {}) {
   return y;
 }
 
-function drawManualCompletionLines(doc, y, lineCount, helperText, context) {
-  const height = 11 + lineCount * 8;
-  y = ensureInstitutionalSpace(doc, y, height, context);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.6);
-  doc.setTextColor(96, 112, 100);
-  doc.text(doc.splitTextToSize(helperText, 174), 14, y);
-  doc.setDrawColor(190, 205, 196);
-  for (let index = 0; index < lineCount; index += 1) {
-    const lineY = y + 11 + index * 8;
-    doc.line(14, lineY, 196, lineY);
-  }
-  doc.setTextColor(23, 33, 27);
-  return y + height + 4;
-}
-
 function drawInterventionChronology(doc, timeline, y, context) {
   if (!timeline.length) {
     return drawReportParagraph(doc, 'No constan intervenciones registradas en el expediente consultado.', y, { context });
@@ -716,28 +704,25 @@ function drawInterventionChronology(doc, timeline, y, context) {
 
   let currentY = y;
   timeline.forEach((item) => {
-    const descriptionLines = doc.splitTextToSize(item.description || 'Atención registrada por la entidad.', 126);
+    const narrativeLines = doc.splitTextToSize(buildInterventionStoryText(item), 142);
     const responsibleLines = doc.splitTextToSize(`Responsable: ${item.responsible || 'No registrado'}`, 126);
     const observationLines = item.observations ? doc.splitTextToSize(`Observaciones: ${item.observations}`, 126) : [];
-    const itemHeight = Math.max(28, 12 + descriptionLines.length * 5 + responsibleLines.length * 5 + observationLines.length * 5);
+    const itemHeight = Math.max(34, 16 + narrativeLines.length * 5.4 + responsibleLines.length * 5 + observationLines.length * 5);
     currentY = ensureInstitutionalSpace(doc, currentY, itemHeight + 6, context);
 
-    doc.setDrawColor(36, 126, 80);
-    doc.line(43, currentY + 2, 43, currentY + itemHeight - 3);
-    doc.setFillColor(36, 126, 80);
-    doc.circle(43, currentY + 3, 1.6, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.2);
+    doc.setFontSize(10.2);
     doc.setTextColor(23, 33, 27);
     doc.text(formatDate(item.date), 14, currentY + 5);
-    doc.text(item.type || 'Atención registrada', 50, currentY + 5);
+    doc.setFontSize(9.4);
+    doc.text(item.type || 'Atención registrada', 14, currentY + 13);
 
-    let lineY = currentY + 12;
+    let lineY = currentY + 5;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.2);
+    doc.setFontSize(9.5);
     doc.setTextColor(45, 56, 49);
-    doc.text(descriptionLines, 50, lineY, { lineHeightFactor: 1.28 });
-    lineY += descriptionLines.length * 5;
+    doc.text(narrativeLines, 50, lineY, { lineHeightFactor: 1.32 });
+    lineY += narrativeLines.length * 5.4 + 2;
     doc.text(responsibleLines, 50, lineY, { lineHeightFactor: 1.28 });
     lineY += responsibleLines.length * 5;
     if (observationLines.length) {
@@ -752,9 +737,28 @@ function drawInterventionChronology(doc, timeline, y, context) {
   return currentY;
 }
 
+function drawMobilizedResources(doc, resources, y, context) {
+  if (!resources.length) {
+    return drawReportParagraph(doc, 'No constan recursos movilizados registrados en el historial de intervención consultado.', y, { context });
+  }
+  let currentY = y;
+  resources.forEach((resource) => {
+    currentY = ensureInstitutionalSpace(doc, currentY, 11, context);
+    doc.setFillColor(36, 126, 80);
+    doc.circle(17, currentY - 1.5, 1.4, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(45, 56, 49);
+    doc.text(resource, 23, currentY);
+    currentY += 9;
+  });
+  doc.setTextColor(23, 33, 27);
+  return currentY + 2;
+}
+
 function drawReportObservations(doc, observations, y, context) {
   if (!observations.length) {
-    return drawManualCompletionLines(doc, y, 7, 'Espacio reservado para observaciones complementarias cuando no constan observaciones registradas en el expediente.', context);
+    return drawReportParagraph(doc, 'No constan observaciones adicionales registradas en el expediente consultado.', y, { context });
   }
   let currentY = y;
   observations.forEach((observation, index) => {
@@ -842,32 +846,36 @@ function getInitialSocialObservation(history = []) {
   }) || null;
 }
 
+function buildInstitutionalPresentationText(orgName) {
+  return `El presente Informe de Atención Social resume la intervención realizada por ${orgName || 'la Asociación Pan y Esperanza'} con la persona beneficiaria identificada en este expediente. La información procede exclusivamente del expediente interno de la entidad y refleja las actuaciones registradas hasta la fecha de emisión.`;
+}
+
 function buildFamilyContextText(beneficiary, family, familyMembers = [], familyStats) {
   const parts = [];
   if (family) {
     parts.push(`La persona beneficiaria consta vinculada a la unidad familiar ${family.family_code || 'sin código registrado'}.`);
-    if (family.responsible_name) parts.push(`La persona responsable familiar registrada es ${family.responsible_name}.`);
-    if (family.status) parts.push(`La situación familiar registrada es "${family.status}".`);
-    if (family.notes) parts.push(`Observación familiar registrada: ${family.notes}`);
+    parts.push(`Según la información registrada, la unidad familiar está compuesta por ${familyStats.total} miembro${familyStats.total === 1 ? '' : 's'}, de los cuales ${familyStats.minors} figura${familyStats.minors === 1 ? '' : 'n'} como menor${familyStats.minors === 1 ? '' : 'es'}.`);
+    if (family.responsible_name) parts.push(`La persona de referencia familiar registrada es ${family.responsible_name}.`);
+    if (family.status) parts.push(`La situación familiar registrada en el expediente es "${family.status}".`);
   } else {
     parts.push('No consta unidad familiar vinculada en el expediente.');
+    parts.push(`La composición registrada para la persona beneficiaria indica ${familyStats.total} miembro${familyStats.total === 1 ? '' : 's'}, con ${familyStats.minors} menor${familyStats.minors === 1 ? '' : 'es'}.`);
   }
   if (familyMembers.length) {
     const members = familyMembers
       .map((member) => `${member.full_name || 'Miembro sin nombre'}${member.family_relationship ? ` (${member.family_relationship})` : ''}`)
       .join('; ');
-    parts.push(`Composición registrada: ${members}.`);
-  } else {
-    parts.push(`Composición registrada: ${familyStats.adults} adulto${familyStats.adults === 1 ? '' : 's'} y ${familyStats.minors} menor${familyStats.minors === 1 ? '' : 'es'}.`);
+    parts.push(`Constan como miembros de la unidad: ${members}.`);
   }
   if (beneficiary.situation) parts.push(`Situación individual registrada: "${beneficiary.situation}".`);
+  if (family?.notes) parts.push(`Observación familiar registrada: ${family.notes}`);
   return parts.join(' ');
 }
 
 function buildAttentionReasonText(beneficiary, history = []) {
   const initialObservation = getInitialSocialObservation(history);
   const notes = uniqueReportValues([initialObservation?.notes, beneficiary.notes]);
-  if (!notes.length) return '';
+  if (!notes.length) return 'No consta información suficiente para describir el motivo inicial de la atención.';
   return `El motivo de la atención se recoge a partir de las observaciones obrantes en el expediente. ${notes.join(' ')}`;
 }
 
@@ -889,7 +897,7 @@ function buildSocialInterventionSummary(beneficiary, timeline) {
 
 function buildCurrentSituationText(beneficiary, timeline, latestAttention) {
   const parts = [];
-  parts.push(`El expediente consta actualmente como ${beneficiary.is_active ? 'activo' : 'inactivo'} en los registros de la Asociación.`);
+  parts.push(beneficiary.is_active ? 'Actualmente la persona beneficiaria continúa en seguimiento por parte de la Asociación.' : 'Actualmente el expediente no consta como activo en los registros de la Asociación.');
   if (latestAttention) {
     parts.push(`La última ayuda o intervención registrada es ${lowerFirst(latestAttention.type || 'una atención de seguimiento')} con fecha ${formatDate(latestAttention.date)}.`);
   } else {
@@ -901,11 +909,34 @@ function buildCurrentSituationText(beneficiary, timeline, latestAttention) {
   return parts.join(' ');
 }
 
-function buildSocialAttentionConclusion(beneficiary) {
+function buildMobilizedResources(timeline = []) {
+  const resources = [];
+  timeline.forEach((item) => {
+    const source = `${item.type || ''} ${item.description || ''}`;
+    const normalized = normalizeTextForReport(source);
+    if (normalized.includes('alimento') || normalized.includes('comida')) {
+      resources.push('Entrega de alimentos');
+    } else if (normalized.includes('econom') || normalized.includes('ayuda monetaria')) {
+      resources.push('Ayuda económica');
+    } else if (normalized.includes('orientacion') || normalized.includes('informacion')) {
+      resources.push('Información y orientación');
+    } else if (normalized.includes('seguimiento')) {
+      resources.push('Seguimiento registrado');
+    } else if (item.type) {
+      resources.push(item.type);
+    }
+  });
+  return uniqueReportValues(resources).slice(0, 8);
+}
+
+function buildSocialAttentionConclusion(beneficiary, timeline) {
+  if (!timeline.length) {
+    return 'El expediente consultado identifica a la persona beneficiaria y recoge la información social disponible en la entidad, sin que consten intervenciones registradas en el historial consultado.';
+  }
   const followUpText = beneficiary.is_active
-    ? 'A fecha de emisión, el expediente continúa abierto para el seguimiento por parte de la Asociación.'
-    : 'A fecha de emisión, el expediente no consta como activo en los registros consultados.';
-  return `La información contenida en este informe refleja la atención prestada por la Asociación Pan y Esperanza en el marco de su actividad social. El presente documento tiene carácter informativo y resume las actuaciones registradas hasta la fecha de emisión. ${followUpText}`;
+    ? 'El expediente permanece abierto para su seguimiento por parte de la Asociación.'
+    : 'El expediente no consta actualmente como activo en los registros consultados.';
+  return `El expediente refleja una intervención de apoyo y seguimiento realizada por la Asociación Pan y Esperanza, documentada mediante las actuaciones registradas en la historia de intervención. ${followUpText} Este informe tiene carácter informativo y resume la información obrante en el expediente a la fecha de emisión.`;
 }
 
 function buildEntityAssessmentText(beneficiary, timeline) {
@@ -919,6 +950,15 @@ function buildEntityAssessmentText(beneficiary, timeline) {
     parts.push(`La valoración institucional se basa en las ${timeline.length} actuación${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'} en el sistema de la entidad.`);
   }
   parts.push('Esta valoración tiene carácter institucional e informativo y no constituye diagnóstico profesional ni valoración clínica.');
+  return parts.join(' ');
+}
+
+function buildInterventionStoryText(item) {
+  const type = item.type || 'atención registrada';
+  const parts = [`Se registra una intervención de tipo ${lowerFirst(type)} en el expediente.`];
+  if (item.description && normalizeTextForReport(item.description) !== normalizeTextForReport('Atención registrada por la entidad.')) {
+    parts.push(`La descripción registrada indica: ${item.description}.`);
+  }
   return parts.join(' ');
 }
 
