@@ -460,14 +460,34 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   async function getOrCreateAccountingContact(contactType, payload = {}) {
-    const name = cleanText(payload.name || payload.contact_name);
-    if (!name) return null;
     const safeType = ['supplier', 'donor', 'lender', 'creditor', 'beneficiary', 'other'].includes(contactType) ? contactType : 'other';
-    const existing = (data.accounting_contacts || []).find((contact) => (
+    const contactId = cleanText(payload.contact_id || payload.id);
+    if (contactId) {
+      const existingById = (data.accounting_contacts || []).find((contact) => (
+        contact.id === contactId
+        && normalize(contact.contact_type || 'other') === normalize(safeType)
+      ));
+      if (existingById) return existingById;
+    }
+    const name = cleanText(payload.name || payload.contact_name);
+    if (!name && !contactId) return null;
+    const existing = name ? (data.accounting_contacts || []).find((contact) => (
       normalize(contact.name) === normalize(name)
       && normalize(contact.contact_type || 'other') === normalize(safeType)
-    ));
+    )) : null;
     if (existing) return existing;
+    const latestContacts = await dataStore.list('accounting_contacts').catch(() => data.accounting_contacts || []);
+    const latestById = contactId ? (latestContacts || []).find((contact) => (
+      contact.id === contactId
+      && normalize(contact.contact_type || 'other') === normalize(safeType)
+    )) : null;
+    if (latestById) return latestById;
+    if (!name) return null;
+    const latestExisting = name ? (latestContacts || []).find((contact) => (
+      normalize(contact.name) === normalize(name)
+      && normalize(contact.contact_type || 'other') === normalize(safeType)
+    )) : null;
+    if (latestExisting) return latestExisting;
     const contact = await dataStore.create('accounting_contacts', {
       contact_type: safeType,
       name,
@@ -627,6 +647,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const date = operationDate(payload.operation_at);
     const account = findFinancialAccount(payload.financial_account_id);
     const contact = await getOrCreateAccountingContact(options.contactType, {
+      contact_id: payload.contact_id || (options.contactType === 'donor' ? payload.donor_contact_id : ''),
       name: options.contactName,
       document_id: payload.contact_document_id,
       email: payload.contact_email,
@@ -818,6 +839,7 @@ export function useAppData(enabled = true, currentUser = null) {
       const date = operationDate(payload.operation_at);
       const donorName = cleanText(payload.donor_name || payload.contact_name);
       const contact = await getOrCreateAccountingContact('donor', {
+        contact_id: payload.donor_contact_id || payload.contact_id,
         name: donorName,
         document_id: payload.contact_document_id,
         email: payload.contact_email,
@@ -1734,6 +1756,15 @@ export function useAppData(enabled = true, currentUser = null) {
     createDonorContact: async (payload) => {
       assertPermission('accounting', 'create');
       const cleanContact = sanitizeDonorContactPayload(payload, { is_active: true });
+      const latestContacts = await dataStore.list('accounting_contacts').catch(() => data.accounting_contacts || []);
+      const duplicate = (latestContacts || []).find((item) => (
+        normalize(item.contact_type) === 'donor'
+        && (
+          normalize(item.name) === normalize(cleanContact.name)
+          || (cleanContact.email && normalize(item.email) === normalize(cleanContact.email))
+        )
+      ));
+      if (duplicate) return duplicate;
       const contact = await dataStore.create('accounting_contacts', {
         ...cleanContact,
         created_at: new Date().toISOString()

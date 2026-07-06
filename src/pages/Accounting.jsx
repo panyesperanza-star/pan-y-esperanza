@@ -50,6 +50,8 @@ const OPERATION_TYPES = [
 const MONEY_OUT_OPERATION_TYPES = new Set(['expense', 'inventory_purchase', 'economic_help', 'loan_repayment', 'debt_payment']);
 const ACCOUNT_OPERATION_TYPES = new Set(['income', 'expense', 'donation_money', 'inventory_purchase', 'economic_help', 'loan_received', 'loan_repayment', 'debt_payment']);
 const INVENTORY_OPERATION_TYPES = new Set(['donation_in_kind', 'inventory_purchase']);
+const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
+const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
 
 export function Accounting({ data, actions, currentUser, navigationTarget }) {
   const [modal, setModal] = useState(null);
@@ -267,6 +269,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
         <Modal title={modal.title || 'Nueva operacion economica'} onClose={() => setModal(null)}>
           <EconomicOperationForm
             data={data}
+            actions={actions}
             report={report}
             currentUser={currentUser}
             isSuperadmin={isSuperadmin}
@@ -362,7 +365,7 @@ function EconomicOperationPanel({ canCreate, onOpen }) {
   );
 }
 
-function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', contextLabel = 'Nueva operacion', onSubmit, onCorrect, onVoid }) {
+function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', contextLabel = 'Nueva operacion', onSubmit, onCorrect, onVoid }) {
   const accounts = report.financialAccounts || [];
   const inventoryItems = data.inventory_items || [];
   const beneficiaries = data.beneficiaries || [];
@@ -400,6 +403,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initia
     reference: '',
     contact_name: '',
     supplier_name: '',
+    donor_contact_id: '',
     donor_name: '',
     donor_kind: 'Particular',
     lender_name: '',
@@ -408,6 +412,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initia
     contact_document_id: '',
     contact_email: '',
     contact_phone: '',
+    contact_address: '',
     inventory_item_mode: inventoryItems.length ? 'existing' : 'new',
     inventory_item_id: inventoryItems[0]?.id || '',
     inventory_name: '',
@@ -498,6 +503,9 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initia
           allow_negative_balance: form.allow_negative_balance
         });
       } else {
+        if ((form.operation_type === 'donation_money' || form.operation_type === 'donation_in_kind') && !String(form.donor_name || '').trim()) {
+          throw new Error('Selecciona o crea un donante antes de registrar la donacion.');
+        }
         const donationUnitValue = form.operation_type === 'donation_in_kind'
           ? resolveDonationUnitValue(form, inventoryItems, inventoryUnitValues)
           : null;
@@ -598,7 +606,7 @@ function EconomicOperationForm({ data, report, currentUser, isSuperadmin, initia
         </FormField>
       )}
 
-      <ContactFields form={form} update={update} beneficiaries={beneficiaries} />
+      <ContactFields form={form} update={update} beneficiaries={beneficiaries} data={data} actions={actions} />
 
       {needsInventory && (
         <InventoryOperationFields form={form} update={update} items={inventoryItems} operationType={form.operation_type} inventoryUnitValues={inventoryUnitValues} />
@@ -1005,7 +1013,7 @@ function MovementSelect({ label, rows, value, onChange }) {
   );
 }
 
-function ContactFields({ form, update, beneficiaries }) {
+function ContactFields({ form, update, beneficiaries, data, actions }) {
   if (form.operation_type === 'income') {
     return <FormField label="Persona u origen"><input className={inputClass} value={form.contact_name} onChange={(event) => update('contact_name', event.target.value)} /></FormField>;
   }
@@ -1018,12 +1026,7 @@ function ContactFields({ form, update, beneficiaries }) {
     );
   }
   if (form.operation_type === 'donation_money' || form.operation_type === 'donation_in_kind') {
-    return (
-      <>
-        <FormField label="Donante" required><input className={inputClass} required value={form.donor_name} onChange={(event) => update('donor_name', event.target.value)} /></FormField>
-        <FormField label="Tipo de donante"><select className={inputClass} value={form.donor_kind} onChange={(event) => update('donor_kind', event.target.value)}><option>Particular</option><option>Empresa</option><option>Entidad</option><option>Anonimo</option></select></FormField>
-      </>
-    );
+    return <DonorSelector form={form} update={update} contacts={data.accounting_contacts || []} actions={actions} />;
   }
   if (form.operation_type === 'loan_received') {
     return (
@@ -1047,6 +1050,168 @@ function ContactFields({ form, update, beneficiaries }) {
     );
   }
   return null;
+}
+
+function DonorSelector({ form, update, contacts, actions }) {
+  const [query, setQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createdDonors, setCreatedDonors] = useState([]);
+  const donors = useMemo(() => {
+    const byId = new Map();
+    [...(contacts || []), ...createdDonors]
+      .filter((contact) => normalize(contact.contact_type) === 'donor')
+      .forEach((contact) => byId.set(contact.id, contact));
+    return [...byId.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }, [contacts, createdDonors]);
+  const filteredDonors = donors.filter((donor) => normalize([
+    donor.name,
+    donor.email,
+    donor.phone,
+    donor.address,
+    donor.notes
+  ].join(' ')).includes(normalize(query)));
+  const selectedDonor = donors.find((donor) => donor.id === form.donor_contact_id) || null;
+
+  function selectDonor(donorId) {
+    const donor = donors.find((item) => item.id === donorId);
+    if (!donor) {
+      update({
+        donor_contact_id: '',
+        donor_name: '',
+        donor_kind: 'Particular',
+        contact_document_id: '',
+        contact_email: '',
+        contact_phone: '',
+        contact_address: ''
+      });
+      return;
+    }
+    const meta = accountingDonorMetadata(donor);
+    update({
+      donor_contact_id: donor.id,
+      donor_name: donor.name || '',
+      donor_kind: meta.kind || inferAccountingDonorKind(donor.name),
+      contact_document_id: donor.document_id || '',
+      contact_email: donor.email || '',
+      contact_phone: donor.phone || '',
+      contact_address: donor.address || ''
+    });
+  }
+
+  async function createDonor(payload) {
+    const notes = buildAccountingDonorNotes({
+      observations: payload.notes,
+      kind: payload.kind,
+      contactPerson: payload.contact_person
+    });
+    const donor = await actions.createDonorContact({
+      name: payload.name,
+      document_id: payload.document_id,
+      email: payload.email,
+      phone: payload.phone,
+      address: payload.address,
+      notes,
+      is_active: true
+    });
+    setCreatedDonors((current) => current.some((item) => item.id === donor.id) ? current : [...current, donor]);
+    setCreating(false);
+    setQuery(donor.name || '');
+    selectCreatedDonor(donor);
+  }
+
+  function selectCreatedDonor(donor) {
+    const meta = accountingDonorMetadata(donor);
+    update({
+      donor_contact_id: donor.id,
+      donor_name: donor.name || '',
+      donor_kind: meta.kind || inferAccountingDonorKind(donor.name),
+      contact_document_id: donor.document_id || '',
+      contact_email: donor.email || '',
+      contact_phone: donor.phone || '',
+      contact_address: donor.address || ''
+    });
+  }
+
+  return (
+    <div className="sm:col-span-2 rounded-md border border-slate-200 bg-slate-50 p-4">
+      <div className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
+        <FormField label="Buscar donante" required>
+          <input className={inputClass} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, telefono, email o direccion" />
+        </FormField>
+        <FormField label="Seleccionar" required>
+          <select className={inputClass} required value={form.donor_contact_id || ''} onChange={(event) => selectDonor(event.target.value)}>
+            <option value="">Selecciona un donante</option>
+            {filteredDonors.map((donor) => <option key={donor.id} value={donor.id}>{donor.name}</option>)}
+          </select>
+        </FormField>
+        <Button className="h-10 px-3" onClick={() => setCreating(true)} title="Nuevo donante"><Plus size={18} /><span className="sr-only">Nuevo donante</span></Button>
+      </div>
+      {!filteredDonors.length && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">No hay donantes con esa busqueda. Usa el boton + para crear la ficha completa.</p>
+      )}
+      {selectedDonor && (
+        <div className="mt-4 grid gap-2 text-sm md:grid-cols-5">
+          <ReadOnlyDonorField label="Tipo" value={form.donor_kind} />
+          <ReadOnlyDonorField label="Contacto" value={accountingDonorMetadata(selectedDonor).contactPerson} />
+          <ReadOnlyDonorField label="Telefono" value={form.contact_phone} />
+          <ReadOnlyDonorField label="Email" value={form.contact_email} />
+          <ReadOnlyDonorField label="Direccion" value={form.contact_address} />
+        </div>
+      )}
+      {creating && (
+        <div className="mt-4 rounded-md border border-brand-100 bg-white p-4">
+          <DonorQuickForm onCancel={() => setCreating(false)} onSubmit={createDonor} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadOnlyDonorField({ label, value }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 break-words font-semibold text-slate-700">{value || '-'}</p>
+    </div>
+  );
+}
+
+function DonorQuickForm({ onCancel, onSubmit }) {
+  const [form, setForm] = useState({ name: '', kind: 'Particular', contact_person: '', document_id: '', phone: '', email: '', address: '', notes: '' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const update = (field, value) => {
+    setError('');
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit(form);
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo guardar el donante.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
+      {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 sm:col-span-2">{error}</div>}
+      <div className="sm:col-span-2"><FormField label="Nombre del donante" required><input className={inputClass} required value={form.name} onChange={(event) => update('name', event.target.value)} /></FormField></div>
+      <FormField label="Tipo"><select className={inputClass} value={form.kind} onChange={(event) => update('kind', event.target.value)}><option>Particular</option><option>Empresa</option><option>Iglesia</option><option>Asociacion</option><option>Fundacion</option><option>Administracion</option><option>Entidad</option><option>Anonimo</option></select></FormField>
+      <FormField label="Persona de contacto"><input className={inputClass} value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></FormField>
+      <FormField label="Documento / CIF"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
+      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar y seleccionar'}</Button>
+      </div>
+    </form>
+  );
 }
 
 function InventoryOperationFields({ form, update, items, operationType, inventoryUnitValues }) {
@@ -2484,6 +2649,38 @@ function toDateTimeInputValue(value) {
 
 function updateForm(setForm, field, value) {
   setForm((state) => ({ ...state, [field]: value }));
+}
+
+function accountingDonorMetadata(donor) {
+  const lines = String(donor?.notes || '').split(/\r?\n/);
+  return {
+    kind: markerValue(lines, DONOR_KIND_MARKER),
+    contactPerson: markerValue(lines, DONOR_CONTACT_MARKER)
+  };
+}
+
+function markerValue(lines, marker) {
+  const line = lines.find((item) => item.startsWith(marker));
+  return line ? line.slice(marker.length).trim() : '';
+}
+
+function buildAccountingDonorNotes({ observations, kind, contactPerson }) {
+  return [
+    String(observations || '').trim(),
+    `${DONOR_KIND_MARKER} ${kind || 'Particular'}`.trim(),
+    contactPerson ? `${DONOR_CONTACT_MARKER} ${contactPerson}`.trim() : ''
+  ].filter(Boolean).join('\n');
+}
+
+function inferAccountingDonorKind(name = '') {
+  const value = normalize(name);
+  if (value.includes('iglesia') || value.includes('parroquia')) return 'Iglesia';
+  if (value.includes('fundacion')) return 'Fundacion';
+  if (value.includes('asociacion')) return 'Asociacion';
+  if (value.includes('ayuntamiento') || value.includes('administracion')) return 'Administracion';
+  if (/\b(sl|s l|sa|s a)\b/.test(value) || value.includes('empresa')) return 'Empresa';
+  if (value.includes('anonimo')) return 'Anonimo';
+  return 'Particular';
 }
 
 function readFileAsDataUrl(file) {
