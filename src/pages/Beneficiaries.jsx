@@ -281,8 +281,8 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                  <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Ver ficha <ChevronRight size={15} /></Button>
-                  <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Imprimir ficha de ${item.full_name}`} title="Imprimir ficha"><Printer size={17} /></button>
+                  <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Abrir expediente <ChevronRight size={15} /></Button>
+                  <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Descargar resumen del expediente de ${item.full_name}`} title="Resumen del expediente"><Printer size={17} /></button>
                   {canEdit && <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => setEditing(item)} aria-label={`Editar a ${item.full_name}`} title="Editar"><Edit3 size={17} /></button>}
                   {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminacion de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}><Trash2 size={17} /></button>}
                 </div>
@@ -797,6 +797,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onEdit={onEdit}
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
+        onSummaryPdf={() => printBeneficiaryPdf(beneficiary, deliveries)}
         onSocialReport={() => printSocialAttentionReportPdf({
           beneficiary,
           family,
@@ -893,28 +894,29 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onSocialReport, onDelivery, onPhotoChange }) {
+function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
   return (
     <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
-      <div className="relative flex flex-col gap-6 pt-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
+      <div className="relative flex flex-col gap-6 pt-16 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-center">
           <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} canDelete={canDelete} onChange={onPhotoChange} />
-          <div className="min-w-0 pb-1">
+          <div className="min-w-0 flex-1 rounded-xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-200">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge active={beneficiary.is_active} />
               <SocialSituationBadge value={beneficiary.situation} />
             </div>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
+            <h2 className="mt-2 break-words text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
               <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-slate-400" /> Alta: {formatDate(beneficiary.joined_at)}</span>
               <span className="flex items-center gap-1.5"><Users size={15} className="text-slate-400" /> {family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'}</span>
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2 lg:max-w-sm lg:justify-end">
           {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
-          <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
+          <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
+          <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe de Atención Social</Button>
           <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
           <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
           {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}

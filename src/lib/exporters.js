@@ -15,7 +15,7 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   const doc = new jsPDF();
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(17);
-  doc.text('Ficha de beneficiario - Pan y Esperanza', 52, 20);
+  doc.text('Resumen del expediente - Pan y Esperanza', 52, 20);
   doc.setFontSize(11);
   const fields = [
     ['Codigo', beneficiary.code],
@@ -40,7 +40,7 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
     headStyles: { fillColor: [36, 126, 80] },
     styles: { fontSize: 8 }
   });
-  doc.save(`Ficha-${beneficiary.code}.pdf`);
+  doc.save(`Resumen-expediente-${beneficiary.code}.pdf`);
 }
 
 export async function printSocialAttentionReportPdf({
