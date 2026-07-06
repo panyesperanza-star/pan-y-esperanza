@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
+import { resolveBeneficiaryPhotoUrl } from './beneficiaryPhotos';
 import { formatDate, formatDateTime, nextReceiptNumber } from './formatters';
 
 export function exportExcel(filename, sheets) {
@@ -58,96 +59,47 @@ export async function printSocialAttentionReportPdf({
   const activeDeliveries = (deliveries || []).filter((item) => item.status !== 'Anulada');
   const timeline = buildSocialAttentionTimeline(activeDeliveries, history);
   const familyStats = getFamilyStats(beneficiary, familyMembers);
-  const responsible = currentUserNameForReport(currentUser);
+  const latestAttention = getLatestSocialAttention(timeline);
+  const responsible = reportResponsible(currentUser);
+  const photo = await getBeneficiaryReportPhoto(beneficiary);
 
-  await drawSocialAttentionHeader(doc, orgName, beneficiary, generatedAt);
-  let y = 48;
+  await drawSocialAttentionCover(doc, { orgName, beneficiary, generatedAt, photo });
+  let y = 102;
 
-  y = drawSocialSectionTitle(doc, 'DATOS GENERALES', y);
-  autoTable(doc, {
-    startY: y,
-    body: [
-      ['Nombre', beneficiary.full_name || '-'],
-      ['Documento', beneficiary.document_id || '-'],
-      ['Fecha de alta', formatDate(beneficiary.joined_at)],
-      ['Unidad familiar', family ? `${family.family_code || '-'} - ${family.responsible_name || 'sin responsable registrado'}` : 'Sin unidad familiar vinculada'],
-      ['Adultos', String(familyStats.adults)],
-      ['Menores', String(familyStats.minors)],
-      ['Dirección', [beneficiary.address_full || family?.address, beneficiary.postal_code].filter(Boolean).join(' - ') || '-'],
-      ['Teléfono', beneficiary.phone || '-'],
-      ['Estado del expediente', beneficiary.is_active ? 'Activo' : 'Inactivo']
-    ],
-    styles: { fontSize: 9, cellPadding: 2.2 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 1: { cellWidth: 130 } },
-    theme: 'grid',
-    headStyles: { fillColor: [36, 126, 80] }
-  });
-  y = doc.lastAutoTable.finalY + 10;
+  y = drawProfessionalSectionTitle(doc, '1', 'IDENTIFICACIÓN', y);
+  y = drawIdentificationCards(doc, beneficiary, family, familyStats, y);
 
-  y = drawSocialSectionTitle(doc, 'MOTIVO DE LA ATENCIÓN', y);
-  const initialObservation = getInitialSocialObservation(history);
-  if (initialObservation) {
-    y = drawWrappedText(doc, initialObservation.notes, 14, y, 182, 5);
-  } else {
-    y = drawEditableArea(doc, y, 26);
-  }
+  y = drawProfessionalSectionTitle(doc, '2', 'CONTEXTO FAMILIAR', y + 6);
+  y = drawNarrativeCard(doc, buildFamilyContextText(beneficiary, family, familyMembers, familyStats), y, { accent: true });
 
-  y = ensureSocialSpace(doc, y + 6, 54);
-  y = drawSocialSectionTitle(doc, 'HISTORIAL DE ATENCIÓN', y);
-  autoTable(doc, {
-    startY: y,
-    head: [['Fecha', 'Tipo de ayuda', 'Descripción', 'Responsable']],
-    body: timeline.length ? timeline.map((item) => [
-      formatDate(item.date),
-      item.type || '-',
-      item.description || '-',
-      item.responsible || '-'
-    ]) : [['-', 'Sin atenciones registradas', 'No constan intervenciones en el expediente.', '-']],
-    styles: { fontSize: 8.2, cellPadding: 2.2, overflow: 'linebreak' },
-    columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 38 }, 2: { cellWidth: 82 }, 3: { cellWidth: 38 } },
-    headStyles: { fillColor: [36, 126, 80] }
-  });
-  y = doc.lastAutoTable.finalY + 10;
+  y = drawProfessionalSectionTitle(doc, '3', 'MOTIVO DE LA ATENCIÓN', y + 6);
+  const attentionReason = buildAttentionReasonText(beneficiary, history);
+  y = attentionReason
+    ? drawNarrativeBlock(doc, attentionReason, y)
+    : drawManualCompletionBlock(doc, y, 30, 'Espacio reservado para completar el motivo de la atención cuando la información disponible sea insuficiente.');
 
-  y = ensureSocialSpace(doc, y, 42);
-  y = drawSocialSectionTitle(doc, 'RESUMEN DE LA INTERVENCIÓN', y);
-  y = drawWrappedText(doc, buildSocialInterventionSummary(beneficiary, family, timeline), 14, y, 182, 5);
+  y = drawProfessionalSectionTitle(doc, '4', 'HISTORIAL DE INTERVENCIÓN', y + 7);
+  y = drawInterventionTimelineTable(doc, timeline, y);
 
-  y = ensureSocialSpace(doc, y + 6, 42);
-  y = drawSocialSectionTitle(doc, 'SITUACIÓN ACTUAL', y);
-  const latestAttention = timeline[0];
-  autoTable(doc, {
-    startY: y,
-    body: [
-      ['Situación', beneficiary.situation || '-'],
-      ['Seguimiento', timeline.length ? 'Con atenciones registradas en el expediente' : 'Sin atenciones registradas en el expediente'],
-      ['Número de intervenciones', String(timeline.length)],
-      ['Última atención', latestAttention ? `${formatDate(latestAttention.date)} - ${latestAttention.type}` : '-']
-    ],
-    styles: { fontSize: 9, cellPadding: 2.2 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 1: { cellWidth: 130 } },
-    theme: 'grid'
-  });
-  y = doc.lastAutoTable.finalY + 10;
+  y = drawProfessionalSectionTitle(doc, '5', 'RESUMEN DE LA INTERVENCIÓN', y + 8);
+  y = drawNarrativeBlock(doc, buildSocialInterventionSummary(beneficiary, timeline), y);
 
-  y = ensureSocialSpace(doc, y, 48);
-  y = drawSocialSectionTitle(doc, 'OBSERVACIONES', y);
+  y = drawProfessionalSectionTitle(doc, '6', 'SITUACIÓN ACTUAL', y + 7);
+  y = drawCurrentSituationCards(doc, beneficiary, timeline, latestAttention, y);
+
+  y = drawProfessionalSectionTitle(doc, '7', 'VALORACIÓN DE LA ENTIDAD', y + 7);
+  y = drawNarrativeCard(doc, buildEntityAssessmentText(beneficiary, timeline), y, { accent: true });
+
+  y = drawProfessionalSectionTitle(doc, '8', 'OBSERVACIONES', y + 7);
   y = beneficiary.notes
-    ? drawWrappedText(doc, beneficiary.notes, 14, y, 182, 5)
-    : drawEditableArea(doc, y, 24);
+    ? drawNarrativeBlock(doc, beneficiary.notes, y, { minHeight: 34 })
+    : drawManualCompletionBlock(doc, y, 34, 'Espacio reservado para observaciones complementarias.');
 
-  y = ensureSocialSpace(doc, y + 6, 52);
-  y = drawSocialSectionTitle(doc, 'CONCLUSION', y);
-  y = drawWrappedText(doc, buildSocialAttentionConclusion(beneficiary, timeline), 14, y, 182, 5);
+  y = drawProfessionalSectionTitle(doc, '9', 'CONCLUSIÓN', y + 7);
+  y = drawNarrativeBlock(doc, buildSocialAttentionConclusion(), y);
 
-  y = ensureSocialSpace(doc, y + 12, 34);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Responsable del expediente', 14, y);
-  doc.setFont('helvetica', 'normal');
-  doc.line(14, y + 16, 92, y + 16);
-  doc.text(responsible || 'Nombre y firma', 14, y + 23);
-  doc.text(`Fecha: ${formatDate(generatedAt)}`, 120, y + 23);
+  y = drawProfessionalSectionTitle(doc, '10', 'RESPONSABLE', y + 7);
+  drawResponsibleSignature(doc, responsible, generatedAt, y);
 
   drawSocialAttentionFooterOnAllPages(doc);
   doc.save(`Informe-atencion-social-${safePdfFilename(beneficiary.code || beneficiary.full_name || 'beneficiario')}.pdf`);
@@ -550,54 +502,226 @@ function drawDeliveriesReportFooter(doc) {
   doc.setTextColor(23, 33, 27);
 }
 
-async function drawSocialAttentionHeader(doc, orgName, beneficiary, generatedAt) {
-  await addOfficialLogo(doc, 14, 10, 30, 20);
+async function drawSocialAttentionCover(doc, { orgName, beneficiary, generatedAt, photo }) {
+  doc.setFillColor(244, 248, 245);
+  doc.rect(0, 0, 210, 297, 'F');
+  doc.setFillColor(36, 126, 80);
+  doc.rect(0, 0, 210, 38, 'F');
+  await addOfficialLogo(doc, 14, 9, 30, 20);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text(orgName, 50, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text('Documento informativo para entidades colaboradoras y administraciones públicas', 50, 24);
+
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14, 46, 182, 46, 3, 3, 'F');
+  doc.setDrawColor(219, 229, 220);
+  doc.roundedRect(14, 46, 182, 46, 3, 3);
   doc.setTextColor(23, 33, 27);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text(orgName, 50, 16);
-  doc.setFontSize(16);
-  doc.text('INFORME DE ATENCIÓN SOCIAL', 50, 27);
+  doc.setFontSize(19);
+  doc.text('INFORME DE ATENCIÓN SOCIAL', 24, 62);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Número de expediente: ${beneficiary.code || '-'}`, 50, 35);
-  doc.text(`Fecha de emisión: ${formatDate(generatedAt)}`, 138, 35);
-  doc.setDrawColor(219, 229, 220);
-  doc.line(14, 42, 196, 42);
-}
+  doc.text(`Número de expediente: ${beneficiary.code || '-'}`, 24, 75);
+  doc.text(`Fecha de emisión: ${formatDate(generatedAt)}`, 24, 82);
 
-function drawSocialSectionTitle(doc, title, y) {
-  y = ensureSocialSpace(doc, y, 12);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(36, 126, 80);
-  doc.text(title, 14, y);
-  doc.setTextColor(23, 33, 27);
+  doc.setDrawColor(198, 210, 202);
+  doc.roundedRect(158, 52, 28, 32, 2, 2);
+  if (photo?.dataUrl) {
+    doc.addImage(photo.dataUrl, photo.format || 'JPEG', 159, 53, 26, 30);
+  } else {
+    doc.setFillColor(239, 246, 241);
+    doc.roundedRect(159, 53, 26, 30, 2, 2, 'F');
+    doc.setTextColor(36, 126, 80);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text(reportInitials(beneficiary.full_name), 172, 70, { align: 'center' });
+  }
   doc.setFont('helvetica', 'normal');
-  return y + 5;
+  doc.setFontSize(7);
+  doc.setTextColor(96, 112, 100);
+  doc.text(photo?.dataUrl ? 'Fotografía del expediente' : 'Fotografía no disponible', 172, 89, { align: 'center' });
+  doc.setTextColor(23, 33, 27);
 }
 
-function drawWrappedText(doc, text, x, y, width, lineHeight) {
-  const lines = doc.splitTextToSize(String(text || '-'), width);
-  y = ensureSocialSpace(doc, y, lines.length * lineHeight + 4);
+function drawProfessionalSectionTitle(doc, number, title, y) {
+  y = ensureSocialSpace(doc, y, 16);
+  doc.setFillColor(36, 126, 80);
+  doc.roundedRect(14, y - 5, 9, 9, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(String(number), 18.5, y + 1, { align: 'center' });
+  doc.setTextColor(23, 33, 27);
+  doc.setFontSize(11);
+  doc.text(title, 28, y + 1);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(28, y + 4, 196, y + 4);
+  doc.setFont('helvetica', 'normal');
+  return y + 11;
+}
+
+function drawIdentificationCards(doc, beneficiary, family, familyStats, y) {
+  return drawInfoCards(doc, [
+    ['Nombre', beneficiary.full_name || '-'],
+    ['Documento', beneficiary.document_id || '-'],
+    ['Fecha de nacimiento', formatDate(beneficiary.birth_date)],
+    ['Dirección', [beneficiary.address_full || family?.address, beneficiary.postal_code].filter(Boolean).join(' - ') || '-'],
+    ['Teléfono', beneficiary.phone || '-'],
+    ['Unidad familiar', family ? `${family.family_code || '-'} - ${family.responsible_name || 'sin responsable registrado'}` : 'Sin unidad familiar vinculada'],
+    ['Adultos', String(familyStats.adults)],
+    ['Menores', String(familyStats.minors)],
+    ['Fecha de alta', formatDate(beneficiary.joined_at)],
+    ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']
+  ], y, { columns: 2 });
+}
+
+function drawInfoCards(doc, items, y, options = {}) {
+  const columns = options.columns || 2;
+  const gap = 4;
+  const cardWidth = (182 - gap * (columns - 1)) / columns;
+  const cardHeight = options.cardHeight || 18;
+  let currentY = y;
+  items.forEach((item, index) => {
+    if (index % columns === 0) currentY = ensureSocialSpace(doc, currentY, cardHeight + 4);
+    const column = index % columns;
+    const x = 14 + column * (cardWidth + gap);
+    const boxY = currentY;
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(219, 229, 220);
+    doc.roundedRect(x, boxY, cardWidth, cardHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.4);
+    doc.setTextColor(96, 112, 100);
+    doc.text(String(item[0]).toUpperCase(), x + 3, boxY + 5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(23, 33, 27);
+    const valueLines = doc.splitTextToSize(String(item[1] || '-'), cardWidth - 6).slice(0, 2);
+    doc.text(valueLines, x + 3, boxY + 11);
+    if (column === columns - 1 || index === items.length - 1) currentY += cardHeight + 4;
+  });
+  return currentY;
+}
+
+function drawNarrativeCard(doc, text, y, options = {}) {
+  const lines = doc.splitTextToSize(String(text || '-'), 168);
+  const height = Math.max(options.minHeight || 26, lines.length * 5 + 12);
+  y = ensureSocialSpace(doc, y, height + 2);
+  doc.setFillColor(options.accent ? 247 : 255, options.accent ? 251 : 255, options.accent ? 248 : 255);
+  doc.setDrawColor(options.accent ? 190 : 219, options.accent ? 215 : 229, options.accent ? 199 : 220);
+  doc.roundedRect(14, y, 182, height, 3, 3, 'FD');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(45, 56, 49);
-  doc.text(lines, x, y);
+  doc.text(lines, 21, y + 10);
   doc.setTextColor(23, 33, 27);
-  return y + lines.length * lineHeight;
+  return y + height + 2;
 }
 
-function drawEditableArea(doc, y, height) {
+function drawNarrativeBlock(doc, text, y, options = {}) {
+  const lines = doc.splitTextToSize(String(text || '-'), 174);
+  let index = 0;
+  let firstChunk = true;
+  while (index < lines.length) {
+    y = ensureSocialSpace(doc, y, 26);
+    const availableHeight = Math.max(24, 258 - y);
+    const maxLines = Math.max(1, Math.floor((availableHeight - 10) / 5));
+    const chunk = lines.slice(index, index + maxLines);
+    const minHeight = firstChunk ? options.minHeight || 24 : 18;
+    const height = Math.max(minHeight, chunk.length * 5 + 10);
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 228);
+    doc.roundedRect(14, y, 182, height, 2, 2, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(45, 56, 49);
+    doc.text(chunk, 18, y + 8);
+    doc.setTextColor(23, 33, 27);
+    y += height + 2;
+    index += chunk.length;
+    firstChunk = false;
+  }
+  return y;
+}
+
+function drawManualCompletionBlock(doc, y, height, helperText) {
   y = ensureSocialSpace(doc, y, height + 4);
+  doc.setFillColor(255, 255, 255);
   doc.setDrawColor(198, 210, 202);
   doc.setLineDashPattern([1.5, 1.5], 0);
-  doc.roundedRect(14, y, 182, height, 2, 2);
+  doc.roundedRect(14, y, 182, height, 2, 2, 'FD');
   doc.setLineDashPattern([], 0);
   doc.setFontSize(8.5);
   doc.setTextColor(112, 126, 116);
-  doc.text('Espacio para completar por la entidad emisora si procede.', 18, y + 7);
+  doc.text(doc.splitTextToSize(helperText, 170), 20, y + 8);
   doc.setTextColor(23, 33, 27);
-  return y + height;
+  return y + height + 2;
+}
+
+function drawInterventionTimelineTable(doc, timeline, y) {
+  y = ensureSocialSpace(doc, y, 36);
+  autoTable(doc, {
+    startY: y,
+    head: [['Fecha', 'Tipo de ayuda', 'Descripción', 'Responsable', 'Observaciones']],
+    body: timeline.length ? timeline.map((item) => [
+      formatDate(item.date),
+      item.type || '-',
+      item.description || '-',
+      item.responsible || '-',
+      item.observations || '-'
+    ]) : [['-', 'Sin intervenciones registradas', 'No constan actuaciones en el expediente consultado.', '-', '-']],
+    styles: { fontSize: 8, cellPadding: 2.1, overflow: 'linebreak', valign: 'top' },
+    headStyles: { fillColor: [36, 126, 80], textColor: [255, 255, 255] },
+    alternateRowStyles: { fillColor: [248, 250, 249] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 54 },
+      3: { cellWidth: 32 },
+      4: { cellWidth: 40 }
+    },
+    margin: { left: 14, right: 14 }
+  });
+  return (doc.lastAutoTable?.finalY || y) + 4;
+}
+
+function drawCurrentSituationCards(doc, beneficiary, timeline, latestAttention, y) {
+  return drawInfoCards(doc, [
+    ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo'],
+    ['Última atención', latestAttention ? `${formatDate(latestAttention.date)} - ${latestAttention.type}` : 'Sin atenciones registradas'],
+    ['Total intervenciones', String(timeline.length)],
+    ['Seguimiento', timeline.length > 1 ? 'Seguimiento con continuidad registrada' : timeline.length === 1 ? 'Seguimiento puntual registrado' : 'Sin seguimiento registrado'],
+    ['Observaciones relevantes', beneficiary.notes || 'Sin observaciones registradas']
+  ], y, { columns: 2, cardHeight: 22 });
+}
+
+function drawResponsibleSignature(doc, responsible, generatedAt, y) {
+  y = ensureSocialSpace(doc, y, 44);
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(219, 229, 220);
+  doc.roundedRect(14, y, 182, 38, 3, 3, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Nombre', 20, y + 8);
+  doc.text('Cargo', 20, y + 17);
+  doc.text('Fecha', 20, y + 26);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(23, 33, 27);
+  doc.text(responsible.name || 'Nombre y apellidos', 44, y + 8);
+  doc.text(responsible.position || 'Responsable de atención', 44, y + 17);
+  doc.text(formatDate(generatedAt), 44, y + 26);
+  doc.setDrawColor(150, 164, 154);
+  doc.line(120, y + 25, 184, y + 25);
+  doc.setFontSize(8);
+  doc.setTextColor(96, 112, 100);
+  doc.text('Firma', 146, y + 31, { align: 'center' });
+  doc.setTextColor(23, 33, 27);
 }
 
 function ensureSocialSpace(doc, y, neededHeight) {
@@ -607,7 +731,7 @@ function ensureSocialSpace(doc, y, neededHeight) {
 }
 
 function drawSocialAttentionFooter(doc) {
-  const text = 'El presente informe ha sido elaborado por la Asociación Pan y Esperanza con fines exclusivamente informativos y de seguimiento social, a partir de la información obrante en el expediente de la persona beneficiaria.';
+  const text = 'Este informe ha sido elaborado por la Asociación Pan y Esperanza con fines exclusivamente informativos. La información contenida procede del expediente interno de la entidad y refleja las actuaciones realizadas hasta la fecha de emisión.';
   doc.setDrawColor(219, 229, 220);
   doc.line(14, 270, 196, 270);
   doc.setFontSize(7.5);
@@ -632,21 +756,20 @@ function buildSocialAttentionTimeline(deliveries = [], history = []) {
   const deliveryRows = deliveries.map((delivery) => ({
     date: delivery.delivered_at || delivery.reception_at || delivery.created_at,
     type: delivery.help_type || 'Ayuda entregada',
-    description: [
-      delivery.inventory_item_name || delivery.product || '',
-      delivery.notes || ''
-    ].filter(Boolean).join('. ') || 'Atención registrada en el expediente.',
-    responsible: delivery.responsible || delivery.created_by || ''
+    description: delivery.inventory_item_name || delivery.product || 'Atención registrada por la entidad.',
+    responsible: delivery.responsible || delivery.created_by || '',
+    observations: delivery.notes || ''
   }));
   const historyRows = history.map((item) => ({
     date: item.date || item.created_at,
     type: item.entry_type || 'Seguimiento',
     description: item.notes || 'Anotación de seguimiento registrada.',
-    responsible: item.user_name || item.created_by || item.user || ''
+    responsible: item.user_name || item.created_by || item.user || '',
+    observations: ''
   }));
   return [...deliveryRows, ...historyRows]
     .filter((item) => item.date || item.description)
-    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
 }
 
 function getInitialSocialObservation(history = []) {
@@ -657,27 +780,72 @@ function getInitialSocialObservation(history = []) {
   }) || null;
 }
 
-function buildSocialInterventionSummary(beneficiary, family, timeline) {
+function buildFamilyContextText(beneficiary, family, familyMembers = [], familyStats) {
+  const parts = [];
+  if (family) {
+    parts.push(`La persona beneficiaria consta vinculada a la unidad familiar ${family.family_code || 'sin código registrado'}.`);
+    if (family.responsible_name) parts.push(`La persona responsable familiar registrada es ${family.responsible_name}.`);
+    if (family.status) parts.push(`La situación familiar registrada es "${family.status}".`);
+    if (family.notes) parts.push(`Observación familiar registrada: ${family.notes}`);
+  } else {
+    parts.push('No consta unidad familiar vinculada en el expediente.');
+  }
+  if (familyMembers.length) {
+    const members = familyMembers
+      .map((member) => `${member.full_name || 'Miembro sin nombre'}${member.family_relationship ? ` (${member.family_relationship})` : ''}`)
+      .join('; ');
+    parts.push(`Composición registrada: ${members}.`);
+  } else {
+    parts.push(`Composición registrada: ${familyStats.adults} adulto${familyStats.adults === 1 ? '' : 's'} y ${familyStats.minors} menor${familyStats.minors === 1 ? '' : 'es'}.`);
+  }
+  if (beneficiary.situation) parts.push(`Situación individual registrada: "${beneficiary.situation}".`);
+  return parts.join(' ');
+}
+
+function buildAttentionReasonText(beneficiary, history = []) {
+  const initialObservation = getInitialSocialObservation(history);
+  if (initialObservation?.notes) return initialObservation.notes;
+  const parts = [];
+  if (beneficiary.requested_help) parts.push(`El expediente registra una demanda de atención vinculada a ${lowerFirst(beneficiary.requested_help)}.`);
+  if (beneficiary.situation) parts.push(`La situación registrada en el expediente es "${beneficiary.situation}".`);
+  if (beneficiary.notes) parts.push(`Como observación relevante consta: ${beneficiary.notes}`);
+  return parts.join(' ');
+}
+
+function buildSocialInterventionSummary(beneficiary, timeline) {
   const parts = [
     `${beneficiary.full_name || 'La persona beneficiaria'} figura en el expediente de la Asociación Pan y Esperanza${beneficiary.joined_at ? ` desde el ${formatDate(beneficiary.joined_at)}` : ''}.`
   ];
-  if (beneficiary.situation) parts.push(`La situación registrada en el expediente es "${beneficiary.situation}".`);
-  if (beneficiary.requested_help) parts.push(`La ayuda solicitada registrada es "${beneficiary.requested_help}".`);
-  if (family?.family_code) parts.push(`Consta vinculación con la unidad familiar ${family.family_code}.`);
   if (timeline.length) {
     const helpTypes = uniqueReportValues(timeline.map((item) => item.type)).slice(0, 3).join(', ');
-    parts.push(`El expediente recoge ${timeline.length} intervención${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'}${helpTypes ? `, entre ellas: ${helpTypes}` : ''}.`);
+    parts.push(`Desde entonces constan ${timeline.length} intervención${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'}${helpTypes ? ` relacionadas con: ${helpTypes}` : ''}.`);
+    parts.push('La frecuencia de atención se determina a partir de las actuaciones registradas por la entidad en el expediente.');
   } else {
     parts.push('No constan intervenciones registradas en el historial consultado.');
   }
   return parts.join(' ');
 }
 
-function buildSocialAttentionConclusion(beneficiary, timeline) {
+function buildSocialAttentionConclusion() {
+  return 'La información contenida en este informe refleja la atención prestada por la Asociación Pan y Esperanza en el marco de su actividad social. El presente documento tiene carácter informativo y resume las actuaciones realizadas con la persona beneficiaria hasta la fecha de emisión.';
+}
+
+function buildEntityAssessmentText(beneficiary, timeline) {
+  const parts = [];
   if (beneficiary.is_active) {
-    return `De acuerdo con la información disponible en el expediente, ${beneficiary.full_name || 'la persona beneficiaria'} continúa en seguimiento por parte de la Asociación Pan y Esperanza. Este informe tiene carácter informativo y no constituye diagnóstico profesional.`;
+    parts.push('Con la información obrante en el expediente, la Asociación considera conveniente mantener el seguimiento de la persona beneficiaria.');
+  } else {
+    parts.push('Con la información obrante en el expediente, la persona beneficiaria no consta actualmente como expediente activo.');
   }
-  return `De acuerdo con la información disponible en el expediente, ${beneficiary.full_name || 'la persona beneficiaria'} no consta actualmente como expediente activo. Este informe tiene carácter informativo y no constituye diagnóstico profesional.`;
+  if (timeline.length) {
+    parts.push(`La valoración institucional se basa en las ${timeline.length} actuación${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'} en el sistema de la entidad.`);
+  }
+  parts.push('Esta valoración tiene carácter institucional e informativo y no constituye diagnóstico profesional ni valoración clínica.');
+  return parts.join(' ');
+}
+
+function getLatestSocialAttention(timeline = []) {
+  return [...timeline].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0] || null;
 }
 
 function getFamilyStats(beneficiary, familyMembers = []) {
@@ -702,6 +870,62 @@ function ageFromDate(value) {
 
 function currentUserNameForReport(user) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.email || '';
+}
+
+function reportResponsible(user) {
+  const name = currentUserNameForReport(user);
+  const rawPosition = String(user?.position || user?.role || 'Responsable de atención').trim();
+  const normalized = normalizeTextForReport(rawPosition);
+  const position = normalized.includes('trabajador social') || normalized.includes('trabajadora social')
+    ? 'Responsable de atención'
+    : rawPosition;
+  return { name, position };
+}
+
+async function getBeneficiaryReportPhoto(beneficiary) {
+  const source = await resolveBeneficiaryPhotoUrl(beneficiary).catch(() => null);
+  if (!source) return null;
+  return prepareReportImage(source, 360, 420, 0.78).catch(() => null);
+}
+
+function prepareReportImage(source, maxWidth, maxHeight, quality = 0.78) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const ratio = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+        const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+        const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve({ dataUrl: canvas.toDataURL('image/jpeg', quality), format: 'JPEG' });
+      } catch {
+        resolve(null);
+      }
+    };
+    image.onerror = () => resolve(null);
+    image.src = source;
+  });
+}
+
+function reportInitials(name = '') {
+  return String(name || 'PE')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'PE';
+}
+
+function lowerFirst(value = '') {
+  const text = String(value || '').trim();
+  return text ? `${text[0].toLowerCase()}${text.slice(1)}` : '';
 }
 
 function uniqueReportValues(values = []) {
