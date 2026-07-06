@@ -19,18 +19,18 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   doc.text('Resumen del expediente - Pan y Esperanza', 52, 20);
   doc.setFontSize(11);
   const fields = [
-    ['Codigo', beneficiary.code],
+    ['Código', beneficiary.code],
     ['Nombre', beneficiary.full_name],
     ['DNI/NIE / NIE O PASAPORTE', beneficiary.document_id || '-'],
-    ['Direccion completa', beneficiary.address_full || '-'],
-    ['Codigo postal', beneficiary.postal_code || '-'],
-    ['Telefono', beneficiary.phone || '-'],
+    ['Dirección completa', beneficiary.address_full || '-'],
+    ['Código postal', beneficiary.postal_code || '-'],
+    ['Teléfono', beneficiary.phone || '-'],
     ['Unidad familiar', `${beneficiary.family_members || 0} miembros, ${beneficiary.minors_count || 0} menores`],
-    ['Situacion', beneficiary.situation],
+    ['Situación', beneficiary.situation],
     ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo'],
     ['Ayuda solicitada', beneficiary.requested_help || '-'],
     ['Fecha alta', formatDate(beneficiary.joined_at)],
-    ['Ultima ayuda', formatDate(beneficiary.last_help_at)],
+    ['Última ayuda', formatDate(beneficiary.last_help_at)],
     ['Observaciones', beneficiary.notes || '-']
   ];
   autoTable(doc, { startY: 34, body: fields, styles: { fontSize: 9 }, columnStyles: { 0: { fontStyle: 'bold' } } });
@@ -149,7 +149,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
     startY: 63,
     body: [
       ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
-      ['Codigo beneficiario', beneficiary?.code || '-'],
+      ['Código beneficiario', beneficiary?.code || '-'],
       ['Documento identificativo', beneficiary?.document_id || '-']
     ],
     styles: { fontSize: 9 },
@@ -329,9 +329,9 @@ export async function exportReportPdf(data) {
       ['Entregas registradas', activeDeliveries.length],
       ['Productos inventario', data.inventory_items.length],
       ['Donaciones', data.donations?.length || 0],
-      ['Ingresos tesoreria', formatMoney(treasuryIncome)],
-      ['Gastos tesoreria', formatMoney(treasuryExpenses)],
-      ['Saldo tesoreria', formatMoney(treasuryIncome - treasuryExpenses)],
+      ['Ingresos tesorería', formatMoney(treasuryIncome)],
+      ['Gastos tesorería', formatMoney(treasuryExpenses)],
+      ['Saldo tesorería', formatMoney(treasuryIncome - treasuryExpenses)],
       ['Voluntarios', data.volunteers.length]
     ],
     headStyles: { fillColor: [36, 126, 80] }
@@ -343,18 +343,18 @@ export async function printDonationCertificatePdf(donation, organization = {}) {
   const doc = new jsPDF();
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(16);
-  doc.text('Certificado de donacion', 52, 20);
+  doc.text('Certificado de donación', 52, 20);
   autoTable(doc, {
     startY: 36,
     body: [
       ['Entidad', organization.name || 'Pan y Esperanza'],
       ['CIF', organization.cif || '-'],
-      ['Direccion', organization.address || '-'],
+      ['Dirección', organization.address || '-'],
       ['Donante', donation.donor || '-'],
       ['Tipo donante', donation.donor_kind || '-'],
-      ['Tipo donacion', donation.donation_type || '-'],
+      ['Tipo donación', donation.donation_type || '-'],
       ['Fecha', formatDate(donation.donated_at)],
-      ['Valor estimado', `${donation.estimated_value || 0} EUR`],
+      ['Valor estimado', formatMoney(donation.estimated_value)],
       ['Observaciones', donation.notes || '-']
     ],
     styles: { fontSize: 9 },
@@ -367,7 +367,7 @@ export async function exportTreasuryPdf(data, indicators) {
   const doc = new jsPDF();
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(16);
-  doc.text('Informe de tesoreria - Pan y Esperanza', 52, 20);
+  doc.text('Informe de tesorería - Pan y Esperanza', 52, 20);
   autoTable(doc, {
     startY: 34,
     head: [['Indicador', 'Importe']],
@@ -396,7 +396,7 @@ export async function exportTreasuryPdf(data, indicators) {
   });
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 10,
-    head: [['Persona', 'Fecha', 'Concepto', 'Importe', 'Estado', 'Devolucion']],
+    head: [['Persona', 'Fecha', 'Concepto', 'Importe', 'Estado', 'Devolución']],
     body: (data.treasury_loans || []).map((item) => [item.person, formatDate(item.loan_at), item.concept, formatMoney(item.amount), item.status, formatDate(item.returned_at)]),
     headStyles: { fillColor: [36, 126, 80] },
     styles: { fontSize: 8 }
@@ -418,7 +418,7 @@ export function exportTreasuryExcel(data, indicators) {
     },
     { name: 'Ingresos', rows: data.treasury_incomes || [] },
     { name: 'Gastos', rows: data.treasury_expenses || [] },
-    { name: 'Prestamos', rows: data.treasury_loans || [] },
+    { name: 'Préstamos', rows: data.treasury_loans || [] },
     { name: 'Caja y bancos', rows: data.treasury_accounts || [] }
   ]);
 }
@@ -1161,5 +1161,5 @@ function groupTotals(deliveries, field) {
 }
 
 function formatMoney(value) {
-  return `${Number(value || 0).toFixed(2)} EUR`;
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
 }

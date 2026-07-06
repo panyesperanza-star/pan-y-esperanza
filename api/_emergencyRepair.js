@@ -56,21 +56,21 @@ export function requireRepairSecret(request, requestId, logPrefix) {
       payload: {
         ok: false,
         code: 'REPAIR_SECRET_NOT_CONFIGURED',
-        error: 'Modo reparacion no configurado. Anada EMERGENCY_REPAIR_SECRET en Vercel.',
+        error: 'Modo reparación no configurado. Añada EMERGENCY_REPAIR_SECRET en Vercel.',
         details: diagnostics
       }
     };
   }
 
   if (!received || received !== configured) {
-    console.error(`${logPrefix} secreto de reparacion invalido`, { requestId, ...diagnostics });
+    console.error(`${logPrefix} secreto de reparación inválido`, { requestId, ...diagnostics });
     return {
       ok: false,
       status: 401,
       payload: {
         ok: false,
         code: 'INVALID_REPAIR_SECRET',
-        error: 'Secreto de reparacion invalido.',
+        error: 'Secreto de reparación inválido.',
         details: diagnostics
       }
     };
@@ -103,7 +103,7 @@ export function getEmergencyAdmin(requestId, logPrefix) {
       payload: {
         ok: false,
         code: 'SUPABASE_SERVICE_ROLE_INVALID',
-        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato valido.',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido.',
         details: diagnostics
       }
     };

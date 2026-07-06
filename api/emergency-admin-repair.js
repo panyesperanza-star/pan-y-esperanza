@@ -16,10 +16,10 @@ export default async function handler(request, response) {
   console.info(`${logPrefix} inicio`, { requestId, method: request.method });
 
   if (request.method !== 'POST' && request.method !== 'GET') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
-  // Soporte GET temporal para ejecutar la reparacion desde navegador:
+  // Soporte GET temporal para ejecutar la reparación desde navegador:
   // /api/emergency-admin-repair?secret=VALOR
   // Eliminar este soporte cuando Elizabeth quede reparada.
   const secretRequest = request.method === 'GET' ? withQuerySecretHeader(request) : request;

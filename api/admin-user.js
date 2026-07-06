@@ -5,7 +5,7 @@ export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (request.method !== 'POST') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -20,7 +20,7 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_ADMIN_NOT_CONFIGURED',
         step: 'server_config_missing',
-        error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
+        error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
         details: serverDiagnostics
       });
     }
@@ -31,7 +31,7 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_SERVICE_ROLE_INVALID',
         step: 'server_config_service_role_format',
-        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato valido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
         details: serverDiagnostics
       });
     }
@@ -108,14 +108,14 @@ export default async function handler(request, response) {
     if (action === 'reset-password') {
       const password = String(body.password || '').trim();
       if (password.length < 8) {
-        return sendJson(response, 400, { ok: false, code: 'WEAK_PASSWORD', error: 'La contrasena debe tener al menos 8 caracteres.' });
+        return sendJson(response, 400, { ok: false, code: 'WEAK_PASSWORD', error: 'La contraseña debe tener al menos 8 caracteres.' });
       }
       if (!existing.auth_user_id) {
         return sendJson(response, 400, { ok: false, code: 'NO_AUTH_USER', error: 'Este usuario no esta vinculado a Supabase Auth.' });
       }
       const { error: authError } = await admin.auth.admin.updateUserById(existing.auth_user_id, { password });
       if (authError) throw authError;
-      await writeAudit(admin, requester.profile, `Restablecio contrasena de usuario: ${existing.email}`);
+      await writeAudit(admin, requester.profile, `Restableció contraseña de usuario: ${existing.email}`);
       return sendJson(response, 200, { ok: true, message: 'Contrasena restablecida correctamente.' });
     }
 
@@ -132,8 +132,8 @@ export default async function handler(request, response) {
 
     return sendJson(response, 400, { ok: false, code: 'UNKNOWN_ACTION', error: 'Accion de usuario no reconocida.' });
   } catch (error) {
-    console.error('[admin-user] Excepcion', { requestId, message: error.message, stack: error.stack });
-    return sendJson(response, 500, { ok: false, code: 'ADMIN_USER_FAILED', error: error.message || 'No se pudo completar la operacion de usuarios.' });
+    console.error('[admin-user] Excepción', { requestId, message: error.message, stack: error.stack });
+    return sendJson(response, 500, { ok: false, code: 'ADMIN_USER_FAILED', error: error.message || 'No se pudo completar la operación de usuarios.' });
   }
 }
 

@@ -26,10 +26,10 @@ export function Login({ onAccess }) {
         body: JSON.stringify({ email, logoUrl, origin: window.location.origin })
       });
       const payload = await safeJson(response);
-      if (!response.ok) throw new Error(payload.error || 'No se pudo solicitar la recuperacion.');
+      if (!response.ok) throw new Error(payload.error || 'No se pudo solicitar la recuperación.');
       setMessage(payload.message || 'Revise su correo para continuar.');
     } catch (err) {
-      setError(err.message || 'No se pudo solicitar la recuperacion.');
+      setError(err.message || 'No se pudo solicitar la recuperación.');
     }
   }
 
@@ -44,13 +44,13 @@ export function Login({ onAccess }) {
         body: JSON.stringify({ token: resetToken, password: newPassword })
       });
       const payload = await safeJson(response);
-      if (!response.ok) throw new Error(payload.error || 'No se pudo actualizar la contrasena.');
-      setMessage(payload.message || 'Contrasena actualizada correctamente.');
+      if (!response.ok) throw new Error(payload.error || 'No se pudo actualizar la contraseña.');
+      setMessage(payload.message || 'Contraseña actualizada correctamente.');
       window.history.replaceState({}, '', window.location.pathname);
       setPassword('');
       setMode('login');
     } catch (err) {
-      setError(err.message || 'No se pudo actualizar la contrasena.');
+      setError(err.message || 'No se pudo actualizar la contraseña.');
     }
   }
 
@@ -61,9 +61,9 @@ export function Login({ onAccess }) {
           <div>
             <img src={logo} alt="Pan y Esperanza" className="h-24 w-auto object-contain" />
             <h2 className="mt-8 text-3xl font-bold">Pan y Esperanza</h2>
-            <p className="mt-3 max-w-md text-brand-50">Gestion integral de beneficiarios, entregas, inventario y justificantes.</p>
+            <p className="mt-3 max-w-md text-brand-50">Gestión integral de beneficiarios, entregas, inventario y justificantes.</p>
           </div>
-          <p className="mt-10 text-sm text-brand-50">Logo oficial integrado sin deformar y preparado para impresion.</p>
+          <p className="mt-10 text-sm text-brand-50">Logo oficial integrado sin deformar y preparado para impresión.</p>
         </div>
         {mode === 'login' && <form className="p-8 sm:p-10" onSubmit={async (event) => {
           event.preventDefault();
@@ -72,50 +72,50 @@ export function Login({ onAccess }) {
           try {
             await onAccess({ email, password });
           } catch (err) {
-            setError(err.message || 'No se pudo iniciar sesion.');
+            setError(err.message || 'No se pudo iniciar sesión.');
           }
         }}>
           <BrandLogo className="h-16 w-auto" />
           <h3 className="mt-8 text-2xl font-bold text-ink">Acceso</h3>
-          <p className="mt-2 text-sm text-slate-600">Inicia sesion con email y contrasena.</p>
+          <p className="mt-2 text-sm text-slate-600">Inicia sesión con email y contraseña.</p>
           <div className="mt-6 space-y-4">
             <FormField label="Email">
               <input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </FormField>
-            <FormField label="Contrasena">
+            <FormField label="Contraseña">
               <input className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
             <Button className="w-full" type="submit">Entrar</Button>
-            <button type="button" className="w-full text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setError(''); setMessage(''); setMode('forgot'); }}>Olvide mi contrasena</button>
+            <button type="button" className="w-full text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setError(''); setMessage(''); setMode('forgot'); }}>Olvidé mi contraseña</button>
           </div>
         </form>}
         {mode === 'forgot' && <form className="p-8 sm:p-10" onSubmit={requestReset}>
           <BrandLogo className="h-16 w-auto" />
-          <h3 className="mt-8 text-2xl font-bold text-ink">Recuperar contrasena</h3>
-          <p className="mt-2 text-sm text-slate-600">Indica tu email y enviaremos un enlace seguro para establecer una nueva contrasena.</p>
+          <h3 className="mt-8 text-2xl font-bold text-ink">Recuperar contraseña</h3>
+          <p className="mt-2 text-sm text-slate-600">Indica tu email y enviaremos un enlace seguro para establecer una nueva contraseña.</p>
           <div className="mt-6 space-y-4">
             <FormField label="Email">
               <input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-            <Button className="w-full" type="submit">Enviar enlace de recuperacion</Button>
+            <Button className="w-full" type="submit">Enviar enlace de recuperación</Button>
             <button type="button" className="w-full text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setError(''); setMessage(''); setMode('login'); }}>Volver al acceso</button>
           </div>
         </form>}
         {mode === 'reset' && <form className="p-8 sm:p-10" onSubmit={resetPassword}>
           <BrandLogo className="h-16 w-auto" />
-          <h3 className="mt-8 text-2xl font-bold text-ink">Nueva contrasena</h3>
-          <p className="mt-2 text-sm text-slate-600">Introduce una nueva contrasena para recuperar el acceso.</p>
+          <h3 className="mt-8 text-2xl font-bold text-ink">Nueva contraseña</h3>
+          <p className="mt-2 text-sm text-slate-600">Introduce una nueva contraseña para recuperar el acceso.</p>
           <div className="mt-6 space-y-4">
-            <FormField label="Nueva contrasena">
+            <FormField label="Nueva contraseña">
               <input className={inputClass} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-            <Button className="w-full" type="submit">Guardar nueva contrasena</Button>
+            <Button className="w-full" type="submit">Guardar nueva contraseña</Button>
           </div>
         </form>}
       </section>
@@ -128,6 +128,6 @@ async function safeJson(response) {
   try {
     return text ? JSON.parse(text) : {};
   } catch {
-    return { error: 'Respuesta no valida del servidor.' };
+    return { error: 'Respuesta no válida del servidor.' };
   }
 }

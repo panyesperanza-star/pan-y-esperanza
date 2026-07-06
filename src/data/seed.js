@@ -104,7 +104,7 @@ export const seedData = {
   inventory_items: [
     { id: crypto.randomUUID(), name: 'Arroz', category: 'Alimentos', lot: 'AR-2026-01', expires_at: '2026-12-31', donor: 'Banco de Alimentos', location: 'Almacen A', unit: 'kg', stock: 50, low_stock_threshold: 20, notes: '' },
     { id: crypto.randomUUID(), name: 'Leche', category: 'Alimentos', lot: 'LE-2026-06', expires_at: '2026-07-15', donor: 'Supermercado Solidario', location: 'Camara 1', unit: 'litros', stock: 18, low_stock_threshold: 25, notes: 'Reponer esta semana.' },
-    { id: crypto.randomUUID(), name: 'Gel de ducha', category: 'Higiene', lot: 'HG-2026-02', expires_at: '', donor: 'Donacion particular', location: 'Estanteria H', unit: 'unidades', stock: 40, low_stock_threshold: 15, notes: '' }
+    { id: crypto.randomUUID(), name: 'Gel de ducha', category: 'Higiene', lot: 'HG-2026-02', expires_at: '', donor: 'Donación particular', location: 'Estantería H', unit: 'unidades', stock: 40, low_stock_threshold: 15, notes: '' }
   ],
   inventory_movements: [],
   donations: [
@@ -123,7 +123,7 @@ export const seedData = {
   deletion_requests: [],
   accounting_audit_trail: [],
   treasury_incomes: [
-    { id: crypto.randomUUID(), income_at: todayISO(), category: 'Donaciones', concept: 'Donacion economica inicial', amount: 600, donor: 'Empresa Solidaria SL', payment_method: 'Transferencia', notes: 'Ingreso de ejemplo para tesoreria.', document_name: '' }
+    { id: crypto.randomUUID(), income_at: todayISO(), category: 'Donaciones', concept: 'Donación económica inicial', amount: 600, donor: 'Empresa Solidaria SL', payment_method: 'Transferencia', notes: 'Ingreso de ejemplo para tesorería.', document_name: '' }
   ],
   treasury_expenses: [
     { id: crypto.randomUUID(), expense_at: todayISO(), category: 'Alimentacion', concept: 'Compra de alimentos frescos', amount: 180, supplier: 'Mercado local', responsible: 'Elizabeth', invoice_name: '', notes: 'Gasto de ejemplo para control de caja.' }

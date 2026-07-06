@@ -5,7 +5,7 @@ export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (request.method !== 'POST') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -19,10 +19,10 @@ export default async function handler(request, response) {
     const password = String(body.password || '').trim();
 
     if (!url || !serviceRoleKey) {
-      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
     }
     if (!token || password.length < 8) {
-      return sendJson(response, 400, { ok: false, code: 'INVALID_RESET', error: 'El enlace no es valido o la contrasena tiene menos de 8 caracteres.' });
+      return sendJson(response, 400, { ok: false, code: 'INVALID_RESET', error: 'El enlace no es válido o la contraseña tiene menos de 8 caracteres.' });
     }
 
     const admin = createClient(url, serviceRoleKey, {
@@ -38,11 +38,11 @@ export default async function handler(request, response) {
       .single();
 
     if (tokenError || !resetToken) {
-      return sendJson(response, 400, { ok: false, code: 'INVALID_OR_EXPIRED_TOKEN', error: 'El enlace de recuperacion no es valido o ha caducado.' });
+      return sendJson(response, 400, { ok: false, code: 'INVALID_OR_EXPIRED_TOKEN', error: 'El enlace de recuperación no es válido o ha caducado.' });
     }
 
     if (!resetToken.auth_user_id) {
-      return sendJson(response, 400, { ok: false, code: 'NO_AUTH_USER', error: 'El usuario no esta vinculado a Supabase Auth.' });
+      return sendJson(response, 400, { ok: false, code: 'NO_AUTH_USER', error: 'El usuario no está vinculado a Supabase Auth.' });
     }
 
     const { error: authError } = await admin.auth.admin.updateUserById(resetToken.auth_user_id, { password });
@@ -52,15 +52,15 @@ export default async function handler(request, response) {
     await admin.from('audit_logs').insert({
       user_name: resetToken.email,
       user_email: resetToken.email,
-      action: 'Restablecio su contrasena',
+      action: 'Restableció su contraseña',
       happened_at: new Date().toISOString()
     });
 
-    console.info('[reset-password] Contrasena actualizada', { requestId, email: resetToken.email });
-    return sendJson(response, 200, { ok: true, message: 'Contrasena actualizada correctamente. Ya puede iniciar sesion.' });
+    console.info('[reset-password] Contraseña actualizada', { requestId, email: resetToken.email });
+    return sendJson(response, 200, { ok: true, message: 'Contraseña actualizada correctamente. Ya puede iniciar sesión.' });
   } catch (error) {
-    console.error('[reset-password] Excepcion', { requestId, message: error.message, stack: error.stack });
-    return sendJson(response, 500, { ok: false, code: 'PASSWORD_RESET_FAILED', error: error.message || 'No se pudo actualizar la contrasena.' });
+    console.error('[reset-password] Excepción', { requestId, message: error.message, stack: error.stack });
+    return sendJson(response, 500, { ok: false, code: 'PASSWORD_RESET_FAILED', error: error.message || 'No se pudo actualizar la contraseña.' });
   }
 }
 

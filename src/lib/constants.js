@@ -1,4 +1,4 @@
-export const HELP_TYPES = ['Alimentos', 'Higiene', 'Ropa', 'Ayuda economica', 'Otra ayuda'];
+export const HELP_TYPES = ['Alimentos', 'Higiene', 'Ropa', 'Ayuda económica', 'Otra ayuda'];
 export const BENEFICIARY_SITUATIONS = ['Activa', 'Urgente', 'Prioritario', 'Seguimiento', 'Vulnerable', 'Inactiva'];
 export const MODULES = [
   { id: 'dashboard', label: 'Centro de operaciones', path: '/dashboard' },
@@ -13,7 +13,7 @@ export const MODULES = [
   { id: 'volunteers', label: 'Voluntarios', path: '/volunteers' },
   { id: 'reports', label: 'Informes', path: '/reports' },
   { id: 'users', label: 'Usuarios', path: '/users' },
-  { id: 'settings', label: 'Configuracion', path: '/settings' },
+  { id: 'settings', label: 'Configuración', path: '/settings' },
   { id: 'backup', label: 'Copias', path: '/backup' },
   { id: 'provider', label: 'Panel del proveedor', path: '/provider' }
 ];
@@ -44,7 +44,7 @@ export const PERMISSION_MODULES = [
   { id: 'volunteers', label: 'Voluntarios' },
   { id: 'reports', label: 'Informes' },
   { id: 'users', label: 'Usuarios' },
-  { id: 'settings', label: 'Configuracion' },
+  { id: 'settings', label: 'Configuración' },
   { id: 'backup', label: 'Copias de seguridad' }
 ];
 

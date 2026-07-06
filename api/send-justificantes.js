@@ -11,7 +11,7 @@ export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (request.method !== 'POST') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -40,7 +40,7 @@ export default async function handler(request, response) {
 
     if (!apiKey || !from) {
       console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
-      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.' });
+      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.' });
     }
 
     const auth = await requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId });
@@ -102,18 +102,18 @@ export default async function handler(request, response) {
 
     const invalidAttachment = attachments.find((attachment) => !attachment?.filename || !attachment?.content);
     if (invalidAttachment) {
-      console.error('[send-justificantes] Adjunto invalido', { requestId, invalidAttachment: summarizeAttachment(invalidAttachment) });
-      return sendJson(response, 400, { ok: false, code: 'INVALID_ATTACHMENT', error: 'Uno de los adjuntos no es valido.' });
+      console.error('[send-justificantes] Adjunto inválido', { requestId, invalidAttachment: summarizeAttachment(invalidAttachment) });
+      return sendJson(response, 400, { ok: false, code: 'INVALID_ATTACHMENT', error: 'Uno de los adjuntos no es válido.' });
     }
 
     const attachmentValidation = attachments.map(validatePdfAttachment);
     const invalidPdf = attachmentValidation.find((item) => !item.ok);
     if (invalidPdf) {
-      console.error('[send-justificantes] PDF invalido antes de Resend', { requestId, invalidPdf, attachmentValidation });
+      console.error('[send-justificantes] PDF inválido antes de Resend', { requestId, invalidPdf, attachmentValidation });
       return sendJson(response, 400, {
         ok: false,
         code: 'INVALID_PDF_ATTACHMENT',
-        error: `El adjunto ${invalidPdf.filename || 'sin nombre'} no es un PDF valido: ${invalidPdf.reason}.`
+        error: `El adjunto ${invalidPdf.filename || 'sin nombre'} no es un PDF válido: ${invalidPdf.reason}.`
       });
     }
 
@@ -251,7 +251,7 @@ export default async function handler(request, response) {
       attachments: responseAttachments
     });
   } catch (error) {
-    console.error('[send-justificantes] Excepcion', { requestId, message: error.message, stack: error.stack });
+    console.error('[send-justificantes] Excepción', { requestId, message: error.message, stack: error.stack });
     return sendJson(response, 500, { ok: false, code: 'MAIL_SEND_FAILED', error: error.message || 'Error al enviar el correo.', attachments: responseAttachments });
   }
 }
@@ -540,7 +540,7 @@ function createServerReceiptPdf(entry = {}, organization = {}, logo = null) {
     startY: 53,
     body: [
       ['Beneficiario', beneficiary.full_name || delivery.beneficiary_name || '-'],
-      ['Codigo beneficiario', beneficiary.code || '-'],
+      ['Código beneficiario', beneficiary.code || '-'],
       ['Documento identificativo', beneficiary.document_id || '-']
     ],
     styles: { fontSize: 9 },
@@ -587,7 +587,7 @@ function createServerReceiptPdf(entry = {}, organization = {}, logo = null) {
   doc.setFontSize(8);
   doc.setTextColor(96, 112, 100);
   doc.text('Este documento acredita la entrega de ayuda social realizada por Pan y Esperanza.', 14, 279);
-  doc.text('Documento generado electronicamente por el Sistema de Gestion Pan y Esperanza.', 14, 285);
+  doc.text('Documento generado electrónicamente por el Sistema de Gestión Pan y Esperanza.', 14, 285);
   doc.setTextColor(23, 33, 27);
 
   return doc;
@@ -720,7 +720,7 @@ function parseImageDataUrl(dataUrl, label) {
   if (!isValidBase64(normalized)) {
     console.warn('[send-justificantes] Imagen Base64 omitida', {
       image: label,
-      reason: 'Base64 invalido',
+      reason: 'Base64 inválido',
       characters: normalized.length
     });
     return null;
@@ -811,12 +811,12 @@ function validatePngBuffer(bytes, label) {
     }
     const type = bytes.subarray(typeStart, dataStart).toString('ascii');
     if (!/^[A-Za-z]{4}$/.test(type)) {
-      return { ok: false, format: 'PNG', reason: `${label}: tipo de chunk PNG invalido`, pngHeaderValid: true };
+      return { ok: false, format: 'PNG', reason: `${label}: tipo de chunk PNG inválido`, pngHeaderValid: true };
     }
     const expectedCrc = bytes.readUInt32BE(dataEnd);
     const actualCrc = crc32(bytes.subarray(typeStart, dataEnd));
     if (expectedCrc !== actualCrc) {
-      return { ok: false, format: 'PNG', reason: `${label}: CRC invalido en chunk ${type}`, pngHeaderValid: true };
+      return { ok: false, format: 'PNG', reason: `${label}: CRC inválido en chunk ${type}`, pngHeaderValid: true };
     }
     if (type === 'IHDR') {
       if (sawHeader || offset !== 8 || length !== 13 || bytes.readUInt32BE(dataStart) === 0 || bytes.readUInt32BE(dataStart + 4) === 0) {
@@ -1002,7 +1002,7 @@ function isMissingEmailLogColumn(error) {
 async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId }) {
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[send-justificantes] Supabase admin no configurado', { requestId, hasSupabaseUrl: Boolean(supabaseUrl), hasServiceRoleKey: Boolean(serviceRoleKey) });
-    return { ok: false, status: 503, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.' };
+    return { ok: false, status: 503, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.' };
   }
 
   const token = getBearerToken(request);
@@ -1015,7 +1015,7 @@ async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, req
   });
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData?.user?.email) {
-    console.error('[send-justificantes] Token invalido', { requestId, error: authError?.message });
+    console.error('[send-justificantes] Token inválido', { requestId, error: authError?.message });
     return { ok: false, status: 401, code: 'INVALID_SESSION', error: 'Sesion no valida o caducada.' };
   }
 

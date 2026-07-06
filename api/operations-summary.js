@@ -5,7 +5,7 @@ export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (request.method !== 'GET') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -18,7 +18,7 @@ export default async function handler(request, response) {
       return sendJson(response, 503, {
         ok: false,
         code: 'SUPABASE_ADMIN_NOT_CONFIGURED',
-        error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
+        error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
         details: serverDiagnostics
       });
     }
@@ -28,7 +28,7 @@ export default async function handler(request, response) {
       return sendJson(response, 503, {
         ok: false,
         code: 'SUPABASE_SERVICE_ROLE_INVALID',
-        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato valido. Revise la variable en Vercel.',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido. Revise la variable en Vercel.',
         details: serverDiagnostics
       });
     }
@@ -60,7 +60,7 @@ export default async function handler(request, response) {
       pendingPasswordResets: count || 0
     });
   } catch (error) {
-    console.error('[operations-summary] Excepcion', { requestId, message: error.message, stack: error.stack });
+    console.error('[operations-summary] Excepción', { requestId, message: error.message, stack: error.stack });
     return sendJson(response, 500, {
       ok: false,
       code: 'OPERATIONS_SUMMARY_FAILED',

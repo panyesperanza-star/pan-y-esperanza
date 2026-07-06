@@ -100,7 +100,7 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
 
   if (!response.ok) {
     if (responsePayload.code === 'MAIL_NOT_CONFIGURED') {
-      throw createEmailApiError(responsePayload.error || 'Servicio de correo no configurado. Anada RESEND_API_KEY en el archivo .env.', responsePayload, response.status);
+      throw createEmailApiError(responsePayload.error || 'Servicio de correo no configurado. Añada RESEND_API_KEY en el archivo .env.', responsePayload, response.status);
     }
     throw createEmailApiError(responsePayload.error || 'Error al enviar el correo.', responsePayload, response.status);
   }

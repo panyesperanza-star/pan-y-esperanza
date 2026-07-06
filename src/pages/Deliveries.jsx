@@ -1,4 +1,4 @@
-import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
+﻿import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
@@ -47,9 +47,9 @@ export function Deliveries({ data, actions, currentUser }) {
         relations: buildDeliveryRelationWarnings(item, data)
       });
       setDeleteTarget(null);
-      setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
+      setNotice('Solicitud de eliminación enviada al proveedor del sistema.');
     } catch (error) {
-      setNotice(error.message || 'No se pudo enviar la solicitud de eliminacion.');
+      setNotice(error.message || 'No se pudo enviar la solicitud de eliminación.');
     }
   }
 
@@ -67,7 +67,7 @@ export function Deliveries({ data, actions, currentUser }) {
   async function sendDeliveryEmail(item, beneficiary) {
     setNotice('');
     if (!beneficiary?.email) {
-      setNotice('El beneficiario no tiene correo electronico registrado.');
+      setNotice('El beneficiario no tiene correo electrónico registrado.');
       return;
     }
     setBusyAction(`email-${item.id}`);
@@ -93,7 +93,7 @@ export function Deliveries({ data, actions, currentUser }) {
     setNotice('');
     const phone = normalizeWhatsAppPhone(beneficiary?.phone);
     if (!phone) {
-      setNotice('El beneficiario no tiene telefono valido para WhatsApp.');
+      setNotice('El beneficiario no tiene teléfono válido para WhatsApp.');
       return;
     }
     const message = `Hola ${beneficiary.full_name}, desde Pan y Esperanza confirmamos la entrega ${item.receipt_number || ''} del ${formatDate(item.delivered_at)}.`;
@@ -118,7 +118,7 @@ export function Deliveries({ data, actions, currentUser }) {
     <>
       <PageHeader
         title="Entregas"
-        description="Cada entrega actualiza el historial del beneficiario, la ultima ayuda, el stock y el justificante firmado."
+        description="Cada entrega actualiza el historial del beneficiario, la última ayuda, el stock y el justificante firmado."
         actions={canCreate ? <Button onClick={() => setOpen(true)}><PackagePlus size={18} /> Registrar entrega</Button> : null}
       />
 
@@ -183,9 +183,9 @@ export function Deliveries({ data, actions, currentUser }) {
                           variant="danger"
                           className="whitespace-nowrap"
                           onClick={() => requestDeletePermanently(item)}
-                          title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}
+                          title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}
                         >
-                          <Trash2 size={16} /> {canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion'}
+                          <Trash2 size={16} /> {canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación'}
                         </Button>
                       )}
                     </div>
@@ -208,7 +208,7 @@ export function Deliveries({ data, actions, currentUser }) {
         </Modal>
       )}
       {deleteTarget && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeleteTarget(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeleteTarget(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={deleteTarget.item.receipt_number ? `Entrega ${deleteTarget.item.receipt_number}` : `Entrega ${deleteTarget.item.id}`}
@@ -462,7 +462,7 @@ function buildDeliveryRelationWarnings(delivery, data) {
   if (delivery.receiver_name || delivery.receiver_document_id) relations.push(`Datos del receptor: ${delivery.receiver_name || delivery.receiver_document_id}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'} vinculado${socialEvents.length === 1 ? '' : 's'}`);
   if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length} registro${emailLogs.length === 1 ? '' : 's'} vinculado${emailLogs.length === 1 ? '' : 's'}`);
-  if (delivery.status === 'Anulada') relations.push('Historial de anulacion conservado en la entrega');
+  if (delivery.status === 'Anulada') relations.push('Historial de anulación conservado en la entrega');
 
   return relations;
 }

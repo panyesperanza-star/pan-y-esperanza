@@ -47,7 +47,7 @@ export async function requireAdmin(request, admin, requestId, logPrefix) {
 
   if (diagnostics.tokenHasNonAscii || !isJwtLike(token)) {
     return rejectAdmin(logPrefix, requestId, 401, 'INVALID_TOKEN_FORMAT', 'authorization_token_format', 'Sesion no valida o caducada.', {
-      motivo: 'La cabecera Authorization llega, pero el token no tiene formato JWT ASCII valido.',
+      motivo: 'La cabecera Authorization llega, pero el token no tiene formato JWT ASCII válido.',
       ...diagnostics
     });
   }

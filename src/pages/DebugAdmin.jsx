@@ -124,7 +124,7 @@ export function DebugAdmin({ currentUser }) {
         />
         <Button onClick={repairCurrentUser}>Reparar mi usuario</Button>
         <Button variant="secondary" onClick={testCreateUser}>Probar creacion de usuario</Button>
-        <Button variant="secondary" onClick={testDeleteUser}>Probar eliminacion</Button>
+        <Button variant="secondary" onClick={testDeleteUser}>Probar eliminación</Button>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -151,7 +151,7 @@ export function DebugAdmin({ currentUser }) {
       <section className="grid gap-4 lg:grid-cols-3">
         <DebugPanel title="Reparar mi usuario" value={repairResult} />
         <DebugPanel title="Probar creacion de usuario" value={createResult} />
-        <DebugPanel title="Probar eliminacion" value={deleteResult} />
+        <DebugPanel title="Probar eliminación" value={deleteResult} />
       </section>
     </div>
   );

@@ -35,7 +35,7 @@ export function ProviderPanel({ data, actions, currentUser }) {
     <>
       <PageHeader
         title="Panel del proveedor"
-        description="Solicitudes de eliminacion definitiva pendientes de revision del Superadministrador del sistema."
+        description="Solicitudes de eliminación definitiva pendientes de revisión del Superadministrador del sistema."
         actions={<span className="inline-flex items-center gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700"><ServerCog size={17} /> Proveedor SaaS</span>}
       />
 
@@ -96,7 +96,7 @@ export function ProviderPanel({ data, actions, currentUser }) {
       )}
 
       {resolving && (
-        <Modal title={resolving.decision === 'Aprobada' ? 'Aprobar eliminacion' : 'Rechazar eliminacion'} onClose={() => setResolving(null)}>
+        <Modal title={resolving.decision === 'Aprobada' ? 'Aprobar eliminación' : 'Rechazar eliminación'} onClose={() => setResolving(null)}>
           <ResolveRequestForm
             request={resolving.request}
             decision={resolving.decision}
@@ -192,7 +192,7 @@ function ResolveRequestForm({ request, decision, onCancel, onSubmit }) {
   return (
     <form className="space-y-4" onSubmit={submit}>
       <div className={`rounded-md border p-4 text-sm ${isApproval ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-        <p className="font-bold">{isApproval ? 'La aprobacion ejecutara la eliminacion definitiva.' : 'El rechazo mantendra el registro sin cambios.'}</p>
+        <p className="font-bold">{isApproval ? 'La aprobación ejecutará la eliminación definitiva.' : 'El rechazo mantendrá el registro sin cambios.'}</p>
         <p className="mt-1">Registro: {request.record_label || request.record_id}</p>
       </div>
       <FormField label={isApproval ? 'Motivo de aprobacion' : 'Motivo de rechazo'}>

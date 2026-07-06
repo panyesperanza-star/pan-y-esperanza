@@ -25,12 +25,12 @@ export function DirectDeletionForm({ recordLabel, relations = [], onCancel, onCo
   return (
     <form className="space-y-4" onSubmit={submit}>
       <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-        <p className="font-bold">Esta accion eliminara definitivamente {recordLabel || 'este registro'}.</p>
-        <p className="mt-1">Solo esta disponible para el Superadministrador propietario de Pan y Esperanza.</p>
+        <p className="font-bold">Esta acción eliminará definitivamente {recordLabel || 'este registro'}.</p>
+        <p className="mt-1">Solo está disponible para el Superadministrador propietario de Pan y Esperanza.</p>
       </div>
       {relations.length > 0 && (
         <div>
-          <p className="text-sm font-bold text-ink">Informacion relacionada detectada:</p>
+          <p className="text-sm font-bold text-ink">Información relacionada detectada:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
             {relations.map((relation) => <li key={relation}>{relation}</li>)}
           </ul>

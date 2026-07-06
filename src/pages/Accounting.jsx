@@ -34,17 +34,17 @@ import { Treasury } from './Treasury';
 const OPERATION_TYPES = [
   { value: 'income', label: 'Ingreso', icon: ArrowUpCircle, tone: 'bg-emerald-50 text-emerald-700' },
   { value: 'expense', label: 'Gasto', icon: ArrowDownCircle, tone: 'bg-red-50 text-red-700' },
-  { value: 'donation_money', label: 'Donacion monetaria', icon: Banknote, tone: 'bg-emerald-50 text-emerald-700' },
-  { value: 'donation_in_kind', label: 'Donacion en especie', icon: Gift, tone: 'bg-pink-50 text-pink-700' },
+  { value: 'donation_money', label: 'Donación monetaria', icon: Banknote, tone: 'bg-emerald-50 text-emerald-700' },
+  { value: 'donation_in_kind', label: 'Donación en especie', icon: Gift, tone: 'bg-pink-50 text-pink-700' },
   { value: 'inventory_purchase', label: 'Compra de inventario', icon: PackageCheck, tone: 'bg-cyan-50 text-cyan-700' },
-  { value: 'economic_help', label: 'Ayuda economica', icon: HandCoins, tone: 'bg-amber-50 text-amber-700' },
-  { value: 'loan_received', label: 'Prestamo recibido', icon: HandCoins, tone: 'bg-violet-50 text-violet-700' },
-  { value: 'loan_repayment', label: 'Devolucion de prestamo', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
+  { value: 'economic_help', label: 'Ayuda económica', icon: HandCoins, tone: 'bg-amber-50 text-amber-700' },
+  { value: 'loan_received', label: 'Préstamo recibido', icon: HandCoins, tone: 'bg-violet-50 text-violet-700' },
+  { value: 'loan_repayment', label: 'Devolución de préstamo', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
   { value: 'supplier_debt', label: 'Deuda con proveedor', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
   { value: 'debt_payment', label: 'Pago de deuda', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
   { value: 'transfer', label: 'Transferencia entre cuentas', icon: RefreshCw, tone: 'bg-slate-100 text-slate-700' },
-  { value: 'correction', label: 'Correccion', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
-  { value: 'void', label: 'Anulacion', icon: AlertTriangle, tone: 'bg-red-50 text-red-700' }
+  { value: 'correction', label: 'Corrección', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
+  { value: 'void', label: 'Anulación', icon: AlertTriangle, tone: 'bg-red-50 text-red-700' }
 ];
 
 const MONEY_OUT_OPERATION_TYPES = new Set(['expense', 'inventory_purchase', 'economic_help', 'loan_repayment', 'debt_payment']);
@@ -97,7 +97,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
       type: 'economic-operation',
       operationType,
       title: navigationTarget.title || operationModalTitle(operationType),
-      contextLabel: navigationTarget.contextLabel || 'Nueva operacion'
+      contextLabel: navigationTarget.contextLabel || 'Nueva operación'
     });
   }, [canCreate, navigationTarget?.key, navigationTarget?.filter, navigationTarget?.operationType]);
 
@@ -105,19 +105,19 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
     <>
       <PageHeader
         title="Contabilidad"
-        description="Centro de control economico y social de Pan y Esperanza."
+        description="Centro de control económico y social de Pan y Esperanza."
         actions={<PermissionBadges canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
       />
 
       <section ref={summaryRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Estado economico</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Estado económico</p>
             <h3 className="text-xl font-bold text-ink">Dinero real disponible y compromisos pendientes</h3>
           </div>
           {report.usingTreasuryFallback && (
             <p className="max-w-md text-sm text-slate-500">
-              Resumen provisional basado en Tesoreria actual hasta registrar movimientos contables.
+              Resumen provisional basado en los datos económicos actuales hasta registrar movimientos contables.
             </p>
           )}
         </div>
@@ -138,7 +138,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
             <EconomicCard label="Caja" value={formatMoney(report.cashBalance)} detail={`${report.cashAccounts} cuentas de efectivo`} icon={Wallet} tone="bg-emerald-50 text-emerald-700" />
             <EconomicCard label="Bancos" value={formatMoney(report.bankBalance)} detail={`${report.bankAccounts} cuentas bancarias o digitales`} icon={Landmark} tone="bg-blue-50 text-blue-700" />
-            <EconomicCard label="Prestamos pendientes de devolver" value={formatMoney(report.pendingLoanAmount)} detail={`${report.pendingLoans} registros pendientes`} icon={HandCoins} tone="bg-violet-50 text-violet-700" />
+            <EconomicCard label="Préstamos pendientes de devolver" value={formatMoney(report.pendingLoanAmount)} detail={`${report.pendingLoans} registros pendientes`} icon={HandCoins} tone="bg-violet-50 text-violet-700" />
             <EconomicCard label="Facturas/deudas pendientes" value={formatMoney(report.pendingDebtAndInvoiceAmount)} detail={`${report.pendingInvoices + report.pendingDebts} asuntos pendientes`} icon={Receipt} tone="bg-orange-50 text-orange-700" />
             <EconomicCard label="Documentos pendientes" value={report.pendingDocuments} detail="Facturas, tickets o movimientos sin adjunto" icon={FileText} tone="bg-slate-100 text-slate-700" />
           </div>
@@ -186,8 +186,8 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
       <section ref={alertsRef} className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Alertas economicas</p>
-            <h3 className="text-xl font-bold text-ink">Asuntos que requieren revision</h3>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Alertas económicas</p>
+            <h3 className="text-xl font-bold text-ink">Asuntos que requieren revisión</h3>
           </div>
           {report.alerts.length ? <AlertTriangle className="text-orange-600" size={24} /> : <CheckCircle2 className="text-emerald-600" size={24} />}
         </div>
@@ -198,13 +198,13 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
             ))}
           </div>
         ) : (
-          <EmptyState icon={CheckCircle2} title="Todo correcto por ahora." detail="No hay alertas economicas con los datos actuales." />
+          <EmptyState icon={CheckCircle2} title="Todo correcto por ahora." detail="No hay alertas económicas con los datos actuales." />
         )}
       </section>
 
       <section ref={timelineRef} className="mt-6 rounded-md border border-slate-200 bg-white shadow-panel">
         <div className="border-b border-slate-200 p-5">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Linea temporal economica</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Línea temporal económica</p>
           <h3 className="text-xl font-bold text-ink">Todas las operaciones ordenadas por fecha</h3>
         </div>
         {report.recentMovements.length ? (
@@ -221,7 +221,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
                   <th>Persona/proveedor/donante</th>
                   <th>Valor total estimado</th>
                   <th>Estado</th>
-                  <th className="pr-5">Metodo</th>
+                  <th className="pr-5">Método</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -245,7 +245,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
             </table>
           </div>
         ) : (
-          <EmptyState icon={ClipboardList} title="No hay movimientos registrados todavia." detail="Cuando se registren ingresos, gastos, prestamos, deudas o valor social apareceran aqui." />
+          <EmptyState icon={ClipboardList} title="No hay movimientos registrados todavía." detail="Cuando se registren ingresos, gastos, préstamos, deudas o valor social aparecerán aquí." />
         )}
       </section>
 
@@ -255,7 +255,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
 
       <section className="mt-6">
         <div className="mb-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Areas contables agrupadas</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Áreas contables agrupadas</p>
           <h3 className="text-xl font-bold text-ink">Estructura preparada para las siguientes fases</h3>
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
@@ -266,7 +266,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
       </section>
 
       {modal?.type === 'economic-operation' && (
-        <Modal title={modal.title || 'Nueva operacion economica'} onClose={() => setModal(null)}>
+        <Modal title={modal.title || 'Nueva operación económica'} onClose={() => setModal(null)}>
           <EconomicOperationForm
             data={data}
             actions={actions}
@@ -308,7 +308,7 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
       )}
 
       {modal?.type === 'delete-account' && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setModal(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setModal(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={modal.item.name || 'Cuenta contable'}
@@ -349,13 +349,13 @@ function EconomicOperationPanel({ canCreate, onOpen }) {
     <section className="mt-6 rounded-md border border-brand-200 bg-white p-5 shadow-panel">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Motor unico de operaciones economicas</p>
-          <h3 className="text-xl font-bold text-ink">Toda la contabilidad empieza aqui</h3>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Motor único de operaciones económicas</p>
+          <h3 className="text-xl font-bold text-ink">Toda la contabilidad empieza aquí</h3>
           <p className="mt-1 text-sm text-slate-600">El sistema genera movimientos, documentos, contactos, inventario, eventos y auditoria desde una sola entrada.</p>
         </div>
         {canCreate ? (
           <Button className="min-h-[56px] justify-center px-6 text-base uppercase" onClick={onOpen}>
-            <Plus size={22} /> Nueva operacion
+            <Plus size={22} /> Nueva operación
           </Button>
         ) : (
           <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>
@@ -365,7 +365,7 @@ function EconomicOperationPanel({ canCreate, onOpen }) {
   );
 }
 
-function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', contextLabel = 'Nueva operacion', onSubmit, onCorrect, onVoid }) {
+function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmin, initialOperationType = 'income', initialLoanId = '', initialDebtId = '', contextLabel = 'Nueva operación', onSubmit, onCorrect, onVoid }) {
   const accounts = report.financialAccounts || [];
   const inventoryItems = data.inventory_items || [];
   const beneficiaries = data.beneficiaries || [];
@@ -504,13 +504,13 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         });
       } else {
         if ((form.operation_type === 'donation_money' || form.operation_type === 'donation_in_kind') && !String(form.donor_name || '').trim()) {
-          throw new Error('Selecciona o crea un donante antes de registrar la donacion.');
+          throw new Error('Selecciona o crea un donante antes de registrar la donación.');
         }
         const donationUnitValue = form.operation_type === 'donation_in_kind'
           ? resolveDonationUnitValue(form, inventoryItems, inventoryUnitValues)
           : null;
         if (form.operation_type === 'donation_in_kind' && donationUnitValue === null) {
-          throw new Error('Indica el valor unitario estimado de la donacion en especie.');
+          throw new Error('Indica el valor unitario estimado de la donación en especie.');
         }
         const computedAmount = donationUnitValue === null
           ? Number(form.amount || 0)
@@ -524,7 +524,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         });
       }
     } catch (submitError) {
-      setError(submitError.message || 'No se pudo registrar la operacion.');
+      setError(submitError.message || 'No se pudo registrar la operación.');
     } finally {
       setSaving(false);
     }
@@ -541,7 +541,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         </div>
       </div>
 
-      <FormField label="Tipo de operacion" required>
+      <FormField label="Tipo de operación" required>
         <select className={inputClass} required value={form.operation_type} onChange={(event) => changeOperationType(event.target.value)}>
           {OPERATION_TYPES.filter((item) => item.value !== 'void' || isSuperadmin).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
@@ -560,7 +560,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       )}
 
       {form.operation_type === 'loan_repayment' && (
-        <FormField label="Prestamo pendiente" required>
+        <FormField label="Préstamo pendiente" required>
           <select className={inputClass} required value={form.loan_id} onChange={(event) => {
             const loan = pendingLoans.find((item) => item.id === event.target.value);
             setForm((state) => ({ ...state, loan_id: event.target.value, amount: loan?.outstanding || state.amount }));
@@ -588,7 +588,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       {form.operation_type === 'void' && (
         <>
           <MovementSelect label="Movimiento a anular" rows={activeMovements} value={form.target_movement_id} onChange={(value) => update('target_movement_id', value)} />
-          <div className="sm:col-span-2"><FormField label="Motivo de anulacion" required><textarea className={inputClass} rows="3" required value={form.void_reason} onChange={(event) => update('void_reason', event.target.value)} /></FormField></div>
+          <div className="sm:col-span-2"><FormField label="Motivo de anulación" required><textarea className={inputClass} rows="3" required value={form.void_reason} onChange={(event) => update('void_reason', event.target.value)} /></FormField></div>
         </>
       )}
 
@@ -620,19 +620,19 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         <>
           {(needsAccount || form.operation_type === 'transfer' || form.operation_type === 'correction') && (
             <>
-              <FormField label="Metodo"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
+              <FormField label="Método"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
               <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
             </>
           )}
           <FormField label="Tipo de documento"><select className={inputClass} value={form.document_type} onChange={(event) => update('document_type', event.target.value)}><option value="invoice">Factura</option><option value="ticket">Ticket</option><option value="receipt">Recibo</option><option value="contract">Contrato</option><option value="proof">Justificante</option><option value="other">Otro</option></select></FormField>
-          <FormField label="Numero de documento"><input className={inputClass} value={form.document_number} onChange={(event) => update('document_number', event.target.value)} /></FormField>
+          <FormField label="Número de documento"><input className={inputClass} value={form.document_number} onChange={(event) => update('document_number', event.target.value)} /></FormField>
           <FileAttachmentField form={form} setForm={setForm} />
           <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
         </>
       )}
 
       {form.operation_type === 'correction' && (
-        <div className="sm:col-span-2"><FormField label="Motivo de correccion" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => update('correction_reason', event.target.value)} /></FormField></div>
+        <div className="sm:col-span-2"><FormField label="Motivo de corrección" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => update('correction_reason', event.target.value)} /></FormField></div>
       )}
 
       {isSuperadmin && (MONEY_OUT_OPERATION_TYPES.has(form.operation_type) || form.operation_type === 'transfer' || form.operation_type === 'correction') && <NegativeBalanceToggle form={form} setForm={setForm} />}
@@ -654,7 +654,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, canDeleteDir
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Caja y bancos</p>
           <h3 className="text-xl font-bold text-ink">Operativa cerrada para efectivo, cuentas y transferencias</h3>
-          <p className="mt-1 text-sm text-slate-600">Los movimientos actualizan saldo, crean evento contable y quedan registrados en auditoria.</p>
+          <p className="mt-1 text-sm text-slate-600">Los movimientos actualizan saldo, crean evento contable y quedan registrados en auditoría.</p>
         </div>
         {canCreate && (
           <div className="flex flex-wrap gap-2">
@@ -675,7 +675,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, canDeleteDir
           <AccountColumn
             title="Caja"
             accounts={cashAccounts}
-            emptyText="No hay cajas creadas todavia."
+            emptyText="No hay cajas creadas todavía."
             canEdit={canEdit}
             canDelete={canDelete}
             canDeleteDirectly={canDeleteDirectly}
@@ -684,7 +684,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, canDeleteDir
           <AccountColumn
             title="Bancos"
             accounts={bankAccounts}
-            emptyText="No hay cuentas bancarias creadas todavia."
+            emptyText="No hay cuentas bancarias creadas todavía."
             canEdit={canEdit}
             canDelete={canDelete}
             canDeleteDirectly={canDeleteDirectly}
@@ -697,7 +697,7 @@ function CashBankWorkspace({ report, canCreate, canEdit, canDelete, canDeleteDir
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h4 className="font-bold text-ink">Movimientos de Caja y Bancos</h4>
-                <p className="text-sm text-slate-500">Linea temporal unica, incluyendo activos, corregidos y anulados.</p>
+                <p className="text-sm text-slate-500">Línea temporal única, incluyendo activos, corregidos y anulados.</p>
               </div>
             </div>
           </div>
@@ -730,7 +730,7 @@ function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, canDele
             {(canEdit || canDelete) && (
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 {canEdit && <Button variant="secondary" onClick={() => onOpen({ type: 'account', item: account })}>Editar</Button>}
-                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>{canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion'}</Button>}
+                {canDelete && <Button variant="danger" onClick={() => onOpen({ type: 'delete-account', item: account })}>{canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación'}</Button>}
               </div>
             )}
           </article>
@@ -743,7 +743,7 @@ function AccountColumn({ title, accounts, emptyText, canEdit, canDelete, canDele
 
 function CashBankTimeline({ rows }) {
   if (!rows.length) {
-    return <div className="p-4"><EmptyState icon={ClipboardList} title="No hay movimientos de Caja o Bancos." detail="Crea una caja o cuenta bancaria y registra la primera operacion." /></div>;
+    return <div className="p-4"><EmptyState icon={ClipboardList} title="No hay movimientos de Caja o Bancos." detail="Crea una caja o cuenta bancaria y registra la primera operación." /></div>;
   }
   return (
     <div className="overflow-x-auto">
@@ -788,31 +788,31 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
     <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Prestamos y deudas</p>
-          <h3 className="text-xl font-bold text-ink">Compromisos calculados automaticamente</h3>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Préstamos y deudas</p>
+          <h3 className="text-xl font-bold text-ink">Compromisos calculados automáticamente</h3>
           <p className="mt-1 text-sm text-slate-600">Importe recibido, devuelto, pagado y pendiente se derivan del historial de movimientos activos.</p>
         </div>
         {canCreate ? (
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'loan_received', title: 'Registrar prestamo', contextLabel: 'Prestamos y deudas' })}>
-              <HandCoins size={17} /> Registrar prestamo
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'loan_received', title: 'Registrar préstamo', contextLabel: 'Préstamos y deudas' })}>
+              <HandCoins size={17} /> Registrar préstamo
             </Button>
             <Button
               variant="secondary"
               disabled={!firstPendingLoan}
-              title={!firstPendingLoan ? 'No hay prestamos pendientes de devolver.' : ''}
-              onClick={() => firstPendingLoan && onOpenOperation({ operationType: 'loan_repayment', loanId: firstPendingLoan.id, title: 'Registrar devolucion de prestamo', contextLabel: 'Prestamos y deudas' })}
+              title={!firstPendingLoan ? 'No hay préstamos pendientes de devolver.' : ''}
+              onClick={() => firstPendingLoan && onOpenOperation({ operationType: 'loan_repayment', loanId: firstPendingLoan.id, title: 'Registrar devolución de préstamo', contextLabel: 'Préstamos y deudas' })}
             >
-              <RefreshCw size={17} /> Registrar devolucion
+              <RefreshCw size={17} /> Registrar devolución
             </Button>
-            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'supplier_debt', title: 'Registrar deuda', contextLabel: 'Prestamos y deudas' })}>
+            <Button variant="secondary" onClick={() => onOpenOperation({ operationType: 'supplier_debt', title: 'Registrar deuda', contextLabel: 'Préstamos y deudas' })}>
               <Receipt size={17} /> Registrar deuda
             </Button>
             <Button
               variant="secondary"
               disabled={!firstPendingDebt}
               title={!firstPendingDebt ? 'No hay deudas pendientes de pagar.' : ''}
-              onClick={() => firstPendingDebt && onOpenOperation({ operationType: 'debt_payment', debtId: firstPendingDebt.id, title: 'Registrar pago de deuda', contextLabel: 'Prestamos y deudas' })}
+              onClick={() => firstPendingDebt && onOpenOperation({ operationType: 'debt_payment', debtId: firstPendingDebt.id, title: 'Registrar pago de deuda', contextLabel: 'Préstamos y deudas' })}
             >
               <RefreshCw size={17} /> Registrar pago de deuda
             </Button>
@@ -824,14 +824,14 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <CommitmentColumn
-          title="Prestamos"
+          title="Préstamos"
           icon={HandCoins}
           rows={loans}
-          emptyTitle="No hay prestamos registrados."
-          emptyDetail="Cuando registres un prestamo desde este bloque aparecera aqui con su saldo."
+          emptyTitle="No hay préstamos registrados."
+          emptyDetail="Cuando registres un préstamo desde este bloque aparecerá aquí con su saldo."
           canCreate={canCreate}
-          actionLabel="Registrar devolucion"
-          onAction={(loan) => onOpenOperation({ operationType: 'loan_repayment', loanId: loan.id, title: 'Registrar devolucion de prestamo', contextLabel: 'Prestamos y deudas' })}
+          actionLabel="Registrar devolución"
+          onAction={(loan) => onOpenOperation({ operationType: 'loan_repayment', loanId: loan.id, title: 'Registrar devolución de préstamo', contextLabel: 'Préstamos y deudas' })}
           renderMeta={(loan) => (
             <>
               <MetricPill label="Importe original" value={formatMoney(loan.principal)} />
@@ -848,7 +848,7 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
           emptyDetail="Las deudas con proveedor o persona se registran desde este bloque."
           canCreate={canCreate}
           actionLabel="Registrar pago"
-          onAction={(debt) => onOpenOperation({ operationType: 'debt_payment', debtId: debt.id, title: 'Registrar pago de deuda', contextLabel: 'Prestamos y deudas' })}
+          onAction={(debt) => onOpenOperation({ operationType: 'debt_payment', debtId: debt.id, title: 'Registrar pago de deuda', contextLabel: 'Préstamos y deudas' })}
           renderMeta={(debt) => (
             <>
               <MetricPill label="Importe original" value={formatMoney(debt.original)} />
@@ -874,7 +874,7 @@ function LoansDebtsWorkspace({ report, canCreate, onOpenOperation }) {
             ))}
           </div>
         ) : (
-          <EmptyState icon={Building2} title="No hay fichas con compromisos." detail="Al crear prestamos o deudas, cada contacto tendra su resumen e historial." />
+          <EmptyState icon={Building2} title="No hay fichas con compromisos." detail="Al crear préstamos o deudas, cada contacto tendrá su resumen e historial." />
         )}
       </div>
     </section>
@@ -979,7 +979,7 @@ function ContactCommitmentCard({ contact }) {
 function OperationBlocker({ type }) {
   const messages = {
     transfer: 'Necesitas al menos dos cuentas activas para transferir.',
-    loan_repayment: 'No hay prestamos pendientes para devolver.',
+    loan_repayment: 'No hay préstamos pendientes para devolver.',
     debt_payment: 'No hay deudas pendientes para pagar.',
     correction: 'No hay movimientos activos corregibles.',
     void: 'No hay movimientos activos para anular.'
@@ -1136,7 +1136,7 @@ function DonorSelector({ form, update, contacts, actions }) {
     <div className="sm:col-span-2 rounded-md border border-slate-200 bg-slate-50 p-4">
       <div className="grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
         <FormField label="Buscar donante" required>
-          <input className={inputClass} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, telefono, email o direccion" />
+          <input className={inputClass} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, teléfono, email o dirección" />
         </FormField>
         <FormField label="Seleccionar" required>
           <select className={inputClass} required value={form.donor_contact_id || ''} onChange={(event) => selectDonor(event.target.value)}>
@@ -1147,15 +1147,15 @@ function DonorSelector({ form, update, contacts, actions }) {
         <Button className="h-10 px-3" onClick={() => setCreating(true)} title="Nuevo donante"><Plus size={18} /><span className="sr-only">Nuevo donante</span></Button>
       </div>
       {!filteredDonors.length && (
-        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">No hay donantes con esa busqueda. Usa el boton + para crear la ficha completa.</p>
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">No hay donantes con esa búsqueda. Usa el botón + para crear la ficha completa.</p>
       )}
       {selectedDonor && (
         <div className="mt-4 grid gap-2 text-sm md:grid-cols-5">
           <ReadOnlyDonorField label="Tipo" value={form.donor_kind} />
           <ReadOnlyDonorField label="Contacto" value={accountingDonorMetadata(selectedDonor).contactPerson} />
-          <ReadOnlyDonorField label="Telefono" value={form.contact_phone} />
+          <ReadOnlyDonorField label="Teléfono" value={form.contact_phone} />
           <ReadOnlyDonorField label="Email" value={form.contact_email} />
-          <ReadOnlyDonorField label="Direccion" value={form.contact_address} />
+          <ReadOnlyDonorField label="Dirección" value={form.contact_address} />
         </div>
       )}
       {creating && (
@@ -1199,12 +1199,12 @@ function DonorQuickForm({ onCancel, onSubmit }) {
     <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
       {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 sm:col-span-2">{error}</div>}
       <div className="sm:col-span-2"><FormField label="Nombre del donante" required><input className={inputClass} required value={form.name} onChange={(event) => update('name', event.target.value)} /></FormField></div>
-      <FormField label="Tipo"><select className={inputClass} value={form.kind} onChange={(event) => update('kind', event.target.value)}><option>Particular</option><option>Empresa</option><option>Iglesia</option><option>Asociacion</option><option>Fundacion</option><option>Administracion</option><option>Entidad</option><option>Anonimo</option></select></FormField>
+      <FormField label="Tipo"><select className={inputClass} value={form.kind} onChange={(event) => update('kind', event.target.value)}><option>Particular</option><option>Empresa</option><option>Iglesia</option><option>Asociación</option><option>Fundación</option><option>Administración</option><option>Entidad</option><option>Anónimo</option></select></FormField>
       <FormField label="Persona de contacto"><input className={inputClass} value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></FormField>
       <FormField label="Documento / CIF"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
-      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
       <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end gap-2 sm:col-span-2">
         <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
@@ -1325,7 +1325,7 @@ function FinancialAccountForm({ initial, defaultType = 'cash', onSubmit }) {
       </FormField>
       <FormField label="Saldo inicial" required><input className={inputClass} type="number" step="0.01" min="0" required disabled={Boolean(initial)} value={form.opening_balance ?? 0} onChange={(event) => updateForm(setForm, 'opening_balance', Number(event.target.value))} /></FormField>
       <FormField label="Banco"><input className={inputClass} value={form.bank_name || ''} onChange={(event) => updateForm(setForm, 'bank_name', event.target.value)} /></FormField>
-      <FormField label="Numero de cuenta"><input className={inputClass} value={form.account_number || ''} onChange={(event) => updateForm(setForm, 'account_number', event.target.value)} /></FormField>
+      <FormField label="Número de cuenta"><input className={inputClass} value={form.account_number || ''} onChange={(event) => updateForm(setForm, 'account_number', event.target.value)} /></FormField>
       <FormField label="IBAN"><input className={inputClass} value={form.iban || ''} onChange={(event) => updateForm(setForm, 'iban', event.target.value)} /></FormField>
       <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes || ''} onChange={(event) => updateForm(setForm, 'notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit">{initial ? 'Guardar cambios' : 'Crear cuenta'}</Button></div>
@@ -1374,13 +1374,13 @@ function CashBankMovementForm({ accounts, movementType, movement, isCorrection =
       </FormField>
       <FormField label="Fecha y hora" required><input className={inputClass} type="datetime-local" required value={form.movement_datetime} onChange={(event) => updateForm(setForm, 'movement_datetime', event.target.value)} /></FormField>
       <FormField label="Importe" required><input className={inputClass} type="number" step="0.01" min="0.01" required value={form.amount} onChange={(event) => updateForm(setForm, 'amount', Number(event.target.value))} /></FormField>
-      <FormField label="Metodo"><select className={inputClass} value={form.payment_method} onChange={(event) => updateForm(setForm, 'payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
+      <FormField label="Método"><select className={inputClass} value={form.payment_method} onChange={(event) => updateForm(setForm, 'payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
       <div className="sm:col-span-2"><FormField label="Motivo" required><textarea className={inputClass} rows="3" required value={form.reason} onChange={(event) => updateForm(setForm, 'reason', event.target.value)} /></FormField></div>
       <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => updateForm(setForm, 'reference', event.target.value)} /></FormField>
       <FileAttachmentField form={form} setForm={setForm} />
-      {isCorrection && <div className="sm:col-span-2"><FormField label="Motivo de correccion" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => updateForm(setForm, 'correction_reason', event.target.value)} /></FormField></div>}
+      {isCorrection && <div className="sm:col-span-2"><FormField label="Motivo de corrección" required><textarea className={inputClass} rows="3" required value={form.correction_reason} onChange={(event) => updateForm(setForm, 'correction_reason', event.target.value)} /></FormField></div>}
       {isSuperadmin && movementType.endsWith('_out') && <NegativeBalanceToggle form={form} setForm={setForm} />}
-      <div className="flex justify-end sm:col-span-2"><Button type="submit">{isCorrection ? 'Guardar correccion' : 'Registrar movimiento'}</Button></div>
+      <div className="flex justify-end sm:col-span-2"><Button type="submit">{isCorrection ? 'Guardar corrección' : 'Registrar movimiento'}</Button></div>
     </form>
   );
 }
@@ -1446,9 +1446,9 @@ function VoidMovementForm({ movement, onSubmit }) {
     <form className="space-y-4" onSubmit={handleSubmit}>
       <FormError message={error} />
       <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Vas a anular el movimiento {movementTypeLabel(movement.movement_type)} por {formatMoney(movement.amount)}. El saldo de la cuenta se revertira automaticamente.
+        Vas a anular el movimiento {movementTypeLabel(movement.movement_type)} por {formatMoney(movement.amount)}. El saldo de la cuenta se revertirá automáticamente.
       </div>
-      <FormField label="Motivo de anulacion" required><textarea className={inputClass} rows="4" required value={reason} onChange={(event) => setReason(event.target.value)} /></FormField>
+      <FormField label="Motivo de anulación" required><textarea className={inputClass} rows="4" required value={reason} onChange={(event) => setReason(event.target.value)} /></FormField>
       <div className="flex justify-end"><Button variant="danger" type="submit">Anular movimiento</Button></div>
     </form>
   );
@@ -1469,7 +1469,7 @@ function DeleteAccountForm({ account, onSubmit }) {
     <form className="space-y-4" onSubmit={handleSubmit}>
       <FormError message={error} />
       <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Solo se eliminara si no tiene movimientos ni eventos relacionados. Si ya fue usada, el sistema bloqueara la eliminacion.
+        Solo se eliminará si no tiene movimientos ni eventos relacionados. Si ya fue usada, el sistema bloqueará la eliminación.
       </div>
       <p className="font-bold text-ink">{account.name}</p>
       <div className="flex justify-end"><Button variant="danger" type="submit">Eliminar cuenta vacia</Button></div>
@@ -1599,7 +1599,7 @@ function sectionForAccountingFilter(filter) {
 
 function operationModalTitle(operationType) {
   const operation = OPERATION_TYPES.find((item) => item.value === operationType);
-  return operation ? `Registrar ${operation.label.toLowerCase()}` : 'Nueva operacion economica';
+  return operation ? `Registrar ${operation.label.toLowerCase()}` : 'Nueva operación económica';
 }
 
 function EmptyState({ icon: Icon, title, detail }) {
@@ -1816,12 +1816,12 @@ function buildAccountingReport(data = {}) {
 function buildAlerts({ pendingInvoices, pendingLoanRows, pendingDebtRows, overdueDebtRows, upcomingDebtRows, movementWithoutDocs, cashImbalances, unreconciledBanks }) {
   const alerts = [];
   if (pendingInvoices > 0) alerts.push({ title: 'Facturas pendientes', detail: `${pendingInvoices} facturas o tickets pendientes de adjuntar o revisar.`, icon: Receipt, tone: 'border-orange-200 bg-orange-50 text-orange-700', target: 'timeline' });
-  if (pendingLoanRows.length > 0) alerts.push({ title: 'Prestamos pendientes', detail: `${pendingLoanRows.length} prestamos pendientes de devolver.`, icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700', target: 'loansDebts' });
+  if (pendingLoanRows.length > 0) alerts.push({ title: 'Préstamos pendientes', detail: `${pendingLoanRows.length} préstamos pendientes de devolver.`, icon: HandCoins, tone: 'border-violet-200 bg-violet-50 text-violet-700', target: 'loansDebts' });
   if (overdueDebtRows.length > 0) alerts.push({ title: 'Deudas vencidas', detail: `${overdueDebtRows.length} deudas han superado su fecha de vencimiento.`, icon: AlertTriangle, tone: 'border-red-200 bg-red-50 text-red-700', target: 'loansDebts' });
   if (upcomingDebtRows.length > 0) alerts.push({ title: 'Pagos proximos', detail: `${upcomingDebtRows.length} pagos vencen en los proximos 14 dias.`, icon: CalendarClock, tone: 'border-amber-200 bg-amber-50 text-amber-800', target: 'loansDebts' });
   if (pendingDebtRows.length > 0) alerts.push({ title: 'Deudas pendientes', detail: `${pendingDebtRows.length} deudas activas con saldo pendiente.`, icon: Building2, tone: 'border-red-200 bg-red-50 text-red-700', target: 'loansDebts' });
   if (movementWithoutDocs > 0) alerts.push({ title: 'Movimientos sin documento adjunto', detail: `${movementWithoutDocs} movimientos necesitan factura, ticket o justificante.`, icon: FileText, tone: 'border-slate-200 bg-slate-50 text-slate-700', target: 'timeline' });
-  if (cashImbalances.length > 0) alerts.push({ title: 'Caja descuadrada', detail: `${cashImbalances.length} cajas requieren revision de saldo.`, icon: Wallet, tone: 'border-red-200 bg-red-50 text-red-700', target: 'cashBank' });
+  if (cashImbalances.length > 0) alerts.push({ title: 'Caja descuadrada', detail: `${cashImbalances.length} cajas requieren revisión de saldo.`, icon: Wallet, tone: 'border-red-200 bg-red-50 text-red-700', target: 'cashBank' });
   if (unreconciledBanks.length > 0) alerts.push({ title: 'Bancos sin conciliar', detail: `${unreconciledBanks.length} cuentas bancarias pendientes de conciliacion.`, icon: Landmark, tone: 'border-blue-200 bg-blue-50 text-blue-700', target: 'cashBank' });
   return alerts;
 }
@@ -1897,8 +1897,8 @@ function buildRecentMovements(context) {
     rows.push({
       key: `loan-${loan.id}`,
       date: loan.loan_at || loan.created_at,
-      type: 'Prestamo recibido',
-      concept: loan.reason || loan.notes || 'Prestamo registrado',
+      type: 'Préstamo recibido',
+      concept: loan.reason || loan.notes || 'Préstamo registrado',
       contact: contactName(contactsById.get(loan.contact_id)),
       amount: Number(loan.principal_amount || 0),
       direction: 'in',
@@ -1913,8 +1913,8 @@ function buildRecentMovements(context) {
     rows.push({
       key: `loan-movement-${movement.id}`,
       date: movement.payment_at || movement.created_at,
-      type: movement.movement_type === 'full_repayment' ? 'Devolucion total' : 'Devolucion parcial',
-      concept: movement.notes || loan?.reason || 'Movimiento de prestamo',
+      type: movement.movement_type === 'full_repayment' ? 'Devolución total' : 'Devolución parcial',
+      concept: movement.notes || loan?.reason || 'Movimiento de préstamo',
       contact: contactName(contactsById.get(loan?.contact_id)),
       amount: Number(movement.amount || 0),
       direction: movement.movement_type === 'loan_received' ? 'in' : 'out',
@@ -1981,42 +1981,42 @@ function buildRecentMovements(context) {
       key: `treasury-income-${income.id}`,
       date: income.income_at || income.created_at,
       type: 'Ingreso',
-      concept: income.concept || income.category || 'Ingreso de Tesoreria',
+      concept: income.concept || income.category || 'Ingreso de tesorería',
       contact: income.donor || '-',
       amount: Number(income.amount || 0),
       direction: 'in',
       status: 'Registrado',
-      method: income.payment_method || 'Tesoreria'
+      method: income.payment_method || 'Tesorería'
     }));
     treasuryExpenses.forEach((expense) => rows.push({
       key: `treasury-expense-${expense.id}`,
       date: expense.expense_at || expense.created_at,
       type: 'Gasto',
-      concept: expense.concept || expense.category || 'Gasto de Tesoreria',
+      concept: expense.concept || expense.category || 'Gasto de tesorería',
       contact: expense.supplier || expense.responsible || '-',
       amount: Number(expense.amount || 0),
       direction: 'out',
       status: 'Registrado',
-      method: 'Tesoreria'
+      method: 'Tesorería'
     }));
     treasuryLoans.forEach((loan) => rows.push({
       key: `treasury-loan-${loan.id}`,
       date: loan.loan_at || loan.created_at,
-      type: 'Prestamo',
-      concept: loan.concept || 'Prestamo de Tesoreria',
+      type: 'Préstamo',
+      concept: loan.concept || 'Préstamo de tesorería',
       contact: loan.person || '-',
       amount: Number(loan.amount || 0),
       direction: isPendingTreasuryLoan(loan) ? 'in' : 'neutral',
       status: loan.status || 'Registrado',
-      method: 'Tesoreria'
+      method: 'Tesorería'
     }));
   }
 
   donations.filter((donation) => !representedDonationIds.has(donation.id)).forEach((donation) => rows.push({
       key: `donation-social-${donation.id}`,
       date: donation.donated_at || donation.created_at,
-      type: 'Donacion en especie',
-      concept: donation.donation_type || donation.notes || 'Donacion en especie',
+      type: 'Donación en especie',
+      concept: donation.donation_type || donation.notes || 'Donación en especie',
       contact: donation.donor || '-',
       amount: Number(donation.estimated_value || 0),
       direction: 'social',
@@ -2143,7 +2143,7 @@ function buildAreaGroups(report) {
       icon: Receipt,
       tone: 'bg-orange-50 text-orange-700',
       items: [
-        { label: 'Prestamos', detail: 'Adelantos recibidos con saldo pendiente.', value: report.pendingLoans },
+        { label: 'Préstamos', detail: 'Adelantos recibidos con saldo pendiente.', value: report.pendingLoans },
         { label: 'Deudas', detail: 'Importes pendientes con proveedores o personas.', value: report.pendingDebts },
         { label: 'Facturas pendientes', detail: 'Facturas o tickets pendientes de completar.', value: report.pendingInvoices }
       ]
@@ -2177,7 +2177,7 @@ function buildAreaGroups(report) {
         { label: 'Libro caja', detail: 'Resumen de movimientos de efectivo.', value: report.cashAccounts },
         { label: 'Bancos', detail: 'Resumen por cuenta bancaria.', value: report.bankAccounts },
         { label: 'Ingresos y gastos', detail: 'Actividad monetaria general.', value: report.metrics.incomes + report.metrics.expenses },
-        { label: 'Prestamos', detail: 'Historial y saldos pendientes.', value: report.metrics.loans },
+        { label: 'Préstamos', detail: 'Historial y saldos pendientes.', value: report.metrics.loans },
         { label: 'Deudas', detail: 'Historial y saldos pendientes.', value: report.metrics.debts },
         { label: 'Balance', detail: 'Saldo real y compromisos.', value: formatMoney(report.realBalance) },
         { label: 'Valor social', detail: 'Recibido, entregado y balance social.', value: formatMoney(report.socialBalance) }
@@ -2265,7 +2265,7 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
       {
         key: `loan-open-${loan.id}`,
         date: loan.loan_at || loan.created_at,
-        label: 'Prestamo recibido',
+        label: 'Préstamo recibido',
         amount: principal,
         kind: 'received'
       },
@@ -2274,7 +2274,7 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
         .map((movement) => ({
           key: `loan-movement-${movement.id}`,
           date: movement.payment_at || movement.created_at,
-          label: movement.movement_type === 'full_repayment' ? 'Devolucion total' : 'Devolucion parcial',
+          label: movement.movement_type === 'full_repayment' ? 'Devolución total' : 'Devolución parcial',
           amount: Number(movement.amount || 0),
           kind: 'payment'
         }))
@@ -2284,7 +2284,7 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
       raw: loan,
       contactId: loan.contact_id,
       contactName: contactName(contactsById.get(loan.contact_id)),
-      reason: loan.reason || loan.notes || 'Prestamo registrado',
+      reason: loan.reason || loan.notes || 'Préstamo registrado',
       date: loan.loan_at || loan.created_at,
       principal,
       repaid,
@@ -2479,14 +2479,14 @@ function eventTypeLabel(type) {
     income: 'Ingreso',
     expense: 'Gasto',
     purchase: 'Compra',
-    loan: 'Prestamo',
+    loan: 'Préstamo',
     debt: 'Deuda',
-    donation_money: 'Donacion monetaria',
-    donation_in_kind: 'Donacion en especie',
+    donation_money: 'Donación monetaria',
+    donation_in_kind: 'Donación en especie',
     asset: 'Activo',
     social_value: 'Valor social',
-    correction: 'Correccion',
-    void: 'Anulacion'
+    correction: 'Corrección',
+    void: 'Anulación'
   };
   return labels[type] || 'Movimiento';
 }
@@ -2499,14 +2499,14 @@ function movementTypeLabel(type) {
     bank_out: 'Salida banco',
     transfer_in: 'Transferencia entrada',
     transfer_out: 'Transferencia salida',
-    adjustment: 'Correccion'
+    adjustment: 'Corrección'
   };
   return labels[type] || 'Movimiento';
 }
 
 function socialEventLabel(event) {
   const labels = {
-    in_kind_donation: 'Donacion en especie',
+    in_kind_donation: 'Donación en especie',
     delivery: 'Ayuda entregada',
     inventory_adjustment: 'Ajuste de inventario',
     volunteer_time: 'Tiempo voluntario',
@@ -2583,8 +2583,8 @@ function amountLabelForOperation(type) {
 
 function submitLabelForOperation(type) {
   if (type === 'void') return 'Anular movimiento';
-  if (type === 'correction') return 'Guardar correccion';
-  return 'Registrar operacion';
+  if (type === 'correction') return 'Guardar corrección';
+  return 'Registrar operación';
 }
 
 function contactName(contact) {

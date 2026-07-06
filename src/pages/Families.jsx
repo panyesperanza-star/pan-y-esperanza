@@ -151,7 +151,7 @@ export function Families({ data, actions, currentUser, onNavigate }) {
             <span className="sr-only">Buscar familias</span>
             <input
               className="w-full bg-transparent py-2.5 text-sm outline-none"
-              placeholder="Buscar por codigo, responsable, direccion, telefono o miembro"
+              placeholder="Buscar por código, responsable, dirección, teléfono o miembro"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -181,7 +181,7 @@ export function Families({ data, actions, currentUser, onNavigate }) {
             onDelete={() => setDeleteTarget(profileItem)}
           />
         ))}
-        {!filtered.length && <EmptyState icon={Search} title="No hay familias" text="Prueba con otra busqueda o cambia el filtro de estado." />}
+        {!filtered.length && <EmptyState icon={Search} title="No hay familias" text="Prueba con otra búsqueda o cambia el filtro de estado." />}
       </section>
 
       {editing && (
@@ -243,7 +243,7 @@ function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive,
             <FamilyStatusBadge status={familyStatus(family)} />
           </div>
           <p className="mt-1 truncate text-sm font-semibold text-slate-700">{family.responsible_name || 'Sin responsable'}</p>
-          <p className="mt-2 line-clamp-2 text-sm text-slate-600">{family.address || 'Sin direccion registrada'}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-slate-600">{family.address || 'Sin dirección registrada'}</p>
         </div>
         <span className={`rounded-xl p-3 ${archived ? 'bg-white text-slate-500' : 'bg-brand-50 text-brand-700'}`}><Users size={22} /></span>
       </div>
@@ -256,9 +256,9 @@ function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive,
       </dl>
 
       <div className="mt-4 space-y-2 text-sm text-slate-600">
-        <MetaLine icon={Phone} text={family.phone || 'Sin telefono'} />
+        <MetaLine icon={Phone} text={family.phone || 'Sin teléfono'} />
         <MetaLine icon={Mail} text={family.email || 'Sin email'} />
-        <MetaLine icon={CalendarDays} text={`Ultima ayuda: ${latestHelp ? formatDate(latestHelp.delivered_at) : '-'}`} />
+        <MetaLine icon={CalendarDays} text={`Última ayuda: ${latestHelp ? formatDate(latestHelp.delivered_at) : '-'}`} />
       </div>
 
       {hasMembers && isSuperadmin && (
@@ -303,7 +303,7 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
     { id: 'history', label: 'Historial', icon: PackageCheck, count: allDeliveries.length },
     { id: 'documents', label: 'Documentos', icon: Paperclip, count: documents.length },
     { id: 'observations', label: 'Observaciones', icon: NotebookTabs, count: observations.length },
-    { id: 'timeline', label: 'Linea temporal', icon: ClipboardList, count: timeline.length }
+    { id: 'timeline', label: 'Línea temporal', icon: ClipboardList, count: timeline.length }
   ];
 
   return (
@@ -319,7 +319,7 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
             </div>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{family.responsible_name || 'Unidad familiar'}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
-              <span className="flex items-center gap-1.5"><MapPin size={15} className="text-slate-400" /> {family.address || 'Sin direccion'}</span>
+              <span className="flex items-center gap-1.5"><MapPin size={15} className="text-slate-400" /> {family.address || 'Sin dirección'}</span>
               <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-slate-400" /> Alta: {formatDate(family.created_at)}</span>
             </div>
           </div>
@@ -337,7 +337,7 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
         <ProfileMetric icon={Users} label="Total miembros" value={stats.totalMembers} tone="blue" />
         <ProfileMetric icon={PackageCheck} label="Entregas" value={activeDeliveries.length} tone="brand" />
         <ProfileMetric icon={Euro} label="Valor recibido" value={formatCurrency(socialValue)} tone="green" />
-        <ProfileMetric icon={CalendarDays} label="Ultima ayuda" value={latestHelp ? formatDate(latestHelp.delivered_at) : '-'} tone="slate" />
+        <ProfileMetric icon={CalendarDays} label="Última ayuda" value={latestHelp ? formatDate(latestHelp.delivered_at) : '-'} tone="slate" />
       </section>
 
       <nav className="mt-6 overflow-x-auto border-y border-slate-200 bg-white px-5 sm:px-7" aria-label="Secciones del expediente familiar">
@@ -387,16 +387,16 @@ function FamilySummaryPanel({ family, stats, latestHelp, socialValue }) {
     <div className="grid gap-5 lg:grid-cols-2">
       <InfoCard icon={Home} title="Datos de cabecera">
         <InfoGrid items={[
-          ['Codigo familia', family.family_code],
+          ['Código familia', family.family_code],
           ['Responsable', family.responsible_name],
-          ['Direccion', family.address],
-          ['Telefono', family.phone],
+          ['Dirección', family.address],
+          ['Teléfono', family.phone],
           ['Email', family.email],
           ['Estado', familyStatus(family)],
           ['Fecha alta', formatDate(family.created_at)]
         ]} />
       </InfoCard>
-      <InfoCard icon={Users} title="Composicion familiar">
+      <InfoCard icon={Users} title="Composición familiar">
         <InfoGrid items={[
           ['Adultos', stats.adults],
           ['Menores', stats.minors],
@@ -408,7 +408,7 @@ function FamilySummaryPanel({ family, stats, latestHelp, socialValue }) {
         <InfoGrid items={[
           ['Entregas realizadas', stats.deliveryCount],
           ['Valor social recibido', formatCurrency(socialValue)],
-          ['Ultima ayuda', latestHelp ? `${formatDate(latestHelp.delivered_at)} - ${latestHelp.help_type || 'Ayuda'}` : '-']
+          ['Última ayuda', latestHelp ? `${formatDate(latestHelp.delivered_at)} - ${latestHelp.help_type || 'Ayuda'}` : '-']
         ]} />
       </InfoCard>
       <InfoCard icon={NotebookTabs} title="Observaciones generales">
@@ -439,7 +439,7 @@ function MembersPanel({ members, family, onOpenBeneficiary }) {
                   <h4 className="truncate font-bold text-ink">{member.full_name}</h4>
                   <MemberStatusBadge active={member.is_active} />
                 </div>
-                <p className="mt-1 text-sm text-slate-500">{member.code || 'Sin codigo'} - {member.document_id || 'Sin documento'}</p>
+                <p className="mt-1 text-sm text-slate-500">{member.code || 'Sin código'} - {member.document_id || 'Sin documento'}</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
                   <span className="rounded-full bg-slate-100 px-2.5 py-1">Edad: {memberAgeLabel(member)}</span>
                   <span className="rounded-full bg-brand-50 px-2.5 py-1 text-brand-700">{familyRelationship(member, family)}</span>
@@ -451,7 +451,7 @@ function MembersPanel({ members, family, onOpenBeneficiary }) {
           </article>
         ))}
       </div>
-      {!members.length && <div className="mt-4"><EmptyState icon={Users} title="Sin miembros asociados" text="Esta familia todavia no tiene beneficiarios vinculados." /></div>}
+      {!members.length && <div className="mt-4"><EmptyState icon={Users} title="Sin miembros asociados" text="Esta familia todavía no tiene beneficiarios vinculados." /></div>}
     </section>
   );
 }
@@ -527,7 +527,7 @@ function FamilyDocumentsPanel({ family, members, documents, actions, canEdit, ca
   return (
     <section>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <SectionHeading icon={Paperclip} title="Documentos" description="Documentacion asociada a la familia o a cualquiera de sus miembros." />
+        <SectionHeading icon={Paperclip} title="Documentos" description="Documentación asociada a la familia o a cualquiera de sus miembros." />
         {canEdit && (
           <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2 lg:w-[520px]">
             <select className={inputClass} value={form.document_type} onChange={(event) => setForm((current) => ({ ...current, document_type: event.target.value }))}>
@@ -560,7 +560,7 @@ function FamilyDocumentsPanel({ family, members, documents, actions, canEdit, ca
           </article>
         ))}
       </div>
-      {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="No hay documentacion vinculada a esta familia." /></div>}
+      {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="No hay documentación vinculada a esta familia." /></div>}
     </section>
   );
 }
@@ -605,19 +605,19 @@ function FamilyObservationsPanel({ family, members, observations, actions, canEd
               <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{entry.notes}</p>
             </article>
           ))}
-          {!observations.length && <EmptyState icon={NotebookTabs} title="Sin observaciones" text="Todavia no hay historial social familiar." />}
+          {!observations.length && <EmptyState icon={NotebookTabs} title="Sin observaciones" text="Todavía no hay historial social familiar." />}
         </div>
       </div>
 
       {canEdit && (
         <form className="h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submit}>
-          <h3 className="font-bold text-ink">Nueva observacion</h3>
+          <h3 className="font-bold text-ink">Nueva observación</h3>
           <div className="mt-4 space-y-3">
             <FormField label="Fecha"><input className={inputClass} type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} /></FormField>
             <FormField label="Tipo"><select className={inputClass} value={form.entry_type} onChange={(event) => setForm((current) => ({ ...current, entry_type: event.target.value }))}>{FAMILY_HISTORY_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-            <FormField label="Ambito"><select className={inputClass} value={form.beneficiary_id} onChange={(event) => setForm((current) => ({ ...current, beneficiary_id: event.target.value }))}><option value="">Familia completa</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}</select></FormField>
+            <FormField label="Ámbito"><select className={inputClass} value={form.beneficiary_id} onChange={(event) => setForm((current) => ({ ...current, beneficiary_id: event.target.value }))}><option value="">Familia completa</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}</select></FormField>
             <FormField label="Observaciones"><textarea className={inputClass} rows="5" required value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
-            <Button type="submit" className="w-full" disabled={saving}>{saving ? 'Guardando...' : 'Guardar observacion'}</Button>
+            <Button type="submit" className="w-full" disabled={saving}>{saving ? 'Guardando...' : 'Guardar observación'}</Button>
           </div>
         </form>
       )}
@@ -628,7 +628,7 @@ function FamilyObservationsPanel({ family, members, observations, actions, canEd
 function FamilyTimeline({ rows }) {
   return (
     <section>
-      <SectionHeading icon={ClipboardList} title="Linea temporal" description="Altas, entregas, cambios, incidencias y documentos." />
+      <SectionHeading icon={ClipboardList} title="Línea temporal" description="Altas, entregas, cambios, incidencias y documentos." />
       <div className="mt-5 space-y-3">
         {rows.map((row) => {
           const Icon = row.icon;
@@ -646,7 +646,7 @@ function FamilyTimeline({ rows }) {
             </article>
           );
         })}
-        {!rows.length && <EmptyState icon={ClipboardList} title="Sin linea temporal" text="Los eventos apareceran cuando haya actividad familiar." />}
+        {!rows.length && <EmptyState icon={ClipboardList} title="Sin línea temporal" text="Los eventos aparecerán cuando haya actividad familiar." />}
       </div>
     </section>
   );
@@ -671,7 +671,7 @@ function FamilyForm({ initial, families, members, onSubmit, onCancel }) {
     setError('');
     const duplicate = families.find((family) => normalize(family.family_code) === normalize(form.family_code) && family.id !== form.id);
     if (duplicate) {
-      setError('Ya existe una familia con ese codigo.');
+      setError('Ya existe una familia con ese código.');
       return;
     }
     if (members.length && !form.responsible_beneficiary_id) {
@@ -696,7 +696,7 @@ function FamilyForm({ initial, families, members, onSubmit, onCancel }) {
     <form className="space-y-5" onSubmit={submit}>
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
       <FormSection icon={Home} title="Cabecera familiar" description="Datos principales del expediente familiar.">
-        <FormField label="Codigo familia" required><input className={inputClass} required value={form.family_code || ''} onChange={(event) => update('family_code', event.target.value)} /></FormField>
+        <FormField label="Código familia" required><input className={inputClass} required value={form.family_code || ''} onChange={(event) => update('family_code', event.target.value)} /></FormField>
         <FormField label="Estado"><select className={inputClass} value={form.status || 'Activa'} onChange={(event) => update('status', event.target.value)}>{FAMILY_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
         <div className="sm:col-span-2">
           <FormField label="Responsable">
@@ -724,13 +724,13 @@ function FamilyForm({ initial, families, members, onSubmit, onCancel }) {
             )}
           </FormField>
         </div>
-        <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField></div>
-        <FormField label="Telefono"><input className={inputClass} type="tel" value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
+        <div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+        <FormField label="Teléfono"><input className={inputClass} type="tel" value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
         <FormField label="Email"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
         <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count ?? 0} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField>
       </FormSection>
 
-      <FormSection icon={NotebookTabs} title="Observaciones" description="Informacion social relevante para la unidad familiar.">
+      <FormSection icon={NotebookTabs} title="Observaciones" description="Información social relevante para la unidad familiar.">
         <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="5" value={form.notes || ''} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
         {form.status === 'Archivada' && <div className="sm:col-span-2"><FormField label="Motivo de archivo"><textarea className={inputClass} rows="3" value={form.archive_reason || ''} onChange={(event) => update('archive_reason', event.target.value)} /></FormField></div>}
       </FormSection>

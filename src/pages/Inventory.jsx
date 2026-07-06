@@ -233,8 +233,8 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                           <Button
                             variant="danger"
                             className="h-9 w-9 px-0"
-                            aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminacion de'} ${item.name}`}
-                            title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}
+                            aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminación de'} ${item.name}`}
+                            title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}
                             disabled={deletingId === item.id}
                             onClick={() => setDeletionTarget({ item, relations: buildInventoryRelationWarnings(item, data) })}
                           >
@@ -320,7 +320,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </Modal>
       )}
       {deletionTarget && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeletionTarget(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={`${deletionTarget.item.name}${deletionTarget.item.lot ? ` - Lote ${deletionTarget.item.lot}` : ''}`}

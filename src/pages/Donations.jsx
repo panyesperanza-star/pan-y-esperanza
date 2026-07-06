@@ -84,7 +84,7 @@ export function Donations({ data, actions, currentUser, navigationTarget, onNavi
   }, [navigationTarget]);
 
   function openOperation(operationType) {
-    const label = operationType === 'donation_in_kind' ? 'Donacion en especie' : 'Donacion monetaria';
+    const label = operationType === 'donation_in_kind' ? 'Donación en especie' : 'Donación monetaria';
     onNavigate?.({
       moduleId: 'accounting',
       filter: 'new-operation',
@@ -192,8 +192,8 @@ export function Donations({ data, actions, currentUser, navigationTarget, onNavi
         description="CRM de donantes. Las donaciones se registran una sola vez desde Contabilidad."
         actions={canRegisterDonation ? (
           <>
-            <Button onClick={() => openOperation('donation_money')}><Banknote size={18} /> Donacion monetaria</Button>
-            <Button variant="secondary" onClick={() => openOperation('donation_in_kind')}><Gift size={18} /> Donacion en especie</Button>
+            <Button onClick={() => openOperation('donation_money')}><Banknote size={18} /> Donación monetaria</Button>
+            <Button variant="secondary" onClick={() => openOperation('donation_in_kind')}><Gift size={18} /> Donación en especie</Button>
           </>
         ) : <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>}
       />
@@ -207,7 +207,7 @@ export function Donations({ data, actions, currentUser, navigationTarget, onNavi
             <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar donante</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-              <input className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, telefono, email o direccion" />
+              <input className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, teléfono, email o dirección" />
             </span>
           </label>
           <label>
@@ -243,7 +243,7 @@ export function Donations({ data, actions, currentUser, navigationTarget, onNavi
         <EmptyState
           icon={Users}
           title="No hay donantes con estos filtros."
-          text="Cuando se registren donaciones desde Contabilidad apareceran aqui como historial del donante."
+          text="Cuando se registren donaciones desde Contabilidad aparecerán aquí como historial del donante."
         />
       )}
 
@@ -335,9 +335,9 @@ function DonorCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive, 
       </div>
 
       <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-        <ContactInfo icon={Phone} label="Telefono" value={profile.phone} />
+        <ContactInfo icon={Phone} label="Teléfono" value={profile.phone} />
         <ContactInfo icon={Mail} label="Email" value={profile.email} />
-        <ContactInfo icon={MapPin} label="Direccion" value={profile.address} wide />
+        <ContactInfo icon={MapPin} label="Dirección" value={profile.address} wide />
         <ContactInfo icon={NotebookTabs} label="Observaciones" value={profile.observations} wide />
       </dl>
 
@@ -346,7 +346,7 @@ function DonorCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive, 
         <MiniMetric label="Dinero donado" value={formatMoney(profile.moneyDonated)} />
         <MiniMetric label="Valor social" value={formatMoney(profile.socialDonated)} />
         <MiniMetric label="Primera" value={formatDate(profile.firstDonation)} />
-        <MiniMetric label="Ultima" value={formatDate(profile.lastDonation)} />
+        <MiniMetric label="Última" value={formatDate(profile.lastDonation)} />
         <MiniMetric label="Pendientes" value={profile.pendingDonations} />
       </div>
 
@@ -415,9 +415,9 @@ function DonorForm({ profile, onCancel, onSubmit }) {
       <FormField label="Tipo"><select className={inputClass} value={form.kind} onChange={(event) => update('kind', event.target.value)}>{DONOR_KIND_FORM_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></FormField>
       <FormField label="Persona de contacto"><input className={inputClass} value={form.contactPerson} onChange={(event) => update('contactPerson', event.target.value)} /></FormField>
       <FormField label="Documento / CIF"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
-      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
       <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="4" value={form.observations} onChange={(event) => update('observations', event.target.value)} /></FormField></div>
       <div className="flex justify-end gap-2 sm:col-span-2">
         <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
@@ -440,7 +440,7 @@ function ArchiveDonorForm({ profile, onCancel, onConfirm }) {
         setSaving(false);
       }
     }}>
-      <p className="mb-4 text-sm text-slate-600">El donante <strong>{profile.name}</strong> se conservara en el historial y dejara de aparecer como activo.</p>
+      <p className="mb-4 text-sm text-slate-600">El donante <strong>{profile.name}</strong> se conservará en el historial y dejará de aparecer como activo.</p>
       <FormField label="Motivo de archivo">
         <textarea className={inputClass} rows="4" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo u observaciones..." />
       </FormField>
@@ -472,7 +472,7 @@ function DeleteDonorForm({ profile, onCancel, onConfirm }) {
         setSaving(false);
       }
     }}>
-      <p className="text-sm text-slate-600">Se eliminara definitivamente la ficha del donante <strong>{profile.name}</strong>. Esta accion solo esta disponible porque no tiene donaciones registradas.</p>
+      <p className="text-sm text-slate-600">Se eliminará definitivamente la ficha del donante <strong>{profile.name}</strong>. Esta acción solo está disponible porque no tiene donaciones registradas.</p>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
         <Button type="submit" variant="danger" disabled={saving}><Trash2 size={16} /> Eliminar</Button>
@@ -509,7 +509,7 @@ function DonorProfile({ profile, data, tab, setTab, canEdit, isSuperadmin, onEdi
               <ProfileMetric label="Dinero" value={formatMoney(profile.moneyDonated)} />
               <ProfileMetric label="Valor social" value={formatMoney(profile.socialDonated)} />
               <ProfileMetric label="Primera" value={formatDate(profile.firstDonation)} />
-              <ProfileMetric label="Ultima" value={formatDate(profile.lastDonation)} />
+              <ProfileMetric label="Última" value={formatDate(profile.lastDonation)} />
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
@@ -567,18 +567,18 @@ function DonorSummary({ profile }) {
           ['Nombre', profile.name],
           ['Tipo', profile.kind],
           ['Persona de contacto', profile.contactPerson || '-'],
-          ['Telefono', profile.phone || '-'],
+          ['Teléfono', profile.phone || '-'],
           ['Email', profile.email || '-'],
-          ['Direccion', profile.address || '-']
+          ['Dirección', profile.address || '-']
         ]} />
       </InfoPanel>
       <InfoPanel icon={Gift} title="Resumen de donaciones">
         <InfoGrid items={[
-          ['Numero total de donaciones', profile.totalDonations],
+          ['Número total de donaciones', profile.totalDonations],
           ['Dinero donado', formatMoney(profile.moneyDonated)],
           ['Valor social donado', formatMoney(profile.socialDonated)],
-          ['Primera donacion', formatDate(profile.firstDonation)],
-          ['Ultima donacion', formatDate(profile.lastDonation)],
+          ['Primera donación', formatDate(profile.firstDonation)],
+          ['Última donación', formatDate(profile.lastDonation)],
           ['Donaciones pendientes', profile.pendingDonations]
         ]} />
       </InfoPanel>
@@ -663,13 +663,13 @@ function DonorDocuments({ profile, data }) {
         <article key={`certificate-${item.id}`} className="flex items-start gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <span className="rounded-md bg-emerald-50 p-2 text-emerald-700"><Download size={18} /></span>
           <div className="min-w-0 flex-1">
-            <p className="font-bold text-ink">Certificado de donacion</p>
+            <p className="font-bold text-ink">Certificado de donación</p>
             <p className="mt-1 text-xs text-slate-500">{formatDate(item.date)} - {item.concept}</p>
           </div>
           <Button variant="secondary" onClick={() => printDonationCertificatePdf(item.rawDonation, data.organization_settings?.[0])}><Download size={16} /> Descargar</Button>
         </article>
       ))}
-      {!docs.length && !certificates.length && <EmptyState icon={FileText} title="Sin documentos" text="Los justificantes y certificados asociados al donante apareceran aqui." />}
+      {!docs.length && !certificates.length && <EmptyState icon={FileText} title="Sin documentos" text="Los justificantes y certificados asociados al donante aparecerán aquí." />}
     </section>
   );
 }
@@ -689,7 +689,7 @@ function DonorCommunications({ profile }) {
           </div>
         </article>
       ))}
-      {!profile.communications.length && <EmptyState icon={MessageSquareText} title="Sin comunicaciones" text="Los emails vinculados al donante apareceran aqui." />}
+      {!profile.communications.length && <EmptyState icon={MessageSquareText} title="Sin comunicaciones" text="Los emails vinculados al donante aparecerán aquí." />}
     </section>
   );
 }
@@ -918,7 +918,7 @@ function buildDonorProfiles(data) {
         id: `accounting-${event.id}`,
         category: 'money',
         date: event.occurred_at || event.created_at,
-        concept: event.title || 'Donacion monetaria',
+        concept: event.title || 'Donación monetaria',
         moneyAmount: Number(event.amount || 0),
         socialAmount: 0,
         status: event.status || 'active',
@@ -939,11 +939,11 @@ function buildDonorProfiles(data) {
         id: `treasury-${income.id}`,
         category: 'money',
         date: income.income_at || income.created_at,
-        concept: income.concept || 'Donacion monetaria',
+        concept: income.concept || 'Donación monetaria',
         moneyAmount: Number(income.amount || 0),
         socialAmount: 0,
         status: income.status || 'active',
-        sourceLabel: 'Tesoreria historica',
+        sourceLabel: 'Tesorería histórica',
         notes: income.notes || '',
         eventId: '',
         contactId: contact?.id || '',
@@ -959,7 +959,7 @@ function buildDonorProfiles(data) {
       id: `donation-${donation.id}`,
       category: 'kind',
       date: donation.donated_at || donation.created_at,
-      concept: donation.donation_type || 'Donacion en especie',
+      concept: donation.donation_type || 'Donación en especie',
       moneyAmount: 0,
       socialAmount: Number(donation.estimated_value || 0),
       status: donationStatus(donation),
@@ -984,7 +984,7 @@ function buildDonorProfiles(data) {
         id: `social-${event.id}`,
         category: 'kind',
         date: event.social_value_at || event.created_at,
-        concept: item?.name || event.notes || 'Donacion en especie',
+        concept: item?.name || event.notes || 'Donación en especie',
         moneyAmount: 0,
         socialAmount: Number(event.amount || 0),
         status: event.status || 'active',

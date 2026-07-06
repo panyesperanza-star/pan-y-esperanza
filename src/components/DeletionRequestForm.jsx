@@ -30,12 +30,12 @@ export function DeletionRequestForm({ recordLabel, relations = [], onCancel, onS
   return (
     <form className="space-y-4" onSubmit={submit}>
       <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <p className="font-bold">No se eliminara el registro ahora.</p>
-        <p className="mt-1">Se enviara una solicitud al proveedor del sistema para revisar la eliminacion definitiva de {recordLabel || 'este registro'}.</p>
+        <p className="font-bold">No se eliminará el registro ahora.</p>
+        <p className="mt-1">Se enviará una solicitud al proveedor del sistema para revisar la eliminación definitiva de {recordLabel || 'este registro'}.</p>
       </div>
       {relations.length > 0 && (
         <div>
-          <p className="text-sm font-bold text-ink">Informacion relacionada detectada:</p>
+          <p className="text-sm font-bold text-ink">Información relacionada detectada:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
             {relations.map((relation) => <li key={relation}>{relation}</li>)}
           </ul>
@@ -52,7 +52,7 @@ export function DeletionRequestForm({ recordLabel, relations = [], onCancel, onS
         <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" variant="danger" disabled={saving}>
           {saving ? <Trash2 size={16} /> : <Send size={16} />}
-          {saving ? 'Enviando...' : 'Enviar solicitud de eliminacion'}
+          {saving ? 'Enviando...' : 'Enviar solicitud de eliminación'}
         </Button>
       </div>
     </form>

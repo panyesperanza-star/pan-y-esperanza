@@ -158,7 +158,7 @@ export default function App() {
         <section className="max-w-lg rounded-md border border-slate-200 bg-white p-8 text-center shadow-panel">
           <h1 className="text-2xl font-bold text-ink">Sin modulos asignados</h1>
           <p className="mt-3 text-slate-600">Tu cuenta esta activa, pero no tiene permisos de visualizacion. Solicita acceso a un administrador.</p>
-          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesion</button>
+          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesión</button>
         </section>
       </main>
     );

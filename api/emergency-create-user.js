@@ -15,7 +15,7 @@ export default async function handler(request, response) {
   console.info(`${logPrefix} inicio`, { requestId, method: request.method });
 
   if (request.method !== 'POST') {
-    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Método no permitido.' });
   }
 
   const secret = requireRepairSecret(request, requestId, logPrefix);
@@ -35,7 +35,7 @@ export default async function handler(request, response) {
       return sendJson(response, 400, {
         ok: false,
         code: 'INVALID_USER',
-        error: 'Email y contrasena son obligatorios.'
+        error: 'Email y contraseña son obligatorios.'
       });
     }
 
@@ -43,7 +43,7 @@ export default async function handler(request, response) {
       return sendJson(response, 400, {
         ok: false,
         code: 'WEAK_PASSWORD',
-        error: 'La contrasena debe tener al menos 8 caracteres.'
+        error: 'La contraseña debe tener al menos 8 caracteres.'
       });
     }
 

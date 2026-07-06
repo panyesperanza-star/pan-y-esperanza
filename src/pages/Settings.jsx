@@ -27,7 +27,7 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
 
   return (
     <>
-      <PageHeader title={initialTab === 'users' ? 'Usuarios' : 'Configuracion'} description={initialTab === 'users' ? 'Gestion de usuarios, roles y permisos.' : 'Identidad corporativa y configuracion del sistema.'} />
+      <PageHeader title={initialTab === 'users' ? 'Usuarios' : 'Configuración'} description={initialTab === 'users' ? 'Gestión de usuarios, roles y permisos.' : 'Identidad corporativa y configuración del sistema.'} />
       <div className="mb-5 flex flex-wrap gap-2">
         {canViewSettings && <Button variant={tab === 'entity' ? 'primary' : 'secondary'} onClick={() => setTab('entity')}>Entidad</Button>}
         {canViewSettings && <Button variant={tab === 'mail' ? 'primary' : 'secondary'} onClick={() => setTab('mail')}>Correo</Button>}
@@ -40,8 +40,8 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
         <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); actions.updateOrganizationSettings(form); }}>
           <FormField label="Nombre entidad"><input className={inputClass} value={form.name || ''} onChange={(event) => update('name', event.target.value)} /></FormField>
           <FormField label="CIF"><input className={inputClass} value={form.cif || ''} onChange={(event) => update('cif', event.target.value)} /></FormField>
-          <FormField label="Direccion"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField>
-          <FormField label="Telefono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
+          <FormField label="Dirección"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField>
+          <FormField label="Teléfono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
           <FormField label="Correo"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
           <FormField label="Web"><input className={inputClass} value={form.website || ''} onChange={(event) => update('website', event.target.value)} /></FormField>
           <div className="sm:col-span-2"><FormField label="Logo"><input className={inputClass} value={form.logo_path || 'src/assets/logo-pan-y-esperanza.png'} onChange={(event) => update('logo_path', event.target.value)} /></FormField></div>
@@ -72,7 +72,7 @@ function SystemStatus() {
         <StatusItem label="Base de datos conectada" ok={status.databaseConfigured} />
         <StatusItem label="Correo conectado" ok={status.emailConfigured} />
         <StatusItem label="Almacenamiento conectado" ok={storageConnected ?? status.storageConfigured} action={<Button variant="secondary" type="button" onClick={checkStorage}>Comprobar</Button>} />
-        <StatusItem label="Ultima copia de seguridad" value={lastBackup ? formatDateTime(lastBackup) : 'Sin copias registradas'} />
+        <StatusItem label="Última copia de seguridad" value={lastBackup ? formatDateTime(lastBackup) : 'Sin copias registradas'} />
       </div>
       <p className="mt-4 text-sm text-slate-500">Para produccion real configura Supabase, Resend y el bucket de almacenamiento en Vercel antes de activar usuarios reales.</p>
     </section>
@@ -172,7 +172,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-ink">Usuarios</h3>
-          <p className="text-sm text-slate-500">Gestion de usuarios, permisos por accion, accesos y auditoria.</p>
+          <p className="text-sm text-slate-500">Gestión de usuarios, permisos por acción, accesos y auditoría.</p>
         </div>
         {canCreate && <Button onClick={() => setEditing(emptyUser(currentUser))}>Crear usuario</Button>}
       </div>
@@ -180,7 +180,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
         <MiniStat label="Usuarios activos" value={activeUsers.length} />
         <MiniStat label="Usuarios inactivos" value={inactiveUsers.length} />
         <MiniStat label="Usuarios bloqueados" value={blockedUsers.length} />
-        <MiniStat label="Ultimos accesos" value={users.filter((user) => user.last_access_at).length} />
+        <MiniStat label="Últimos accesos" value={users.filter((user) => user.last_access_at).length} />
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant={section === 'users' ? 'primary' : 'secondary'} onClick={() => setSection('users')}>Usuarios</Button>
@@ -238,7 +238,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
   async function blockUser(user) {
     try {
       await actions.blockUser(user.id);
-      setMessage('Usuario bloqueado. No podra iniciar sesion hasta ser reactivado.');
+      setMessage('Usuario bloqueado. No podrá iniciar sesión hasta ser reactivado.');
     } catch (error) {
       setMessage(error.message);
     }
@@ -255,7 +255,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1240px] text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Email</th><th>Telefono</th><th>Cargo</th><th>Estado</th><th>Ultimo acceso</th><th>Creado</th><th>Creado por</th><th className="text-right pr-4">Acciones</th></tr></thead>
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Email</th><th>Teléfono</th><th>Cargo</th><th>Estado</th><th>Último acceso</th><th>Creado</th><th>Creado por</th><th className="text-right pr-4">Acciones</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((user) => {
               const status = getUserStatus(user);
@@ -273,7 +273,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
                   <td className="pr-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       {canEdit && <Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
-                      {canEdit && <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contrasena temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contrasena temporal actualizada.'); } }}>Restablecer contrasena</Button>}
+                      {canEdit && <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contraseña temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contraseña temporal actualizada.'); } }}>Restablecer contraseña</Button>}
                       {canEdit && (status === 'Activo'
                         ? <Button variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
                         : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
@@ -327,7 +327,7 @@ function UserForm({ initial, organization, onSubmit }) {
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>
       <FormField label="Apellidos"><input className={inputClass} value={form.last_name || ''} onChange={(event) => update('last_name', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" required value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <FormField label="Telefono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Teléfono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Cargo"><input className={inputClass} value={form.position || ''} onChange={(event) => update('position', event.target.value)} /></FormField>
       <FormField label="Contrasena temporal"><input className={inputClass} type="password" value={form.password || ''} onChange={(event) => update('password', event.target.value)} /></FormField>
       <FormField label="Rol"><select className={inputClass} value={form.role || 'Voluntario'} onChange={(event) => updateRole(event.target.value)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField>
@@ -387,8 +387,8 @@ function normalizeUserError(error) {
   const message = error?.message || '';
   if (message.includes('duplicate key') || message.includes('app_users_email_key')) return 'Ya existe un usuario registrado con ese email.';
   if (message.includes('status')) return 'No se pudo guardar el estado del usuario. Ejecute la migracion 20260622_user_status_management.sql en Supabase.';
-  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel y redepliegue.';
-  if (message.includes('Sesion de administrador requerida') || message.includes('Sesion no valida')) return 'Sesion de administrador no valida. Cierre sesion y vuelva a entrar.';
+  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel y redepliegue.';
+  if (message.includes('Sesion de administrador requerida') || message.includes('Sesion no valida') || message.includes('Sesión de administrador requerida') || message.includes('Sesión no válida')) return 'Sesión de administrador no válida. Cierre sesión y vuelva a entrar.';
   if (message.includes('No tiene permisos')) return 'No tiene permisos para administrar usuarios.';
   return message || 'No se pudo registrar el usuario. Revise los datos e intentelo de nuevo.';
 }

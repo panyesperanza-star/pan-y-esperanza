@@ -5,7 +5,7 @@ export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (request.method !== 'POST') {
-    return sendJson(response, 405, { ok: false, error: 'Metodo no permitido.' });
+    return sendJson(response, 405, { ok: false, error: 'Método no permitido.' });
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -22,7 +22,7 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_ADMIN_NOT_CONFIGURED',
         step: 'server_config_missing',
-        error: 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
+        error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
         details: serverDiagnostics
       });
     }
@@ -33,13 +33,13 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_SERVICE_ROLE_INVALID',
         step: 'server_config_service_role_format',
-        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato valido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
         details: serverDiagnostics
       });
     }
 
     if (!user.email || !user.password) {
-      return sendJson(response, 400, { ok: false, code: 'INVALID_USER', error: 'Email y contrasena son obligatorios.' });
+      return sendJson(response, 400, { ok: false, code: 'INVALID_USER', error: 'Email y contraseña son obligatorios.' });
     }
 
     const admin = createClient(url, serviceRoleKey, {
@@ -111,7 +111,7 @@ export default async function handler(request, response) {
     console.info('[create-user] Usuario creado', { requestId, id: profileData.id, email: profileData.email });
     return sendJson(response, 200, { ok: true, user: profileData });
   } catch (error) {
-    console.error('[create-user] Excepcion', { requestId, message: error.message, stack: error.stack });
+    console.error('[create-user] Excepción', { requestId, message: error.message, stack: error.stack });
     return sendJson(response, 500, { ok: false, code: 'CREATE_USER_FAILED', error: error.message || 'No se pudo crear el usuario.' });
   }
 }

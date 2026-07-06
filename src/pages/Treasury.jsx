@@ -42,7 +42,7 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
       relations: deletionTarget.relations
     });
     setDeletionTarget(null);
-    setNotice('Solicitud de eliminacion enviada al proveedor del sistema.');
+    setNotice('Solicitud de eliminación enviada al proveedor del sistema.');
   }
 
   async function deletePermanently() {
@@ -74,16 +74,16 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
 
       {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_incomes', 'treasury_income', item, item.concept || 'Ingreso de tesoreria', actions.deleteTreasuryIncome))} />}
       {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_expenses', 'treasury_expense', item, item.concept || 'Gasto de tesoreria', actions.deleteTreasuryExpense))} />}
-      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Prestamo de tesoreria', actions.deleteTreasuryLoan))} />}
+      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Préstamo de tesorería', actions.deleteTreasuryLoan))} />}
       {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_accounts', 'treasury_account', item, item.name || 'Cuenta de tesoreria', actions.deleteTreasuryAccount))} />}
       {tab === 'Informes' && <ReportsPanel data={data} indicators={indicators} />}
 
       {modal?.type === 'Ingresos' && <Modal title={modal.item ? 'Editar ingreso' : 'Nuevo ingreso'} onClose={close}><IncomeForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryIncome(modal.item.id, payload) : await actions.createTreasuryIncome(payload); close(); }} /></Modal>}
       {modal?.type === 'Gastos' && <Modal title={modal.item ? 'Editar gasto' : 'Nuevo gasto'} onClose={close}><ExpenseForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryExpense(modal.item.id, payload) : await actions.createTreasuryExpense(payload); close(); }} /></Modal>}
-      {modal?.type === 'Prestamos' && <Modal title={modal.item ? 'Editar prestamo' : 'Nuevo prestamo'} onClose={close}><LoanForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryLoan(modal.item.id, payload) : await actions.createTreasuryLoan(payload); close(); }} /></Modal>}
+      {modal?.type === 'Prestamos' && <Modal title={modal.item ? 'Editar préstamo' : 'Nuevo préstamo'} onClose={close}><LoanForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryLoan(modal.item.id, payload) : await actions.createTreasuryLoan(payload); close(); }} /></Modal>}
       {modal?.type === 'Caja y bancos' && <Modal title={modal.item ? 'Editar cuenta' : 'Nueva cuenta'} onClose={close}><AccountForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryAccount(modal.item.id, payload) : await actions.createTreasuryAccount(payload); close(); }} /></Modal>}
       {deletionTarget && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeletionTarget(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={deletionTarget.record_label}
@@ -109,7 +109,7 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
       <section className="mt-6 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Tesoreria integrada</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Tesorería integrada</p>
             <h3 className="text-xl font-bold text-ink">Registros historicos dentro de Contabilidad</h3>
             <p className="mt-1 text-sm text-slate-600">Ingresos, gastos, prestamos, caja, bancos e informes heredados, sin entrada independiente en el menu.</p>
           </div>
@@ -123,7 +123,7 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
   return (
     <>
       <PageHeader
-        title="Tesoreria"
+        title="Tesorería"
         description="Control de ingresos, gastos, prestamos adelantados, caja y bancos."
         actions={['Informes'].includes(tab) ? null : actionButton}
       />
@@ -149,7 +149,7 @@ function ExpenseTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onD
 }
 
 function LoanTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
-  return <DataTable columns={['Persona', 'Fecha', 'Motivo', 'Importe', 'Estado', 'Fecha devolucion', 'Observaciones']} rows={rows.map((item) => ({
+  return <DataTable columns={['Persona', 'Fecha', 'Motivo', 'Importe', 'Estado', 'Fecha devolución', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [item.person, formatDate(item.loan_at), item.concept, money(item.amount), item.status, formatDate(item.returned_at), item.notes || '-'],
     item
@@ -254,13 +254,13 @@ function ExpenseForm({ initial, onSubmit }) {
 
 function LoanForm({ initial, onSubmit }) {
   const [form, setForm] = useState(initial || { person: '', loan_at: todayISO(), concept: '', amount: 0, status: 'Pendiente de devolver', returned_at: '', notes: '' });
-  return <TreasuryForm onSubmit={onSubmit} form={form} setForm={setForm} submitLabel="Guardar prestamo">
+  return <TreasuryForm onSubmit={onSubmit} form={form} setForm={setForm} submitLabel="Guardar préstamo">
     <FormField label="Persona"><input className={inputClass} required value={form.person} onChange={(event) => update(setForm, 'person', event.target.value)} /></FormField>
     <FormField label="Fecha"><input className={inputClass} type="date" required value={form.loan_at} onChange={(event) => update(setForm, 'loan_at', event.target.value)} /></FormField>
     <FormField label="Motivo"><input className={inputClass} required value={form.concept} onChange={(event) => update(setForm, 'concept', event.target.value)} /></FormField>
     <FormField label="Importe"><input className={inputClass} type="number" step="0.01" min="0" required value={form.amount} onChange={(event) => update(setForm, 'amount', Number(event.target.value))} /></FormField>
     <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update(setForm, 'status', event.target.value)}><option>Pendiente de devolver</option><option>Devuelto</option><option>Parcialmente devuelto</option></select></FormField>
-    <FormField label="Fecha devolucion"><input className={inputClass} type="date" value={form.returned_at || ''} onChange={(event) => update(setForm, 'returned_at', event.target.value)} /></FormField>
+    <FormField label="Fecha devolución"><input className={inputClass} type="date" value={form.returned_at || ''} onChange={(event) => update(setForm, 'returned_at', event.target.value)} /></FormField>
     <TextareaField form={form} setForm={setForm} />
   </TreasuryForm>;
 }

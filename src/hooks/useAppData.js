@@ -125,8 +125,8 @@ export function useAppData(enabled = true, currentUser = null) {
     const movementType = payload?.movement_type;
     const quantity = Number(payload?.quantity || 0);
     const item = data.inventory_items.find((entry) => entry.id === payload?.item_id);
-    if (!item) throw new Error('Selecciona un producto valido.');
-    if (!['Entrada', 'Salida'].includes(movementType)) throw new Error('El tipo de movimiento no es valido.');
+    if (!item) throw new Error('Selecciona un producto válido.');
+    if (!['Entrada', 'Salida'].includes(movementType)) throw new Error('El tipo de movimiento no es válido.');
     if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad debe ser mayor que cero.');
     if (movementType === 'Salida' && quantity > Number(item.stock || 0)) {
       throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
@@ -186,7 +186,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function assertSystemSuperadmin() {
     if (!isSystemSuperadmin(currentUser)) {
-      throw new Error('Solo el Superadministrador del sistema puede resolver solicitudes de eliminacion.');
+      throw new Error('Solo el Superadministrador del sistema puede resolver solicitudes de eliminación.');
     }
   }
 
@@ -198,7 +198,7 @@ export function useAppData(enabled = true, currentUser = null) {
       throw new Error('Pan y Esperanza puede eliminar definitivamente este registro sin enviar solicitud.');
     }
     if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId), data.organization_settings?.[0] || {})) {
-      throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este modulo.');
+      throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este módulo.');
     }
   }
 
@@ -226,7 +226,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const organization = data.organization_settings?.[0] || {};
     return {
       association_id: organization.id || 'main',
-      association_name: organization.name || 'Asociacion sin nombre'
+      association_name: organization.name || 'Asociación sin nombre'
     };
   }
 
@@ -246,19 +246,19 @@ export function useAppData(enabled = true, currentUser = null) {
   async function notifyDeletionRequestProvider(request) {
     const to = providerEmail();
     if (!to) {
-      await audit(`Solicitud de eliminacion ${request.id} creada sin correo de proveedor configurado`);
+      await audit(`Solicitud de eliminación ${request.id} creada sin correo de proveedor configurado`);
       return;
     }
     await sendEmailViaApi({
       to,
-      subject: `Solicitud de eliminacion pendiente - ${request.association_name}`,
+      subject: `Solicitud de eliminación pendiente - ${request.association_name}`,
       message: [
-        'Se ha recibido una solicitud de eliminacion definitiva.',
+        'Se ha recibido una solicitud de eliminación definitiva.',
         '',
-        `Asociacion: ${request.association_name}`,
+        `Asociación: ${request.association_name}`,
         `Usuario: ${request.requester_name || request.requester_email || '-'}`,
         `Registro solicitado: ${request.record_label || request.record_id}`,
-        `Modulo: ${request.module}`,
+        `Módulo: ${request.module}`,
         `Motivo: ${request.reason}`,
         request.notes ? `Observaciones: ${request.notes}` : ''
       ].filter(Boolean).join('\n'),
@@ -270,9 +270,9 @@ export function useAppData(enabled = true, currentUser = null) {
     if (!request?.requester_email) return;
     await sendEmailViaApi({
       to: request.requester_email,
-      subject: `Solicitud de eliminacion rechazada - ${request.record_label || request.record_id}`,
+      subject: `Solicitud de eliminación rechazada - ${request.record_label || request.record_id}`,
       message: [
-        'La solicitud de eliminacion definitiva ha sido rechazada por el proveedor del sistema.',
+        'La solicitud de eliminación definitiva ha sido rechazada por el proveedor del sistema.',
         '',
         `Registro: ${request.record_label || request.record_id}`,
         `Motivo de la solicitud: ${request.reason}`,
@@ -286,7 +286,7 @@ export function useAppData(enabled = true, currentUser = null) {
     try {
       await sender();
     } catch (error) {
-      console.warn('[eliminaciones] No se pudo enviar notificacion:', error);
+      console.warn('[eliminaciones] No se pudo enviar notificación:', error);
       await audit(`${auditMessage}: ${error.message || 'error de correo'}`);
     }
   }
@@ -308,7 +308,7 @@ export function useAppData(enabled = true, currentUser = null) {
     }
     if (moduleId === 'donations') {
       await dataStore.remove('donations', recordId);
-      return 'donacion';
+      return 'donación';
     }
     if (moduleId === 'treasury_incomes') {
       await dataStore.remove('treasury_incomes', recordId);
@@ -320,7 +320,7 @@ export function useAppData(enabled = true, currentUser = null) {
     }
     if (moduleId === 'treasury_loans') {
       await dataStore.remove('treasury_loans', recordId);
-      return 'prestamo de tesoreria';
+      return 'préstamo de tesorería';
     }
     if (moduleId === 'treasury_accounts') {
       await dataStore.remove('treasury_accounts', recordId);
@@ -330,7 +330,7 @@ export function useAppData(enabled = true, currentUser = null) {
       await dataStore.remove('financial_accounts', recordId);
       return 'cuenta contable';
     }
-    throw new Error(`El modulo ${moduleId} todavia no tiene ejecutor de eliminacion definitiva.`);
+    throw new Error(`El módulo ${moduleId} todavía no tiene ejecutor de eliminación definitiva.`);
   }
 
   async function accountingAuditTrail(tableName, recordId, action, previousData, nextData) {
@@ -369,7 +369,7 @@ export function useAppData(enabled = true, currentUser = null) {
   function assertNoUnauthorizedNegativeBalance(account, nextBalance, allowNegativeBalance) {
     if (nextBalance >= 0) return;
     if (currentUser?.role === 'Superadministrador' && allowNegativeBalance === true) return;
-    throw new Error(`La operacion dejaria saldo negativo en ${account.name}. Saldo disponible: ${Number(account.current_balance || 0).toFixed(2)} EUR.`);
+    throw new Error(`La operación dejaría saldo negativo en ${account.name}. Saldo disponible: ${Number(account.current_balance || 0).toFixed(2)} EUR.`);
   }
 
   function operationDate(value) {
@@ -763,7 +763,7 @@ export function useAppData(enabled = true, currentUser = null) {
         documentType: 'receipt',
         forceDocument: false
       });
-      await audit(`Contabilidad: nueva operacion ingreso ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: nueva operación ingreso ${payload.concept || ''}`.trim());
       return;
     }
     if (operationType === 'expense') {
@@ -777,7 +777,7 @@ export function useAppData(enabled = true, currentUser = null) {
         documentType: 'ticket',
         forceDocument: true
       });
-      await audit(`Contabilidad: nueva operacion gasto ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: nueva operación gasto ${payload.concept || ''}`.trim());
       return;
     }
     if (operationType === 'donation_money') {
@@ -786,12 +786,12 @@ export function useAppData(enabled = true, currentUser = null) {
         direction: 'in',
         contactType: 'donor',
         contactName: payload.donor_name || payload.contact_name,
-        defaultConcept: 'Donacion monetaria',
-        label: 'Donacion monetaria',
+        defaultConcept: 'Donación monetaria',
+        label: 'Donación monetaria',
         documentType: 'receipt',
         forceDocument: false
       });
-      await audit(`Contabilidad: donacion monetaria ${payload.donor_name || ''}`.trim());
+      await audit(`Contabilidad: donación monetaria ${payload.donor_name || ''}`.trim());
       return;
     }
     if (operationType === 'economic_help') {
@@ -801,8 +801,8 @@ export function useAppData(enabled = true, currentUser = null) {
         direction: 'out',
         contactType: 'beneficiary',
         contactName: beneficiary?.full_name || payload.beneficiary_name || payload.contact_name,
-        defaultConcept: 'Ayuda economica',
-        label: 'Ayuda economica',
+        defaultConcept: 'Ayuda económica',
+        label: 'Ayuda económica',
         documentType: 'proof',
         forceDocument: true,
         sourceModule: 'beneficiaries',
@@ -824,7 +824,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'create', null, socialEvent);
-      await audit(`Contabilidad: ayuda economica ${beneficiary?.full_name || payload.beneficiary_name || ''}`.trim());
+      await audit(`Contabilidad: ayuda económica ${beneficiary?.full_name || payload.beneficiary_name || ''}`.trim());
       return;
     }
     if (operationType === 'inventory_purchase') {
@@ -860,14 +860,14 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       const item = await resolveInventoryItemForOperation(payload, donorName);
       const unitValue = resolveInventoryUnitValueForOperation(payload, item, quantity);
-      if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donacion en especie.');
+      if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donación en especie.');
       const amount = roundCurrency(quantity * unitValue);
-      const title = cleanText(payload.concept) || `Donacion en especie: ${item.name}`;
+      const title = cleanText(payload.concept) || `Donación en especie: ${item.name}`;
       const event = await createAccountingEvent({
         event_type: 'donation_in_kind',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Donacion en especie registrada sin afectar caja ni banco.',
+        description: cleanText(payload.notes) || 'Donación en especie registrada sin afectar caja ni banco.',
         amount,
         contact_id: contact?.id || null,
         financial_account_id: null
@@ -884,7 +884,7 @@ export function useAppData(enabled = true, currentUser = null) {
         estimated_value: amount,
         notes: cleanText(payload.notes || title)
       });
-      const inventoryMovement = await registerInventoryEntryForOperation(item, payload, quantity, `Donacion en especie: ${title}`);
+      const inventoryMovement = await registerInventoryEntryForOperation(item, payload, quantity, `Donación en especie: ${title}`);
       const socialEvent = await dataStore.create('social_value_events', {
         accounting_event_id: event.id,
         value_type: 'received',
@@ -904,7 +904,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'create', null, socialEvent);
       await updateAccountingEventSource(event, 'donations', donation.id);
-      await audit(`Contabilidad: donacion en especie ${donorName || item.name}`.trim());
+      await audit(`Contabilidad: donación en especie ${donorName || item.name}`.trim());
       return;
     }
     if (operationType === 'loan_received') {
@@ -918,13 +918,13 @@ export function useAppData(enabled = true, currentUser = null) {
         phone: payload.contact_phone,
         address: payload.contact_address
       });
-      if (!contact) throw new Error('Indica quien concede el prestamo.');
-      const title = cleanText(payload.concept) || 'Prestamo recibido';
+      if (!contact) throw new Error('Indica quién concede el préstamo.');
+      const title = cleanText(payload.concept) || 'Préstamo recibido';
       const event = await createAccountingEvent({
         event_type: 'loan',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Prestamo recibido registrado automaticamente.',
+        description: cleanText(payload.notes) || 'Préstamo recibido registrado automáticamente.',
         amount,
         contact_id: contact.id,
         financial_account_id: account.id
@@ -971,25 +971,25 @@ export function useAppData(enabled = true, currentUser = null) {
         allowNegativeBalance: payload.allow_negative_balance
       });
       await updateAccountingEventSource(event, 'loan_records', loan.id);
-      await audit(`Contabilidad: prestamo recibido ${title}`.trim());
+      await audit(`Contabilidad: préstamo recibido ${title}`.trim());
       return;
     }
     if (operationType === 'loan_repayment') {
       const loan = activeAccountingRows(data.loan_records || []).find((item) => item.id === payload.loan_id);
-      if (!loan) throw new Error('Selecciona un prestamo pendiente.');
+      if (!loan) throw new Error('Selecciona un préstamo pendiente.');
       const outstanding = outstandingLoanAmount(loan);
-      if (outstanding <= 0) throw new Error('Este prestamo no tiene saldo pendiente.');
+      if (outstanding <= 0) throw new Error('Este préstamo no tiene saldo pendiente.');
       const amount = assertPositiveNumber(payload.amount);
-      if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente del prestamo: ${outstanding.toFixed(2)} EUR.`);
+      if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente del préstamo: ${outstanding.toFixed(2)} EUR.`);
       const date = operationDate(payload.operation_at);
       const account = findFinancialAccount(payload.financial_account_id);
       const contact = (data.accounting_contacts || []).find((item) => item.id === loan.contact_id);
-      const title = cleanText(payload.concept) || `Devolucion de prestamo: ${loan.reason}`;
+      const title = cleanText(payload.concept) || `Devolución de préstamo: ${loan.reason}`;
       const event = await createAccountingEvent({
         event_type: 'loan',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Devolucion de prestamo registrada automaticamente.',
+        description: cleanText(payload.notes) || 'Devolución de préstamo registrada automáticamente.',
         amount,
         contact_id: loan.contact_id,
         financial_account_id: account.id,
@@ -1031,7 +1031,7 @@ export function useAppData(enabled = true, currentUser = null) {
         updated_at: new Date().toISOString()
       });
       await accountingAuditTrail('loan_records', loan.id, 'update_status', loan, updatedLoan);
-      await audit(`Contabilidad: devolucion de prestamo ${contact?.name || loan.reason}`.trim());
+      await audit(`Contabilidad: devolución de préstamo ${contact?.name || loan.reason}`.trim());
       return;
     }
     if (operationType === 'supplier_debt') {
@@ -1092,7 +1092,7 @@ export function useAppData(enabled = true, currentUser = null) {
         event_type: 'debt',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Pago de deuda registrado automaticamente.',
+        description: cleanText(payload.notes) || 'Pago de deuda registrado automáticamente.',
         amount,
         contact_id: debt.contact_id,
         financial_account_id: account.id,
@@ -1146,7 +1146,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       return;
     }
-    throw new Error('Selecciona un tipo de operacion valido.');
+    throw new Error('Selecciona un tipo de operación válido.');
   }
 
   function sanitizeFinancialAccountPayload(payload, initial = {}) {
@@ -1155,7 +1155,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const allowed = ['cash', 'bank', 'bizum', 'paypal', 'card', 'other'];
     const openingBalance = Number(payload?.opening_balance || 0);
     if (!name) throw new Error('El nombre de la cuenta es obligatorio.');
-    if (!allowed.includes(accountType)) throw new Error('El tipo de cuenta no es valido.');
+    if (!allowed.includes(accountType)) throw new Error('El tipo de cuenta no es válido.');
     if (!Number.isFinite(openingBalance) || openingBalance < 0) throw new Error('El saldo inicial no puede ser negativo.');
     return {
       name,
@@ -1177,7 +1177,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const allowed = ['cash_in', 'cash_out', 'bank_in', 'bank_out'];
     const amount = Number(payload?.amount || 0);
     const reason = String(payload?.reason || payload?.notes || '').trim();
-    if (!allowed.includes(movementType)) throw new Error('El tipo de movimiento no es valido.');
+    if (!allowed.includes(movementType)) throw new Error('El tipo de movimiento no es válido.');
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('El importe debe ser mayor que cero.');
     if (reason.length < 3) throw new Error('El motivo es obligatorio.');
     const account = findFinancialAccount(payload?.financial_account_id);
@@ -1259,7 +1259,7 @@ export function useAppData(enabled = true, currentUser = null) {
     try {
       return text ? JSON.parse(text) : {};
     } catch {
-      return { error: 'Respuesta no valida del servidor.' };
+      return { error: 'Respuesta no válida del servidor.' };
     }
   }
 
@@ -1277,7 +1277,7 @@ export function useAppData(enabled = true, currentUser = null) {
       body: JSON.stringify({ action, ...payload })
     });
     const result = await readApiJson(response);
-    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operacion de usuarios.'));
+    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operación de usuarios.'));
     return result;
   }
 
@@ -1313,7 +1313,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function cancelDeliveryWithoutRpc(delivery, cleanReason) {
     if (currentUser?.role !== 'Superadministrador') {
-      throw new Error('La funcion de anulacion no esta disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperacion segura.');
+      throw new Error('La función de anulación no está disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperación segura.');
     }
 
     const cancelledAt = new Date().toISOString();
@@ -1325,7 +1325,7 @@ export function useAppData(enabled = true, currentUser = null) {
         p_item_id: item.id,
         p_moved_at: cancelledAt.slice(0, 10),
         p_movement_type: 'Entrada',
-        p_notes: `Reversion por anulacion de entrega: ${cleanReason}`,
+        p_notes: `Reversión por anulación de entrega: ${cleanReason}`,
         p_quantity: Number(delivery.quantity || 0),
         p_responsible: cancelledByName
       });
@@ -1339,7 +1339,7 @@ export function useAppData(enabled = true, currentUser = null) {
         quantity: Number(delivery.quantity || 0),
         moved_at: cancelledAt,
         responsible: cancelledByName,
-        notes: `Reversion por anulacion de entrega: ${cleanReason}`
+        notes: `Reversión por anulación de entrega: ${cleanReason}`
       });
     }
 
@@ -1472,7 +1472,7 @@ export function useAppData(enabled = true, currentUser = null) {
       const moduleId = String(payload?.module || '').trim();
       assertDeletionRequester(moduleId);
       const reason = String(payload?.reason || '').trim();
-      if (reason.length < 5) throw new Error('Indica un motivo valido para solicitar la eliminacion.');
+      if (reason.length < 5) throw new Error('Indica un motivo válido para solicitar la eliminación.');
       const recordId = String(payload?.record_id || '').trim();
       if (!recordId) throw new Error('No se ha indicado el registro que se desea eliminar.');
       const existingPending = (data.deletion_requests || []).find((request) => (
@@ -1499,10 +1499,10 @@ export function useAppData(enabled = true, currentUser = null) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
-      await audit(`Solicito eliminacion definitiva de ${created.record_label || created.record_id}. Motivo: ${reason}`);
+      await audit(`Solicitó eliminación definitiva de ${created.record_label || created.record_id}. Motivo: ${reason}`);
       await trySendDeletionEmail(
         () => notifyDeletionRequestProvider(created),
-        `Fallo notificacion al proveedor para solicitud ${created.id}`
+        `Falló notificación al proveedor para solicitud ${created.id}`
       );
       await reload();
       return created;
@@ -1511,10 +1511,10 @@ export function useAppData(enabled = true, currentUser = null) {
       assertSystemSuperadmin();
       const request = (data.deletion_requests || []).find((item) => item.id === id);
       if (!request) throw new Error('La solicitud no existe.');
-      if (request.status !== 'Pendiente') throw new Error('La solicitud ya esta resuelta.');
+      if (request.status !== 'Pendiente') throw new Error('La solicitud ya está resuelta.');
       const decision = payload?.decision === 'Aprobada' ? 'Aprobada' : 'Rechazada';
       const resolutionReason = String(payload?.resolution_reason || '').trim();
-      if (resolutionReason.length < 5) throw new Error('Indica un motivo de resolucion valido.');
+      if (resolutionReason.length < 5) throw new Error('Indica un motivo de resolución válido.');
       let deletedRecordType = '';
       if (decision === 'Aprobada') {
         deletedRecordType = await executeApprovedDeletionRequest(request);
@@ -1528,11 +1528,11 @@ export function useAppData(enabled = true, currentUser = null) {
         resolution_reason: resolutionReason,
         updated_at: new Date().toISOString()
       });
-      await audit(`${decision === 'Aprobada' ? 'Aprobo y ejecuto' : 'Rechazo'} solicitud de eliminacion ${request.record_label || request.record_id}. Motivo: ${resolutionReason}`);
+      await audit(`${decision === 'Aprobada' ? 'Aprobó y ejecutó' : 'Rechazó'} solicitud de eliminación ${request.record_label || request.record_id}. Motivo: ${resolutionReason}`);
       if (decision === 'Rechazada') {
         await trySendDeletionEmail(
           () => notifyDeletionRequestRejected(resolved, resolutionReason),
-          `Fallo notificacion de rechazo para solicitud ${id}`
+          `Falló notificación de rechazo para solicitud ${id}`
         );
       }
       await reload();
@@ -1829,7 +1829,7 @@ export function useAppData(enabled = true, currentUser = null) {
       }
       await dataStore.remove('accounting_contacts', id);
       await accountingAuditTrail('accounting_contacts', id, 'delete_donor_without_donations', contact, null);
-      await audit(`Donantes: elimino donante sin donaciones ${contact.name}`.trim());
+      await audit(`Donantes: eliminó donante sin donaciones ${contact.name}`.trim());
       await reload();
     },
     createFinancialAccount: async (payload) => {
@@ -1901,10 +1901,10 @@ export function useAppData(enabled = true, currentUser = null) {
       }
       const linkedEvent = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
       if (['loan', 'debt'].includes(linkedEvent?.event_type)) {
-        throw new Error('Para corregir un prestamo o deuda, anula el movimiento y registra la operacion correcta desde Nueva operacion.');
+        throw new Error('Para corregir un préstamo o deuda, anula el movimiento y registra la operación correcta desde Nueva operación.');
       }
       const correctionReason = String(payload?.correction_reason || '').trim();
-      if (correctionReason.length < 5) throw new Error('Indica un motivo de correccion valido.');
+      if (correctionReason.length < 5) throw new Error('Indica un motivo de corrección válido.');
       const account = findFinancialAccount(original.financial_account_id);
       const { movement, event, document } = sanitizeCashBankMovementPayload({
         ...payload,
@@ -1933,7 +1933,7 @@ export function useAppData(enabled = true, currentUser = null) {
       const createdEvent = await dataStore.create('accounting_events', {
         ...event,
         correction_of_event_id: original.accounting_event_id || null,
-        description: `${event.description}. Correccion: ${correctionReason}`
+        description: `${event.description}. Corrección: ${correctionReason}`
       });
       await accountingAuditTrail('accounting_events', createdEvent.id, 'create_correction', null, createdEvent);
       const createdMovement = await dataStore.create('cash_bank_movements', {
@@ -1949,10 +1949,10 @@ export function useAppData(enabled = true, currentUser = null) {
     voidCashBankMovement: async (id, reason) => {
       assertAccountingSuperadmin();
       const cleanReason = String(reason || '').trim();
-      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulacion valido.');
+      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulación válido.');
       const original = (data.cash_bank_movements || []).find((movement) => movement.id === id);
       if (!original) throw new Error('El movimiento no existe.');
-      if (original.status === 'voided') throw new Error('El movimiento ya esta anulado.');
+      if (original.status === 'voided') throw new Error('El movimiento ya está anulado.');
       const relatedMovements = original.accounting_event_id && String(original.movement_type || '').startsWith('transfer_')
         ? (data.cash_bank_movements || []).filter((movement) => movement.accounting_event_id === original.accounting_event_id && movement.status !== 'voided')
         : [original];
@@ -2021,19 +2021,19 @@ export function useAppData(enabled = true, currentUser = null) {
     createTreasuryLoan: async (payload) => {
       assertPermission('accounting', 'create');
       await dataStore.create('treasury_loans', payload);
-      await audit(`Contabilidad: registro historico de prestamo ${payload.concept || payload.person || ''}`.trim());
+      await audit(`Contabilidad: registro histórico de préstamo ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     updateTreasuryLoan: async (id, payload) => {
       assertPermission('accounting', 'edit');
       await dataStore.update('treasury_loans', id, payload);
-      await audit(`Contabilidad: actualizo prestamo historico ${payload.concept || payload.person || ''}`.trim());
+      await audit(`Contabilidad: actualizó préstamo histórico ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     deleteTreasuryLoan: async (id) => {
       assertPermission('accounting', 'delete');
       await dataStore.remove('treasury_loans', id);
-      await audit('Contabilidad: elimino prestamo historico');
+      await audit('Contabilidad: eliminó préstamo histórico');
       await reload();
     },
     createTreasuryAccount: async (payload) => {
@@ -2075,7 +2075,7 @@ export function useAppData(enabled = true, currentUser = null) {
         const result = await readApiJson(response);
         if (!response.ok) {
           if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
-            throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.'));
+            throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.'));
           }
           throw new Error(formatApiError(result, 'No se pudo crear el usuario.'));
         }
@@ -2136,12 +2136,12 @@ export function useAppData(enabled = true, currentUser = null) {
     resetUserPassword: async (id, password) => {
       if (hasSupabaseConfig) await adminUserRequest('reset-password', { id, password });
       else await dataStore.update('app_users', id, { password });
-      await audit('Restablecio contrasena de usuario');
+      await audit('Restableció contraseña de usuario');
       await reload();
     },
     updateUserLastAccess: async (id) => {
       await dataStore.update('app_users', id, { last_access_at: new Date().toISOString() });
-      await audit('Inicio sesion');
+      await audit('Inició sesión');
       await reload();
     },
     createAuditLog: async (payload) => {

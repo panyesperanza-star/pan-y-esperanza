@@ -6,8 +6,8 @@ export async function getApiHeaders() {
 
   const { data, error } = await supabase.auth.getSession();
   if (error) {
-    console.error('[api-auth] No se pudo obtener la sesion de Supabase', { message: error.message });
-    throw new Error('Sesion de administrador no valida. Cierre sesion y vuelva a entrar.');
+    console.error('[api-auth] No se pudo obtener la sesión de Supabase', { message: error.message });
+    throw new Error('Sesión de administrador no válida. Cierre sesión y vuelva a entrar.');
   }
 
   const token = cleanJwt(data?.session?.access_token);
@@ -22,8 +22,8 @@ export async function getApiHeaders() {
   console.info('[api-auth] Preparando Authorization Bearer', diagnostics);
 
   if (!token || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
-    console.error('[api-auth] Token de sesion ausente o con formato invalido', diagnostics);
-    throw new Error('Sesion de administrador no valida. Cierre sesion y vuelva a entrar.');
+    console.error('[api-auth] Token de sesión ausente o con formato inválido', diagnostics);
+    throw new Error('Sesión de administrador no válida. Cierre sesión y vuelva a entrar.');
   }
 
   return {

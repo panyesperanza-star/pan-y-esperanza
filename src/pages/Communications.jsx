@@ -70,7 +70,7 @@ export function Communications({ data, actions, currentUser, navigationTarget })
   async function sendEmail(event) {
     event.preventDefault();
     if (!form.recipients) {
-      setNotice('El beneficiario no tiene correo electronico registrado o no se ha indicado destinatario.');
+      setNotice('El beneficiario no tiene correo electrónico registrado o no se ha indicado destinatario.');
       return;
     }
     if (form.attachReceipt && !latestDelivery) {
@@ -113,7 +113,7 @@ export function Communications({ data, actions, currentUser, navigationTarget })
     }
     const phone = normalizeWhatsAppPhone(form.whatsappPhone || beneficiary.phone);
     if (!phone) {
-      setNotice('Este beneficiario no tiene un telefono valido para WhatsApp.');
+      setNotice('Este beneficiario no tiene un teléfono válido para WhatsApp.');
       return;
     }
     const url = buildWhatsAppUrl(phone, form.message);
@@ -122,7 +122,7 @@ export function Communications({ data, actions, currentUser, navigationTarget })
     try {
       await actions.createEmailLog({
         recipient: `WhatsApp ${phone}`,
-        subject: `WhatsApp - ${form.subject || 'Comunicacion'}`,
+        subject: `WhatsApp - ${form.subject || 'Comunicación'}`,
         sent_by: currentUser?.email || currentUser?.first_name || 'Sistema',
         sent_at: new Date().toISOString(),
         attachments: [],
@@ -135,7 +135,7 @@ export function Communications({ data, actions, currentUser, navigationTarget })
 
   return (
     <>
-      <PageHeader title="Comunicaciones" description="Envio de emails, historial y estructura preparada para WhatsApp." />
+      <PageHeader title="Comunicaciones" description="Envío de emails, historial y estructura preparada para WhatsApp." />
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Beneficiarios activos" value={stats.activeBeneficiaries} />
@@ -172,7 +172,7 @@ export function Communications({ data, actions, currentUser, navigationTarget })
             </FormField>
             <label className="flex items-center gap-2 rounded-md border border-slate-200 p-3 text-sm text-slate-700">
               <input type="checkbox" checked={form.attachReceipt} onChange={(event) => update('attachReceipt', event.target.checked)} />
-              Adjuntar justificante PDF de la ultima entrega
+              Adjuntar justificante PDF de la última entrega
             </label>
             <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" variant="secondary" disabled={!latestDelivery} onClick={downloadLatestReceipt}><Download size={18} /> Descargar PDF</Button>
@@ -189,14 +189,14 @@ export function Communications({ data, actions, currentUser, navigationTarget })
                 {data.beneficiaries.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}
               </select>
             </FormField>
-            <FormField label="Telefono WhatsApp">
+            <FormField label="Teléfono WhatsApp">
               <input className={inputClass} value={form.whatsappPhone || ''} onChange={(event) => update('whatsappPhone', event.target.value)} placeholder="+34 600 000 000" />
             </FormField>
             <FormField label="Mensaje">
               <textarea className={inputClass} rows="5" value={form.message} onChange={(event) => update('message', event.target.value)} />
             </FormField>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              El boton abre WhatsApp Web o la aplicacion del movil con el mensaje preparado. El envio final lo confirma la persona usuaria desde WhatsApp.
+              El botón abre WhatsApp Web o la aplicación del móvil con el mensaje preparado. El envío final lo confirma la persona usuaria desde WhatsApp.
             </div>
             <div className="flex justify-end">
               <Button type="submit"><MessageCircle size={18} /> Enviar WhatsApp</Button>

@@ -9,7 +9,7 @@ function log(step, detail = '') {
 
 function dataUrlToBlob(dataUrl) {
   const [metadata, encoded] = String(dataUrl).split(',');
-  if (!metadata || !encoded) throw new Error('La imagen optimizada no tiene un formato valido.');
+  if (!metadata || !encoded) throw new Error('La imagen optimizada no tiene un formato válido.');
   const mimeType = metadata.match(/^data:([^;]+);base64$/)?.[1] || 'image/webp';
   const binary = atob(encoded);
   const bytes = new Uint8Array(binary.length);

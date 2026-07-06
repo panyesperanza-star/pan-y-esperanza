@@ -42,7 +42,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
         <div className="mt-8">{nav}</div>
         <div className="absolute bottom-5 left-5 right-5 grid gap-2">
           {showReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>}
-          <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Cerrar sesion</Button>
+          <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Cerrar sesión</Button>
         </div>
       </aside>
       <main className="lg:pl-72">

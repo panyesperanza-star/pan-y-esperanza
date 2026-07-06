@@ -26,7 +26,7 @@ export function clearStoredUser() {
 export async function signIn({ email, password }, users = []) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error('Email o contrasena no validos.');
+    if (error) throw new Error('Email o contraseña no válidos.');
     const current = await loadDatabaseProfile(data.user);
     await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', current.id);
     storeUser(current);
@@ -35,7 +35,7 @@ export async function signIn({ email, password }, users = []) {
 
   const user = users.find((item) => item.email?.toLowerCase() === email.toLowerCase());
   if (!user || user.password !== password || !isUserActive(user)) {
-    throw new Error('Email o contrasena no validos.');
+    throw new Error('Email o contraseña no válidos.');
   }
   const current = withPermissions(user);
   storeUser(current);
@@ -50,7 +50,7 @@ export async function signOut() {
 export async function refreshCurrentUser() {
   if (!hasSupabaseConfig || !supabase) return getStoredUser();
   const { data, error } = await supabase.auth.getSession();
-  if (error || !data?.session?.user) throw new Error('La sesion ha caducado.');
+  if (error || !data?.session?.user) throw new Error('La sesión ha caducado.');
   const current = await loadDatabaseProfile(data.session.user);
   storeUser(current);
   return current;
@@ -74,7 +74,7 @@ async function loadDatabaseProfile(authUser) {
   if (profileError || !profile) throw new Error('Usuario autenticado sin perfil activo en Pan y Esperanza.');
   if (!isUserActive(profile)) {
     await supabase.auth.signOut();
-    throw new Error('Usuario inactivo o bloqueado. Contacte con administracion.');
+    throw new Error('Usuario inactivo o bloqueado. Contacte con administración.');
   }
   if (!profile.auth_user_id) {
     await supabase.from('app_users').update({ auth_user_id: authUser.id }).eq('id', profile.id);

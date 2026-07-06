@@ -7,7 +7,7 @@ export function BrandLogo({ className = 'h-12 w-auto', showText = true }) {
       {showText && (
         <div>
           <h1 className="text-lg font-bold text-ink">Pan y Esperanza</h1>
-          <p className="text-sm text-slate-500">Gestion social nacional</p>
+          <p className="text-sm text-slate-500">Gestión social nacional</p>
         </div>
       )}
     </div>

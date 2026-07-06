@@ -287,7 +287,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
                   <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Abrir expediente <ChevronRight size={15} /></Button>
                   <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Descargar resumen del expediente de ${item.full_name}`} title="Resumen del expediente"><Printer size={17} /></button>
                   {canEdit && <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => setEditing(item)} aria-label={`Editar a ${item.full_name}`} title="Editar"><Edit3 size={17} /></button>}
-                  {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminacion de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'}><Trash2 size={17} /></button>}
+                  {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminación de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}><Trash2 size={17} /></button>}
                 </div>
               </div>
             </article>
@@ -326,7 +326,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
         </Modal>
       )}
       {deletionTarget && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminacion definitiva'} onClose={() => setDeletionTarget(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeletionTarget(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
@@ -378,7 +378,7 @@ function SituationBadge({ value }) {
 }
 
 function targetLabelForBeneficiaries(filter) {
-  if (filter === 'critical-families') return 'Familias criticas';
+  if (filter === 'critical-families') return 'Familias críticas';
   if (filter === 'stale-help') return 'Sin ayuda +30 dias';
   if (filter === 'family-detail') return 'Expediente seleccionado';
   return '';
@@ -401,7 +401,7 @@ function buildBeneficiaryRelationWarnings(beneficiary, data) {
   if (history.length) relations.push(`Seguimiento: ${history.length}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
   if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length}`);
-  if (beneficiary.profile_photo) relations.push('Fotografia de perfil');
+  if (beneficiary.profile_photo) relations.push('Fotografía de perfil');
   return relations;
 }
 
@@ -533,7 +533,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     if (form.__family_mode === 'new') {
       const duplicateFamily = families.find((family) => normalize(family.family_code) === normalize(form.__new_family?.family_code));
       if (duplicateFamily) {
-        setFormError('Ya existe una familia con ese codigo.');
+        setFormError('Ya existe una familia con ese código.');
         return;
       }
     }
@@ -611,7 +611,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         </FormField>
       </FormSection>
 
-      <FormSection icon={Users} title="Unidad familiar" description="Vinculacion y composicion familiar actual.">
+      <FormSection icon={Users} title="Unidad familiar" description="Vinculación y composición familiar actual.">
         <FormField label="Pertenece a una familia?">
           <select className={inputClass} value={form.__family_mode === 'none' ? 'No' : 'Si'} onChange={(event) => updateFamilyMode(event.target.value === 'Si' ? (activeFamilies.length ? 'existing' : 'new') : 'none')}>
             <option>No</option>
@@ -619,12 +619,12 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
           </select>
         </FormField>
         {form.__family_mode !== 'none' && (
-          <FormField label="Relacion familiar">
+          <FormField label="Relación familiar">
             <input className={inputClass} value={form.family_relationship || ''} onChange={(event) => update('family_relationship', event.target.value)} placeholder="Responsable, hijo/a, pareja..." />
           </FormField>
         )}
         {form.__family_mode !== 'none' && (
-          <FormField label="Modo de vinculacion">
+          <FormField label="Modo de vinculación">
             <select className={inputClass} value={form.__family_mode} onChange={(event) => updateFamilyMode(event.target.value)}>
               <option value="existing" disabled={!activeFamilies.length && !selectedArchivedFamily}>Seleccionar familia existente</option>
               <option value="new">Crear nueva familia</option>
@@ -642,12 +642,12 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         )}
         {form.__family_mode === 'new' && (
           <div className="grid gap-4 rounded-xl border border-brand-100 bg-brand-50/40 p-4 sm:col-span-2 sm:grid-cols-2">
-            <FormField label="Codigo familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
+            <FormField label="Código familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
             <FormField label="Responsable">
-              <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{form.full_name || 'Se asignara al beneficiario creado'}</div>
+              <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{form.full_name || 'Se asignará al beneficiario creado'}</div>
             </FormField>
-            <div className="sm:col-span-2"><FormField label="Direccion familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
-            <FormField label="Telefono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
+            <div className="sm:col-span-2"><FormField label="Dirección familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
+            <FormField label="Teléfono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
             <FormField label="Email familiar"><input className={inputClass} type="email" value={form.__new_family.email || ''} onChange={(event) => updateNewFamily('email', event.target.value)} /></FormField>
             <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.__new_family.dependents_count ?? 0} onChange={(event) => updateNewFamily('dependents_count', Number(event.target.value))} /></FormField>
             <div className="sm:col-span-2"><FormField label="Observaciones familiares"><textarea className={inputClass} rows="3" value={form.__new_family.notes || ''} onChange={(event) => updateNewFamily('notes', event.target.value)} /></FormField></div>
@@ -1118,17 +1118,16 @@ function QuickFamilyForm({ beneficiary, onSubmit }) {
         setSaving(false);
       }
     }}>
-      <FormField label="Codigo familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField>
+      <FormField label="Código familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField>
       <FormField label="Responsable"><div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{beneficiary.full_name}</div></FormField>
-      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
-      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
       <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField>
       <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Creando...' : 'Crear y vincular familia'}</Button></div>
     </form>
   );
-  return <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSubmit(form); } finally { setSaving(false); } }}><FormField label="Código familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField><FormField label="Titular"><input className={inputClass} required value={form.responsible_name} onChange={(event) => update('responsible_name', event.target.value)} /></FormField><div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div><FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField><FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField><FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField><div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div><div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Creando…' : 'Crear y vincular familia'}</Button></div></form>;
 }
 
 function formatCurrency(value) {
