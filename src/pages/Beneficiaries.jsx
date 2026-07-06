@@ -74,6 +74,8 @@ const emptyBeneficiary = {
   last_help_at: null
 };
 
+const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
+
 const SEX_OPTIONS = ['Mujer', 'Hombre', 'No binario', 'Prefiere no indicar'];
 const MARITAL_STATUS_OPTIONS = ['Soltero/a', 'Casado/a', 'Pareja de hecho', 'Separado/a', 'Divorciado/a', 'Viudo/a'];
 const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'Derivación', 'Observación'];
@@ -448,6 +450,11 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
   const [saving, setSaving] = useState(false);
   const documentInputRef = useRef(null);
   const codeInputRef = useRef(null);
+  const activeFamilies = families.filter((family) => !isArchivedFamily(family));
+  const selectedArchivedFamily = form.family_id ? families.find((family) => family.id === form.family_id && isArchivedFamily(family)) : null;
+  const selectableFamilies = selectedArchivedFamily
+    ? [selectedArchivedFamily, ...activeFamilies.filter((family) => family.id !== selectedArchivedFamily.id)]
+    : activeFamilies;
 
   const update = (field, value) => {
     setFormError('');
@@ -466,7 +473,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     setForm((current) => ({
       ...current,
       __family_mode: value,
-      family_id: value === 'none' ? '' : value === 'existing' ? current.family_id || families[0]?.id || '' : '',
+      family_id: value === 'none' ? '' : value === 'existing' ? current.family_id || activeFamilies[0]?.id || '' : '',
       family_relationship: value === 'none' ? '' : current.family_relationship || 'Responsable',
       __new_family: {
         ...current.__new_family,
@@ -514,6 +521,10 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     if (!validateUniqueFields()) return;
     if (form.__family_mode === 'existing' && !form.family_id) {
       setFormError('Selecciona una familia existente o cambia a crear una nueva.');
+      return;
+    }
+    if (form.__family_mode === 'existing' && isArchivedFamily(families.find((family) => family.id === form.family_id)) && initial.family_id !== form.family_id) {
+      setFormError('No se pueden añadir nuevos miembros a una familia archivada.');
       return;
     }
     if (form.__family_mode === 'new') {
@@ -599,7 +610,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
 
       <FormSection icon={Users} title="Unidad familiar" description="Vinculacion y composicion familiar actual.">
         <FormField label="Pertenece a una familia?">
-          <select className={inputClass} value={form.__family_mode === 'none' ? 'No' : 'Si'} onChange={(event) => updateFamilyMode(event.target.value === 'Si' ? (families.length ? 'existing' : 'new') : 'none')}>
+          <select className={inputClass} value={form.__family_mode === 'none' ? 'No' : 'Si'} onChange={(event) => updateFamilyMode(event.target.value === 'Si' ? (activeFamilies.length ? 'existing' : 'new') : 'none')}>
             <option>No</option>
             <option>Si</option>
           </select>
@@ -612,7 +623,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         {form.__family_mode !== 'none' && (
           <FormField label="Modo de vinculacion">
             <select className={inputClass} value={form.__family_mode} onChange={(event) => updateFamilyMode(event.target.value)}>
-              <option value="existing" disabled={!families.length}>Seleccionar familia existente</option>
+              <option value="existing" disabled={!activeFamilies.length && !selectedArchivedFamily}>Seleccionar familia existente</option>
               <option value="new">Crear nueva familia</option>
             </select>
           </FormField>
@@ -621,8 +632,9 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
           <FormField label="Familia existente">
             <select className={inputClass} required value={form.family_id || ''} onChange={(event) => update('family_id', event.target.value)}>
               <option value="">Selecciona una familia</option>
-              {families.map((family) => <option key={family.id} value={family.id}>{family.family_code} - {family.responsible_name}</option>)}
+              {selectableFamilies.map((family) => <option key={family.id} value={family.id} disabled={isArchivedFamily(family) && initial.family_id !== family.id}>{family.family_code} - {family.responsible_name}{isArchivedFamily(family) ? ' (Archivada)' : ''}</option>)}
             </select>
+            {selectedArchivedFamily && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">Esta familia está archivada. Se conserva la vinculación existente, pero no admite nuevos miembros.</p>}
           </FormField>
         )}
         {form.__family_mode === 'new' && (
@@ -695,6 +707,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const family = data.families.find((item) => item.id === beneficiary.family_id);
+  const familyArchived = isArchivedFamily(family);
   const familyMembers = family ? data.beneficiaries.filter((item) => item.family_id === family.id) : [];
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
@@ -702,7 +715,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
   const activeDeliveries = deliveries.filter(isActiveDelivery);
   const valuation = calculateDeliveriesValue(activeDeliveries, data.inventory_items);
-  const canCreateDelivery = canDo(currentUser, 'deliveries', 'create');
+  const canCreateDelivery = canDo(currentUser, 'deliveries', 'create') && !familyArchived;
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
 
@@ -816,7 +829,8 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
             beneficiary={beneficiary}
             family={family}
             members={familyMembers}
-            canAddMember={canCreateBeneficiary}
+            archived={familyArchived}
+            canAddMember={canCreateBeneficiary && !familyArchived}
             canCreateFamily={canCreateFamily && canEdit}
             onAddMember={() => onAddFamilyMember(family.id)}
             onCreateFamily={() => setFamilyOpen(true)}
@@ -1054,14 +1068,14 @@ function PersonalDataPanel({ beneficiary }) {
   );
 }
 
-function FamilyPanel({ beneficiary, family, members, canAddMember, canCreateFamily, onAddMember, onCreateFamily }) {
+function FamilyPanel({ beneficiary, family, members, archived, canAddMember, canCreateFamily, onAddMember, onCreateFamily }) {
   if (!family) {
     return <EmptyState icon={Users} title="Sin unidad familiar" text="Este beneficiario no está vinculado a ninguna unidad familiar." action={canCreateFamily ? <Button onClick={onCreateFamily}><Plus size={17} /> Crear unidad familiar</Button> : null} />;
   }
   return (
     <section>
-      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-        <div><p className="text-xs font-bold uppercase tracking-wide text-brand-700">Unidad familiar</p><h3 className="mt-1 text-2xl font-bold text-ink">{family.family_code}</h3><p className="mt-2 text-sm text-slate-600">Titular: <strong>{family.responsible_name || beneficiary.full_name}</strong></p></div>
+      <div className={`flex flex-col gap-4 rounded-xl border p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between ${archived ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white'}`}>
+        <div><p className={`text-xs font-bold uppercase tracking-wide ${archived ? 'text-slate-600' : 'text-brand-700'}`}>Unidad familiar</p><h3 className="mt-1 text-2xl font-bold text-ink">{family.family_code}</h3><p className="mt-2 text-sm text-slate-600">Titular: <strong>{family.responsible_name || beneficiary.full_name}</strong></p>{archived && <p className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-300">Familia archivada: no se pueden añadir miembros ni registrar nuevas entregas.</p>}</div>
         {canAddMember && <Button onClick={onAddMember}><UserPlus size={17} /> Añadir miembro</Button>}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3"><FamilyMetric label="Miembros vinculados" value={members.length || beneficiary.family_members || 1} /><FamilyMetric label="Menores" value={members.length ? members.reduce((sum, item) => sum + Number(item.minors_count || 0), 0) : beneficiary.minors_count || 0} /><FamilyMetric label="Dependientes" value={family.dependents_count || 0} /></div>
@@ -1115,6 +1129,15 @@ function getLatestDelivery(deliveries) {
 
 function isActiveDelivery(delivery) {
   return delivery.status !== 'Anulada';
+}
+
+function isArchivedFamily(family) {
+  if (!family) return false;
+  if (family.archived_at) return true;
+  if (normalize(family.status) === 'archivada') return true;
+  return String(family.notes || '')
+    .split(/\r?\n/)
+    .some((line) => line.startsWith(FAMILY_ARCHIVE_MARKER));
 }
 
 function calculateDeliveriesValue(deliveries, inventoryItems = []) {

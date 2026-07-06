@@ -72,6 +72,16 @@ export function useAppData(enabled = true, currentUser = null) {
     };
   }
 
+  function withFamilyArchiveMarker(notes, archivedAt, archivedBy, reason) {
+    const cleanNotes = String(notes || '')
+      .split(/\r?\n/)
+      .filter((line) => !line.startsWith('[FAMILIA_ARCHIVADA]'))
+      .join('\n')
+      .trim();
+    const marker = `[FAMILIA_ARCHIVADA] ${archivedAt} | ${archivedBy || 'Usuario'} | ${String(reason || '').trim()}`.trim();
+    return [cleanNotes, marker].filter(Boolean).join('\n');
+  }
+
   function currentUserName() {
     return `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim()
       || currentUser?.email
@@ -1500,12 +1510,14 @@ export function useAppData(enabled = true, currentUser = null) {
       assertPermission('families', 'edit');
       const family = data.families.find((item) => item.id === id);
       if (!family) throw new Error('La familia no existe.');
+      const archivedAt = new Date().toISOString();
+      const archiveReason = String(payload.reason || payload.archive_reason || '').trim();
       const archived = await dataStore.update('families', id, {
-        notes: family.notes || '',
+        notes: withFamilyArchiveMarker(family.notes, archivedAt, currentUserName(), archiveReason),
         status: 'Archivada',
-        archived_at: new Date().toISOString(),
-        archive_reason: String(payload.reason || payload.archive_reason || '').trim(),
-        updated_at: new Date().toISOString()
+        archived_at: archivedAt,
+        archive_reason: archiveReason,
+        updated_at: archivedAt
       });
       await audit(`Archivo familia ${family.family_code || family.responsible_name || id}`.trim());
       await reload();

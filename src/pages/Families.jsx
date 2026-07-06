@@ -106,6 +106,17 @@ export function Families({ data, actions, currentUser, onNavigate }) {
     setNotice('Familia archivada correctamente.');
   }
 
+  async function unarchiveFamily(profileItem) {
+    await actions.updateFamily(profileItem.family.id, {
+      ...profileItem.family,
+      status: 'Activa',
+      archived_at: null,
+      archive_reason: '',
+      notes: visibleFamilyNotes(profileItem.family)
+    });
+    setNotice('Familia desarchivada correctamente.');
+  }
+
   async function deleteFamily(profileItem) {
     await actions.deleteFamily(profileItem.family.id);
     setDeleteTarget(null);
@@ -166,6 +177,7 @@ export function Families({ data, actions, currentUser, onNavigate }) {
             onOpen={() => setProfileId(profileItem.family.id)}
             onEdit={() => setEditing(profileItem.family)}
             onArchive={(reason) => archiveFamily(profileItem, reason)}
+            onUnarchive={() => unarchiveFamily(profileItem)}
             onDelete={() => setDeleteTarget(profileItem)}
           />
         ))}
@@ -211,14 +223,19 @@ export function Families({ data, actions, currentUser, onNavigate }) {
   );
 }
 
-function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive, onDelete }) {
+function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive, onUnarchive, onDelete }) {
   const { family, stats, activeDeliveries, latestHelp, socialValue } = profile;
   const hasMembers = profile.members.length > 0;
   const archived = familyStatus(family) === 'Archivada';
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   return (
-    <article className={`rounded-xl border bg-white p-4 shadow-panel transition hover:border-brand-100 ${archived ? 'border-slate-200 bg-slate-50' : 'border-slate-200'}`}>
+    <article className={`overflow-hidden rounded-xl border p-4 transition ${archived ? 'border-slate-300 bg-slate-100 shadow-sm' : 'border-slate-200 bg-white shadow-panel hover:border-brand-100'}`}>
+      {archived && (
+        <div className="-mx-4 -mt-4 mb-4 border-b border-slate-300 bg-slate-300 px-4 py-3 text-center text-sm font-black uppercase tracking-wide text-slate-700">
+          📁 ARCHIVADA
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -228,7 +245,7 @@ function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive,
           <p className="mt-1 truncate text-sm font-semibold text-slate-700">{family.responsible_name || 'Sin responsable'}</p>
           <p className="mt-2 line-clamp-2 text-sm text-slate-600">{family.address || 'Sin direccion registrada'}</p>
         </div>
-        <span className="rounded-xl bg-brand-50 p-3 text-brand-700"><Users size={22} /></span>
+        <span className={`rounded-xl p-3 ${archived ? 'bg-white text-slate-500' : 'bg-brand-50 text-brand-700'}`}><Users size={22} /></span>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -251,7 +268,9 @@ function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive,
       <div className="mt-4 flex flex-wrap gap-2">
         <Button onClick={onOpen} className="min-w-[160px]"><FileText size={16} /> Abrir expediente <ChevronRight size={15} /></Button>
         {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
-        {canEdit && !archived && <Button variant="secondary" onClick={() => setArchiveOpen(true)}><Archive size={16} /> Archivar</Button>}
+        {canEdit && (archived
+          ? <Button variant="secondary" onClick={onUnarchive}><Archive size={16} /> Desarchivar</Button>
+          : <Button variant="secondary" onClick={() => setArchiveOpen(true)}><Archive size={16} /> Archivar</Button>)}
         {isSuperadmin && (
           <Button variant="danger" disabled={hasMembers} onClick={onDelete} title={hasMembers ? 'Esta familia tiene miembros asociados.' : 'Eliminar definitivamente'}>
             <Trash2 size={16} /> Eliminar
@@ -276,6 +295,7 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
   const [tab, setTab] = useState('summary');
   const [notice, setNotice] = useState('');
   const { family, members, activeDeliveries, allDeliveries, documents, observations, timeline, stats, latestHelp, socialValue } = profile;
+  const archived = familyStatus(family) === 'Archivada';
 
   const tabs = [
     { id: 'summary', label: 'Resumen', icon: Home },
@@ -288,11 +308,12 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
 
   return (
     <div className="-m-5">
-      <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
+      <header className={`relative overflow-hidden border-b px-5 py-7 sm:px-7 ${archived ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white'}`}>
+        <div className={`absolute inset-x-0 top-0 h-24 ${archived ? 'bg-slate-300' : 'bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500'}`} />
         <div className="relative flex flex-col gap-6 pt-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
+              {archived && <span className="rounded-full bg-slate-700 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">📁 ARCHIVADA</span>}
               <FamilyStatusBadge status={familyStatus(family)} />
               <span className="rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">{family.family_code}</span>
             </div>
@@ -361,6 +382,7 @@ function FamilyProfile({ profile, data, actions, canEdit, canDelete, onEdit, onO
 }
 
 function FamilySummaryPanel({ family, stats, latestHelp, socialValue }) {
+  const archive = archiveMetadata(family);
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <InfoCard icon={Home} title="Datos de cabecera">
@@ -393,8 +415,9 @@ function FamilySummaryPanel({ family, stats, latestHelp, socialValue }) {
         <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{visibleFamilyNotes(family) || 'No hay observaciones generales registradas.'}</p>
         {familyStatus(family) === 'Archivada' && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-            <p><strong>Archivada:</strong> {formatDateTime(family.archived_at || archiveMetadata(family).archivedAt)}</p>
-            <p className="mt-1"><strong>Motivo:</strong> {family.archive_reason || archiveMetadata(family).reason || '-'}</p>
+            <p><strong>Fecha de archivado:</strong> {formatDateTime(family.archived_at || archive.archivedAt)}</p>
+            <p className="mt-1"><strong>Usuario que archivó:</strong> {archive.archivedBy || '-'}</p>
+            <p className="mt-1"><strong>Motivo:</strong> {family.archive_reason || archive.reason || '-'}</p>
           </div>
         )}
       </InfoCard>
@@ -810,13 +833,17 @@ function MetaLine({ icon: Icon, text }) {
 
 function FamilyStatusBadge({ status }) {
   const normalized = normalize(status);
-  const tone = normalized === 'archivada'
-    ? 'bg-slate-100 text-slate-700 ring-slate-200'
-    : normalized === 'urgente'
-      ? 'bg-red-50 text-red-700 ring-red-200'
-      : normalized === 'seguimiento'
-        ? 'bg-blue-50 text-blue-700 ring-blue-200'
-        : 'bg-brand-50 text-brand-700 ring-brand-100';
+  if (normalized === 'archivada') {
+    return <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 ring-1 ring-inset ring-slate-300">⚪ Archivada</span>;
+  }
+  if (normalized === 'activa') {
+    return <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">🟢 Activa</span>;
+  }
+  const tone = normalized === 'urgente'
+    ? 'bg-red-50 text-red-700 ring-red-200'
+    : normalized === 'seguimiento'
+      ? 'bg-blue-50 text-blue-700 ring-blue-200'
+      : 'bg-brand-50 text-brand-700 ring-brand-100';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${tone}`}>{status || 'Activa'}</span>;
 }
 
@@ -1002,12 +1029,22 @@ function familyStatus(family) {
 function archiveMetadata(family) {
   const notes = String(family?.notes || '');
   const line = notes.split(/\r?\n/).find((item) => item.startsWith(ARCHIVE_MARKER));
-  if (!line) return { archived: false, archivedAt: '', reason: '' };
+  if (!line) return { archived: false, archivedAt: '', archivedBy: '', reason: '' };
   const rest = line.slice(ARCHIVE_MARKER.length).trim();
+  if (rest.includes('|')) {
+    const [archivedAt, archivedBy, reason] = rest.split('|').map((part) => part.trim());
+    return {
+      archived: true,
+      archivedAt: archivedAt || '',
+      archivedBy: archivedBy || '',
+      reason: reason || ''
+    };
+  }
   const [archivedAt, ...reasonParts] = rest.split(' ');
   return {
     archived: true,
     archivedAt: archivedAt || '',
+    archivedBy: '',
     reason: reasonParts.join(' ').trim()
   };
 }

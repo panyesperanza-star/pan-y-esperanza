@@ -10,8 +10,10 @@ import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../l
 import { HELP_TYPES } from '../lib/constants';
 import { normalizeEmailError, sendEmailViaApi } from '../lib/emailClient';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
-import { formatDate, formatDateTime, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
+
+const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 
 export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
@@ -242,8 +244,12 @@ function CancellationForm({ delivery, onSubmit }) {
 }
 
 export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
+  const eligibleBeneficiaries = data.beneficiaries.filter((item) => item.is_active && !isBeneficiaryFamilyArchived(item, data.families));
+  const initialEligibleBeneficiaryId = eligibleBeneficiaries.some((item) => item.id === initialBeneficiaryId)
+    ? initialBeneficiaryId
+    : eligibleBeneficiaries[0]?.id || '';
   const [form, setForm] = useState({
-    beneficiary_id: initialBeneficiaryId || data.beneficiaries[0]?.id || '',
+    beneficiary_id: initialEligibleBeneficiaryId,
     delivered_at: todayISO(),
     responsible: '',
     delivered_time: new Date().toTimeString().slice(0, 5),
@@ -264,8 +270,9 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
       <FormField label="Beneficiario">
         <select className={inputClass} required value={form.beneficiary_id} onChange={(event) => update('beneficiary_id', event.target.value)}>
-          {data.beneficiaries.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}
+          {eligibleBeneficiaries.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}
         </select>
+        {!eligibleBeneficiaries.length && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">No hay beneficiarios disponibles para una nueva entrega. Las familias archivadas no admiten nuevas entregas.</p>}
       </FormField>
       <FormField label="Fecha">
         <input className={inputClass} type="date" value={form.delivered_at} onChange={(event) => update('delivered_at', event.target.value)} />
@@ -315,7 +322,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
         </FormField>
       </div>
       <div className="flex justify-end sm:col-span-2">
-        <Button type="submit" disabled={!data.beneficiaries.length || !data.inventory_items.length}>Guardar entrega</Button>
+        <Button type="submit" disabled={!eligibleBeneficiaries.length || !data.inventory_items.length}>Guardar entrega</Button>
       </div>
     </form>
   );
@@ -414,6 +421,17 @@ function toDateTimeLocal(value) {
   const date = value ? new Date(value) : new Date();
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function isBeneficiaryFamilyArchived(beneficiary, families = []) {
+  if (!beneficiary?.family_id) return false;
+  const family = families.find((item) => item.id === beneficiary.family_id);
+  if (!family) return false;
+  if (family.archived_at) return true;
+  if (normalize(family.status) === 'archivada') return true;
+  return String(family.notes || '')
+    .split(/\r?\n/)
+    .some((line) => line.startsWith(FAMILY_ARCHIVE_MARKER));
 }
 
 function buildDeliveryRelationWarnings(delivery, data) {

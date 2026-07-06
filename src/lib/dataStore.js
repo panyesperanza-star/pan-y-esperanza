@@ -258,7 +258,9 @@ function withoutFamilyIntegrationFields(table, payload) {
   if (table === 'families') {
     const { status, archived_at, archive_reason, updated_at, ...fallback } = payload;
     if (status === 'Archivada' || archived_at) {
-      fallback.notes = withFamilyArchiveMarker(fallback.notes, archived_at, archive_reason);
+      fallback.notes = String(fallback.notes || '').includes(FAMILY_ARCHIVE_MARKER)
+        ? fallback.notes
+        : withFamilyArchiveMarker(fallback.notes, archived_at, archive_reason);
     } else {
       fallback.notes = stripFamilyArchiveMarker(fallback.notes);
     }
