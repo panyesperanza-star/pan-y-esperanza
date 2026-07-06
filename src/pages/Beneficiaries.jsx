@@ -43,7 +43,7 @@ import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../l
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printBeneficiaryPdf, printDeliveryReceiptPdf } from '../lib/exporters';
+import { printBeneficiaryPdf, printDeliveryReceiptPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 import { DeliveryForm } from './Deliveries';
@@ -797,6 +797,15 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onEdit={onEdit}
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
+        onSocialReport={() => printSocialAttentionReportPdf({
+          beneficiary,
+          family,
+          familyMembers,
+          deliveries: activeDeliveries,
+          history,
+          organization: data.organization_settings?.[0],
+          currentUser
+        })}
         onDelivery={() => setDeliveryOpen(true)}
         onPhotoChange={handlePhotoChange}
       />
@@ -884,7 +893,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onDelivery, onPhotoChange }) {
+function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onSocialReport, onDelivery, onPhotoChange }) {
   return (
     <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
@@ -905,6 +914,7 @@ function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery,
         </div>
         <div className="flex flex-wrap gap-2">
           {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
+          <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
           <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
           <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
           {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}

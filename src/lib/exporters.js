@@ -43,6 +43,116 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   doc.save(`Ficha-${beneficiary.code}.pdf`);
 }
 
+export async function printSocialAttentionReportPdf({
+  beneficiary,
+  family = null,
+  familyMembers = [],
+  deliveries = [],
+  history = [],
+  organization = {},
+  currentUser = null
+}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  const generatedAt = new Date().toISOString();
+  const activeDeliveries = (deliveries || []).filter((item) => item.status !== 'Anulada');
+  const timeline = buildSocialAttentionTimeline(activeDeliveries, history);
+  const familyStats = getFamilyStats(beneficiary, familyMembers);
+  const responsible = currentUserNameForReport(currentUser);
+
+  await drawSocialAttentionHeader(doc, orgName, beneficiary, generatedAt);
+  let y = 48;
+
+  y = drawSocialSectionTitle(doc, 'DATOS GENERALES', y);
+  autoTable(doc, {
+    startY: y,
+    body: [
+      ['Nombre', beneficiary.full_name || '-'],
+      ['Documento', beneficiary.document_id || '-'],
+      ['Fecha de alta', formatDate(beneficiary.joined_at)],
+      ['Unidad familiar', family ? `${family.family_code || '-'} - ${family.responsible_name || 'sin responsable registrado'}` : 'Sin unidad familiar vinculada'],
+      ['Adultos', String(familyStats.adults)],
+      ['Menores', String(familyStats.minors)],
+      ['Dirección', [beneficiary.address_full || family?.address, beneficiary.postal_code].filter(Boolean).join(' - ') || '-'],
+      ['Teléfono', beneficiary.phone || '-'],
+      ['Estado del expediente', beneficiary.is_active ? 'Activo' : 'Inactivo']
+    ],
+    styles: { fontSize: 9, cellPadding: 2.2 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 1: { cellWidth: 130 } },
+    theme: 'grid',
+    headStyles: { fillColor: [36, 126, 80] }
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  y = drawSocialSectionTitle(doc, 'MOTIVO DE LA ATENCIÓN', y);
+  const initialObservation = getInitialSocialObservation(history);
+  if (initialObservation) {
+    y = drawWrappedText(doc, initialObservation.notes, 14, y, 182, 5);
+  } else {
+    y = drawEditableArea(doc, y, 26);
+  }
+
+  y = ensureSocialSpace(doc, y + 6, 54);
+  y = drawSocialSectionTitle(doc, 'HISTORIAL DE ATENCIÓN', y);
+  autoTable(doc, {
+    startY: y,
+    head: [['Fecha', 'Tipo de ayuda', 'Descripción', 'Responsable']],
+    body: timeline.length ? timeline.map((item) => [
+      formatDate(item.date),
+      item.type || '-',
+      item.description || '-',
+      item.responsible || '-'
+    ]) : [['-', 'Sin atenciones registradas', 'No constan intervenciones en el expediente.', '-']],
+    styles: { fontSize: 8.2, cellPadding: 2.2, overflow: 'linebreak' },
+    columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 38 }, 2: { cellWidth: 82 }, 3: { cellWidth: 38 } },
+    headStyles: { fillColor: [36, 126, 80] }
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  y = ensureSocialSpace(doc, y, 42);
+  y = drawSocialSectionTitle(doc, 'RESUMEN DE LA INTERVENCIÓN', y);
+  y = drawWrappedText(doc, buildSocialInterventionSummary(beneficiary, family, timeline), 14, y, 182, 5);
+
+  y = ensureSocialSpace(doc, y + 6, 42);
+  y = drawSocialSectionTitle(doc, 'SITUACIÓN ACTUAL', y);
+  const latestAttention = timeline[0];
+  autoTable(doc, {
+    startY: y,
+    body: [
+      ['Situación', beneficiary.situation || '-'],
+      ['Seguimiento', timeline.length ? 'Con atenciones registradas en el expediente' : 'Sin atenciones registradas en el expediente'],
+      ['Número de intervenciones', String(timeline.length)],
+      ['Última atención', latestAttention ? `${formatDate(latestAttention.date)} - ${latestAttention.type}` : '-']
+    ],
+    styles: { fontSize: 9, cellPadding: 2.2 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 1: { cellWidth: 130 } },
+    theme: 'grid'
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  y = ensureSocialSpace(doc, y, 48);
+  y = drawSocialSectionTitle(doc, 'OBSERVACIONES', y);
+  y = beneficiary.notes
+    ? drawWrappedText(doc, beneficiary.notes, 14, y, 182, 5)
+    : drawEditableArea(doc, y, 24);
+
+  y = ensureSocialSpace(doc, y + 6, 52);
+  y = drawSocialSectionTitle(doc, 'CONCLUSION', y);
+  y = drawWrappedText(doc, buildSocialAttentionConclusion(beneficiary, timeline), 14, y, 182, 5);
+
+  y = ensureSocialSpace(doc, y + 12, 34);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Responsable del expediente', 14, y);
+  doc.setFont('helvetica', 'normal');
+  doc.line(14, y + 16, 92, y + 16);
+  doc.text(responsible || 'Nombre y firma', 14, y + 23);
+  doc.text(`Fecha: ${formatDate(generatedAt)}`, 120, y + 23);
+
+  drawSocialAttentionFooterOnAllPages(doc);
+  doc.save(`Informe-atencion-social-${safePdfFilename(beneficiary.code || beneficiary.full_name || 'beneficiario')}.pdf`);
+}
+
 export async function printDeliveryReceiptPdf(delivery, beneficiary, deliveries = []) {
   const { doc, receiptNumber } = await createDeliveryReceiptPdf(delivery, beneficiary, deliveries);
   doc.save(`Justificante-${receiptNumber}.pdf`);
@@ -438,6 +548,180 @@ function drawDeliveriesReportFooter(doc) {
   doc.text('Pan y Esperanza', 14, 283);
   doc.text('info@panyesperanza.org · www.panyesperanza.org', 14, 288);
   doc.setTextColor(23, 33, 27);
+}
+
+async function drawSocialAttentionHeader(doc, orgName, beneficiary, generatedAt) {
+  await addOfficialLogo(doc, 14, 10, 30, 20);
+  doc.setTextColor(23, 33, 27);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(orgName, 50, 16);
+  doc.setFontSize(16);
+  doc.text('INFORME DE ATENCIÓN SOCIAL', 50, 27);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Número de expediente: ${beneficiary.code || '-'}`, 50, 35);
+  doc.text(`Fecha de emisión: ${formatDate(generatedAt)}`, 138, 35);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 42, 196, 42);
+}
+
+function drawSocialSectionTitle(doc, title, y) {
+  y = ensureSocialSpace(doc, y, 12);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(36, 126, 80);
+  doc.text(title, 14, y);
+  doc.setTextColor(23, 33, 27);
+  doc.setFont('helvetica', 'normal');
+  return y + 5;
+}
+
+function drawWrappedText(doc, text, x, y, width, lineHeight) {
+  const lines = doc.splitTextToSize(String(text || '-'), width);
+  y = ensureSocialSpace(doc, y, lines.length * lineHeight + 4);
+  doc.setFontSize(9.5);
+  doc.setTextColor(45, 56, 49);
+  doc.text(lines, x, y);
+  doc.setTextColor(23, 33, 27);
+  return y + lines.length * lineHeight;
+}
+
+function drawEditableArea(doc, y, height) {
+  y = ensureSocialSpace(doc, y, height + 4);
+  doc.setDrawColor(198, 210, 202);
+  doc.setLineDashPattern([1.5, 1.5], 0);
+  doc.roundedRect(14, y, 182, height, 2, 2);
+  doc.setLineDashPattern([], 0);
+  doc.setFontSize(8.5);
+  doc.setTextColor(112, 126, 116);
+  doc.text('Espacio para completar por la entidad emisora si procede.', 18, y + 7);
+  doc.setTextColor(23, 33, 27);
+  return y + height;
+}
+
+function ensureSocialSpace(doc, y, neededHeight) {
+  if (y + neededHeight <= 260) return y;
+  doc.addPage();
+  return 18;
+}
+
+function drawSocialAttentionFooter(doc) {
+  const text = 'El presente informe ha sido elaborado por la Asociación Pan y Esperanza con fines exclusivamente informativos y de seguimiento social, a partir de la información obrante en el expediente de la persona beneficiaria.';
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 270, 196, 270);
+  doc.setFontSize(7.5);
+  doc.setTextColor(96, 112, 100);
+  doc.text(doc.splitTextToSize(text, 182), 14, 276);
+  doc.setTextColor(23, 33, 27);
+}
+
+function drawSocialAttentionFooterOnAllPages(doc) {
+  const total = doc.getNumberOfPages();
+  for (let page = 1; page <= total; page += 1) {
+    doc.setPage(page);
+    drawSocialAttentionFooter(doc);
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 132, 124);
+    doc.text(`Pagina ${page} de ${total}`, 178, 288);
+    doc.setTextColor(23, 33, 27);
+  }
+}
+
+function buildSocialAttentionTimeline(deliveries = [], history = []) {
+  const deliveryRows = deliveries.map((delivery) => ({
+    date: delivery.delivered_at || delivery.reception_at || delivery.created_at,
+    type: delivery.help_type || 'Ayuda entregada',
+    description: [
+      delivery.inventory_item_name || delivery.product || '',
+      delivery.notes || ''
+    ].filter(Boolean).join('. ') || 'Atención registrada en el expediente.',
+    responsible: delivery.responsible || delivery.created_by || ''
+  }));
+  const historyRows = history.map((item) => ({
+    date: item.date || item.created_at,
+    type: item.entry_type || 'Seguimiento',
+    description: item.notes || 'Anotación de seguimiento registrada.',
+    responsible: item.user_name || item.created_by || item.user || ''
+  }));
+  return [...deliveryRows, ...historyRows]
+    .filter((item) => item.date || item.description)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function getInitialSocialObservation(history = []) {
+  const sorted = [...history].sort((a, b) => String(a.date || a.created_at || '').localeCompare(String(b.date || b.created_at || '')));
+  return sorted.find((item) => {
+    const type = normalizeTextForReport(item.entry_type);
+    return type.includes('primera') || type.includes('inicial');
+  }) || null;
+}
+
+function buildSocialInterventionSummary(beneficiary, family, timeline) {
+  const parts = [
+    `${beneficiary.full_name || 'La persona beneficiaria'} figura en el expediente de la Asociación Pan y Esperanza${beneficiary.joined_at ? ` desde el ${formatDate(beneficiary.joined_at)}` : ''}.`
+  ];
+  if (beneficiary.situation) parts.push(`La situación registrada en el expediente es "${beneficiary.situation}".`);
+  if (beneficiary.requested_help) parts.push(`La ayuda solicitada registrada es "${beneficiary.requested_help}".`);
+  if (family?.family_code) parts.push(`Consta vinculación con la unidad familiar ${family.family_code}.`);
+  if (timeline.length) {
+    const helpTypes = uniqueReportValues(timeline.map((item) => item.type)).slice(0, 3).join(', ');
+    parts.push(`El expediente recoge ${timeline.length} intervención${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'}${helpTypes ? `, entre ellas: ${helpTypes}` : ''}.`);
+  } else {
+    parts.push('No constan intervenciones registradas en el historial consultado.');
+  }
+  return parts.join(' ');
+}
+
+function buildSocialAttentionConclusion(beneficiary, timeline) {
+  if (beneficiary.is_active) {
+    return `De acuerdo con la información disponible en el expediente, ${beneficiary.full_name || 'la persona beneficiaria'} continúa en seguimiento por parte de la Asociación Pan y Esperanza. Este informe tiene carácter informativo y no constituye diagnóstico profesional.`;
+  }
+  return `De acuerdo con la información disponible en el expediente, ${beneficiary.full_name || 'la persona beneficiaria'} no consta actualmente como expediente activo. Este informe tiene carácter informativo y no constituye diagnóstico profesional.`;
+}
+
+function getFamilyStats(beneficiary, familyMembers = []) {
+  const members = Array.isArray(familyMembers) ? familyMembers : [];
+  const total = members.length || Number(beneficiary.family_members || 1);
+  const datedMembers = members.filter((member) => member.birth_date);
+  const datedMinors = datedMembers.filter((member) => ageFromDate(member.birth_date) !== null && ageFromDate(member.birth_date) < 18).length;
+  const minors = datedMembers.length ? datedMinors : Math.min(total, Number(beneficiary.minors_count || 0));
+  return { total, minors, adults: Math.max(0, total - minors) };
+}
+
+function ageFromDate(value) {
+  if (!value) return null;
+  const birth = new Date(value);
+  if (Number.isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age;
+}
+
+function currentUserNameForReport(user) {
+  return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.email || '';
+}
+
+function uniqueReportValues(values = []) {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || '').trim())
+    .filter((value) => {
+      const key = normalizeTextForReport(value);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeTextForReport(value) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function safePdfFilename(value) {
+  return String(value || 'documento').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'documento';
 }
 
 async function addOfficialLogo(doc, x, y, maxWidth, maxHeight) {
