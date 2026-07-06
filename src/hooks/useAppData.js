@@ -482,6 +482,32 @@ export function useAppData(enabled = true, currentUser = null) {
     return contact;
   }
 
+  function sanitizeDonorContactPayload(payload = {}, current = {}) {
+    const name = cleanText(payload.name || payload.contact_name || current.name);
+    if (!name) throw new Error('El nombre del donante es obligatorio.');
+    return {
+      contact_type: 'donor',
+      name,
+      document_id: cleanText(payload.document_id),
+      email: cleanText(payload.email),
+      phone: cleanText(payload.phone),
+      address: cleanText(payload.address),
+      notes: cleanText(payload.notes),
+      is_active: payload.is_active !== undefined ? payload.is_active !== false : current.is_active !== false,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  function donorHasDonationRelations(contact) {
+    if (!contact) return false;
+    const contactId = contact.id;
+    const donorName = normalize(contact.name);
+    return (data.accounting_events || []).some((event) => event.contact_id === contactId && event.event_type === 'donation_money' && isActiveAccountingRow(event))
+      || (data.social_value_events || []).some((event) => event.contact_id === contactId && event.value_type === 'received' && event.event_type === 'in_kind_donation' && isActiveAccountingRow(event))
+      || (data.donations || []).some((donation) => normalize(donation.donor) === donorName && !['voided', 'anulada', 'anulado'].includes(normalize(donation.status || donation.state)))
+      || (data.treasury_incomes || []).some((income) => normalize(income.donor) === donorName && normalize([income.category, income.concept].join(' ')).includes('donacion'));
+  }
+
   async function createAccountingEvent(payload) {
     const event = await dataStore.create('accounting_events', {
       status: 'active',
@@ -1705,13 +1731,53 @@ export function useAppData(enabled = true, currentUser = null) {
       if (!hasSupabaseConfig) await audit(`Registro ${movement.movement_type.toLowerCase()} de inventario ${item.name}`.trim());
       await reload();
     },
-    createDonation: async (payload) => {
-      await dataStore.create('donations', payload);
+    createDonorContact: async (payload) => {
+      assertPermission('accounting', 'create');
+      const cleanContact = sanitizeDonorContactPayload(payload, { is_active: true });
+      const contact = await dataStore.create('accounting_contacts', {
+        ...cleanContact,
+        created_at: new Date().toISOString()
+      });
+      await accountingAuditTrail('accounting_contacts', contact.id, 'create_donor', null, contact);
+      await audit(`Donantes: creo ficha de donante ${contact.name}`.trim());
       await reload();
+      return contact;
     },
-    deleteDonation: async (id) => {
-      assertPermission('donations', 'delete');
-      await dataStore.remove('donations', id);
+    updateDonorContact: async (id, payload) => {
+      assertPermission('accounting', 'edit');
+      const current = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
+      if (!current) throw new Error('El donante no existe.');
+      const cleanContact = sanitizeDonorContactPayload(payload, current);
+      const updated = await dataStore.update('accounting_contacts', id, cleanContact);
+      await accountingAuditTrail('accounting_contacts', id, 'update_donor', current, updated);
+      await audit(`Donantes: edito ficha de donante ${updated.name || current.name}`.trim());
+      await reload();
+      return updated;
+    },
+    archiveDonorContact: async (id, payload) => {
+      assertPermission('accounting', 'edit');
+      const current = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
+      if (!current) throw new Error('El donante no existe.');
+      const updated = await dataStore.update('accounting_contacts', id, {
+        notes: cleanText(payload?.notes ?? current.notes),
+        is_active: payload?.is_active !== false ? true : false,
+        updated_at: new Date().toISOString()
+      });
+      await accountingAuditTrail('accounting_contacts', id, updated.is_active === false ? 'archive_donor' : 'unarchive_donor', current, updated);
+      await audit(`Donantes: ${updated.is_active === false ? 'archivo' : 'desarchivo'} donante ${updated.name || current.name}`.trim());
+      await reload();
+      return updated;
+    },
+    deleteDonorContact: async (id) => {
+      assertAccountingSuperadmin();
+      const contact = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
+      if (!contact) throw new Error('El donante no existe.');
+      if (donorHasDonationRelations(contact)) {
+        throw new Error('Este donante tiene donaciones registradas. Utilice Archivar.');
+      }
+      await dataStore.remove('accounting_contacts', id);
+      await accountingAuditTrail('accounting_contacts', id, 'delete_donor_without_donations', contact, null);
+      await audit(`Donantes: elimino donante sin donaciones ${contact.name}`.trim());
       await reload();
     },
     createFinancialAccount: async (payload) => {

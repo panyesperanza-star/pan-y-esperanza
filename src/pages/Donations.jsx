@@ -1,9 +1,11 @@
 import {
   Banknote,
+  Archive,
   Building2,
   CalendarDays,
   Clock3,
   Download,
+  Edit3,
   Eye,
   FileText,
   Gift,
@@ -14,12 +16,15 @@ import {
   PackageCheck,
   Phone,
   Plus,
+  RotateCcw,
   Search,
+  Trash2,
   UserRound,
   Users
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
@@ -27,6 +32,11 @@ import { printDonationCertificatePdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const DONOR_KIND_OPTIONS = ['Todos', 'Particular', 'Empresa', 'Iglesia', 'Asociacion', 'Fundacion', 'Administracion', 'Entidad', 'Anonimo'];
+const DONOR_KIND_FORM_OPTIONS = DONOR_KIND_OPTIONS.filter((item) => item !== 'Todos');
+const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
+const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
+const DONOR_ALIAS_MARKER = '[DONANTE_ALIAS]';
+const DONOR_ARCHIVE_MARKER = '[DONANTE_ARCHIVADO]';
 const DONOR_TABS = [
   { id: 'summary', label: 'Resumen', icon: UserRound },
   { id: 'history', label: 'Historial de donaciones', icon: Gift },
@@ -35,13 +45,19 @@ const DONOR_TABS = [
   { id: 'notes', label: 'Observaciones', icon: NotebookTabs }
 ];
 
-export function Donations({ data, currentUser, navigationTarget, onNavigate }) {
+export function Donations({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState('Todos');
   const [pendingOnly, setPendingOnly] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [tab, setTab] = useState('summary');
+  const [editing, setEditing] = useState(null);
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [notice, setNotice] = useState('');
   const canRegisterDonation = canDo(currentUser, 'accounting', 'create');
+  const canEditDonors = canDo(currentUser, 'accounting', 'edit');
+  const isSuperadmin = currentUser?.role === 'Superadministrador';
   const donorProfiles = useMemo(() => buildDonorProfiles(data), [data]);
   const stats = useMemo(() => buildDonorStats(donorProfiles), [donorProfiles]);
   const selectedProfile = donorProfiles.find((profile) => profile.id === profileId) || null;
@@ -83,6 +99,92 @@ export function Donations({ data, currentUser, navigationTarget, onNavigate }) {
     setTab('summary');
   }
 
+  async function saveDonor(profile, payload) {
+    const aliases = uniqueValues([...(profile?.aliases || []), profile?.name].filter(Boolean));
+    const notes = buildDonorNotes({
+      observations: payload.observations,
+      kind: payload.kind,
+      contactPerson: payload.contactPerson,
+      aliases,
+      archive: profile?.archive
+    });
+    const cleanPayload = {
+      name: payload.name,
+      document_id: payload.document_id,
+      email: payload.email,
+      phone: payload.phone,
+      address: payload.address,
+      notes,
+      is_active: !profile?.archived
+    };
+    if (profile?.contact?.id) await actions.updateDonorContact(profile.contact.id, cleanPayload);
+    else await actions.createDonorContact(cleanPayload);
+    setEditing(null);
+    setNotice('Ficha del donante actualizada correctamente.');
+  }
+
+  async function archiveDonor(profile, reason) {
+    const archive = {
+      archivedAt: new Date().toISOString(),
+      archivedBy: currentUserName(currentUser),
+      reason
+    };
+    const contact = profile.contact?.id
+      ? profile.contact
+      : await actions.createDonorContact({
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        address: profile.address,
+        notes: buildDonorNotes({
+          observations: profile.observations,
+          kind: profile.kind,
+          contactPerson: profile.contactPerson,
+          aliases: uniqueValues([...(profile.aliases || []), profile.name]),
+          archive
+        }),
+        is_active: false
+      });
+    if (contact?.id && profile.contact?.id) {
+      await actions.archiveDonorContact(contact.id, {
+        notes: buildDonorNotes({
+          observations: profile.observations,
+          kind: profile.kind,
+          contactPerson: profile.contactPerson,
+          aliases: uniqueValues([...(profile.aliases || []), profile.name]),
+          archive
+        }),
+        is_active: false
+      });
+    }
+    setArchiveTarget(null);
+    setProfileId(profile.contact?.id ? profile.id : '');
+    setNotice('Donante archivado correctamente.');
+  }
+
+  async function unarchiveDonor(profile) {
+    if (!profile.contact?.id) return;
+    await actions.archiveDonorContact(profile.contact.id, {
+      notes: buildDonorNotes({
+        observations: profile.observations,
+        kind: profile.kind,
+        contactPerson: profile.contactPerson,
+        aliases: profile.aliases,
+        archive: null
+      }),
+      is_active: true
+    });
+    setNotice('Donante desarchivado correctamente.');
+  }
+
+  async function deleteDonor(profile) {
+    if (!profile.contact?.id) return;
+    await actions.deleteDonorContact(profile.contact.id);
+    setDeleteTarget(null);
+    if (profileId === profile.id) setProfileId('');
+    setNotice('Donante eliminado correctamente.');
+  }
+
   return (
     <>
       <PageHeader
@@ -95,6 +197,7 @@ export function Donations({ data, currentUser, navigationTarget, onNavigate }) {
           </>
         ) : <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Modo consulta</span>}
       />
+      {notice && <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">{notice}</div>}
 
       <DonorStats stats={stats} />
 
@@ -122,7 +225,17 @@ export function Donations({ data, currentUser, navigationTarget, onNavigate }) {
 
       <section className="mt-5 grid gap-4 xl:grid-cols-2">
         {visibleProfiles.map((profile) => (
-          <DonorCard key={profile.id} profile={profile} onOpen={() => openProfile(profile)} />
+          <DonorCard
+            key={profile.id}
+            profile={profile}
+            canEdit={canEditDonors}
+            isSuperadmin={isSuperadmin}
+            onOpen={() => openProfile(profile)}
+            onEdit={() => setEditing(profile)}
+            onArchive={() => setArchiveTarget(profile)}
+            onUnarchive={() => unarchiveDonor(profile)}
+            onDelete={() => setDeleteTarget(profile)}
+          />
         ))}
       </section>
 
@@ -136,7 +249,36 @@ export function Donations({ data, currentUser, navigationTarget, onNavigate }) {
 
       {selectedProfile && (
         <Modal wide title={`Expediente del donante - ${selectedProfile.name}`} onClose={() => setProfileId('')}>
-          <DonorProfile profile={selectedProfile} data={data} tab={tab} setTab={setTab} />
+          <DonorProfile
+            profile={selectedProfile}
+            data={data}
+            tab={tab}
+            setTab={setTab}
+            canEdit={canEditDonors}
+            isSuperadmin={isSuperadmin}
+            onEdit={() => setEditing(selectedProfile)}
+            onArchive={() => setArchiveTarget(selectedProfile)}
+            onUnarchive={() => unarchiveDonor(selectedProfile)}
+            onDelete={() => setDeleteTarget(selectedProfile)}
+          />
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal title="Editar donante" onClose={() => setEditing(null)}>
+          <DonorForm profile={editing} onCancel={() => setEditing(null)} onSubmit={(payload) => saveDonor(editing, payload)} />
+        </Modal>
+      )}
+
+      {archiveTarget && (
+        <Modal title="Archivar donante" onClose={() => setArchiveTarget(null)}>
+          <ArchiveDonorForm profile={archiveTarget} onCancel={() => setArchiveTarget(null)} onConfirm={(reason) => archiveDonor(archiveTarget, reason)} />
+        </Modal>
+      )}
+
+      {deleteTarget && (
+        <Modal title="Eliminar donante" onClose={() => setDeleteTarget(null)}>
+          <DeleteDonorForm profile={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={() => deleteDonor(deleteTarget)} />
         </Modal>
       )}
     </>
@@ -175,14 +317,16 @@ function StatCard({ icon: Icon, label, value, tone }) {
   );
 }
 
-function DonorCard({ profile, onOpen }) {
+function DonorCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive, onUnarchive, onDelete }) {
+  const canDelete = profile.contact?.id && profile.totalDonations === 0;
   return (
-    <article className="rounded-md border border-slate-200 bg-white p-5 shadow-panel transition hover:border-brand-100">
+    <article className={`rounded-md border p-5 shadow-panel transition ${profile.archived ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white hover:border-brand-100'}`}>
+      {profile.archived && <div className="-mx-5 -mt-5 mb-4 border-b border-slate-300 bg-slate-300 px-5 py-3 text-center text-sm font-black uppercase tracking-wide text-slate-700">Archivado</div>}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <DonorKindBadge kind={profile.kind} />
-            {profile.isActive ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">Activo</span> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">Sin actividad</span>}
+            <DonorStatusBadge profile={profile} />
           </div>
           <h3 className="mt-2 truncate text-xl font-bold text-ink">{profile.name}</h3>
           <p className="mt-1 text-sm text-slate-600">Persona de contacto: <strong>{profile.contactPerson || '-'}</strong></p>
@@ -206,7 +350,20 @@ function DonorCard({ profile, onOpen }) {
         <MiniMetric label="Pendientes" value={profile.pendingDonations} />
       </div>
 
-      <div className="mt-4 flex justify-end">
+      {isSuperadmin && profile.totalDonations > 0 && (
+        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Este donante tiene donaciones registradas. Utilice Archivar.</p>
+      )}
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
+        {canEdit && (profile.archived
+          ? <Button variant="secondary" onClick={onUnarchive}><RotateCcw size={16} /> Desarchivar</Button>
+          : <Button variant="secondary" onClick={onArchive}><Archive size={16} /> Archivar</Button>)}
+        {isSuperadmin && (
+          <Button variant="danger" disabled={!canDelete} onClick={onDelete} title={!canDelete ? 'Este donante tiene donaciones registradas. Utilice Archivar.' : 'Eliminar donante'}>
+            <Trash2 size={16} /> Eliminar
+          </Button>
+        )}
         <Button onClick={onOpen}><Eye size={16} /> Abrir expediente</Button>
       </div>
     </article>
@@ -231,24 +388,143 @@ function MiniMetric({ label, value }) {
   );
 }
 
-function DonorProfile({ profile, data, tab, setTab }) {
+function DonorForm({ profile, onCancel, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    name: profile.name || '',
+    kind: profile.kind || 'Particular',
+    contactPerson: profile.contactPerson || '',
+    document_id: profile.documentId || '',
+    phone: profile.phone || '',
+    email: profile.email || '',
+    address: profile.address || '',
+    observations: profile.observations || ''
+  }));
+  const [saving, setSaving] = useState(false);
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      try {
+        await onSubmit(form);
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      <div className="sm:col-span-2"><FormField label="Nombre del donante" required><input className={inputClass} required value={form.name} onChange={(event) => update('name', event.target.value)} /></FormField></div>
+      <FormField label="Tipo"><select className={inputClass} value={form.kind} onChange={(event) => update('kind', event.target.value)}>{DONOR_KIND_FORM_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></FormField>
+      <FormField label="Persona de contacto"><input className={inputClass} value={form.contactPerson} onChange={(event) => update('contactPerson', event.target.value)} /></FormField>
+      <FormField label="Documento / CIF"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
+      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="4" value={form.observations} onChange={(event) => update('observations', event.target.value)} /></FormField></div>
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar donante'}</Button>
+      </div>
+    </form>
+  );
+}
+
+function ArchiveDonorForm({ profile, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  return (
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      try {
+        await onConfirm(reason.trim());
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      <p className="mb-4 text-sm text-slate-600">El donante <strong>{profile.name}</strong> se conservara en el historial y dejara de aparecer como activo.</p>
+      <FormField label="Motivo de archivo">
+        <textarea className={inputClass} rows="4" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo u observaciones..." />
+      </FormField>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
+        <Button type="submit" disabled={saving}><Archive size={16} /> Archivar</Button>
+      </div>
+    </form>
+  );
+}
+
+function DeleteDonorForm({ profile, onCancel, onConfirm }) {
+  const [saving, setSaving] = useState(false);
+  if (profile.totalDonations > 0) {
+    return (
+      <div>
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Este donante tiene donaciones registradas. Utilice Archivar.</p>
+        <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={onCancel}>Cerrar</Button></div>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      try {
+        await onConfirm();
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      <p className="text-sm text-slate-600">Se eliminara definitivamente la ficha del donante <strong>{profile.name}</strong>. Esta accion solo esta disponible porque no tiene donaciones registradas.</p>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
+        <Button type="submit" variant="danger" disabled={saving}><Trash2 size={16} /> Eliminar</Button>
+      </div>
+    </form>
+  );
+}
+
+function DonorProfile({ profile, data, tab, setTab, canEdit, isSuperadmin, onEdit, onArchive, onUnarchive, onDelete }) {
+  const canDelete = profile.contact?.id && profile.totalDonations === 0;
   return (
     <div className="-m-5">
-      <header className="border-b border-slate-200 bg-white px-5 py-6">
+      <header className={`border-b px-5 py-6 ${profile.archived ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white'}`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <DonorKindBadge kind={profile.kind} />
+              <DonorStatusBadge profile={profile} />
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">{profile.totalDonations} donaciones</span>
             </div>
             <h3 className="mt-2 text-2xl font-bold text-ink">{profile.name}</h3>
             <p className="mt-1 text-sm text-slate-600">{profile.email || profile.phone || 'Sin datos de contacto registrados'}</p>
+            {profile.archived && (
+              <div className="mt-3 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                <p className="font-bold">Donante archivado</p>
+                <p className="mt-1">Fecha: {formatDateTime(profile.archive?.archivedAt)}</p>
+                <p>Usuario: {profile.archive?.archivedBy || '-'}</p>
+                <p>Motivo: {profile.archive?.reason || '-'}</p>
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <ProfileMetric label="Dinero" value={formatMoney(profile.moneyDonated)} />
-            <ProfileMetric label="Valor social" value={formatMoney(profile.socialDonated)} />
-            <ProfileMetric label="Primera" value={formatDate(profile.firstDonation)} />
-            <ProfileMetric label="Ultima" value={formatDate(profile.lastDonation)} />
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <ProfileMetric label="Dinero" value={formatMoney(profile.moneyDonated)} />
+              <ProfileMetric label="Valor social" value={formatMoney(profile.socialDonated)} />
+              <ProfileMetric label="Primera" value={formatDate(profile.firstDonation)} />
+              <ProfileMetric label="Ultima" value={formatDate(profile.lastDonation)} />
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
+              {canEdit && (profile.archived
+                ? <Button variant="secondary" onClick={onUnarchive}><RotateCcw size={16} /> Desarchivar</Button>
+                : <Button variant="secondary" onClick={onArchive}><Archive size={16} /> Archivar</Button>)}
+              {isSuperadmin && (
+                <Button variant="danger" disabled={!canDelete} onClick={onDelete} title={!canDelete ? 'Este donante tiene donaciones registradas. Utilice Archivar.' : 'Eliminar donante'}>
+                  <Trash2 size={16} /> Eliminar
+                </Button>
+              )}
+            </div>
+            {isSuperadmin && profile.totalDonations > 0 && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Este donante tiene donaciones registradas. Utilice Archivar.</p>
+            )}
           </div>
         </div>
       </header>
@@ -485,6 +761,16 @@ function DonorKindBadge({ kind }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${tone}`}>{kind || 'Particular'}</span>;
 }
 
+function DonorStatusBadge({ profile }) {
+  if (profile.archived) {
+    return <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 ring-1 ring-slate-300">Archivado</span>;
+  }
+  if (profile.isActive) {
+    return <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">Activo</span>;
+  }
+  return <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">Sin actividad</span>;
+}
+
 function DonationTypeBadge({ category, status }) {
   const pending = isPendingStatus(status);
   const tone = pending
@@ -506,16 +792,90 @@ function EmptyState({ icon: Icon, title, text }) {
   );
 }
 
+function donorMetadata(contact) {
+  const notes = String(contact?.notes || '');
+  const lines = notes.split(/\r?\n/);
+  const kind = markerValue(lines, DONOR_KIND_MARKER);
+  const contactPerson = markerValue(lines, DONOR_CONTACT_MARKER);
+  const aliases = lines
+    .filter((line) => line.startsWith(DONOR_ALIAS_MARKER))
+    .map((line) => line.slice(DONOR_ALIAS_MARKER.length).trim())
+    .filter(Boolean);
+  const archiveLine = lines.find((line) => line.startsWith(DONOR_ARCHIVE_MARKER));
+  const archive = parseArchiveLine(archiveLine);
+  return {
+    kind,
+    contactPerson,
+    aliases,
+    archive,
+    visibleNotes: visibleDonorNotes(notes)
+  };
+}
+
+function markerValue(lines, marker) {
+  const line = lines.find((item) => item.startsWith(marker));
+  return line ? line.slice(marker.length).trim() : '';
+}
+
+function parseArchiveLine(line) {
+  if (!line) return null;
+  const [archivedAt, archivedBy, reason] = line.slice(DONOR_ARCHIVE_MARKER.length).trim().split('|').map((part) => part.trim());
+  return {
+    archivedAt: archivedAt || '',
+    archivedBy: archivedBy || '',
+    reason: reason || ''
+  };
+}
+
+function visibleDonorNotes(notes) {
+  return String(notes || '')
+    .split(/\r?\n/)
+    .filter((line) => ![DONOR_KIND_MARKER, DONOR_CONTACT_MARKER, DONOR_ALIAS_MARKER, DONOR_ARCHIVE_MARKER].some((marker) => line.startsWith(marker)))
+    .join('\n')
+    .trim();
+}
+
+function buildDonorNotes({ observations, kind, contactPerson, aliases = [], archive }) {
+  const markerLines = [
+    `${DONOR_KIND_MARKER} ${kind || 'Particular'}`.trim(),
+    contactPerson ? `${DONOR_CONTACT_MARKER} ${contactPerson}`.trim() : '',
+    ...uniqueValues(aliases).map((alias) => `${DONOR_ALIAS_MARKER} ${alias}`.trim()),
+    archive ? `${DONOR_ARCHIVE_MARKER} ${archive.archivedAt || new Date().toISOString()} | ${archive.archivedBy || ''} | ${archive.reason || ''}`.trim() : ''
+  ].filter(Boolean);
+  return [String(observations || '').trim(), ...markerLines].filter(Boolean).join('\n');
+}
+
+function uniqueValues(values = []) {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || '').trim())
+    .filter((value) => {
+      const key = normalize(value);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function currentUserName(user) {
+  return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email || 'Usuario';
+}
+
 function buildDonorProfiles(data) {
   const contacts = data.accounting_contacts || [];
   const donorContacts = contacts.filter((contact) => normalize(contact.contact_type) === 'donor');
   const contactsById = new Map(donorContacts.map((contact) => [contact.id, contact]));
-  const contactsByName = new Map(donorContacts.map((contact) => [normalize(contact.name), contact]));
+  const contactsByName = new Map();
+  donorContacts.forEach((contact) => {
+    const meta = donorMetadata(contact);
+    [contact.name, ...meta.aliases].filter(Boolean).forEach((name) => contactsByName.set(normalize(name), contact));
+  });
   const inventoryItemsById = new Map((data.inventory_items || []).map((item) => [item.id, item]));
   const profiles = new Map();
 
   function ensureProfile({ name, contact, kind }) {
     const matchedContact = contact || contactsByName.get(normalize(name));
+    const meta = donorMetadata(matchedContact);
     const safeName = matchedContact?.name || name || 'Donante sin identificar';
     const id = matchedContact?.id ? `contact:${matchedContact.id}` : `donor:${normalize(safeName) || 'sin-identificar'}`;
     if (!profiles.has(id)) {
@@ -523,13 +883,17 @@ function buildDonorProfiles(data) {
         id,
         contact: matchedContact || null,
         name: safeName,
-        kind: normalizeKind(kind || inferDonorKind(safeName)),
-        contactPerson: matchedContact?.contact_person || matchedContact?.person || '',
+        kind: normalizeKind(kind || meta.kind || inferDonorKind(safeName)),
+        contactPerson: meta.contactPerson || '',
+        documentId: matchedContact?.document_id || '',
         phone: matchedContact?.phone || '',
         email: matchedContact?.email || '',
         address: matchedContact?.address || '',
-        observations: matchedContact?.notes || '',
-        isActive: matchedContact ? matchedContact.is_active !== false : true,
+        observations: meta.visibleNotes,
+        aliases: meta.aliases,
+        archive: meta.archive,
+        archived: Boolean(meta.archive) || matchedContact?.is_active === false,
+        isActive: matchedContact ? matchedContact.is_active !== false && !meta.archive : true,
         donations: [],
         documents: [],
         communications: []
@@ -538,6 +902,8 @@ function buildDonorProfiles(data) {
     const profile = profiles.get(id);
     if (!profile.contact && matchedContact) profile.contact = matchedContact;
     if ((!profile.kind || profile.kind === 'Particular') && kind) profile.kind = normalizeKind(kind);
+    if (!profile.archive && meta.archive) profile.archive = meta.archive;
+    profile.archived = profile.archived || Boolean(profile.archive) || matchedContact?.is_active === false;
     return profile;
   }
 
