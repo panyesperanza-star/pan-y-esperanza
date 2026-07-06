@@ -86,6 +86,19 @@ export function Accounting({ data, actions, currentUser, navigationTarget }) {
     window.setTimeout(() => scrollToAccountingSection(sectionId), 50);
   }, [navigationTarget?.key, navigationTarget?.filter]);
 
+  useEffect(() => {
+    if (!canCreate || navigationTarget?.moduleId !== 'accounting') return;
+    if (navigationTarget.filter !== 'new-operation') return;
+    const operationType = navigationTarget.operationType;
+    if (!OPERATION_TYPES.some((item) => item.value === operationType)) return;
+    setModal({
+      type: 'economic-operation',
+      operationType,
+      title: navigationTarget.title || operationModalTitle(operationType),
+      contextLabel: navigationTarget.contextLabel || 'Nueva operacion'
+    });
+  }, [canCreate, navigationTarget?.key, navigationTarget?.filter, navigationTarget?.operationType]);
+
   return (
     <>
       <PageHeader
@@ -1417,6 +1430,11 @@ function sectionForAccountingFilter(filter) {
   if (['treasury', 'legacy-treasury', 'historical-treasury'].includes(normalized)) return 'treasury';
   if (['alerts', 'economic-alerts'].includes(normalized)) return 'alerts';
   return '';
+}
+
+function operationModalTitle(operationType) {
+  const operation = OPERATION_TYPES.find((item) => item.value === operationType);
+  return operation ? `Registrar ${operation.label.toLowerCase()}` : 'Nueva operacion economica';
 }
 
 function EmptyState({ icon: Icon, title, detail }) {

@@ -173,7 +173,7 @@ export default function App() {
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
@@ -205,6 +205,7 @@ function buildNavigationPath(target) {
   if (target.profileId) params.set('profile', target.profileId);
   if (target.familyId) params.set('family', target.familyId);
   if (target.itemId) params.set('item', target.itemId);
+  if (target.operationType) params.set('operation', target.operationType);
   const query = params.toString();
   return `${getModulePath(target.moduleId)}${query ? `?${query}` : ''}`;
 }
@@ -219,6 +220,7 @@ function readNavigationTargetFromLocation() {
     profileId: params.get('profile') || '',
     familyId: params.get('family') || '',
     itemId: params.get('item') || '',
+    operationType: params.get('operation') || '',
     key: Date.now()
   };
 }
