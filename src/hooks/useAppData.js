@@ -144,6 +144,18 @@ export function useAppData(enabled = true, currentUser = null) {
     };
   }
 
+  function buildDeliveryTrackingNote(delivery, beneficiary, item, quantity) {
+    const parts = [
+      `Se registra una entrega de ${delivery.help_type || 'ayuda'} a ${beneficiary.full_name || 'la persona beneficiaria'}.`
+    ];
+    if (item?.name) parts.push(`Producto: ${item.name}.`);
+    if (quantity) parts.push(`Cantidad: ${quantity}${item?.unit ? ` ${item.unit}` : ''}.`);
+    if (delivery.receipt_number) parts.push(`Justificante: ${delivery.receipt_number}.`);
+    parts.push(`Responsable: ${delivery.responsible || currentUserName()}.`);
+    if (delivery.notes) parts.push(`Observaciones: ${delivery.notes}`);
+    return parts.join(' ');
+  }
+
   function isLastActiveSuperadmin(userId) {
     const existing = data.app_users.find((user) => user.id === userId);
     return existing?.role === 'Superadministrador'
@@ -1615,7 +1627,7 @@ export function useAppData(enabled = true, currentUser = null) {
       if (item && quantity > Number(item.stock || 0)) {
         throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
       }
-      await dataStore.create('deliveries', {
+      const createdDelivery = await dataStore.create('deliveries', {
         ...payload,
         receipt_number: payload.receipt_number || nextReceiptNumber(data.deliveries, payload.delivered_at),
         beneficiary_name: beneficiary?.full_name || '',
@@ -1623,6 +1635,15 @@ export function useAppData(enabled = true, currentUser = null) {
         family_name: family?.family_code || '',
         inventory_item_name: item?.name || ''
       });
+      if (beneficiary) {
+        await dataStore.create('social_history', {
+          beneficiary_id: beneficiary.id,
+          family_id: family?.id || null,
+          date: payload.delivered_at || new Date().toISOString().slice(0, 10),
+          entry_type: 'Entrega de ayuda',
+          notes: buildDeliveryTrackingNote(createdDelivery, beneficiary, item, quantity)
+        });
+      }
       if (!hasSupabaseConfig && beneficiary) await dataStore.update('beneficiaries', beneficiary.id, { last_help_at: payload.delivered_at });
       if (!hasSupabaseConfig && item && quantity > 0) {
         const nextStock = Number(item.stock || 0) - quantity;

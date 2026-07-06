@@ -58,6 +58,7 @@ export async function printSocialAttentionReportPdf({
   const generatedAt = new Date().toISOString();
   const activeDeliveries = (deliveries || []).filter((item) => item.status !== 'Anulada');
   const timeline = buildSocialAttentionTimeline(activeDeliveries, history);
+  const reportObjectives = getReportObjectives(history);
   const familyStats = getFamilyStats(beneficiary, familyMembers);
   const latestAttention = getLatestSocialAttention(timeline);
   const responsible = reportResponsible(currentUser);
@@ -101,20 +102,20 @@ export async function printSocialAttentionReportPdf({
   y = drawReportParagraph(doc, buildSocialInterventionSummary(beneficiary, timeline), y, { context: reportContext });
 
   y = drawInstitutionalSectionTitle(doc, '7. SITUACIÓN ACTUAL', y + 10, reportContext);
-  y = drawReportParagraph(doc, buildCurrentSituationText(beneficiary, timeline, latestAttention), y, { context: reportContext });
+  y = drawReportParagraph(doc, buildCurrentSituationText(beneficiary, timeline, latestAttention, reportObjectives), y, { context: reportContext });
 
   y = drawInstitutionalSectionTitle(doc, '8. RECURSOS MOVILIZADOS', y + 10, reportContext);
   y = drawMobilizedResources(doc, buildMobilizedResources(timeline), y, reportContext);
 
   y = drawInstitutionalSectionTitle(doc, '9. OBSERVACIONES', y + 10, reportContext);
-  y = drawReportObservations(doc, getReportObservations(beneficiary, family, timeline), y, reportContext);
+  y = drawReportObservations(doc, getReportObservations(beneficiary, family, timeline, history), y, reportContext);
 
   doc.addPage();
   drawInstitutionalPageHeader(doc, reportContext);
   y = 42;
 
   y = drawInstitutionalSectionTitle(doc, '10. VALORACIÓN DE LA ENTIDAD', y, reportContext);
-  y = drawReportParagraph(doc, buildEntityAssessmentText(beneficiary, timeline), y, { context: reportContext });
+  y = drawReportParagraph(doc, buildEntityAssessmentText(beneficiary, timeline, reportObjectives), y, { context: reportContext });
 
   y = drawInstitutionalSectionTitle(doc, '11. CONCLUSIÓN', y + 16, reportContext);
   y = drawReportParagraph(doc, buildSocialAttentionConclusion(beneficiary, timeline), y, { context: reportContext });
@@ -826,16 +827,30 @@ function buildSocialAttentionTimeline(deliveries = [], history = []) {
     responsible: delivery.responsible || delivery.created_by || '',
     observations: delivery.notes || ''
   }));
-  const historyRows = history.map((item) => ({
-    date: item.date || item.created_at,
-    type: item.entry_type || 'Seguimiento',
-    description: item.notes || 'Anotación de seguimiento registrada.',
-    responsible: item.user_name || item.created_by || item.user || '',
-    observations: ''
-  }));
+  const historyRows = history
+    .filter(isReportInterventionEntry)
+    .map((item) => ({
+      date: item.date || item.created_at,
+      type: item.entry_type || 'Seguimiento',
+      description: item.notes || 'Anotación de seguimiento registrada.',
+      responsible: item.user_name || item.created_by_name || item.created_by || item.user || '',
+      observations: ''
+    }));
   return [...deliveryRows, ...historyRows]
     .filter((item) => item.date || item.description)
     .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+}
+
+function isReportObservationEntry(item) {
+  return normalizeTextForReport(item?.entry_type) === 'observacion';
+}
+
+function isReportObjectiveEntry(item) {
+  return normalizeTextForReport(item?.entry_type) === 'objetivo';
+}
+
+function isReportInterventionEntry(item) {
+  return !isReportObservationEntry(item) && !isReportObjectiveEntry(item);
 }
 
 function getInitialSocialObservation(history = []) {
@@ -895,7 +910,7 @@ function buildSocialInterventionSummary(beneficiary, timeline) {
   return parts.join(' ');
 }
 
-function buildCurrentSituationText(beneficiary, timeline, latestAttention) {
+function buildCurrentSituationText(beneficiary, timeline, latestAttention, objectives = []) {
   const parts = [];
   parts.push(beneficiary.is_active ? 'Actualmente la persona beneficiaria continúa en seguimiento por parte de la Asociación.' : 'Actualmente el expediente no consta como activo en los registros de la Asociación.');
   if (latestAttention) {
@@ -906,6 +921,7 @@ function buildCurrentSituationText(beneficiary, timeline, latestAttention) {
   parts.push(timeline.length > 1 ? 'El seguimiento presenta continuidad documental en el expediente.' : timeline.length === 1 ? 'Consta una intervención puntual registrada.' : 'No constan actuaciones de seguimiento registradas.');
   if (beneficiary.requested_help) parts.push(`Como necesidad o ayuda solicitada figura: ${beneficiary.requested_help}.`);
   if (beneficiary.situation) parts.push(`La situación registrada en el expediente es: ${beneficiary.situation}.`);
+  if (objectives.length) parts.push(`El expediente recoge como objetivo de seguimiento: ${objectives[0]}${objectives.length > 1 ? ` Además constan otros ${objectives.length - 1} objetivo${objectives.length === 2 ? '' : 's'} registrados.` : ''}`);
   return parts.join(' ');
 }
 
@@ -939,7 +955,7 @@ function buildSocialAttentionConclusion(beneficiary, timeline) {
   return `El expediente refleja una intervención de apoyo y seguimiento realizada por la Asociación Pan y Esperanza, documentada mediante las actuaciones registradas en la historia de intervención. ${followUpText} Este informe tiene carácter informativo y resume la información obrante en el expediente a la fecha de emisión.`;
 }
 
-function buildEntityAssessmentText(beneficiary, timeline) {
+function buildEntityAssessmentText(beneficiary, timeline, objectives = []) {
   const parts = [];
   if (beneficiary.is_active) {
     parts.push('Con la información obrante en el expediente, la Asociación considera conveniente mantener el seguimiento de la persona beneficiaria.');
@@ -948,6 +964,9 @@ function buildEntityAssessmentText(beneficiary, timeline) {
   }
   if (timeline.length) {
     parts.push(`La valoración institucional se basa en las ${timeline.length} actuación${timeline.length === 1 ? '' : 'es'} registrada${timeline.length === 1 ? '' : 's'} en el sistema de la entidad.`);
+  }
+  if (objectives.length) {
+    parts.push('También se tienen en cuenta los objetivos de seguimiento definidos dentro del expediente social.');
   }
   parts.push('Esta valoración tiene carácter institucional e informativo y no constituye diagnóstico profesional ni valoración clínica.');
   return parts.join(' ');
@@ -980,12 +999,17 @@ function getLatestSocialAttention(timeline = []) {
   return [...timeline].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0] || null;
 }
 
-function getReportObservations(beneficiary, family, timeline = []) {
+function getReportObservations(beneficiary, family, timeline = [], history = []) {
   return uniqueReportValues([
     beneficiary.notes,
     family?.notes,
-    ...timeline.map((item) => item.observations)
+    ...timeline.map((item) => item.observations),
+    ...history.filter(isReportObservationEntry).map((item) => item.notes)
   ]);
+}
+
+function getReportObjectives(history = []) {
+  return uniqueReportValues(history.filter(isReportObjectiveEntry).map((item) => item.notes));
 }
 
 function getFamilyReferenceName(beneficiary, family) {

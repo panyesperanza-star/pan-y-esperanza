@@ -78,7 +78,10 @@ const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 
 const SEX_OPTIONS = ['Mujer', 'Hombre', 'No binario', 'Prefiere no indicar'];
 const MARITAL_STATUS_OPTIONS = ['Soltero/a', 'Casado/a', 'Pareja de hecho', 'Separado/a', 'Divorciado/a', 'Viudo/a'];
-const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'Derivación', 'Observación'];
+const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'Derivación', 'Información y orientación'];
+const OBSERVATION_ENTRY_TYPE = 'Observación';
+const OBJECTIVE_ENTRY_TYPE = 'Objetivo';
+const DELIVERY_TRACKING_ENTRY_TYPE = 'Entrega de ayuda';
 
 export function Beneficiaries({ data, actions, currentUser, navigationTarget }) {
   const [query, setQuery] = useState('');
@@ -395,7 +398,7 @@ function buildBeneficiaryRelationWarnings(beneficiary, data) {
   if (beneficiary.family_id) relations.push(`Familia vinculada: ${beneficiary.family_id}`);
   if (deliveries.length) relations.push(`Entregas: ${deliveries.length}`);
   if (documents.length) relations.push(`Documentos: ${documents.length}`);
-  if (history.length) relations.push(`Historial social: ${history.length}`);
+  if (history.length) relations.push(`Seguimiento: ${history.length}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
   if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length}`);
   if (beneficiary.profile_photo) relations.push('Fotografia de perfil');
@@ -715,6 +718,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
   const activeDeliveries = deliveries.filter(isActiveDelivery);
   const valuation = calculateDeliveriesValue(activeDeliveries, data.inventory_items);
+  const trackingCount = buildTrackingDiary(history, activeDeliveries).length;
   const canCreateDelivery = canDo(currentUser, 'deliveries', 'create') && !familyArchived;
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
@@ -726,7 +730,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     { id: 'deliveries', label: 'Entregas', icon: PackageCheck, count: deliveries.length },
     { id: 'documents', label: 'Documentos', icon: Paperclip, count: documents.length },
     { id: 'emails', label: 'Comunicaciones', icon: Mail, count: emailLogs.length },
-    { id: 'social', label: 'Historial social', icon: NotebookTabs, count: history.length }
+    { id: 'social', label: 'Seguimiento', icon: NotebookTabs, count: trackingCount }
   ];
 
   async function openWhatsApp() {
@@ -849,7 +853,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
         {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} />}
         {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
-        {tab === 'social' && <SocialHistory history={history} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
+        {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
       </main>
 
       {emailOpen && (
@@ -1047,7 +1051,7 @@ function OverviewPanel({ beneficiary, family, deliveries, history }) {
         {latestDelivery ? <><p className="font-bold text-ink">{latestDelivery.help_type || 'Ayuda entregada'}</p><p className="mt-1 text-sm text-slate-500">{formatDate(latestDelivery.delivered_at)} · {latestDelivery.inventory_item_name || 'Sin producto'}</p><p className="mt-3 text-sm text-slate-600">Cantidad: {latestDelivery.quantity || '-'} · Responsable: {latestDelivery.responsible || '-'}</p></> : <p className="text-sm text-slate-500">No hay entregas registradas.</p>}
       </InfoCard>
       <InfoCard icon={NotebookTabs} title="Último seguimiento">
-        {latestHistory ? <><div className="flex items-center justify-between gap-3"><p className="font-bold text-ink">{latestHistory.entry_type || 'Seguimiento'}</p><span className="text-xs text-slate-500">{formatDate(latestHistory.date)}</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{latestHistory.notes}</p></> : <p className="text-sm text-slate-500">No hay anotaciones en el historial social.</p>}
+        {latestHistory ? <><div className="flex items-center justify-between gap-3"><p className="font-bold text-ink">{latestHistory.entry_type || 'Seguimiento'}</p><span className="text-xs text-slate-500">{formatDate(latestHistory.date)}</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{latestHistory.notes}</p></> : <p className="text-sm text-slate-500">No hay anotaciones de seguimiento.</p>}
       </InfoCard>
       <InfoCard icon={Users} title="Unidad familiar"><InfoGrid items={[["Unidad", family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'], ['Miembros', beneficiary.family_members], ['Menores', beneficiary.minors_count], ['Contacto', family?.phone || family?.email]]} /></InfoCard>
       <InfoCard icon={CalendarDays} title="Fechas del expediente"><InfoGrid items={[["Primera atención", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Última ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
@@ -1383,18 +1387,35 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, organization, actions, 
   );
 }
 
-function SocialHistory({ history, beneficiary, actions, currentUser, canEdit }) {
+function SocialHistory({ history, deliveries = [], beneficiary, actions, currentUser, canEdit }) {
   const [note, setNote] = useState('');
   const [entryType, setEntryType] = useState('Seguimiento');
   const [date, setDate] = useState(todayISO());
+  const [observation, setObservation] = useState('');
+  const [observationDate, setObservationDate] = useState(todayISO());
+  const [objective, setObjective] = useState('');
+  const [objectiveDate, setObjectiveDate] = useState(todayISO());
   const [saving, setSaving] = useState(false);
+  const diary = buildTrackingDiary(history, deliveries);
+  const observations = getTrackingEntriesByType(history, OBSERVATION_ENTRY_TYPE);
+  const objectives = getTrackingEntriesByType(history, OBJECTIVE_ENTRY_TYPE);
+  const indicators = buildTrackingIndicators(beneficiary, diary, observations, objectives);
 
-  async function submit(event) {
+  async function createTrackingEntry(payload) {
+    await actions.createSocialHistory({
+      beneficiary_id: beneficiary.id,
+      date: payload.date,
+      entry_type: payload.entry_type,
+      notes: payload.notes.trim()
+    });
+  }
+
+  async function submitIntervention(event) {
     event.preventDefault();
     if (!note.trim()) return;
     setSaving(true);
     try {
-      await actions.createSocialHistory({ beneficiary_id: beneficiary.id, date, entry_type: entryType, notes: note.trim() });
+      await createTrackingEntry({ date, entry_type: entryType, notes: note });
       setNote('');
       setDate(todayISO());
     } finally {
@@ -1402,32 +1423,227 @@ function SocialHistory({ history, beneficiary, actions, currentUser, canEdit }) 
     }
   }
 
+  async function submitObjective(event) {
+    event.preventDefault();
+    if (!objective.trim()) return;
+    setSaving(true);
+    try {
+      await createTrackingEntry({ date: objectiveDate, entry_type: OBJECTIVE_ENTRY_TYPE, notes: objective });
+      setObjective('');
+      setObjectiveDate(todayISO());
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitObservation(event) {
+    event.preventDefault();
+    if (!observation.trim()) return;
+    setSaving(true);
+    try {
+      await createTrackingEntry({ date: observationDate, entry_type: OBSERVATION_ENTRY_TYPE, notes: observation });
+      setObservation('');
+      setObservationDate(todayISO());
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <section>
-      <SectionHeading icon={NotebookTabs} title="Historial social" description="Anotaciones y seguimiento del expediente." />
-      {canEdit && (
-        <form className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submit}>
-          <div className="grid gap-3 sm:grid-cols-[180px_170px_1fr_auto] sm:items-end">
-            <FormField label="Tipo"><select className={inputClass} value={entryType} onChange={(event) => setEntryType(event.target.value)}>{SOCIAL_ENTRY_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-            <FormField label="Fecha"><input className={inputClass} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></FormField>
-            <FormField label="Nueva anotación"><input className={inputClass} required value={note} onChange={(event) => setNote(event.target.value)} placeholder="Escribe una anotación de seguimiento" /></FormField>
-            <Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Guardando…' : 'Añadir'}</Button>
-          </div>
-        </form>
-      )}
-      <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
-        {history.map((item) => (
-          <article key={item.id} className="relative flex gap-4">
-            <span className="z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700 ring-4 ring-slate-50"><CalendarDays size={17} /></span>
-            <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-ink">{item.entry_type || 'Seguimiento'}</h4><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><UserRound size={13} /> {socialHistoryUser(item, currentUser)}</p></div><time className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{formatDate(item.date)}</time></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.notes}</p></div>
-          </article>
-        ))}
+    <section className="space-y-5">
+      <SectionHeading icon={NotebookTabs} title="Seguimiento" description="Diario de intervención social, objetivos, observaciones e indicadores del expediente." />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {indicators.map((indicator) => <TrackingMetric key={indicator.label} {...indicator} />)}
       </div>
-      {!history.length && <div className="mt-4"><EmptyState icon={NotebookTabs} title="Sin anotaciones" text="Todavía no hay entradas en el historial social." /></div>}
+      {canEdit && (
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submitIntervention}>
+            <h4 className="font-bold text-ink">Nueva intervención</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[180px_170px_1fr]">
+              <FormField label="Tipo"><select className={inputClass} value={entryType} onChange={(event) => setEntryType(event.target.value)}>{SOCIAL_ENTRY_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+              <FormField label="Fecha"><input className={inputClass} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></FormField>
+              <div className="sm:col-span-3"><FormField label="Relato de la intervención"><textarea className={inputClass} required rows="4" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Describe qué atención se realizó, qué se observó y qué seguimiento queda pendiente." /></FormField></div>
+            </div>
+            <div className="mt-3 flex justify-end"><Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Guardando...' : 'Añadir al diario'}</Button></div>
+          </form>
+
+          <div className="grid gap-4">
+            <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submitObjective}>
+              <h4 className="font-bold text-ink">Objetivo del expediente</h4>
+              <div className="mt-3 grid gap-3">
+                <FormField label="Fecha"><input className={inputClass} type="date" value={objectiveDate} onChange={(event) => setObjectiveDate(event.target.value)} /></FormField>
+                <FormField label="Objetivo"><textarea className={inputClass} required rows="3" value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Ejemplo: mantener seguimiento mensual de la unidad familiar." /></FormField>
+              </div>
+              <div className="mt-3 flex justify-end"><Button type="submit" variant="secondary" disabled={saving || !objective.trim()}><CheckCircle2 size={17} /> Guardar objetivo</Button></div>
+            </form>
+
+            <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submitObservation}>
+              <h4 className="font-bold text-ink">Observación independiente</h4>
+              <div className="mt-3 grid gap-3">
+                <FormField label="Fecha"><input className={inputClass} type="date" value={observationDate} onChange={(event) => setObservationDate(event.target.value)} /></FormField>
+                <FormField label="Observación"><textarea className={inputClass} required rows="3" value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="Anota una observación relevante sin convertirla en intervención." /></FormField>
+              </div>
+              <div className="mt-3 flex justify-end"><Button type="submit" variant="secondary" disabled={saving || !observation.trim()}><NotebookTabs size={17} /> Guardar observación</Button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <TrackingList title="Objetivos del expediente" icon={CheckCircle2} entries={objectives} empty="No hay objetivos definidos en este expediente." currentUser={currentUser} />
+        <TrackingList title="Observaciones independientes" icon={ClipboardList} entries={observations} empty="No hay observaciones independientes registradas." currentUser={currentUser} />
+      </div>
+
+      <div>
+        <SectionHeading icon={CalendarDays} title="Diario cronológico" description="Historia documentada de intervenciones y entregas registradas." />
+        <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
+          {diary.map((item) => (
+            <article key={item.key} className="relative flex gap-4">
+              <span className={`z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-slate-50 ${item.tone}`}><item.icon size={17} /></span>
+              <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-ink">{item.type}</h4><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><UserRound size={13} /> {item.userLabel || socialHistoryUser(item.raw, currentUser)}</p></div><time className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{formatDate(item.date)}</time></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.notes}</p></div>
+            </article>
+          ))}
+        </div>
+        {!diary.length && <div className="mt-4"><EmptyState icon={NotebookTabs} title="Sin seguimiento" text="Todavía no hay intervenciones documentadas en este expediente." /></div>}
+      </div>
     </section>
   );
 }
 
+function TrackingMetric({ label, value, detail, tone }) {
+  const tones = {
+    brand: 'bg-brand-50 text-brand-700',
+    blue: 'bg-blue-50 text-blue-700',
+    amber: 'bg-amber-50 text-amber-700',
+    slate: 'bg-slate-100 text-slate-700'
+  };
+  return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-2xl font-bold ${tones[tone] ? tones[tone].split(' ')[1] : 'text-ink'}`}>{value}</p>{detail && <p className="mt-1 text-xs font-medium text-slate-500">{detail}</p>}</div>;
+}
+
+function TrackingList({ title, icon: Icon, entries, empty, currentUser }) {
+  return (
+    <section>
+      <SectionHeading icon={Icon} title={title} description="Registro independiente dentro del expediente social." />
+      <div className="mt-4 space-y-3">
+        {entries.map((item) => (
+          <article key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="flex items-center gap-1.5 text-xs text-slate-500"><UserRound size={13} /> {socialHistoryUser(item, currentUser)}</p>
+              <time className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{formatDate(item.date)}</time>
+            </div>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.notes}</p>
+          </article>
+        ))}
+      </div>
+      {!entries.length && <div className="mt-4"><EmptyState icon={Icon} title="Sin registros" text={empty} /></div>}
+    </section>
+  );
+}
+
+function getTrackingEntriesByType(history, type) {
+  const key = normalize(type);
+  return [...history]
+    .filter((item) => normalize(item.entry_type) === key)
+    .sort((a, b) => String(b.date || b.created_at || '').localeCompare(String(a.date || a.created_at || '')));
+}
+
+function buildTrackingDiary(history = [], deliveries = []) {
+  const diaryEntries = history
+    .filter((item) => isDiaryTrackingEntry(item))
+    .map((item) => ({
+      key: `history-${item.id}`,
+      raw: item,
+      date: item.date || item.created_at,
+      type: item.entry_type || 'Seguimiento',
+      notes: item.notes || 'Intervención registrada en el expediente.',
+      icon: trackingIconFor(item.entry_type),
+      tone: trackingToneFor(item.entry_type)
+    }));
+  const deliveryEntries = deliveries
+    .filter((delivery) => !hasDeliveryTrackingEntry(history, delivery))
+    .map((delivery) => ({
+      key: `delivery-${delivery.id}`,
+      raw: delivery,
+      date: delivery.delivered_at || delivery.reception_at || delivery.created_at,
+      type: DELIVERY_TRACKING_ENTRY_TYPE,
+      notes: buildDeliveryTrackingText(delivery),
+      userLabel: delivery.responsible || 'Responsable no registrado',
+      icon: PackageCheck,
+      tone: 'bg-brand-50 text-brand-700'
+    }));
+  return [...diaryEntries, ...deliveryEntries]
+    .filter((item) => item.date || item.notes)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function isDiaryTrackingEntry(item) {
+  const type = normalize(item.entry_type);
+  return type !== normalize(OBSERVATION_ENTRY_TYPE) && type !== normalize(OBJECTIVE_ENTRY_TYPE);
+}
+
+function hasDeliveryTrackingEntry(history, delivery) {
+  const receipt = normalize(delivery.receipt_number);
+  const deliveredAt = String(delivery.delivered_at || '').slice(0, 10);
+  return history.some((item) => {
+    if (normalize(item.entry_type) !== normalize(DELIVERY_TRACKING_ENTRY_TYPE)) return false;
+    const notes = normalize(item.notes);
+    const sameReceipt = receipt && notes.includes(receipt);
+    const sameDate = deliveredAt && String(item.date || '').slice(0, 10) === deliveredAt;
+    return sameReceipt || (sameDate && notes.includes(normalize(delivery.help_type)));
+  });
+}
+
+function buildDeliveryTrackingText(delivery) {
+  const parts = [`Se registra una entrega de ${delivery.help_type || 'ayuda'} en el expediente.`];
+  if (delivery.inventory_item_name) parts.push(`Producto: ${delivery.inventory_item_name}.`);
+  if (delivery.quantity) parts.push(`Cantidad: ${delivery.quantity}.`);
+  if (delivery.receipt_number) parts.push(`Justificante: ${delivery.receipt_number}.`);
+  if (delivery.notes) parts.push(`Observaciones: ${delivery.notes}`);
+  return parts.join(' ');
+}
+
+function buildTrackingIndicators(beneficiary, diary, observations, objectives) {
+  const latest = diary[0];
+  const days = latest?.date ? daysSince(latest.date) : null;
+  return [
+    { label: 'Intervenciones', value: diary.length, detail: latest ? `Última: ${formatDate(latest.date)}` : 'Sin intervenciones', tone: 'brand' },
+    { label: 'Objetivos', value: objectives.length, detail: objectives.length ? 'Definidos en seguimiento' : 'Sin objetivos definidos', tone: 'blue' },
+    { label: 'Observaciones', value: observations.length, detail: observations.length ? 'Registro independiente' : 'Sin observaciones', tone: 'slate' },
+    { label: 'Estado seguimiento', value: trackingStatusLabel(beneficiary, days), detail: days === null ? 'Sin fecha registrada' : `Hace ${days} día${days === 1 ? '' : 's'}`, tone: days !== null && days > 30 ? 'amber' : 'brand' }
+  ];
+}
+
+function daysSince(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  return Math.max(0, Math.floor((today.setHours(0, 0, 0, 0) - date.setHours(0, 0, 0, 0)) / 86400000));
+}
+
+function trackingStatusLabel(beneficiary, days) {
+  if (!beneficiary.is_active) return 'Inactivo';
+  if (days === null) return 'Sin seguimiento';
+  if (days > 30) return 'Revisar';
+  if (days > 15) return 'Próximo';
+  return 'Actualizado';
+}
+
+function trackingIconFor(type) {
+  const normalized = normalize(type);
+  if (normalized.includes('entrega')) return PackageCheck;
+  if (normalized.includes('incidencia')) return ClipboardList;
+  if (normalized.includes('primera')) return HeartHandshake;
+  return CalendarDays;
+}
+
+function trackingToneFor(type) {
+  const normalized = normalize(type);
+  if (normalized.includes('incidencia')) return 'bg-amber-50 text-amber-700';
+  if (normalized.includes('entrega')) return 'bg-brand-50 text-brand-700';
+  if (normalized.includes('derivacion')) return 'bg-blue-50 text-blue-700';
+  return 'bg-slate-100 text-slate-700';
+}
+
 function socialHistoryUser(item, currentUser) {
-  return item.user_name || item.created_by || item.user || (item.isLocalDraft ? `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() : '') || 'Usuario no registrado';
+  return item.user_name || item.created_by_name || item.created_by || item.user || (item.isLocalDraft ? `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() : '') || 'Usuario no registrado';
 }
