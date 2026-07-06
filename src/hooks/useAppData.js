@@ -1501,6 +1501,7 @@ export function useAppData(enabled = true, currentUser = null) {
       const family = data.families.find((item) => item.id === id);
       if (!family) throw new Error('La familia no existe.');
       const archived = await dataStore.update('families', id, {
+        notes: family.notes || '',
         status: 'Archivada',
         archived_at: new Date().toISOString(),
         archive_reason: String(payload.reason || payload.archive_reason || '').trim(),

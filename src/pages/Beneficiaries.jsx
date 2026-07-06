@@ -152,7 +152,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
       const createdFamily = await actions.createFamily({
         ...__new_family,
         family_code: __new_family?.family_code || nextFamilyCode(data.families),
-        responsible_name: __new_family?.responsible_name || payload.full_name,
+        responsible_name: payload.full_name,
         address: __new_family?.address || payload.address_full,
         phone: __new_family?.phone || payload.phone,
         email: __new_family?.email || payload.email,
@@ -628,7 +628,9 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         {form.__family_mode === 'new' && (
           <div className="grid gap-4 rounded-xl border border-brand-100 bg-brand-50/40 p-4 sm:col-span-2 sm:grid-cols-2">
             <FormField label="Codigo familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
-            <FormField label="Responsable"><input className={inputClass} required value={form.__new_family.responsible_name || ''} onChange={(event) => updateNewFamily('responsible_name', event.target.value)} /></FormField>
+            <FormField label="Responsable">
+              <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{form.full_name || 'Se asignara al beneficiario creado'}</div>
+            </FormField>
             <div className="sm:col-span-2"><FormField label="Direccion familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
             <FormField label="Telefono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
             <FormField label="Email familiar"><input className={inputClass} type="email" value={form.__new_family.email || ''} onChange={(event) => updateNewFamily('email', event.target.value)} /></FormField>
@@ -1076,6 +1078,26 @@ function QuickFamilyForm({ beneficiary, onSubmit }) {
   const [form, setForm] = useState({ id: crypto.randomUUID(), family_code: `FAM-${String(Date.now()).slice(-4)}`, responsible_name: beneficiary.full_name, address: beneficiary.address_full || '', phone: beneficiary.phone || '', email: beneficiary.email || '', dependents_count: beneficiary.minors_count || 0, notes: '' });
   const [saving, setSaving] = useState(false);
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      try {
+        await onSubmit({ ...form, responsible_name: beneficiary.full_name });
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      <FormField label="Codigo familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField>
+      <FormField label="Responsable"><div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{beneficiary.full_name}</div></FormField>
+      <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
+      <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+      <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Creando...' : 'Crear y vincular familia'}</Button></div>
+    </form>
+  );
   return <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSubmit(form); } finally { setSaving(false); } }}><FormField label="Código familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField><FormField label="Titular"><input className={inputClass} required value={form.responsible_name} onChange={(event) => update('responsible_name', event.target.value)} /></FormField><div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div><FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField><FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField><FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField><div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div><div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Creando…' : 'Crear y vincular familia'}</Button></div></form>;
 }
 

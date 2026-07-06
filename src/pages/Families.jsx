@@ -34,6 +34,8 @@ import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { DOCUMENT_TYPES } from '../lib/constants';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
+const ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
+
 const emptyFamily = {
   family_code: '',
   responsible_name: '',
@@ -87,8 +89,14 @@ export function Families({ data, actions, currentUser, onNavigate }) {
   const urgentFamilies = profiles.filter((item) => familyStatus(item.family) === 'Urgente' || item.members.some((member) => member.situation === 'Urgente')).length;
 
   async function saveFamily(payload) {
-    if (payload.id) await actions.updateFamily(payload.id, payload);
-    else await actions.createFamily({ ...payload, family_code: payload.family_code || nextFamilyCode(data.families || []) });
+    const currentProfile = profiles.find((item) => item.family.id === payload.id);
+    const selectedResponsible = currentProfile?.members.find((member) => member.id === payload.responsible_beneficiary_id);
+    const cleanPayload = {
+      ...payload,
+      responsible_name: selectedResponsible?.full_name || payload.responsible_name || 'Pendiente de asignar'
+    };
+    if (payload.id) await actions.updateFamily(payload.id, cleanPayload);
+    else await actions.createFamily({ ...cleanPayload, family_code: cleanPayload.family_code || nextFamilyCode(data.families || []) });
     setEditing(null);
     setNotice('Familia guardada correctamente.');
   }
@@ -166,7 +174,13 @@ export function Families({ data, actions, currentUser, onNavigate }) {
 
       {editing && (
         <Modal wide title={editing.id ? 'Editar familia' : 'Nueva familia'} onClose={() => setEditing(null)}>
-          <FamilyForm initial={editing} families={data.families || []} onSubmit={saveFamily} onCancel={() => setEditing(null)} />
+          <FamilyForm
+            initial={editing}
+            families={data.families || []}
+            members={profiles.find((item) => item.family.id === editing.id)?.members || []}
+            onSubmit={saveFamily}
+            onCancel={() => setEditing(null)}
+          />
         </Modal>
       )}
 
@@ -235,7 +249,7 @@ function FamilyCard({ profile, canEdit, isSuperadmin, onOpen, onEdit, onArchive,
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={onOpen}><FileText size={16} /> Ver expediente <ChevronRight size={15} /></Button>
+        <Button onClick={onOpen} className="min-w-[160px]"><FileText size={16} /> Abrir expediente <ChevronRight size={15} /></Button>
         {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
         {canEdit && !archived && <Button variant="secondary" onClick={() => setArchiveOpen(true)}><Archive size={16} /> Archivar</Button>}
         {isSuperadmin && (
@@ -376,11 +390,11 @@ function FamilySummaryPanel({ family, stats, latestHelp, socialValue }) {
         ]} />
       </InfoCard>
       <InfoCard icon={NotebookTabs} title="Observaciones generales">
-        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{family.notes || 'No hay observaciones generales registradas.'}</p>
+        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{visibleFamilyNotes(family) || 'No hay observaciones generales registradas.'}</p>
         {familyStatus(family) === 'Archivada' && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-            <p><strong>Archivada:</strong> {formatDateTime(family.archived_at)}</p>
-            <p className="mt-1"><strong>Motivo:</strong> {family.archive_reason || '-'}</p>
+            <p><strong>Archivada:</strong> {formatDateTime(family.archived_at || archiveMetadata(family).archivedAt)}</p>
+            <p className="mt-1"><strong>Motivo:</strong> {family.archive_reason || archiveMetadata(family).reason || '-'}</p>
           </div>
         )}
       </InfoCard>
@@ -615,8 +629,16 @@ function FamilyTimeline({ rows }) {
   );
 }
 
-function FamilyForm({ initial, families, onSubmit, onCancel }) {
-  const [form, setForm] = useState(() => ({ ...emptyFamily, ...initial, status: initial.status || 'Activa' }));
+function FamilyForm({ initial, families, members, onSubmit, onCancel }) {
+  const responsibleMember = members.find((member) => normalize(member.full_name) === normalize(initial.responsible_name)) || members[0] || null;
+  const [form, setForm] = useState(() => ({
+    ...emptyFamily,
+    ...initial,
+    notes: visibleFamilyNotes(initial),
+    responsible_name: responsibleMember?.full_name || initial.responsible_name || 'Pendiente de asignar',
+    responsible_beneficiary_id: responsibleMember?.id || '',
+    status: familyStatus(initial)
+  }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
@@ -629,9 +651,17 @@ function FamilyForm({ initial, families, onSubmit, onCancel }) {
       setError('Ya existe una familia con ese codigo.');
       return;
     }
+    if (members.length && !form.responsible_beneficiary_id) {
+      setError('Selecciona un responsable entre los miembros de esta familia.');
+      return;
+    }
+    const selectedResponsible = members.find((member) => member.id === form.responsible_beneficiary_id);
     setSaving(true);
     try {
-      await onSubmit(form);
+      await onSubmit({
+        ...form,
+        responsible_name: selectedResponsible?.full_name || form.responsible_name || 'Pendiente de asignar'
+      });
     } catch (err) {
       setError(err.message || 'No se pudo guardar la familia.');
     } finally {
@@ -645,7 +675,32 @@ function FamilyForm({ initial, families, onSubmit, onCancel }) {
       <FormSection icon={Home} title="Cabecera familiar" description="Datos principales del expediente familiar.">
         <FormField label="Codigo familia" required><input className={inputClass} required value={form.family_code || ''} onChange={(event) => update('family_code', event.target.value)} /></FormField>
         <FormField label="Estado"><select className={inputClass} value={form.status || 'Activa'} onChange={(event) => update('status', event.target.value)}>{FAMILY_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-        <div className="sm:col-span-2"><FormField label="Responsable" required><input className={inputClass} required value={form.responsible_name || ''} onChange={(event) => update('responsible_name', event.target.value)} /></FormField></div>
+        <div className="sm:col-span-2">
+          <FormField label="Responsable">
+            {members.length ? (
+              <select
+                className={inputClass}
+                required
+                value={form.responsible_beneficiary_id || ''}
+                onChange={(event) => {
+                  const member = members.find((item) => item.id === event.target.value);
+                  setForm((current) => ({
+                    ...current,
+                    responsible_beneficiary_id: event.target.value,
+                    responsible_name: member?.full_name || current.responsible_name
+                  }));
+                }}
+              >
+                <option value="">Selecciona un miembro</option>
+                {members.map((member) => <option key={member.id} value={member.id}>{member.full_name}</option>)}
+              </select>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                Primero vincula beneficiarios a esta familia para asignar un responsable.
+              </div>
+            )}
+          </FormField>
+        </div>
         <div className="sm:col-span-2"><FormField label="Direccion"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField></div>
         <FormField label="Telefono"><input className={inputClass} type="tel" value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
         <FormField label="Email"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
@@ -666,7 +721,6 @@ function FamilyForm({ initial, families, onSubmit, onCancel }) {
 }
 
 function DeleteFamilyDialog({ profile, onCancel, onConfirm }) {
-  const [confirm, setConfirm] = useState('');
   const hasMembers = profile.members.length > 0;
   return (
     <div>
@@ -676,15 +730,11 @@ function DeleteFamilyDialog({ profile, onCancel, onConfirm }) {
           <p className="mt-1">No se puede eliminar definitivamente mientras existan beneficiarios vinculados. Edita esos beneficiarios y quita la familia antes de eliminar.</p>
         </div>
       ) : (
-        <>
-          <p className="text-sm text-slate-600">Vas a eliminar definitivamente la familia <strong>{profile.family.family_code}</strong>. Esta accion no debe usarse para expedientes reales con actividad.</p>
-          <label className="mt-4 block text-sm font-semibold text-slate-700">Escribe ELIMINAR para confirmar</label>
-          <input className={`${inputClass} mt-1`} value={confirm} onChange={(event) => setConfirm(event.target.value)} />
-        </>
+        <p className="text-sm text-slate-600">Vas a eliminar definitivamente la familia <strong>{profile.family.family_code}</strong>. No tiene miembros asociados, por lo que el Superadministrador puede eliminarla.</p>
       )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
-        {!hasMembers && <Button variant="danger" disabled={confirm !== 'ELIMINAR'} onClick={onConfirm}><Trash2 size={16} /> Eliminar definitivamente</Button>}
+        {!hasMembers && <Button variant="danger" onClick={onConfirm}><Trash2 size={16} /> Eliminar definitivamente</Button>}
       </div>
     </div>
   );
@@ -861,6 +911,7 @@ function buildFamilyProfiles(data = {}) {
 
 function buildFamilyTimeline({ family, members, deliveries, documents, observations, inventoryItems }) {
   const rows = [];
+  const archive = archiveMetadata(family);
   rows.push({
     key: `family-created-${family.id}`,
     date: family.created_at,
@@ -879,12 +930,12 @@ function buildFamilyTimeline({ family, members, deliveries, documents, observati
       tone: 'bg-blue-50 text-blue-700'
     });
   }
-  if (family.archived_at) {
+  if (family.archived_at || archive.archivedAt) {
     rows.push({
       key: `family-archived-${family.id}`,
-      date: family.archived_at,
+      date: family.archived_at || archive.archivedAt,
       title: 'Familia archivada',
-      detail: family.archive_reason || 'Expediente archivado.',
+      detail: family.archive_reason || archive.reason || 'Expediente archivado.',
       icon: Archive,
       tone: 'bg-slate-100 text-slate-700'
     });
@@ -943,8 +994,30 @@ function familyStats(family, members, activeDeliveries) {
 }
 
 function familyStatus(family) {
+  if (family.archived_at || archiveMetadata(family).archived) return 'Archivada';
   if (family.status) return family.status;
-  return family.archived_at ? 'Archivada' : 'Activa';
+  return 'Activa';
+}
+
+function archiveMetadata(family) {
+  const notes = String(family?.notes || '');
+  const line = notes.split(/\r?\n/).find((item) => item.startsWith(ARCHIVE_MARKER));
+  if (!line) return { archived: false, archivedAt: '', reason: '' };
+  const rest = line.slice(ARCHIVE_MARKER.length).trim();
+  const [archivedAt, ...reasonParts] = rest.split(' ');
+  return {
+    archived: true,
+    archivedAt: archivedAt || '',
+    reason: reasonParts.join(' ').trim()
+  };
+}
+
+function visibleFamilyNotes(family) {
+  return String(family?.notes || '')
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith(ARCHIVE_MARKER))
+    .join('\n')
+    .trim();
 }
 
 function familyRelationship(member, family) {

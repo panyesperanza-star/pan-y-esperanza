@@ -50,6 +50,7 @@ const OPTIONAL_TABLES = new Set([
   'accounting_audit_trail'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
+const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 const DATE_FIELDS = new Set([
   'birth_date',
   'first_attention_at',
@@ -256,6 +257,11 @@ function shouldRetryWithoutFamilyFields(table, error, payload) {
 function withoutFamilyIntegrationFields(table, payload) {
   if (table === 'families') {
     const { status, archived_at, archive_reason, updated_at, ...fallback } = payload;
+    if (status === 'Archivada' || archived_at) {
+      fallback.notes = withFamilyArchiveMarker(fallback.notes, archived_at, archive_reason);
+    } else {
+      fallback.notes = stripFamilyArchiveMarker(fallback.notes);
+    }
     return fallback;
   }
   if (table === 'beneficiaries') {
@@ -267,6 +273,20 @@ function withoutFamilyIntegrationFields(table, payload) {
     return fallback;
   }
   return payload;
+}
+
+function withFamilyArchiveMarker(notes, archivedAt, reason) {
+  const cleanNotes = stripFamilyArchiveMarker(notes);
+  const marker = `${FAMILY_ARCHIVE_MARKER} ${archivedAt || new Date().toISOString()} ${String(reason || '').trim()}`.trim();
+  return [cleanNotes, marker].filter(Boolean).join('\n');
+}
+
+function stripFamilyArchiveMarker(notes) {
+  return String(notes || '')
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith(FAMILY_ARCHIVE_MARKER))
+    .join('\n')
+    .trim();
 }
 
 function isMissingTableError(error) {
