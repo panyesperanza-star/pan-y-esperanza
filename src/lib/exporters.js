@@ -876,7 +876,8 @@ function reportResponsible(user) {
   const name = currentUserNameForReport(user);
   const rawPosition = String(user?.position || user?.role || 'Responsable de atención').trim();
   const normalized = normalizeTextForReport(rawPosition);
-  const position = normalized.includes('trabajador social') || normalized.includes('trabajadora social')
+  const compactPosition = normalized.replace(/\s+/g, '');
+  const position = compactPosition.includes('trabajadorsocial') || compactPosition.includes('trabajadorasocial')
     ? 'Responsable de atención'
     : rawPosition;
   return { name, position };
