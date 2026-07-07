@@ -924,6 +924,11 @@ function renderEmailMessageHtml(message) {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
     if (!line) continue;
+    const mapsLink = googleMapsLineUrl(line);
+    if (mapsLink) {
+      blocks.push(renderGoogleMapsButton(mapsLink));
+      continue;
+    }
     const inlinePending = pendingDocumentationInlineText(line);
     if (inlinePending !== null) {
       const pendingLines = inlinePending ? [inlinePending] : [];
@@ -941,6 +946,23 @@ function renderEmailMessageHtml(message) {
     }
   }
   return blocks.join('');
+}
+
+function googleMapsLineUrl(line) {
+  const normalized = normalizeEmailTemplateLine(line);
+  if (!normalized.startsWith('google maps:')) return '';
+  const separatorIndex = line.indexOf(':');
+  return separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : '';
+}
+
+function renderGoogleMapsButton(url) {
+  return `
+    <p style="margin:18px 0">
+      <a href="${escapeHtml(url)}" style="display:inline-block;background:#247e50;color:#ffffff;text-decoration:none;font-weight:bold;border-radius:6px;padding:11px 16px">
+        Abrir en Google Maps
+      </a>
+    </p>
+  `;
 }
 
 function pendingDocumentationInlineText(line) {

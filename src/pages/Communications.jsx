@@ -32,6 +32,8 @@ const CAMPAIGN_TYPES = ['Reparto de alimentos', 'Aviso importante', 'Cambio de h
 const RECIPIENT_GROUPS = ['Todos los beneficiarios', 'Solo activos', 'Solo familias', 'Solo urgentes', 'Selección manual'];
 const CHANNELS = ['Email', 'WhatsApp', 'Ambos'];
 const APPOINTMENT_TYPES = ['Entrevista', 'Entrega de documentación', 'Seguimiento', 'Reunión', 'Visita'];
+const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Realizada', 'Reprogramada', 'Cancelada', 'No asistió'];
+const CALENDAR_HOURS = Array.from({ length: 13 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`);
 const REMINDER_TIMES = [
   { id: 'created', label: 'Al crear la cita' },
   { id: '24h', label: '24 horas antes' },
@@ -44,6 +46,7 @@ const REQUIRED_DOCUMENTS = DOCUMENT_TYPES.filter((item) => ['DNI/NIE / NIE O PAS
 export function Communications({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const organization = data.organization_settings?.[0] || {};
   const processingRemindersRef = useRef(false);
+  const agendaFormRef = useRef(null);
   const latestDeliveries = useMemo(() => latestDeliveriesByBeneficiary(data.deliveries), [data.deliveries]);
   const [activeTab, setActiveTab] = useState('direct');
   const [notice, setNotice] = useState('');
@@ -53,6 +56,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
   const [form, setForm] = useState(() => initialDirectForm(data));
   const [campaignForm, setCampaignForm] = useState(() => initialCampaignForm());
   const [appointmentForm, setAppointmentForm] = useState(() => initialAppointmentForm(data, currentUser));
+  const [editingAppointmentId, setEditingAppointmentId] = useState('');
 
   const beneficiary = data.beneficiaries.find((item) => item.id === form.beneficiary_id);
   const latestDelivery = latestDeliveries.get(form.beneficiary_id);
@@ -324,39 +328,191 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
 
   async function submitAppointment(event) {
     event.preventDefault();
-    const selectedBeneficiary = data.beneficiaries.find((item) => item.id === appointmentForm.beneficiary_id);
+    const { selectedBeneficiary, family, appointmentAt, meta } = buildAppointmentPayload(appointmentForm);
     if (!selectedBeneficiary) {
       setNotice('Selecciona un beneficiario para crear la cita.');
       return;
     }
-    const appointmentAt = scheduledDateTime(appointmentForm.date, appointmentForm.time);
-    const family = data.families.find((item) => item.id === (appointmentForm.family_id || selectedBeneficiary.family_id));
-    const meta = {
-      kind: 'appointment',
-      appointment_type: appointmentForm.type,
-      beneficiary_id: selectedBeneficiary.id,
-      beneficiary_name: selectedBeneficiary.full_name,
-      family_id: family?.id || '',
-      family_name: family?.family_code || '',
-      appointment_at: appointmentAt,
-      duration: appointmentForm.duration,
-      responsible: appointmentForm.responsible,
-      place: appointmentForm.place,
-      map_url: mapsUrl(appointmentForm.place),
-      notes: appointmentForm.notes
-    };
+    if (editingAppointmentId) {
+      const appointment = appointments.find((item) => item.id === editingAppointmentId);
+      if (!appointment) {
+        setNotice('No se ha podido encontrar la cita para editarla.');
+        return;
+      }
+      await updateAppointmentRecord(
+        appointment,
+        { ...appointment.meta, ...meta, appointment_status: appointmentForm.status || appointment.status || 'Pendiente' },
+        appointmentForm.status || appointment.status || 'Pendiente',
+        appointmentForm.status === 'Realizada' ? 'Cita realizada y registrada en seguimiento.' : 'Cita actualizada.'
+      );
+      setEditingAppointmentId('');
+      setAppointmentForm(() => initialAppointmentForm(data, currentUser));
+      setNotice('Cita actualizada correctamente.');
+      return;
+    }
+    const finalMeta = await maybeCreateAppointmentTracking('nueva-cita', meta);
     await createCommunicationLog({
       recipient: selectedBeneficiary.email || selectedBeneficiary.full_name,
       subject: `Cita: ${appointmentForm.type}`,
       message: appointmentSummaryMessage(appointmentForm, selectedBeneficiary, family),
-      status: 'Pendiente',
+      status: appointmentForm.status || 'Pendiente',
       result: 'Cita programada.',
-      meta,
+      meta: finalMeta,
       sentAt: appointmentAt
     });
-    await createAppointmentReminders(selectedBeneficiary, appointmentForm, meta);
+    await createAppointmentReminders(selectedBeneficiary, appointmentForm, finalMeta);
     await actions.reloadData();
     setNotice('Cita creada correctamente en la agenda.');
+  }
+
+  function buildAppointmentPayload(formState) {
+    const selectedBeneficiary = data.beneficiaries.find((item) => item.id === formState.beneficiary_id);
+    const appointmentAt = scheduledDateTime(formState.date, formState.time);
+    const family = data.families.find((item) => item.id === (formState.family_id || selectedBeneficiary?.family_id));
+    return {
+      selectedBeneficiary,
+      family,
+      appointmentAt,
+      meta: {
+        kind: 'appointment',
+        appointment_type: formState.type,
+        beneficiary_id: selectedBeneficiary?.id || '',
+        beneficiary_name: selectedBeneficiary?.full_name || '',
+        family_id: family?.id || '',
+        family_name: family?.family_code || '',
+        appointment_at: appointmentAt,
+        duration: formState.duration,
+        responsible: formState.responsible,
+        place: formState.place,
+        map_url: mapsUrl(formState.place),
+        notes: formState.notes,
+        appointment_status: formState.status || 'Pendiente'
+      }
+    };
+  }
+
+  async function updateAppointmentRecord(appointment, nextMeta, nextStatus, result) {
+    const finalMeta = await maybeCreateAppointmentTracking(appointment.id, { ...nextMeta, appointment_status: nextStatus });
+    const selectedBeneficiary = data.beneficiaries.find((item) => item.id === finalMeta.beneficiary_id);
+    const family = data.families.find((item) => item.id === finalMeta.family_id || item.id === selectedBeneficiary?.family_id);
+    const formState = appointmentFormFromMeta(finalMeta);
+    await actions.updateEmailLog(appointment.id, {
+      recipient: selectedBeneficiary?.email || finalMeta.beneficiary_name || appointment.beneficiaryName,
+      subject: `Cita: ${finalMeta.appointment_type || appointment.type}`,
+      message: appointmentSummaryMessage(formState, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, family),
+      status: nextStatus,
+      result,
+      sent_at: finalMeta.appointment_at,
+      attachments: [finalMeta]
+    });
+    await updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState);
+  }
+
+  async function updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState) {
+    const related = reminderLogs.filter((log) => (
+      log.status === 'Pendiente'
+      && log.meta.kind === 'appointment_reminder'
+      && log.meta.beneficiary_id === appointment.beneficiaryId
+      && log.meta.appointment_type === appointment.type
+      && log.meta.appointment_at === appointment.appointmentAt
+    ));
+    const terminalStatus = ['Realizada', 'Cancelada', 'No asistió'].includes(finalMeta.appointment_status);
+    for (const log of related) {
+      const reminderAt = reminderDateTime(finalMeta.appointment_at, log.meta.reminder_time);
+      const message = appointmentReminderMessage(formState, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, organization);
+      const phone = normalizeWhatsAppPhone(selectedBeneficiary?.phone);
+      const channel = log.meta.channel || log.channel;
+      await actions.updateEmailLog(log.id, {
+        subject: `Recordatorio: ${finalMeta.appointment_type || appointment.type}`,
+        message,
+        status: terminalStatus ? finalMeta.appointment_status : log.status,
+        result: terminalStatus ? 'Recordatorio cerrado por el estado de la cita.' : 'Recordatorio actualizado con la cita.',
+        sent_at: reminderAt,
+        attachments: [{
+          ...log.meta,
+          ...finalMeta,
+          kind: 'appointment_reminder',
+          channel,
+          reminder_time: log.meta.reminder_time,
+          scheduled_at: reminderAt,
+          whatsapp_url: channel === 'WhatsApp' && phone ? buildWhatsAppUrl(phone, message) : ''
+        }]
+      });
+    }
+  }
+
+  async function maybeCreateAppointmentTracking(appointmentId, meta) {
+    if (meta.appointment_status !== 'Realizada' || meta.tracking_created_at) return meta;
+    await actions.createSocialHistory({
+      beneficiary_id: meta.beneficiary_id,
+      family_id: meta.family_id || null,
+      date: String(meta.appointment_at || todayISO()).slice(0, 10),
+      entry_type: 'Seguimiento',
+      notes: buildAppointmentTrackingNote(meta)
+    });
+    return { ...meta, tracking_created_at: new Date().toISOString(), tracking_source: appointmentId };
+  }
+
+  function selectCalendarSlot(date, time = '') {
+    setEditingAppointmentId('');
+    setActiveTab('agenda');
+    setCalendarDate(new Date(date));
+    setAppointmentForm((current) => ({
+      ...current,
+      date,
+      time: time || current.time,
+      status: 'Pendiente'
+    }));
+    agendaFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function editAppointment(appointment) {
+    setEditingAppointmentId(appointment.id);
+    setAppointmentForm(appointmentFormFromEntry(appointment, currentUser));
+    agendaFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelAppointmentEdit() {
+    setEditingAppointmentId('');
+    setAppointmentForm(() => initialAppointmentForm(data, currentUser));
+  }
+
+  async function changeAppointmentStatus(appointment, status) {
+    await updateAppointmentRecord(
+      appointment,
+      { ...appointment.meta, appointment_status: status },
+      status,
+      status === 'Realizada' ? 'Cita realizada y registrada en seguimiento.' : `Cita marcada como ${status.toLowerCase()}.`
+    );
+    setNotice(`Cita marcada como ${status}.`);
+  }
+
+  async function moveAppointment(appointmentId, date, time = '') {
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment) return;
+    const nextTime = time || appointment.time || '09:00';
+    const nextStatus = ['Realizada', 'Cancelada', 'No asistió'].includes(appointment.status) ? appointment.status : 'Reprogramada';
+    await updateAppointmentRecord(
+      appointment,
+      { ...appointment.meta, appointment_at: scheduledDateTime(date, nextTime), appointment_status: nextStatus },
+      nextStatus,
+      'Cita reprogramada desde la agenda.'
+    );
+    setNotice('Cita reprogramada correctamente.');
+  }
+
+  async function resizeAppointment(appointmentId, date, endTime) {
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment || !endTime) return;
+    const startTime = appointment.time || '09:00';
+    const duration = Math.max(15, timeToMinutes(endTime) - timeToMinutes(startTime));
+    await updateAppointmentRecord(
+      appointment,
+      { ...appointment.meta, appointment_at: scheduledDateTime(date || appointment.date, startTime), duration: minutesToDuration(duration) },
+      appointment.status || 'Pendiente',
+      'Duración de la cita actualizada desde la agenda.'
+    );
+    setNotice('Duración de la cita actualizada.');
   }
 
   async function createAppointmentReminders(selectedBeneficiary, appointment, appointmentMeta) {
@@ -367,7 +523,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
         const phone = normalizeWhatsAppPhone(selectedBeneficiary.phone);
         const recipient = channel === 'Email' ? selectedBeneficiary.email : phone ? `WhatsApp ${phone}` : selectedBeneficiary.full_name;
         const missing = channel === 'Email' ? !selectedBeneficiary.email : !phone;
-        const reminderMessage = appointmentReminderMessage(appointment, selectedBeneficiary, reminderId);
+        const reminderMessage = appointmentReminderMessage(appointment, selectedBeneficiary, organization);
         const meta = {
           ...appointmentMeta,
           kind: 'appointment_reminder',
@@ -453,6 +609,8 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
         <AgendaPanel
           data={data}
           form={appointmentForm}
+          formRef={agendaFormRef}
+          editingAppointmentId={editingAppointmentId}
           appointments={appointments}
           reminders={reminderLogs}
           calendarDays={calendarDays}
@@ -463,6 +621,12 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           setCalendarDate={setCalendarDate}
           setCalendarMode={setCalendarMode}
           onSubmit={submitAppointment}
+          onCancelEdit={cancelAppointmentEdit}
+          onPickSlot={selectCalendarSlot}
+          onEditAppointment={editAppointment}
+          onMoveAppointment={moveAppointment}
+          onResizeAppointment={resizeAppointment}
+          onStatusChange={changeAppointmentStatus}
           onOpenBeneficiary={openBeneficiary}
         />
       )}
@@ -607,17 +771,43 @@ function ManualRecipientPicker({ beneficiaries, selected, onToggle }) {
   );
 }
 
-function AgendaPanel({ data, form, appointments, reminders, calendarDays, calendarDate, calendarMode, update, toggleReminder, setCalendarDate, setCalendarMode, onSubmit, onOpenBeneficiary }) {
+function AgendaPanel({
+  data,
+  form,
+  formRef,
+  editingAppointmentId,
+  appointments,
+  reminders,
+  calendarDays,
+  calendarDate,
+  calendarMode,
+  update,
+  toggleReminder,
+  setCalendarDate,
+  setCalendarMode,
+  onSubmit,
+  onCancelEdit,
+  onPickSlot,
+  onEditAppointment,
+  onMoveAppointment,
+  onResizeAppointment,
+  onStatusChange,
+  onOpenBeneficiary
+}) {
   const familyOptions = data.families.filter((family) => !form.beneficiary_id || data.beneficiaries.some((item) => item.id === form.beneficiary_id && item.family_id === family.id));
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-        <h3 className="font-bold text-ink">Nueva cita</h3>
+      <section ref={formRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-bold text-ink">{editingAppointmentId ? 'Editar cita' : 'Nueva cita'}</h3>
+          {editingAppointmentId && <Button type="button" variant="secondary" onClick={onCancelEdit}>Cancelar edición</Button>}
+        </div>
         <form className="mt-4 grid gap-4" onSubmit={onSubmit}>
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Tipo de cita"><select className={inputClass} value={form.type} onChange={(event) => update('type', event.target.value)}>{APPOINTMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
             <FormField label="Beneficiario"><select className={inputClass} value={form.beneficiary_id} onChange={(event) => update('beneficiary_id', event.target.value)}>{data.beneficiaries.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}</select></FormField>
             <FormField label="Familia opcional"><select className={inputClass} value={form.family_id} onChange={(event) => update('family_id', event.target.value)}><option value="">Sin familia específica</option>{familyOptions.map((item) => <option key={item.id} value={item.id}>{item.family_code} - {item.responsible_name}</option>)}</select></FormField>
+            <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{APPOINTMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
             <FormField label="Fecha"><input className={inputClass} type="date" required value={form.date} onChange={(event) => update('date', event.target.value)} /></FormField>
             <FormField label="Hora"><input className={inputClass} type="time" required value={form.time} onChange={(event) => update('time', event.target.value)} /></FormField>
             <FormField label="Duración"><input className={inputClass} value={form.duration} onChange={(event) => update('duration', event.target.value)} placeholder="30 minutos" /></FormField>
@@ -640,12 +830,22 @@ function AgendaPanel({ data, form, appointments, reminders, calendarDays, calend
               </div>
             </div>
           </section>
-          <div className="flex justify-end"><Button type="submit"><CalendarPlus size={18} /> Crear cita</Button></div>
+          <div className="flex justify-end"><Button type="submit"><CalendarPlus size={18} /> {editingAppointmentId ? 'Guardar cita' : 'Crear cita'}</Button></div>
         </form>
       </section>
 
       <section className="space-y-5">
-        <CalendarBoard days={calendarDays} date={calendarDate} mode={calendarMode} setDate={setCalendarDate} setMode={setCalendarMode} />
+        <CalendarBoard
+          days={calendarDays}
+          date={calendarDate}
+          mode={calendarMode}
+          setDate={setCalendarDate}
+          setMode={setCalendarMode}
+          onPickSlot={onPickSlot}
+          onEditAppointment={onEditAppointment}
+          onMoveAppointment={onMoveAppointment}
+          onResizeAppointment={onResizeAppointment}
+        />
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-bold text-ink">Próximas citas</h3>
@@ -653,7 +853,7 @@ function AgendaPanel({ data, form, appointments, reminders, calendarDays, calend
           </div>
           <div className="mt-4 space-y-3">
             {appointments.slice(0, 12).map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} onOpenBeneficiary={onOpenBeneficiary} />
+              <AppointmentCard key={appointment.id} appointment={appointment} onEdit={onEditAppointment} onStatusChange={onStatusChange} onOpenBeneficiary={onOpenBeneficiary} />
             ))}
             {!appointments.length && <EmptyText text="Todavía no hay citas en la agenda." />}
           </div>
@@ -663,10 +863,23 @@ function AgendaPanel({ data, form, appointments, reminders, calendarDays, calend
   );
 }
 
-function CalendarBoard({ days, date, mode, setDate, setMode }) {
+function CalendarBoard({ days, date, mode, setDate, setMode, onPickSlot, onEditAppointment, onMoveAppointment, onResizeAppointment }) {
   const title = mode === 'month'
     ? new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(date)
     : `Semana del ${formatDate(days[0]?.date)}`;
+
+  function handleDrop(event, day, time = '') {
+    event.preventDefault();
+    const [action, appointmentId] = String(event.dataTransfer.getData('text/plain') || '').split(':');
+    if (!appointmentId) return;
+    if (action === 'resize') onResizeAppointment(appointmentId, day.date, time);
+    else onMoveAppointment(appointmentId, day.date, time);
+  }
+
+  function allowDrop(event) {
+    event.preventDefault();
+  }
+
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -681,32 +894,135 @@ function CalendarBoard({ days, date, mode, setDate, setMode }) {
           </select>
         </div>
       </div>
-      <div className={`mt-4 grid gap-2 ${mode === 'month' ? 'grid-cols-7' : 'grid-cols-1 md:grid-cols-7'}`}>
-        {days.map((day) => (
-          <article key={day.date} className={`min-h-28 rounded-md border p-2 ${day.isCurrent ? 'border-brand-200 bg-brand-50' : 'border-slate-200 bg-slate-50'}`}>
-            <p className="text-xs font-bold text-slate-500">{formatCalendarDay(day.date)}</p>
-            <div className="mt-2 space-y-1">
-              {day.items.slice(0, 3).map((item) => <p key={item.id} className="truncate rounded bg-white px-2 py-1 text-xs font-semibold text-brand-700">{item.type} · {item.time}</p>)}
-              {day.items.length > 3 && <p className="text-xs text-slate-500">+{day.items.length - 3} más</p>}
+      {mode === 'month' ? (
+        <div className="mt-4 grid gap-2 sm:grid-cols-7">
+          {days.map((day) => (
+            <div
+              key={day.date}
+              role="button"
+              tabIndex={0}
+              className={`min-h-28 cursor-pointer rounded-md border p-2 text-left transition hover:border-brand-300 hover:bg-brand-50 ${day.isCurrent ? 'border-brand-200 bg-brand-50' : 'border-slate-200 bg-slate-50'}`}
+              onClick={() => onPickSlot(day.date)}
+              onKeyDown={(event) => { if (event.key === 'Enter') onPickSlot(day.date); }}
+              onDragOver={allowDrop}
+              onDrop={(event) => handleDrop(event, day)}
+            >
+              <p className="text-xs font-bold text-slate-500">{formatCalendarDay(day.date)}</p>
+              <div className="mt-2 space-y-1">
+                {day.items.slice(0, 3).map((item) => (
+                  <CalendarAppointmentChip key={item.id} item={item} compact onEdit={onEditAppointment} />
+                ))}
+                {day.items.length > 3 && <p className="text-xs text-slate-500">+{day.items.length - 3} más</p>}
+              </div>
             </div>
-          </article>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <div className="grid min-w-[980px] grid-cols-[76px_repeat(7,minmax(120px,1fr))] rounded-md border border-slate-200">
+            <div className="border-b border-slate-200 bg-slate-50 p-2 text-xs font-bold uppercase text-slate-500">Hora</div>
+            {days.map((day) => (
+              <button key={day.date} type="button" className="border-b border-l border-slate-200 bg-slate-50 p-2 text-left text-xs font-bold text-slate-600 hover:bg-brand-50" onClick={() => onPickSlot(day.date)}>
+                {formatCalendarDay(day.date)}
+              </button>
+            ))}
+            {CALENDAR_HOURS.map((hour) => (
+              <CalendarHourRow
+                key={hour}
+                hour={hour}
+                days={days}
+                onPickSlot={onPickSlot}
+                onEditAppointment={onEditAppointment}
+                onDragOver={allowDrop}
+                onDrop={handleDrop}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function AppointmentCard({ appointment, onOpenBeneficiary }) {
+function CalendarHourRow({ hour, days, onPickSlot, onEditAppointment, onDragOver, onDrop }) {
+  return (
+    <>
+      <div className="border-b border-slate-100 bg-white p-2 text-xs font-semibold text-slate-500">{hour}</div>
+      {days.map((day) => {
+        const items = day.items.filter((item) => item.time === hour || (timeToMinutes(item.time) >= timeToMinutes(hour) && timeToMinutes(item.time) < timeToMinutes(hour) + 60));
+        return (
+          <div
+            key={`${day.date}-${hour}`}
+            role="button"
+            tabIndex={0}
+            className="min-h-20 cursor-pointer border-b border-l border-slate-100 bg-white p-2 text-left transition hover:bg-brand-50"
+            onClick={() => onPickSlot(day.date, hour)}
+            onKeyDown={(event) => { if (event.key === 'Enter') onPickSlot(day.date, hour); }}
+            onDragOver={onDragOver}
+            onDrop={(event) => onDrop(event, day, hour)}
+          >
+            <div className="space-y-1">
+              {items.map((item) => (
+                <CalendarAppointmentChip key={item.id} item={item} onEdit={onEditAppointment} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function CalendarAppointmentChip({ item, compact = false, onEdit }) {
+  function startDrag(event, action) {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', `${action}:${item.id}`);
+  }
+
+  return (
+    <div
+      className="group rounded border border-brand-100 bg-white px-2 py-1 text-xs shadow-sm"
+      draggable
+      onDragStart={(event) => startDrag(event, 'move')}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button type="button" className="block w-full truncate text-left font-semibold text-brand-700" onClick={() => onEdit(item)}>
+        {compact ? `${item.type} · ${item.time}` : `${item.time} · ${item.type}`}
+      </button>
+      {!compact && <p className="truncate text-[11px] text-slate-500">{item.beneficiaryName}</p>}
+      {!compact && (
+        <button
+          type="button"
+          className="mt-1 h-2 w-full cursor-ns-resize rounded bg-slate-200 opacity-80 transition group-hover:bg-brand-300"
+          title="Arrastrar para cambiar duración"
+          draggable
+          onDragStart={(event) => startDrag(event, 'resize')}
+          onClick={(event) => event.stopPropagation()}
+        />
+      )}
+    </div>
+  );
+}
+
+function AppointmentCard({ appointment, onEdit, onStatusChange, onOpenBeneficiary }) {
   return (
     <article className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-sm font-bold text-ink">{appointment.type}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="text-left text-sm font-bold text-ink hover:text-brand-700" onClick={() => onEdit(appointment)}>{appointment.type}</button>
+            <StatusPill status={appointment.status} />
+          </div>
           <p className="mt-1 text-sm text-slate-600">{appointment.beneficiaryName} · {formatDateTime(appointment.appointmentAt)}</p>
           <p className="mt-1 text-sm text-slate-500">{appointment.place || 'Lugar no indicado'} · {appointment.duration || 'Duración no indicada'}</p>
           {appointment.notes && <p className="mt-2 text-sm text-slate-600">{appointment.notes}</p>}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          <select className={`${inputClass} w-40`} value={appointment.status} onChange={(event) => onStatusChange(appointment, event.target.value)}>
+            {APPOINTMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
+          </select>
+          <Button type="button" variant="secondary" onClick={() => onEdit(appointment)}><CalendarPlus size={16} /> Editar</Button>
           {appointment.mapUrl && <Button type="button" variant="secondary" onClick={() => window.open(appointment.mapUrl, '_blank', 'noopener,noreferrer')}><MapPin size={16} /> Mapa</Button>}
           <Button type="button" variant="secondary" onClick={() => onOpenBeneficiary(appointment.beneficiaryId)}><ExternalLink size={16} /> Abrir expediente</Button>
         </div>
@@ -784,11 +1100,12 @@ function CommunicationCard({ log, onOpenBeneficiary }) {
 
 function StatusPill({ status }) {
   const normalized = normalize(status);
-  const tone = normalized.includes('error')
-    ? 'bg-red-50 text-red-700 ring-red-200'
-    : normalized.includes('pendiente')
-      ? 'bg-amber-50 text-amber-700 ring-amber-200'
-      : 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  let tone = 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  if (normalized.includes('error')) tone = 'bg-red-50 text-red-700 ring-red-200';
+  else if (normalized.includes('cancelada') || normalized.includes('no asistio')) tone = 'bg-slate-100 text-slate-700 ring-slate-200';
+  else if (normalized.includes('reprogramada')) tone = 'bg-blue-50 text-blue-700 ring-blue-200';
+  else if (normalized.includes('pendiente')) tone = 'bg-amber-50 text-amber-700 ring-amber-200';
+  else if (normalized.includes('confirmada')) tone = 'bg-brand-50 text-brand-700 ring-brand-100';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${tone}`}>{status || 'Enviado'}</span>;
 }
 
@@ -834,6 +1151,7 @@ function initialAppointmentForm(data, currentUser) {
     date: todayISO(),
     time: '10:00',
     duration: '30 minutos',
+    status: 'Pendiente',
     responsible: currentUserName(currentUser),
     place: '',
     notes: '',
@@ -937,19 +1255,23 @@ function buildAppointmentEntries(logs, data) {
     .filter((log) => log.meta.kind === 'appointment')
     .map((log) => {
       const beneficiary = data.beneficiaries.find((item) => item.id === log.meta.beneficiary_id);
+      const appointmentAt = log.meta.appointment_at || log.sent_at;
       return {
         id: log.id,
+        meta: log.meta,
         type: log.meta.appointment_type || 'Cita',
         beneficiaryId: log.meta.beneficiary_id,
         beneficiaryName: log.meta.beneficiary_name || beneficiary?.full_name || 'Beneficiario',
-        appointmentAt: log.meta.appointment_at || log.sent_at,
-        date: String(log.meta.appointment_at || log.sent_at || '').slice(0, 10),
-        time: String(log.meta.appointment_at || log.sent_at || '').slice(11, 16),
+        familyId: log.meta.family_id || beneficiary?.family_id || '',
+        appointmentAt,
+        date: String(appointmentAt || '').slice(0, 10),
+        time: String(appointmentAt || '').slice(11, 16),
         duration: log.meta.duration || '',
         responsible: log.meta.responsible || '',
         place: log.meta.place || '',
         mapUrl: log.meta.map_url || '',
-        notes: log.meta.notes || ''
+        notes: log.meta.notes || '',
+        status: log.meta.appointment_status || log.status || 'Pendiente'
       };
     })
     .sort((a, b) => String(a.appointmentAt).localeCompare(String(b.appointmentAt)));
@@ -1019,6 +1341,60 @@ function reminderDateTime(appointmentAt, reminderId) {
   return date.toISOString();
 }
 
+function appointmentFormFromEntry(appointment, currentUser) {
+  return {
+    ...appointmentFormFromMeta(appointment.meta),
+    beneficiary_id: appointment.beneficiaryId || appointment.meta.beneficiary_id || '',
+    family_id: appointment.familyId || appointment.meta.family_id || '',
+    status: appointment.status || appointment.meta.appointment_status || 'Pendiente',
+    responsible: appointment.responsible || appointment.meta.responsible || currentUserName(currentUser),
+    reminderChannel: 'Email',
+    reminders: []
+  };
+}
+
+function appointmentFormFromMeta(meta = {}) {
+  const appointmentAt = meta.appointment_at || scheduledDateTime(todayISO(), '10:00');
+  return {
+    type: meta.appointment_type || 'Entrevista',
+    beneficiary_id: meta.beneficiary_id || '',
+    family_id: meta.family_id || '',
+    date: String(appointmentAt).slice(0, 10) || todayISO(),
+    time: String(appointmentAt).slice(11, 16) || '10:00',
+    duration: meta.duration || '30 minutos',
+    status: meta.appointment_status || 'Pendiente',
+    responsible: meta.responsible || '',
+    place: meta.place || '',
+    notes: meta.notes || '',
+    reminderChannel: 'Email',
+    reminders: []
+  };
+}
+
+function buildAppointmentTrackingNote(meta = {}) {
+  return [
+    'Cita realizada desde Agenda.',
+    `Tipo de cita: ${meta.appointment_type || 'Cita'}.`,
+    `Hora: ${String(meta.appointment_at || '').slice(11, 16) || '-'}.`,
+    meta.responsible ? `Responsable: ${meta.responsible}.` : '',
+    meta.place ? `Lugar: ${meta.place}.` : '',
+    meta.notes ? `Observaciones: ${meta.notes}` : 'Observaciones: sin observaciones registradas.'
+  ].filter(Boolean).join('\n');
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = String(value || '00:00').split(':').map((part) => Number(part));
+  return (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function minutesToDuration(value) {
+  const minutes = Math.max(15, Number(value || 0));
+  if (minutes < 60) return `${minutes} minutos`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
+}
+
 function appointmentSummaryMessage(form, beneficiary, family) {
   return [
     `Cita programada: ${form.type}`,
@@ -1033,17 +1409,17 @@ function appointmentSummaryMessage(form, beneficiary, family) {
   ].filter(Boolean).join('\n');
 }
 
-function appointmentReminderMessage(form, beneficiary, reminderId) {
-  const reminderLabel = REMINDER_TIMES.find((item) => item.id === reminderId)?.label || 'Recordatorio';
+function appointmentReminderMessage(form, beneficiary, organization = {}) {
+  const association = organization.name || 'Asociación Pan y Esperanza';
   return [
-    `Hola ${beneficiary.full_name}, le recordamos su cita con la Asociación Pan y Esperanza.`,
-    '',
-    `Tipo: ${form.type}`,
+    `Nombre del beneficiario: ${beneficiary.full_name}`,
     `Fecha: ${formatDate(scheduledDateTime(form.date, form.time))}`,
     `Hora: ${form.time}`,
-    form.place ? `Lugar: ${form.place}` : '',
-    '',
-    `Recordatorio configurado: ${reminderLabel}.`
+    `Lugar: ${form.place || 'No indicado'}`,
+    `Motivo: ${form.type}`,
+    `Asociación: ${association}`,
+    organization.phone ? `Teléfono de contacto: ${organization.phone}` : '',
+    form.place ? `Google Maps: ${mapsUrl(form.place)}` : ''
   ].filter(Boolean).join('\n');
 }
 
