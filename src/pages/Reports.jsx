@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
@@ -36,7 +36,7 @@ const initialFilters = {
   query: '',
   dateFrom: '',
   dateTo: '',
-  year: String(new Date().getFullYear()),
+  year: 'Todos',
   status: 'Todos',
   type: 'Todos'
 };
@@ -44,6 +44,7 @@ const initialFilters = {
 export function Reports({ data }) {
   const [activeReportId, setActiveReportId] = useState('annual');
   const [filters, setFilters] = useState(initialFilters);
+  const reportContentRef = useRef(null);
   const reports = useMemo(() => buildReports(data || {}, filters), [data, filters]);
   const activeReport = reports.find((report) => report.id === activeReportId) || reports[0];
   const filteredRows = useMemo(() => filterRows(activeReport.rows, filters, activeReport), [activeReport, filters]);
@@ -63,12 +64,26 @@ export function Reports({ data }) {
     setFilters((current) => ({ ...current, type: 'Todos', status: 'Todos' }));
   }
 
+  function openAnnualMemory() {
+    setActiveReportId('annual');
+    setFilters(initialFilters);
+    window.setTimeout(() => reportContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
+  function ensureRowsForExport() {
+    if (filteredRows.length) return true;
+    window.alert('No hay registros para exportar con los filtros actuales. Ajusta los filtros antes de descargar el informe.');
+    return false;
+  }
+
   function exportCurrentPdf() {
+    if (!ensureRowsForExport()) return;
     if (activeReport.id === 'annual') exportAnnualActivityPdf(activeReport, filteredRows, filters);
     else exportGenericReportPdf(activeReport, filteredRows, filters);
   }
 
   function exportCurrentExcel() {
+    if (!ensureRowsForExport()) return;
     exportExcel(reportFilename(activeReport), excelSheetsForReport(activeReport, filteredRows, filters));
   }
 
@@ -95,7 +110,7 @@ export function Reports({ data }) {
               Resume la actividad registrada por la asociación sin duplicar datos ni solicitar información adicional.
             </p>
           </div>
-          <Button onClick={() => selectReport('annual')}><FileText size={18} /> Abrir memoria</Button>
+          <Button onClick={openAnnualMemory}><FileText size={18} /> Abrir memoria</Button>
         </div>
       </section>
 
@@ -117,7 +132,7 @@ export function Reports({ data }) {
         })}
       </section>
 
-      <section className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <section ref={reportContentRef} className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Filtros</p>
@@ -159,6 +174,8 @@ export function Reports({ data }) {
         {activeReport.metrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}
       </section>
 
+      {activeReport.sections?.length > 0 && <ReportBreakdown sections={activeReport.sections} />}
+
       {activeReport.id === 'annual' && <AnnualPreview report={activeReport} rows={filteredRows} filters={filters} />}
 
       <section className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel">
@@ -176,8 +193,8 @@ export function Reports({ data }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRows.map((row) => (
-                <tr key={row.id}>
-                  {activeReport.columns.map((column) => <td key={column.key} className="px-4 py-3 align-top text-slate-700">{formatCell(row[column.key], column, row)}</td>)}
+                <tr key={row.id} className={rowClassName(row, activeReport)}>
+                  {activeReport.columns.map((column) => <td key={column.key} className={`px-4 py-3 align-top ${cellTextClass(row, activeReport)}`}>{renderCell(row, column, activeReport)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -201,6 +218,46 @@ function MetricCard({ metric }) {
       {metric.detail && <p className="mt-1 text-sm text-slate-500">{metric.detail}</p>}
     </article>
   );
+}
+
+function ReportBreakdown({ sections }) {
+  return (
+    <section className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Resumen comprensible</p>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {sections.map((section) => (
+          <article key={section.title} className="rounded-md border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-bold text-ink">{section.title}</p>
+            <p className="mt-2 text-xl font-bold text-brand-700">{section.value}</p>
+            <p className="mt-1 text-sm leading-5 text-slate-600">{section.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function renderCell(row, column, report) {
+  const value = row[column.key];
+  if (report.id === 'deliveries' && column.key === 'status') {
+    const cancelled = normalize(value) === 'anulada';
+    return (
+      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${cancelled ? 'bg-slate-100 text-slate-600 ring-slate-300' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
+        {formatCell(value, column, row)}
+      </span>
+    );
+  }
+  return formatCell(value, column, row);
+}
+
+function rowClassName(row, report) {
+  if (report.id === 'deliveries' && normalize(row.status) === 'anulada') return 'bg-slate-50';
+  return '';
+}
+
+function cellTextClass(row, report) {
+  if (report.id === 'deliveries' && normalize(row.status) === 'anulada') return 'text-slate-500';
+  return 'text-slate-700';
 }
 
 function AnnualPreview({ report, rows, filters }) {
@@ -241,7 +298,7 @@ function buildReports(data, filters) {
     buildDeliveryReport(deliveries, inventory, period),
     buildInventoryReport(inventory),
     buildDonorReport(donorRows),
-    buildEconomicReport(economicRows, data),
+    buildEconomicReport(economicRows, data, filters),
     buildAnnualReport(data, filters, stats, donorRows, economicRows),
     buildStatisticsReport(stats, beneficiaries, families, deliveries, inventory, donations, socialEvents)
   ];
@@ -365,7 +422,7 @@ function buildDeliveryReport(deliveries, inventory, period) {
       quantity: delivery.quantity || 0,
       responsible: delivery.responsible || '-',
       value: deliveryValue(delivery, inventoryById.get(delivery.inventory_item_id)),
-      status: delivery.status || 'Activa',
+      status: deliveryReportStatus(delivery),
       search: [delivery.receipt_number, delivery.beneficiary_name, delivery.family_name, delivery.help_type, delivery.inventory_item_name, delivery.responsible, delivery.status].join(' ')
     }));
   const activeRows = rows.filter((row) => normalize(row.status) !== 'anulada');
@@ -394,6 +451,12 @@ function buildDeliveryReport(deliveries, inventory, period) {
     ],
     rows
   };
+}
+
+function deliveryReportStatus(delivery) {
+  const status = normalize(delivery?.status || delivery?.state || '');
+  if (['anulada', 'anulado', 'voided', 'cancelled'].includes(status)) return 'Anulada';
+  return delivery?.status || 'Activa';
 }
 
 function buildInventoryReport(inventory) {
@@ -469,11 +532,8 @@ function buildDonorReport(rows) {
   };
 }
 
-function buildEconomicReport(rows, data) {
-  const accounts = asArray(data.financial_accounts).filter(isActiveRecord);
-  const balance = accounts.length
-    ? accounts.reduce((sum, account) => sum + Number(account.current_balance ?? account.opening_balance ?? 0), 0)
-    : asArray(data.treasury_accounts).reduce((sum, account) => sum + Number(account.balance || 0), 0);
+function buildEconomicReport(rows, data, filters) {
+  const breakdown = buildEconomicBreakdown(rows, data, filters);
   return {
     id: 'economic',
     title: 'Económico',
@@ -490,13 +550,127 @@ function buildEconomicReport(rows, data) {
       { key: 'source', label: 'Origen' }
     ],
     metrics: [
-      { label: 'Movimientos', value: rows.length },
-      { label: 'Ingresos', value: formatCurrency(rows.filter((row) => row.direction === 'in').reduce((sum, row) => sum + Number(row.amount || 0), 0)) },
-      { label: 'Gastos', value: formatCurrency(rows.filter((row) => row.direction === 'out').reduce((sum, row) => sum + Number(row.amount || 0), 0)) },
-      { label: 'Saldo real', value: formatCurrency(balance) }
+      { label: 'Caja', value: formatCurrency(breakdown.cashBalance), detail: 'Efectivo disponible' },
+      { label: 'Bancos', value: formatCurrency(breakdown.bankBalance), detail: 'Saldo en cuentas bancarias' },
+      { label: 'Ingresos', value: formatCurrency(breakdown.incomeTotal), detail: 'Entradas monetarias registradas' },
+      { label: 'Gastos', value: formatCurrency(breakdown.expenseTotal), detail: 'Salidas monetarias registradas' },
+      { label: 'Préstamos', value: formatCurrency(breakdown.loanPending), detail: 'Pendiente de devolver' },
+      { label: 'Deudas', value: formatCurrency(breakdown.debtPending), detail: 'Pendiente de pagar' },
+      { label: 'Balance', value: formatCurrency(breakdown.balance), detail: 'Caja y bancos disponibles' }
     ],
+    sections: breakdown.sections,
     rows
   };
+}
+
+function buildEconomicBreakdown(rows, data, filters) {
+  const period = periodPredicate(filters || initialFilters);
+  const accounts = reportFinancialAccounts(data);
+  const cashBalance = accounts.filter(isCashAccount).reduce((sum, account) => sum + accountBalanceForReport(account), 0);
+  const bankBalance = accounts.filter((account) => !isCashAccount(account)).reduce((sum, account) => sum + accountBalanceForReport(account), 0);
+  const accountingEvents = asArray(data.accounting_events).filter((event) => isActiveRecord(event) && period(event.occurred_at || event.created_at));
+  const incomeTotal = accountingEvents.filter((event) => isIncomeEventType(event.event_type)).reduce((sum, event) => sum + Number(event.amount || 0), 0)
+    + asArray(data.treasury_incomes).filter((income) => period(income.income_at || income.created_at)).reduce((sum, income) => sum + Number(income.amount || 0), 0);
+  const expenseTotal = accountingEvents.filter((event) => isExpenseEventType(event.event_type)).reduce((sum, event) => sum + Number(event.amount || 0), 0)
+    + asArray(data.treasury_expenses).filter((expense) => period(expense.expense_at || expense.created_at)).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const activeLoanMovements = asArray(data.loan_movements).filter((movement) => isActiveRecord(movement) && period(movement.payment_at || movement.created_at));
+  const activeDebtMovements = asArray(data.debt_movements).filter((movement) => isActiveRecord(movement) && period(movement.payment_at || movement.created_at));
+  const loanReceived = activeLoanMovements
+    .filter((movement) => movement.movement_type === 'loan_received')
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0)
+    || asArray(data.loan_records).filter((loan) => isActiveRecord(loan) && period(loan.loan_at || loan.created_at)).reduce((sum, loan) => sum + Number(loan.principal_amount || 0), 0);
+  const loanReturned = activeLoanMovements
+    .filter((movement) => ['full_repayment', 'partial_repayment'].includes(movement.movement_type))
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const debtRegistered = asArray(data.debt_records)
+    .filter((debt) => isActiveRecord(debt) && period(debt.debt_at || debt.created_at))
+    .reduce((sum, debt) => sum + Number(debt.original_amount || 0), 0);
+  const debtPaid = activeDebtMovements
+    .filter((movement) => ['full_payment', 'partial_payment'].includes(movement.movement_type))
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const loanPending = sumLoanPending(data);
+  const debtPending = sumDebtPending(data);
+  const balance = cashBalance + bankBalance;
+
+  return {
+    cashBalance,
+    bankBalance,
+    incomeTotal,
+    expenseTotal,
+    loanReceived,
+    loanReturned,
+    loanPending,
+    debtRegistered,
+    debtPaid,
+    debtPending,
+    balance,
+    sections: [
+      { title: 'Caja', value: formatCurrency(cashBalance), detail: 'Efectivo disponible en cuentas de caja.' },
+      { title: 'Bancos', value: formatCurrency(bankBalance), detail: 'Saldo disponible en cuentas bancarias.' },
+      { title: 'Ingresos', value: formatCurrency(incomeTotal), detail: 'Donaciones monetarias e ingresos registrados en el periodo.' },
+      { title: 'Gastos', value: formatCurrency(expenseTotal), detail: 'Gastos, compras y ayudas económicas registradas en el periodo.' },
+      { title: 'Préstamos', value: formatCurrency(loanPending), detail: `${formatCurrency(loanReceived)} recibido; ${formatCurrency(loanReturned)} devuelto.` },
+      { title: 'Deudas', value: formatCurrency(debtPending), detail: `${formatCurrency(debtRegistered)} registrado; ${formatCurrency(debtPaid)} pagado.` },
+      { title: 'Balance', value: formatCurrency(balance), detail: 'Suma actual de caja y bancos.' }
+    ]
+  };
+}
+
+function reportFinancialAccounts(data) {
+  const accounts = asArray(data.financial_accounts).filter(isActiveRecord);
+  if (accounts.length) return accounts;
+  return asArray(data.treasury_accounts)
+    .filter(isActiveRecord)
+    .map((account) => ({
+      ...account,
+      current_balance: account.balance,
+      account_type: account.account_type || account.type || account.name
+    }));
+}
+
+function accountBalanceForReport(account) {
+  return Number(account?.current_balance ?? account?.balance ?? account?.opening_balance ?? 0);
+}
+
+function isCashAccount(account) {
+  const value = normalize([account?.account_type, account?.type, account?.name].join(' '));
+  return value.includes('caja') || value.includes('efectivo') || value.includes('cash');
+}
+
+function isIncomeEventType(type) {
+  return ['income', 'donation_money'].includes(type);
+}
+
+function isExpenseEventType(type) {
+  return ['expense', 'purchase'].includes(type);
+}
+
+function sumLoanPending(data) {
+  const movements = asArray(data.loan_movements).filter(isActiveRecord);
+  return asArray(data.loan_records)
+    .filter(isActiveRecord)
+    .reduce((sum, loan) => sum + loanOutstandingForReport(loan, movements), 0);
+}
+
+function sumDebtPending(data) {
+  const movements = asArray(data.debt_movements).filter(isActiveRecord);
+  return asArray(data.debt_records)
+    .filter(isActiveRecord)
+    .reduce((sum, debt) => sum + debtOutstandingForReport(debt, movements), 0);
+}
+
+function loanOutstandingForReport(loan, movements) {
+  const paid = movements
+    .filter((movement) => movement.loan_id === loan.id && ['full_repayment', 'partial_repayment'].includes(movement.movement_type))
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  return Math.max(0, Number(loan.principal_amount || 0) - paid);
+}
+
+function debtOutstandingForReport(debt, movements) {
+  const paid = movements
+    .filter((movement) => movement.debt_id === debt.id && ['full_payment', 'partial_payment'].includes(movement.movement_type))
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  return Math.max(0, Number(debt.original_amount || 0) - paid);
 }
 
 function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
@@ -746,8 +920,19 @@ function exportGenericReportPdf(report, rows, filters) {
   drawReportHeader(doc, report.title, report.description, filters);
   const metricsBody = report.metrics.map((metric) => [metric.label, String(metric.value), metric.detail || '']);
   autoTable(doc, { startY: 36, head: [['Indicador', 'Valor', 'Detalle']], body: metricsBody, styles: { fontSize: 9 }, headStyles: { fillColor: [36, 126, 80] } });
+  let tableStartY = doc.lastAutoTable.finalY + 8;
+  if (report.sections?.length) {
+    autoTable(doc, {
+      startY: tableStartY,
+      head: [['Bloque', 'Importe', 'Lectura']],
+      body: report.sections.map((section) => [section.title, section.value, section.detail]),
+      styles: { fontSize: 9, overflow: 'linebreak' },
+      headStyles: { fillColor: [36, 126, 80] }
+    });
+    tableStartY = doc.lastAutoTable.finalY + 8;
+  }
   autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 8,
+    startY: tableStartY,
     head: [report.columns.map((column) => column.label)],
     body: rows.map((row) => report.columns.map((column) => exportCell(row[column.key], column, row))),
     styles: { fontSize: 8, overflow: 'linebreak' },
@@ -816,10 +1001,17 @@ function excelSheetsForReport(report, rows, filters) {
     ...report.metrics.map((metric) => ({ Campo: metric.label, Valor: metric.value, Detalle: metric.detail || '' }))
   ];
   const dataRows = rows.map((row) => Object.fromEntries(report.columns.map((column) => [column.label, exportCell(row[column.key], column, row)])));
-  return [
+  const sheets = [
     { name: 'Resumen', rows: summary },
     { name: safeSheetName(report.title), rows: dataRows }
   ];
+  if (report.sections?.length) {
+    sheets.splice(1, 0, {
+      name: 'Desglose',
+      rows: report.sections.map((section) => ({ Bloque: section.title, Importe: section.value, Lectura: section.detail }))
+    });
+  }
+  return sheets;
 }
 
 function drawReportHeader(doc, title, description, filters) {
@@ -876,7 +1068,12 @@ function availableYears(data = {}) {
     ...asArray(data.accounting_events).map((item) => item.occurred_at || item.created_at),
     ...asArray(data.cash_bank_movements).map((item) => item.movement_at || item.created_at),
     ...asArray(data.treasury_incomes).map((item) => item.income_at || item.created_at),
-    ...asArray(data.treasury_expenses).map((item) => item.expense_at || item.created_at)
+    ...asArray(data.treasury_expenses).map((item) => item.expense_at || item.created_at),
+    ...asArray(data.loan_records).map((item) => item.loan_at || item.created_at),
+    ...asArray(data.loan_movements).map((item) => item.payment_at || item.created_at),
+    ...asArray(data.debt_records).map((item) => item.debt_at || item.created_at),
+    ...asArray(data.debt_movements).map((item) => item.payment_at || item.created_at),
+    ...asArray(data.social_value_events).map((item) => item.social_value_at || item.created_at)
   ];
   dateFields.forEach((value) => {
     const year = String(value || '').slice(0, 4);
