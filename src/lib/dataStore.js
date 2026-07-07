@@ -177,6 +177,12 @@ async function update(table, id, payload) {
       if (retry.error) throw retry.error;
       return retry.data;
     }
+    if (error && shouldRetryWithoutEmailHistoryFields(table, error, cleanPayload)) {
+      const fallbackPayload = withoutEmailHistoryFields(cleanPayload);
+      const retry = await supabase.from(table).update(fallbackPayload).eq('id', id).select().single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
     if (error && shouldRetryWithoutFamilyFields(table, error, cleanPayload)) {
       const fallbackPayload = withoutFamilyIntegrationFields(table, cleanPayload);
       const retry = await supabase.from(table).update(fallbackPayload).eq('id', id).select().single();

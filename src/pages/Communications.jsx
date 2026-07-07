@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Search,
   Send,
+  Trash2,
   Users
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -57,6 +58,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
   const [campaignForm, setCampaignForm] = useState(() => initialCampaignForm());
   const [appointmentForm, setAppointmentForm] = useState(() => initialAppointmentForm(data, currentUser));
   const [editingAppointmentId, setEditingAppointmentId] = useState('');
+  const [selectedAgendaDay, setSelectedAgendaDay] = useState('');
 
   const beneficiary = data.beneficiaries.find((item) => item.id === form.beneficiary_id);
   const latestDelivery = latestDeliveries.get(form.beneficiary_id);
@@ -95,7 +97,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
   useEffect(() => {
     if (processingRemindersRef.current) return;
     const due = enrichedLogs.filter((log) => (
-      log.status === 'Pendiente'
+      isPendingEmailLog(log)
       && log.meta.channel === 'Email'
       && ['appointment_reminder', 'campaign'].includes(log.meta.kind)
       && log.meta.scheduled_at
@@ -410,7 +412,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
 
   async function updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState) {
     const related = reminderLogs.filter((log) => (
-      log.status === 'Pendiente'
+      isPendingEmailLog(log)
       && log.meta.kind === 'appointment_reminder'
       && log.meta.beneficiary_id === appointment.beneficiaryId
       && log.meta.appointment_type === appointment.type
@@ -485,6 +487,27 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       status === 'Realizada' ? 'Cita realizada y registrada en seguimiento.' : `Cita marcada como ${status.toLowerCase()}.`
     );
     setNotice(`Cita marcada como ${status}.`);
+  }
+
+  async function deleteAppointment(appointment) {
+    if (currentUser?.role !== 'Superadministrador') {
+      setNotice('Solo el Superadministrador puede eliminar citas definitivamente.');
+      return;
+    }
+    const confirmed = window.confirm(`Vas a eliminar definitivamente esta cita:\n\n${appointment.type}\n${appointment.beneficiaryName}\n${formatDateTime(appointment.appointmentAt)}\n\nEsta acción no se puede deshacer. ¿Continuar?`);
+    if (!confirmed) return;
+    const related = reminderLogs.filter((log) => (
+      log.meta.kind === 'appointment_reminder'
+      && log.meta.beneficiary_id === appointment.beneficiaryId
+      && log.meta.appointment_type === appointment.type
+      && log.meta.appointment_at === appointment.appointmentAt
+    ));
+    for (const log of related) {
+      await actions.deleteEmailLog(log.id);
+    }
+    await actions.deleteEmailLog(appointment.id);
+    if (editingAppointmentId === appointment.id) cancelAppointmentEdit();
+    setNotice('Cita eliminada definitivamente.');
   }
 
   async function moveAppointment(appointmentId, date, time = '') {
@@ -616,6 +639,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           calendarDays={calendarDays}
           calendarDate={calendarDate}
           calendarMode={calendarMode}
+          selectedAgendaDay={selectedAgendaDay}
           update={updateAppointment}
           toggleReminder={toggleReminder}
           setCalendarDate={setCalendarDate}
@@ -627,7 +651,10 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           onMoveAppointment={moveAppointment}
           onResizeAppointment={resizeAppointment}
           onStatusChange={changeAppointmentStatus}
+          onDeleteAppointment={deleteAppointment}
+          onShowDay={setSelectedAgendaDay}
           onOpenBeneficiary={openBeneficiary}
+          canDeleteAppointments={currentUser?.role === 'Superadministrador'}
         />
       )}
 
@@ -781,6 +808,7 @@ function AgendaPanel({
   calendarDays,
   calendarDate,
   calendarMode,
+  selectedAgendaDay,
   update,
   toggleReminder,
   setCalendarDate,
@@ -792,9 +820,13 @@ function AgendaPanel({
   onMoveAppointment,
   onResizeAppointment,
   onStatusChange,
-  onOpenBeneficiary
+  onDeleteAppointment,
+  onShowDay,
+  onOpenBeneficiary,
+  canDeleteAppointments
 }) {
   const familyOptions = data.families.filter((family) => !form.beneficiary_id || data.beneficiaries.some((item) => item.id === form.beneficiary_id && item.family_id === family.id));
+  const selectedDayAppointments = selectedAgendaDay ? appointments.filter((appointment) => appointment.date === selectedAgendaDay) : [];
   return (
     <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
       <section ref={formRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
@@ -845,15 +877,46 @@ function AgendaPanel({
           onEditAppointment={onEditAppointment}
           onMoveAppointment={onMoveAppointment}
           onResizeAppointment={onResizeAppointment}
+          onShowDay={onShowDay}
         />
+        {selectedAgendaDay && (
+          <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-bold text-ink">Citas del {formatDate(selectedAgendaDay)}</h3>
+              <Button type="button" variant="secondary" onClick={() => onShowDay('')}>Cerrar listado</Button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {selectedDayAppointments.map((appointment) => (
+                <AppointmentCard
+                  key={appointment.id}
+                  appointment={appointment}
+                  onEdit={onEditAppointment}
+                  onStatusChange={onStatusChange}
+                  onDelete={onDeleteAppointment}
+                  onOpenBeneficiary={onOpenBeneficiary}
+                  canDelete={canDeleteAppointments}
+                />
+              ))}
+              {!selectedDayAppointments.length && <EmptyText text="No hay citas registradas para este día." />}
+            </div>
+          </section>
+        )}
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-bold text-ink">Próximas citas</h3>
-            <span className="text-sm text-slate-500">{reminders.filter((item) => item.status === 'Pendiente').length} recordatorios pendientes</span>
+            <span className="text-sm text-slate-500">{reminders.filter(isPendingEmailLog).length} recordatorios pendientes</span>
           </div>
           <div className="mt-4 space-y-3">
             {appointments.slice(0, 12).map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} onEdit={onEditAppointment} onStatusChange={onStatusChange} onOpenBeneficiary={onOpenBeneficiary} />
+              <AppointmentCard
+                key={appointment.id}
+                appointment={appointment}
+                onEdit={onEditAppointment}
+                onStatusChange={onStatusChange}
+                onDelete={onDeleteAppointment}
+                onOpenBeneficiary={onOpenBeneficiary}
+                canDelete={canDeleteAppointments}
+              />
             ))}
             {!appointments.length && <EmptyText text="Todavía no hay citas en la agenda." />}
           </div>
@@ -863,7 +926,7 @@ function AgendaPanel({
   );
 }
 
-function CalendarBoard({ days, date, mode, setDate, setMode, onPickSlot, onEditAppointment, onMoveAppointment, onResizeAppointment }) {
+function CalendarBoard({ days, date, mode, setDate, setMode, onPickSlot, onEditAppointment, onMoveAppointment, onResizeAppointment, onShowDay }) {
   const title = mode === 'month'
     ? new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(date)
     : `Semana del ${formatDate(days[0]?.date)}`;
@@ -912,7 +975,18 @@ function CalendarBoard({ days, date, mode, setDate, setMode, onPickSlot, onEditA
                 {day.items.slice(0, 3).map((item) => (
                   <CalendarAppointmentChip key={item.id} item={item} compact onEdit={onEditAppointment} />
                 ))}
-                {day.items.length > 3 && <p className="text-xs text-slate-500">+{day.items.length - 3} más</p>}
+                {day.items.length > 3 && (
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-brand-700 hover:text-brand-800"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onShowDay(day.date);
+                    }}
+                  >
+                    +{day.items.length - 3} más
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -1005,7 +1079,7 @@ function CalendarAppointmentChip({ item, compact = false, onEdit }) {
   );
 }
 
-function AppointmentCard({ appointment, onEdit, onStatusChange, onOpenBeneficiary }) {
+function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpenBeneficiary, canDelete }) {
   return (
     <article className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1025,6 +1099,7 @@ function AppointmentCard({ appointment, onEdit, onStatusChange, onOpenBeneficiar
           <Button type="button" variant="secondary" onClick={() => onEdit(appointment)}><CalendarPlus size={16} /> Editar</Button>
           {appointment.mapUrl && <Button type="button" variant="secondary" onClick={() => window.open(appointment.mapUrl, '_blank', 'noopener,noreferrer')}><MapPin size={16} /> Mapa</Button>}
           <Button type="button" variant="secondary" onClick={() => onOpenBeneficiary(appointment.beneficiaryId)}><ExternalLink size={16} /> Abrir expediente</Button>
+          {canDelete && <Button type="button" variant="danger" onClick={() => onDelete(appointment)}><Trash2 size={16} /> Eliminar</Button>}
         </div>
       </div>
     </article>
@@ -1237,10 +1312,11 @@ function mapsUrl(location) {
 
 function enrichLog(log) {
   const meta = Array.isArray(log.attachments) ? (log.attachments.find((item) => item?.kind) || {}) : {};
+  const metaStatus = meta.kind === 'appointment' ? meta.appointment_status : '';
   return {
     ...log,
     meta,
-    status: log.status || (normalize(log.result).includes('error') ? 'Error' : 'Enviado'),
+    status: metaStatus || log.status || (normalize(log.result).includes('error') ? 'Error' : 'Enviado'),
     channel: meta.channel || inferChannel(log)
   };
 }
@@ -1417,6 +1493,7 @@ function appointmentReminderMessage(form, beneficiary, organization = {}) {
     `Hora: ${form.time}`,
     `Lugar: ${form.place || 'No indicado'}`,
     `Motivo: ${form.type}`,
+    form.notes ? `Observaciones: ${form.notes}` : '',
     `Asociación: ${association}`,
     organization.phone ? `Teléfono de contacto: ${organization.phone}` : '',
     form.place ? `Google Maps: ${mapsUrl(form.place)}` : ''
@@ -1436,7 +1513,7 @@ function formatTime(value) {
 function isPendingEmailLog(log) {
   const status = normalize(log.status || '');
   const result = normalize(log.result || '');
-  return status.includes('pendiente') || status.includes('pending') || result.includes('pendiente') || result.includes('pending');
+  return status.includes('pendiente') || status.includes('pending') || result.includes('pendiente') || result.includes('pending') || result.includes('programado');
 }
 
 export function normalizeWhatsAppPhone(value) {

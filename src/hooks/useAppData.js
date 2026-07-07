@@ -1721,6 +1721,12 @@ export function useAppData(enabled = true, currentUser = null) {
       await dataStore.update('email_logs', id, payload);
       await reload();
     },
+    deleteEmailLog: async (id) => {
+      if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar citas definitivamente.');
+      await dataStore.remove('email_logs', id);
+      await audit('Elimino definitivamente una cita de agenda');
+      await reload();
+    },
     createInventoryItem: async (payload) => {
       assertPermission('inventory', 'edit');
       const item = sanitizeInventoryItemPayload(payload);
