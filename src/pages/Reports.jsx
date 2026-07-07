@@ -605,13 +605,13 @@ function buildEconomicBreakdown(rows, data, filters) {
     debtPending,
     balance,
     sections: [
-      { title: 'Caja', value: formatCurrency(cashBalance), detail: 'Efectivo disponible en cuentas de caja.' },
-      { title: 'Bancos', value: formatCurrency(bankBalance), detail: 'Saldo disponible en cuentas bancarias.' },
-      { title: 'Ingresos', value: formatCurrency(incomeTotal), detail: 'Donaciones monetarias e ingresos registrados en el periodo.' },
-      { title: 'Gastos', value: formatCurrency(expenseTotal), detail: 'Gastos, compras y ayudas económicas registradas en el periodo.' },
-      { title: 'Préstamos', value: formatCurrency(loanPending), detail: `${formatCurrency(loanReceived)} recibido; ${formatCurrency(loanReturned)} devuelto.` },
-      { title: 'Deudas', value: formatCurrency(debtPending), detail: `${formatCurrency(debtRegistered)} registrado; ${formatCurrency(debtPaid)} pagado.` },
-      { title: 'Balance', value: formatCurrency(balance), detail: 'Suma actual de caja y bancos.' }
+      { title: 'Caja', value: formatCurrency(cashBalance), amount: cashBalance, detail: 'Efectivo disponible en cuentas de caja.' },
+      { title: 'Bancos', value: formatCurrency(bankBalance), amount: bankBalance, detail: 'Saldo disponible en cuentas bancarias.' },
+      { title: 'Ingresos', value: formatCurrency(incomeTotal), amount: incomeTotal, detail: 'Donaciones monetarias e ingresos registrados en el periodo.' },
+      { title: 'Gastos', value: formatCurrency(expenseTotal), amount: expenseTotal, detail: 'Gastos, compras y ayudas económicas registradas en el periodo.' },
+      { title: 'Préstamos', value: formatCurrency(loanPending), amount: loanPending, detail: `${formatCurrency(loanReceived)} recibido; ${formatCurrency(loanReturned)} devuelto.` },
+      { title: 'Deudas', value: formatCurrency(debtPending), amount: debtPending, detail: `${formatCurrency(debtRegistered)} registrado; ${formatCurrency(debtPaid)} pagado.` },
+      { title: 'Balance', value: formatCurrency(balance), amount: balance, detail: 'Suma actual de caja y bancos.' }
     ]
   };
 }
@@ -994,24 +994,31 @@ function exportAnnualActivityPdf(report, rows, filters) {
   doc.save(`${reportFilename(report)}-${yearText}.pdf`);
 }
 
-function excelSheetsForReport(report, rows, filters) {
-  const summary = [
-    { Campo: 'Informe', Valor: report.title },
-    { Campo: 'Periodo', Valor: periodLabel(filters) },
-    ...report.metrics.map((metric) => ({ Campo: metric.label, Valor: metric.value, Detalle: metric.detail || '' }))
-  ];
-  const dataRows = rows.map((row) => Object.fromEntries(report.columns.map((column) => [column.label, exportCell(row[column.key], column, row)])));
+function excelSheetsForReport(report, rows) {
+  const dataRows = rows.map((row) => Object.fromEntries(report.columns.map((column) => [column.label, excelCell(row[column.key], column, row)])));
   const sheets = [
-    { name: 'Resumen', rows: summary },
-    { name: safeSheetName(report.title), rows: dataRows }
+    { name: safeSheetName(report.tableTitle || report.title), rows: dataRows }
   ];
   if (report.sections?.length) {
-    sheets.splice(1, 0, {
+    sheets.push({
       name: 'Desglose',
-      rows: report.sections.map((section) => ({ Bloque: section.title, Importe: section.value, Lectura: section.detail }))
+      rows: report.sections.map((section) => ({ Bloque: section.title, Importe: excelNumber(section.amount), Lectura: section.detail }))
     });
   }
   return sheets;
+}
+
+function excelCell(value, column, row) {
+  if (column.dynamicType && row.valueType === 'currency') return excelNumber(value);
+  if (column.dynamicType && typeof value === 'number') return excelNumber(value);
+  if (column.type === 'currency') return excelNumber(value);
+  if (column.type === 'date') return value ? String(value).slice(0, 10) : '';
+  return value === undefined || value === null || value === '-' ? '' : value;
+}
+
+function excelNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : '';
 }
 
 function drawReportHeader(doc, title, description, filters) {

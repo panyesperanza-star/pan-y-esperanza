@@ -8,8 +8,24 @@ import { formatDate, formatDateTime, nextReceiptNumber } from './formatters';
 
 export function exportExcel(filename, sheets) {
   const book = XLSX.utils.book_new();
-  sheets.forEach((sheet) => XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(sheet.rows), sheet.name));
+  sheets.forEach((sheet) => {
+    const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+    const worksheet = XLSX.utils.json_to_sheet(rows, { cellDates: true });
+    applyExcelTableLayout(worksheet, rows);
+    XLSX.utils.book_append_sheet(book, worksheet, sheet.name);
+  });
   XLSX.writeFile(book, `${filename}.xlsx`);
+}
+
+function applyExcelTableLayout(worksheet, rows) {
+  if (!rows.length || !worksheet['!ref']) return;
+  const headers = Object.keys(rows[0]);
+  const range = XLSX.utils.decode_range(worksheet['!ref']);
+  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
+  worksheet['!cols'] = headers.map((header) => {
+    const contentWidth = rows.reduce((width, row) => Math.max(width, String(row[header] ?? '').length + 2), String(header).length + 2);
+    return { wch: Math.min(48, Math.max(12, contentWidth)) };
+  });
 }
 
 export async function printBeneficiaryPdf(beneficiary, deliveries) {
