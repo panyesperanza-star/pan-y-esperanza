@@ -20,7 +20,7 @@ export const EMAIL_TEMPLATES = [
     id: 'documentation',
     name: 'Solicitud de documentación',
     subject: 'Solicitud de documentación - Pan y Esperanza',
-    message: 'Para completar su expediente necesitamos que aporte la documentación pendiente indicada por el equipo social.\n\nDOCUMENTACIÓN PENDIENTE\n🔴 FALTA EL DNI Y EL EMPADRONAMIENTO'
+    message: 'Para completar su expediente necesitamos que nos aporte la siguiente documentación:\n\nDocumentación pendiente\n• DNI\n• Certificado de empadronamiento\n\nSi ya ha entregado esta documentación, puede ignorar este mensaje.\n\nSi necesita ayuda o tiene cualquier duda, puede responder a este correo o ponerse en contacto con la Asociación Pan y Esperanza.\n\nMuchas gracias por su colaboración.'
   },
   {
     id: 'thanks',

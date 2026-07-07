@@ -951,15 +951,16 @@ function pendingDocumentationInlineText(line) {
 }
 
 function renderPendingDocumentationBlock(lines) {
-  const pendingLines = lines.length ? lines : ['FALTA DOCUMENTACIÓN'];
+  const pendingLines = lines.length ? lines : ['Documentación pendiente por concretar'];
   const pendingHtml = pendingLines
-    .map((line) => line.startsWith('🔴') ? line : `🔴 ${line}`)
+    .map((line) => line.replace(/^[•\-]\s*/, '').trim())
     .map(escapeHtml)
-    .join('<br />');
+    .map((line) => `<li style="margin:6px 0">${line}</li>`)
+    .join('');
   return `
-    <div style="margin:22px 0;padding:18px 20px;border-left:5px solid #dc2626;background:#fef2f2;border-radius:8px">
-      <p style="margin:0 0 8px;color:#991b1b;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">DOCUMENTACIÓN PENDIENTE</p>
-      <p style="margin:0;color:#dc2626;font-size:20px;line-height:1.35;font-weight:800">${pendingHtml}</p>
+    <div style="margin:22px 0;padding:18px 20px;border-left:5px solid #f59e0b;background:#fffbeb;border-radius:8px">
+      <p style="margin:0 0 10px;color:#92400e;font-size:17px;font-weight:800">📎 Documentación pendiente</p>
+      <ul style="margin:0;padding-left:20px;color:#78350f;font-size:15px;line-height:1.55;font-weight:700">${pendingHtml}</ul>
     </div>
   `;
 }

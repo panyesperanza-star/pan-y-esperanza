@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  CalendarPlus,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -83,7 +84,7 @@ const OBSERVATION_ENTRY_TYPE = 'Observación';
 const OBJECTIVE_ENTRY_TYPE = 'Objetivo';
 const DELIVERY_TRACKING_ENTRY_TYPE = 'Entrega de ayuda';
 
-export function Beneficiaries({ data, actions, currentUser, navigationTarget }) {
+export function Beneficiaries({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [situationFilter, setSituationFilter] = useState('Todas');
@@ -318,6 +319,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget }) 
             canEdit={canEdit}
             canDelete={canDelete}
             onEdit={() => { setProfileId(null); setEditing(profile); }}
+            onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
             onAddFamilyMember={(familyId) => {
               setProfileId(null);
               setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries), family_id: familyId });
@@ -703,7 +705,7 @@ function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onAddFamilyMember }) {
+function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
@@ -801,6 +803,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onEdit={onEdit}
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
+        onNewAppointment={onNewAppointment}
         onSummaryPdf={() => printBeneficiaryPdf(beneficiary, deliveries)}
         onSocialReport={() => printSocialAttentionReportPdf({
           beneficiary,
@@ -898,7 +901,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
+function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
   return (
     <header className="relative overflow-hidden border-b border-slate-200 bg-white px-5 py-7 sm:px-7">
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-500" />
@@ -923,6 +926,7 @@ function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery,
           <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe de Atención Social</Button>
           <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
           <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
+          <Button variant="secondary" onClick={onNewAppointment}><CalendarPlus size={17} /> Nueva cita</Button>
           {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}
         </div>
       </div>

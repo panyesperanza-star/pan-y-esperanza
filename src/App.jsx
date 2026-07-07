@@ -168,8 +168,8 @@ export default function App() {
   const pages = {
     dashboard: <Dashboard data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
-    beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
+    communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
