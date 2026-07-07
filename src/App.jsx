@@ -117,6 +117,7 @@ export default function App() {
     if (!data) return null;
     return {
       ...data,
+      beneficiaries: [...(data.beneficiaries || [])].sort(compareBeneficiaryByCode),
       deliveries: [...data.deliveries].sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at))),
       inventory_movements: [...data.inventory_movements].sort((a, b) => String(b.moved_at).localeCompare(String(a.moved_at))),
       accounting_events: [...(data.accounting_events || [])].sort((a, b) => String(b.occurred_at || b.created_at).localeCompare(String(a.occurred_at || a.created_at))),
@@ -223,4 +224,16 @@ function readNavigationTargetFromLocation() {
     operationType: params.get('operation') || '',
     key: Date.now()
   };
+}
+
+function compareBeneficiaryByCode(a, b) {
+  const numberA = beneficiaryCodeNumber(a?.code);
+  const numberB = beneficiaryCodeNumber(b?.code);
+  if (numberA !== numberB) return numberA - numberB;
+  return String(a?.code || '').localeCompare(String(b?.code || ''), 'es', { numeric: true });
+}
+
+function beneficiaryCodeNumber(value) {
+  const match = String(value || '').match(/PYE-(\d+)/i);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }

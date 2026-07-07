@@ -899,6 +899,7 @@ function buildHtml(message, logoUrl, organization = {}) {
   const name = organization.name || 'Pan y Esperanza';
   const date = new Date().toLocaleDateString('es-ES');
   const footer = [organization.cif, organization.address, organization.phone, organization.email].filter(Boolean).join(' - ');
+  const messageHtml = renderEmailMessageHtml(message || 'Adjuntamos los justificantes de entrega seleccionados.');
   return `
     <div style="margin:0;padding:24px;background:#f7faf6;font-family:Arial,sans-serif;color:#17211b;line-height:1.5">
       <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dbe5dc;border-radius:8px;overflow:hidden">
@@ -908,13 +909,63 @@ function buildHtml(message, logoUrl, organization = {}) {
           <p style="margin:6px 0 0;color:#607064;font-size:13px">${escapeHtml(date)}</p>
         </div>
         <div style="padding:24px">
-          <p>${escapeHtml(message || 'Adjuntamos los justificantes de entrega seleccionados.')}</p>
+          ${messageHtml}
           <p style="margin-top:24px;color:#247e50;font-weight:bold">${escapeHtml(name)}</p>
           ${footer ? `<p style="font-size:12px;color:#607064">${escapeHtml(footer)}</p>` : ''}
         </div>
       </div>
     </div>
   `;
+}
+
+function renderEmailMessageHtml(message) {
+  const lines = String(message || '').replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    const inlinePending = pendingDocumentationInlineText(line);
+    if (inlinePending !== null) {
+      const pendingLines = inlinePending ? [inlinePending] : [];
+      let nextIndex = index + 1;
+      while (nextIndex < lines.length) {
+        const nextLine = lines[nextIndex].trim();
+        if (!nextLine && pendingLines.length) break;
+        if (nextLine) pendingLines.push(nextLine);
+        nextIndex += 1;
+      }
+      blocks.push(renderPendingDocumentationBlock(pendingLines));
+      index = nextIndex - 1;
+    } else {
+      blocks.push(`<p style="margin:0 0 14px;color:#17211b">${escapeHtml(line)}</p>`);
+    }
+  }
+  return blocks.join('');
+}
+
+function pendingDocumentationInlineText(line) {
+  const normalized = normalizeEmailTemplateLine(line);
+  if (!normalized.startsWith('documentacion pendiente')) return null;
+  const separatorIndex = line.indexOf(':');
+  return separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : '';
+}
+
+function renderPendingDocumentationBlock(lines) {
+  const pendingLines = lines.length ? lines : ['FALTA DOCUMENTACIÓN'];
+  const pendingHtml = pendingLines
+    .map((line) => line.startsWith('🔴') ? line : `🔴 ${line}`)
+    .map(escapeHtml)
+    .join('<br />');
+  return `
+    <div style="margin:22px 0;padding:18px 20px;border-left:5px solid #dc2626;background:#fef2f2;border-radius:8px">
+      <p style="margin:0 0 8px;color:#991b1b;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">DOCUMENTACIÓN PENDIENTE</p>
+      <p style="margin:0;color:#dc2626;font-size:20px;line-height:1.35;font-weight:800">${pendingHtml}</p>
+    </div>
+  `;
+}
+
+function normalizeEmailTemplateLine(value) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
 function escapeHtml(value) {
