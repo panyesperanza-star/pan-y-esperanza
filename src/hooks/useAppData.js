@@ -128,6 +128,8 @@ export function useAppData(enabled = true, currentUser = null) {
     if (!item) throw new Error('Selecciona un producto válido.');
     if (!['Entrada', 'Salida'].includes(movementType)) throw new Error('El tipo de movimiento no es válido.');
     if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad debe ser mayor que cero.');
+    const responsible = String(payload.responsible || '').trim();
+    if (!responsible) throw new Error('El responsable del movimiento es obligatorio.');
     if (movementType === 'Salida' && quantity > Number(item.stock || 0)) {
       throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
     }
@@ -138,7 +140,7 @@ export function useAppData(enabled = true, currentUser = null) {
         movement_type: movementType,
         quantity,
         moved_at: payload.moved_at || new Date().toISOString().slice(0, 10),
-        responsible: String(payload.responsible || '').trim() || currentUserName(),
+        responsible,
         notes: String(payload.notes || '').trim()
       }
     };
@@ -382,6 +384,52 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function cleanText(value) {
     return String(value || '').trim();
+  }
+
+  function normalizeReferencePrefix(value) {
+    const normalized = normalize(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+    return normalized ? normalized.slice(0, 10) : 'DON';
+  }
+
+  function collectOperationalReferences() {
+    return [
+      ...(data.donations || []).flatMap((item) => [item.reference, item.notes]),
+      ...(data.cash_bank_movements || []).flatMap((item) => [item.reference, item.notes]),
+      ...(data.accounting_documents || []).flatMap((item) => [item.document_number, item.notes]),
+      ...(data.accounting_events || []).flatMap((item) => [item.title, item.description])
+    ].filter(Boolean).map(String);
+  }
+
+  function nextDonationReference(donorName, dateValue = new Date()) {
+    const year = new Date(dateValue).getFullYear();
+    const prefix = normalizeReferencePrefix(donorName);
+    const references = collectOperationalReferences();
+    const pattern = new RegExp(`${prefix}-${year}-(\\d{6})`, 'i');
+    let last = references.reduce((max, value) => {
+      const match = value.match(pattern);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    let candidate = '';
+    do {
+      last += 1;
+      candidate = `${prefix}-${year}-${String(last).padStart(6, '0')}`;
+    } while (references.some((value) => value.includes(candidate)));
+    return candidate;
+  }
+
+  function nextInternalDocumentNumber(dateValue = new Date()) {
+    const year = new Date(dateValue).getFullYear();
+    const references = collectOperationalReferences();
+    const last = references.reduce((max, value) => {
+      const match = String(value || '').match(new RegExp(`INT-${year}-(\\d{6})`, 'i'));
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    return `INT-${year}-${String(last + 1).padStart(6, '0')}`;
+  }
+
+  function isInternalDocumentType(value) {
+    const type = normalize(value);
+    return type === 'documento interno' || type === 'document_internal' || type === 'internal_document' || type === 'sin documento' || type === 'no_document';
   }
 
   function assertPositiveNumber(value, label = 'El importe') {
@@ -781,7 +829,13 @@ export function useAppData(enabled = true, currentUser = null) {
       return;
     }
     if (operationType === 'donation_money') {
-      await registerMonetaryEconomicOperation(payload, {
+      const date = operationDate(payload.operation_at);
+      const reference = cleanText(payload.reference) || nextDonationReference(payload.donor_name || payload.contact_name, date);
+      await registerMonetaryEconomicOperation({
+        ...payload,
+        reference,
+        document_number: payload.document_number || reference
+      }, {
         eventType: 'donation_money',
         direction: 'in',
         contactType: 'donor',
@@ -863,18 +917,21 @@ export function useAppData(enabled = true, currentUser = null) {
       if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donación en especie.');
       const amount = roundCurrency(quantity * unitValue);
       const title = cleanText(payload.concept) || `Donación en especie: ${item.name}`;
+      const reference = cleanText(payload.reference) || nextDonationReference(donorName || item.donor || item.name, date);
       const event = await createAccountingEvent({
         event_type: 'donation_in_kind',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Donación en especie registrada sin afectar caja ni banco.',
+        description: [cleanText(payload.notes) || 'Donación en especie registrada sin afectar caja ni banco.', `Referencia: ${reference}`].filter(Boolean).join(' '),
         amount,
         contact_id: contact?.id || null,
         financial_account_id: null
       });
       await createEconomicDocument(event.id, {
         ...payload,
-        document_type: payload.document_type || 'receipt'
+        document_type: payload.document_type || 'receipt',
+        document_number: payload.document_number || reference,
+        reference
       }, amount, date, contact?.id || null, true);
       const donation = await dataStore.create('donations', {
         donor: donorName || 'Donante',
@@ -882,7 +939,7 @@ export function useAppData(enabled = true, currentUser = null) {
         donation_type: payload.donation_type || item.category || item.name,
         donated_at: date,
         estimated_value: amount,
-        notes: cleanText(payload.notes || title)
+        notes: [`Referencia: ${reference}`, cleanText(payload.notes || title)].filter(Boolean).join('\n')
       });
       const inventoryMovement = await registerInventoryEntryForOperation(item, payload, quantity, `Donación en especie: ${title}`);
       const socialEvent = await dataStore.create('social_value_events', {
@@ -1216,8 +1273,20 @@ export function useAppData(enabled = true, currentUser = null) {
   function buildAccountingDocumentPayload(payload, amount, documentAt) {
     const fileName = String(payload?.document_name || '').trim();
     const fileDataUrl = String(payload?.document_data_url || '').trim();
-    const documentNumber = String(payload?.document_number || '').trim();
+    const internalDocument = isInternalDocumentType(payload?.document_type);
+    const documentNumber = String(payload?.document_number || '').trim() || (internalDocument ? nextInternalDocumentNumber(documentAt) : '');
     if (!fileName && !fileDataUrl && !documentNumber && payload?.force_document !== true) return null;
+    const responsible = currentUserName();
+    const concept = cleanText(payload?.concept || payload?.reason || payload?.notes || 'Operación registrada');
+    const donor = cleanText(payload?.donor_name || payload?.contact_name || payload?.supplier_name || payload?.lender_name || payload?.creditor_name);
+    const internalNotes = internalDocument
+      ? [
+        'Justificante interno generado automáticamente.',
+        donor ? `Donante/persona o entidad: ${donor}.` : '',
+        `Concepto: ${concept}.`,
+        `Responsable: ${responsible}.`
+      ].filter(Boolean).join(' ')
+      : '';
     return {
       contact_id: payload?.contact_id || null,
       document_type: payload?.document_type || 'proof',
@@ -1229,7 +1298,7 @@ export function useAppData(enabled = true, currentUser = null) {
       file_name: fileName,
       file_data_url: fileDataUrl,
       status: 'active',
-      notes: String(payload?.document_notes || '').trim(),
+      notes: [String(payload?.document_notes || '').trim(), internalNotes].filter(Boolean).join('\n'),
       ...userMeta()
     };
   }
@@ -2157,6 +2226,78 @@ export function useAppData(enabled = true, currentUser = null) {
     replaceAllData: async (payload) => {
       dataStore.replaceLocalData(payload);
       await reload();
+    },
+    prepareProductionEnvironment: async (scopes = []) => {
+      if (currentUser?.role !== 'Superadministrador') {
+        throw new Error('Solo el Superadministrador puede preparar el entorno de producción.');
+      }
+      const selected = new Set(scopes);
+      const eventIds = new Set();
+      const inventoryItemIds = new Set();
+      const donationIds = new Set();
+      const deliveryIds = new Set();
+      const loanIds = new Set();
+      const debtIds = new Set();
+
+      if (selected.has('donations')) {
+        (data.donations || []).forEach((item) => donationIds.add(item.id));
+        (data.accounting_events || [])
+          .filter((event) => ['donation_money', 'donation_in_kind'].includes(event.event_type) || event.source_module === 'donations')
+          .forEach((event) => eventIds.add(event.id));
+      }
+      if (selected.has('deliveries')) {
+        (data.deliveries || []).forEach((item) => deliveryIds.add(item.id));
+      }
+      if (selected.has('loans')) {
+        (data.loan_records || []).forEach((item) => {
+          loanIds.add(item.id);
+          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
+        });
+        (data.loan_movements || []).forEach((item) => {
+          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
+        });
+      }
+      if (selected.has('debts')) {
+        (data.debt_records || []).forEach((item) => {
+          debtIds.add(item.id);
+          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
+        });
+        (data.debt_movements || []).forEach((item) => {
+          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
+        });
+      }
+      if (selected.has('inventory')) {
+        (data.inventory_items || []).forEach((item) => inventoryItemIds.add(item.id));
+      }
+
+      const removeRows = async (table, rows) => {
+        for (const row of rows) await dataStore.remove(table, row.id);
+        return rows.length;
+      };
+
+      const eventRelated = (row) => row.accounting_event_id && eventIds.has(row.accounting_event_id);
+      const counts = {};
+      counts.accounting_documents = await removeRows('accounting_documents', (data.accounting_documents || []).filter(eventRelated));
+      counts.cash_bank_movements = await removeRows('cash_bank_movements', (data.cash_bank_movements || []).filter(eventRelated));
+      counts.loan_movements = await removeRows('loan_movements', (data.loan_movements || []).filter((row) => loanIds.has(row.loan_id) || eventRelated(row)));
+      counts.debt_movements = await removeRows('debt_movements', (data.debt_movements || []).filter((row) => debtIds.has(row.debt_id) || eventRelated(row)));
+      counts.social_value_events = await removeRows('social_value_events', (data.social_value_events || []).filter((row) => (
+        eventRelated(row)
+        || donationIds.has(row.source_record_id)
+        || deliveryIds.has(row.source_record_id)
+        || inventoryItemIds.has(row.inventory_item_id)
+      )));
+      counts.deliveries = await removeRows('deliveries', (data.deliveries || []).filter((row) => deliveryIds.has(row.id)));
+      counts.donations = await removeRows('donations', (data.donations || []).filter((row) => donationIds.has(row.id)));
+      counts.loan_records = await removeRows('loan_records', (data.loan_records || []).filter((row) => loanIds.has(row.id)));
+      counts.debt_records = await removeRows('debt_records', (data.debt_records || []).filter((row) => debtIds.has(row.id)));
+      counts.inventory_movements = await removeRows('inventory_movements', (data.inventory_movements || []).filter((row) => inventoryItemIds.has(row.item_id)));
+      counts.inventory_items = await removeRows('inventory_items', (data.inventory_items || []).filter((row) => inventoryItemIds.has(row.id)));
+      counts.accounting_events = await removeRows('accounting_events', (data.accounting_events || []).filter((row) => eventIds.has(row.id)));
+
+      await audit(`Preparó entorno de producción. Limpieza: ${Object.entries(counts).map(([key, value]) => `${key}:${value}`).join(', ')}`);
+      await reload();
+      return counts;
     },
     resetDemo: () => {
       dataStore.resetLocalDemo();

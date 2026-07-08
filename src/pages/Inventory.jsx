@@ -23,6 +23,18 @@ import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
 const unitSuggestions = ['unidades', 'kg', 'litros', 'paquetes', 'cajas'];
+const provenanceOptions = ['Compra', 'Donación', 'Cesión', 'Recuperación', 'Otro'];
+const inventoryMetaLabels = [
+  'Procedencia',
+  'Persona o entidad que entrega',
+  'Persona que recibe',
+  'Documento asociado',
+  'Referencia',
+  'Quién entrega',
+  'Quién recibe',
+  'Motivo',
+  'Documento'
+];
 
 export function Inventory({ data, actions, currentUser, navigationTarget }) {
   const [productModal, setProductModal] = useState(null);
@@ -264,30 +276,41 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
           <span className="text-sm text-slate-500">{data.inventory_movements.length} registros</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
+          <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Fecha</th>
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Cantidad</th>
+                <th className="px-4 py-3">Entrega</th>
+                <th className="px-4 py-3">Recibe</th>
+                <th className="px-4 py-3">Motivo</th>
+                <th className="px-4 py-3">Documento</th>
                 <th className="px-4 py-3">Responsable</th>
                 <th className="px-4 py-3">Notas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.inventory_movements.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3">{formatDate(item.moved_at)}</td>
-                  <td className="px-4 py-3 font-medium text-ink">{item.item_name || '-'}</td>
-                  <td className="px-4 py-3"><MovementBadge type={item.movement_type} /></td>
-                  <td className="px-4 py-3 font-semibold">{formatQuantity(item.quantity)}</td>
-                  <td className="px-4 py-3">{item.responsible || '-'}</td>
-                  <td className="px-4 py-3 text-slate-600">{item.notes || '-'}</td>
-                </tr>
-              ))}
+              {data.inventory_movements.map((item) => {
+                const parsed = parseInventoryNotes(item.notes || '');
+                return (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3">{formatDate(item.moved_at)}</td>
+                    <td className="px-4 py-3 font-medium text-ink">{item.item_name || '-'}</td>
+                    <td className="px-4 py-3"><MovementBadge type={item.movement_type} /></td>
+                    <td className="px-4 py-3 font-semibold">{formatQuantity(item.quantity)}</td>
+                    <td className="px-4 py-3">{parsed.meta['Quién entrega'] || '-'}</td>
+                    <td className="px-4 py-3">{parsed.meta['Quién recibe'] || '-'}</td>
+                    <td className="px-4 py-3">{parsed.meta.Motivo || '-'}</td>
+                    <td className="px-4 py-3">{parsed.meta.Documento || '-'}</td>
+                    <td className="px-4 py-3">{item.responsible || '-'}</td>
+                    <td className="px-4 py-3 text-slate-600">{parsed.visible || '-'}</td>
+                  </tr>
+                );
+              })}
               {!data.inventory_movements.length && (
-                <tr><td className="px-4 py-8 text-center text-slate-500" colSpan="6">No hay movimientos registrados.</td></tr>
+                <tr><td className="px-4 py-8 text-center text-slate-500" colSpan="10">No hay movimientos registrados.</td></tr>
               )}
             </tbody>
           </table>
@@ -343,16 +366,21 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
 }
 
 function ProductForm({ initial, onSubmit }) {
+  const parsedNotes = parseInventoryNotes(initial?.notes || '');
   const [form, setForm] = useState(() => ({
     name: initial?.name || '',
     category: initial?.category || 'Alimentos',
     lot: initial?.lot || '',
     expires_at: initial?.expires_at || '',
-    donor: initial?.donor || '',
+    provenance: parsedNotes.meta.Procedencia || 'Donación',
+    donor: initial?.donor || parsedNotes.meta['Persona o entidad que entrega'] || '',
+    received_by: parsedNotes.meta['Persona que recibe'] || '',
+    document_name: parsedNotes.meta['Documento asociado'] || '',
+    reference: parsedNotes.meta.Referencia || '',
     location: initial?.location || '',
     unit: initial?.unit || 'unidades',
     low_stock_threshold: Number(initial?.low_stock_threshold || 0),
-    notes: initial?.notes || ''
+    notes: parsedNotes.visible
   }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -363,7 +391,23 @@ function ProductForm({ initial, onSubmit }) {
     setError('');
     setSaving(true);
     try {
-      await onSubmit(form);
+      await onSubmit({
+        name: form.name,
+        category: form.category,
+        lot: form.lot,
+        expires_at: form.expires_at,
+        donor: form.donor,
+        location: form.location,
+        unit: form.unit,
+        low_stock_threshold: form.low_stock_threshold,
+        notes: buildInventoryNotes(form.notes, {
+          Procedencia: form.provenance,
+          'Persona o entidad que entrega': form.donor,
+          'Persona que recibe': form.received_by,
+          'Documento asociado': form.document_name,
+          Referencia: form.reference
+        })
+      });
     } catch (submitError) {
       setError(normalizeInventoryError(submitError));
     } finally {
@@ -381,7 +425,15 @@ function ProductForm({ initial, onSubmit }) {
       </FormField>
       <FormField label="Lote"><input className={inputClass} value={form.lot} onChange={(event) => update('lot', event.target.value)} /></FormField>
       <FormField label="Fecha de caducidad"><input className={inputClass} type="date" value={form.expires_at} onChange={(event) => update('expires_at', event.target.value)} /></FormField>
-      <FormField label="Donante"><input className={inputClass} value={form.donor} onChange={(event) => update('donor', event.target.value)} /></FormField>
+      <FormField label="Procedencia">
+        <select className={inputClass} value={form.provenance} onChange={(event) => update('provenance', event.target.value)}>
+          {provenanceOptions.map((option) => <option key={option}>{option}</option>)}
+        </select>
+      </FormField>
+      <FormField label="Persona o entidad que entrega"><input className={inputClass} value={form.donor} onChange={(event) => update('donor', event.target.value)} /></FormField>
+      <FormField label="Persona que recibe"><input className={inputClass} value={form.received_by} onChange={(event) => update('received_by', event.target.value)} /></FormField>
+      <FormField label="Documento asociado"><input className={inputClass} value={form.document_name} onChange={(event) => update('document_name', event.target.value)} placeholder="Factura, albarán, justificante..." /></FormField>
+      <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
       <FormField label="Ubicación"><input className={inputClass} value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
       <FormField label="Unidad" required>
         <input className={inputClass} list="inventory-units" required value={form.unit} onChange={(event) => update('unit', event.target.value)} />
@@ -407,6 +459,10 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
     movement_type: movementType,
     quantity: 1,
     moved_at: todayISO(),
+    delivered_by: '',
+    received_by: responsible,
+    reason: movementType === 'Entrada' ? 'Entrada de material' : 'Salida de material',
+    document_name: '',
     responsible,
     notes: ''
   });
@@ -420,7 +476,19 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
     setError('');
     setSaving(true);
     try {
-      await onSubmit(form);
+      await onSubmit({
+        item_id: form.item_id,
+        movement_type: form.movement_type,
+        quantity: form.quantity,
+        moved_at: form.moved_at,
+        responsible: form.responsible,
+        notes: buildInventoryNotes(form.notes, {
+          'Quién entrega': form.delivered_by,
+          'Quién recibe': form.received_by,
+          Motivo: form.reason,
+          Documento: form.document_name
+        })
+      });
     } catch (submitError) {
       setError(normalizeInventoryError(submitError));
     } finally {
@@ -453,6 +521,10 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
         />
       </FormField>
       <FormField label="Fecha" required><input className={inputClass} type="date" required value={form.moved_at} onChange={(event) => update('moved_at', event.target.value)} /></FormField>
+      <FormField label="Quién entrega" required><input className={inputClass} required value={form.delivered_by} onChange={(event) => update('delivered_by', event.target.value)} /></FormField>
+      <FormField label="Quién recibe" required><input className={inputClass} required value={form.received_by} onChange={(event) => update('received_by', event.target.value)} /></FormField>
+      <FormField label="Motivo" required><input className={inputClass} required value={form.reason} onChange={(event) => update('reason', event.target.value)} /></FormField>
+      <FormField label="Documento"><input className={inputClass} value={form.document_name} onChange={(event) => update('document_name', event.target.value)} placeholder="Factura, albarán, justificante..." /></FormField>
       <FormField label="Responsable" required><input className={inputClass} required value={form.responsible} onChange={(event) => update('responsible', event.target.value)} /></FormField>
       <div className="sm:col-span-2"><FormField label="Notas"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar movimiento'}</Button></div>
@@ -560,6 +632,32 @@ function daysUntil(value) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+function parseInventoryNotes(notes = '') {
+  const meta = {};
+  const visible = [];
+  String(notes || '').split(/\r?\n/).forEach((line) => {
+    const clean = line.trim();
+    if (!clean) return;
+    const match = clean.match(/^([^:]+):\s*(.*)$/);
+    const label = match?.[1]?.trim();
+    if (label && inventoryMetaLabels.includes(label)) {
+      meta[label] = match[2]?.trim() || '';
+    } else {
+      visible.push(clean);
+    }
+  });
+  return { meta, visible: visible.join('\n') };
+}
+
+function buildInventoryNotes(visibleNotes, meta = {}) {
+  const lines = Object.entries(meta)
+    .map(([label, value]) => [label, String(value || '').trim()])
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}: ${value}`);
+  const notes = String(visibleNotes || '').trim();
+  return [...lines, notes].filter(Boolean).join('\n');
 }
 
 function formatQuantity(value) {

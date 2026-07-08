@@ -178,7 +178,7 @@ export default function App() {
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} />,
     reports: <Reports data={sorted} />,
-    backup: <Backup data={sorted} actions={actions} />,
+    backup: <Backup data={sorted} actions={actions} currentUser={currentUser} />,
     provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
     users: <Settings key="users" data={sorted} actions={actions} currentUser={currentUser} initialTab="users" />
   };

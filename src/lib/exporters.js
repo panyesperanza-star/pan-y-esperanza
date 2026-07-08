@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
@@ -153,70 +154,51 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   const receiptNumber = delivery.receipt_number || nextReceiptNumber(deliveries, delivery.delivered_at);
   const generatedAt = new Date();
   const productRows = getReceiptProductRows(delivery);
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  const beneficiaryName = beneficiary?.full_name || delivery.beneficiary_name || '-';
+  const familyLabel = receiptFamilyLabel(beneficiary, delivery);
+  const qrDataUrl = await QRCode.toDataURL(receiptQrPayload({ receiptNumber, delivery, beneficiary, orgName }), { margin: 1, width: 140 });
 
-  await drawReceiptHeaderClean(doc, receiptNumber, generatedAt, organization);
+  await drawOfficialReceiptHeader(doc, { orgName, receiptNumber, generatedAt, organization, qrDataUrl });
 
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('JUSTIFICANTE DE ENTREGA DE AYUDA SOCIAL', 14, 46);
-
-  drawPdfSectionTitle(doc, 'DATOS DEL BENEFICIARIO', 58);
+  drawPdfSectionTitle(doc, 'DATOS DE LA ENTREGA', 58);
   autoTable(doc, {
     startY: 63,
     body: [
-      ['Beneficiario', beneficiary?.full_name || delivery.beneficiary_name || '-'],
-      ['Código beneficiario', beneficiary?.code || '-'],
-      ['Documento identificativo', beneficiary?.document_id || '-']
+      ['Número de justificante', receiptNumber],
+      ['Fecha de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
+      ['Beneficiario', beneficiaryName],
+      ['Unidad familiar', familyLabel],
+      ['Responsable', delivery.responsible || '-']
     ],
-    styles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
+    theme: 'plain',
+    styles: { fontSize: 9, cellPadding: 2.2, textColor: [23, 33, 27] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48, textColor: [36, 126, 80] }, 1: { cellWidth: 132 } },
+    margin: { left: 14, right: 14 }
   });
 
-  drawPdfSectionTitle(doc, 'DATOS DE LA ENTREGA', doc.lastAutoTable.finalY + 10);
+  drawPdfSectionTitle(doc, 'PRODUCTOS ENTREGADOS', doc.lastAutoTable.finalY + 10);
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 15,
-    body: [
-      ['Fecha y hora de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
-      ['Responsable', delivery.responsible || '-'],
-      ['Tipo de ayuda', delivery.help_type || '-'],
-      ['Observaciones', delivery.notes || '-']
-    ],
-    styles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48 } }
-  });
-
-  autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 10,
     head: [['Producto entregado', 'Cantidad']],
     body: productRows,
     headStyles: { fillColor: [36, 126, 80] },
-    styles: { fontSize: 9 }
+    alternateRowStyles: { fillColor: [247, 250, 246] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 0: { cellWidth: 130 }, 1: { cellWidth: 38, halign: 'right' } },
+    margin: { left: 14, right: 14 }
   });
 
-  let signatureY = doc.lastAutoTable.finalY + 20;
-  if (signatureY > 215) {
+  const observationsY = drawReceiptObservations(doc, delivery.notes, doc.lastAutoTable.finalY + 12);
+  let signatureY = observationsY + 15;
+  if (signatureY > 210) {
     doc.addPage();
     signatureY = 28;
+    drawReceiptPageMark(doc, orgName, receiptNumber);
   }
-  doc.setFontSize(12);
-  doc.text('Firma del beneficiario', 14, signatureY);
-  doc.text('Firma del responsable', 112, signatureY);
-  doc.setDrawColor(180, 190, 185);
-  doc.roundedRect(14, signatureY + 4, 80, 36, 2, 2);
-  doc.roundedRect(112, signatureY + 4, 80, 36, 2, 2);
-  if (delivery.signature_data_url) {
-    const signature = await compressDataUrlImage(delivery.signature_data_url, 520, 180, 0.74);
-    doc.addImage(signature.dataUrl, signature.format, 14, signatureY + 5, 80, 32);
-  } else {
-    doc.setFontSize(10);
-    doc.text('Sin firma registrada', 14, signatureY + 12);
-  }
-  if (delivery.responsible_signature_data_url) {
-    const responsibleSignature = await compressDataUrlImage(delivery.responsible_signature_data_url, 520, 180, 0.74);
-    doc.addImage(responsibleSignature.dataUrl, responsibleSignature.format, 112, signatureY + 5, 80, 32);
-  }
+  await drawReceiptSignatures(doc, delivery, signatureY);
 
-  drawReceiptLegalFooter(doc);
+  drawReceiptLegalFooter(doc, orgName);
 
   return { doc, receiptNumber };
 }
@@ -295,6 +277,32 @@ async function drawReceiptHeaderClean(doc, receiptNumber, generatedAt, organizat
   doc.line(14, 38, 196, 38);
 }
 
+async function drawOfficialReceiptHeader(doc, { orgName, receiptNumber, generatedAt, organization = {}, qrDataUrl }) {
+  doc.setFillColor(247, 250, 246);
+  doc.rect(0, 0, 210, 50, 'F');
+  await addOfficialLogo(doc, 14, 9, 30, 24);
+  doc.setTextColor(23, 33, 27);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text(orgName, 50, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text([organization.cif || 'CIF: EN TRÁMITE', organization.email || 'info@panyesperanza.org', organization.phone || ''].filter(Boolean), 50, 22);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(36, 126, 80);
+  doc.text('JUSTIFICANTE OFICIAL DE ENTREGA', 14, 43);
+  doc.setTextColor(23, 33, 27);
+  doc.setFontSize(9);
+  doc.text(`Nº ${receiptNumber}`, 142, 18);
+  doc.text(`Emisión: ${formatDateTime(generatedAt.toISOString())}`, 142, 25);
+  doc.addImage(qrDataUrl, 'PNG', 176, 31, 20, 20);
+  doc.setDrawColor(36, 126, 80);
+  doc.setLineWidth(0.6);
+  doc.line(14, 51, 196, 51);
+  doc.setLineWidth(0.2);
+}
+
 function drawPdfSectionTitle(doc, title, y) {
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -304,13 +312,61 @@ function drawPdfSectionTitle(doc, title, y) {
   doc.setTextColor(23, 33, 27);
 }
 
-function drawReceiptLegalFooter(doc) {
+function drawReceiptObservations(doc, notes, y) {
+  drawPdfSectionTitle(doc, 'OBSERVACIONES', y);
+  const text = notes || 'Sin observaciones registradas.';
+  const lines = doc.splitTextToSize(text, 176);
+  doc.setFillColor(247, 250, 246);
+  doc.roundedRect(14, y + 4, 182, Math.max(18, lines.length * 5 + 8), 2, 2, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(23, 33, 27);
+  doc.text(lines, 18, y + 12);
+  return y + Math.max(26, lines.length * 5 + 16);
+}
+
+async function drawReceiptSignatures(doc, delivery, y) {
+  drawPdfSectionTitle(doc, 'FIRMAS', y);
+  const leftX = 14;
+  const rightX = 112;
+  doc.setFontSize(9);
+  doc.setTextColor(23, 33, 27);
+  doc.text('Firma del beneficiario', leftX, y + 10);
+  doc.text('Firma del responsable', rightX, y + 10);
+  doc.setDrawColor(180, 190, 185);
+  doc.roundedRect(leftX, y + 14, 80, 36, 2, 2);
+  doc.roundedRect(rightX, y + 14, 80, 36, 2, 2);
+  if (delivery.signature_data_url) {
+    const signature = await compressDataUrlImage(delivery.signature_data_url, 520, 180, 0.74);
+    doc.addImage(signature.dataUrl, signature.format, leftX, y + 15, 80, 32);
+  } else {
+    doc.setFontSize(8);
+    doc.setTextColor(96, 112, 100);
+    doc.text('Sin firma registrada', leftX + 4, y + 26);
+  }
+  if (delivery.responsible_signature_data_url) {
+    const responsibleSignature = await compressDataUrlImage(delivery.responsible_signature_data_url, 520, 180, 0.74);
+    doc.addImage(responsibleSignature.dataUrl, responsibleSignature.format, rightX, y + 15, 80, 32);
+  }
+}
+
+function drawReceiptPageMark(doc, orgName, receiptNumber) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(36, 126, 80);
+  doc.text(`${orgName} · Justificante ${receiptNumber}`, 14, 16);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 20, 196, 20);
+  doc.setTextColor(23, 33, 27);
+}
+
+function drawReceiptLegalFooter(doc, orgName = 'Asociación Pan y Esperanza') {
   doc.setDrawColor(219, 229, 220);
   doc.line(14, 272, 196, 272);
   doc.setFontSize(8);
   doc.setTextColor(96, 112, 100);
-  doc.text('Este documento acredita la entrega de ayuda social realizada por Pan y Esperanza.', 14, 279);
-  doc.text('Documento generado electrónicamente por el Sistema de Gestión Pan y Esperanza.', 14, 285);
+  doc.text(`Este documento acredita la entrega de ayuda social realizada por ${orgName}.`, 14, 279);
+  doc.text('Documento generado electrónicamente. La información queda archivada para trazabilidad, auditoría y seguimiento interno.', 14, 285);
   doc.setTextColor(23, 33, 27);
 }
 
@@ -326,6 +382,24 @@ function getReceiptProductRows(delivery) {
     delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
     delivery.quantity || '-'
   ]];
+}
+
+function receiptFamilyLabel(beneficiary, delivery) {
+  if (delivery.family_name) return delivery.family_name;
+  const total = Number(beneficiary?.family_members || 0);
+  const minors = Number(beneficiary?.minors_count || 0);
+  if (total || minors) return `${total || '-'} miembros${minors ? ` · ${minors} menores` : ''}`;
+  return 'No registrada';
+}
+
+function receiptQrPayload({ receiptNumber, delivery, beneficiary, orgName }) {
+  return [
+    `Justificante: ${receiptNumber}`,
+    `Asociación: ${orgName}`,
+    `Fecha: ${formatDateTime(delivery.reception_at || delivery.delivered_at)}`,
+    `Beneficiario: ${beneficiary?.full_name || delivery.beneficiary_name || '-'}`,
+    `Responsable: ${delivery.responsible || '-'}`
+  ].join('\n');
 }
 
 export async function exportReportPdf(data) {
