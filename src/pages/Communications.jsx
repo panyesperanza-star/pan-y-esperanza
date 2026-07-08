@@ -34,6 +34,8 @@ const RECIPIENT_GROUPS = ['Todos los beneficiarios', 'Solo activos', 'Solo famil
 const CHANNELS = ['Email', 'WhatsApp', 'Ambos'];
 const APPOINTMENT_TYPES = ['Entrevista', 'Entrega de documentación', 'Seguimiento', 'Reunión', 'Visita'];
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Realizada', 'Reprogramada', 'Cancelada', 'No asistió'];
+const SILENT_APPOINTMENT_STATUSES = ['Pendiente', 'Realizada', 'No asistió'];
+const CLOSED_REMINDER_STATUSES = ['Pendiente', 'Realizada', 'Cancelada', 'No asistió'];
 const CALENDAR_HOURS = Array.from({ length: 13 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`);
 const REMINDER_TIMES = [
   { id: 'created', label: 'Al crear la cita' },
@@ -102,6 +104,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       && ['appointment_reminder', 'campaign'].includes(log.meta.kind)
       && log.meta.scheduled_at
       && new Date(log.meta.scheduled_at) <= new Date()
+      && canProcessScheduledLog(log)
     ));
     if (!due.length) return;
     processingRemindersRef.current = true;
@@ -362,7 +365,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       meta: finalMeta,
       sentAt: appointmentAt
     });
-    await createAppointmentReminders(selectedBeneficiary, appointmentForm, finalMeta);
+    await applyNewAppointmentStatusAutomation(finalMeta, selectedBeneficiary, appointmentForm);
     await actions.reloadData();
     setNotice('Cita creada correctamente en la agenda.');
   }
@@ -388,6 +391,8 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
         place: formState.place,
         map_url: mapsUrl(formState.place),
         notes: formState.notes,
+        appointment_reminder_channel: formState.reminderChannel,
+        appointment_reminders: formState.reminders,
         appointment_status: formState.status || 'Pendiente'
       }
     };
@@ -398,6 +403,8 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
     const selectedBeneficiary = data.beneficiaries.find((item) => item.id === finalMeta.beneficiary_id);
     const family = data.families.find((item) => item.id === finalMeta.family_id || item.id === selectedBeneficiary?.family_id);
     const formState = appointmentFormFromMeta(finalMeta);
+    const previousStatus = appointment.status || 'Pendiente';
+    const previousAppointmentAt = appointment.appointmentAt;
     await actions.updateEmailLog(appointment.id, {
       recipient: selectedBeneficiary?.email || finalMeta.beneficiary_name || appointment.beneficiaryName,
       subject: `Cita: ${finalMeta.appointment_type || appointment.type}`,
@@ -407,7 +414,16 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       sent_at: finalMeta.appointment_at,
       attachments: [finalMeta]
     });
-    await updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState);
+    const relatedReminders = await updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState);
+    await applyAppointmentStatusAutomation({
+      appointment,
+      finalMeta,
+      selectedBeneficiary,
+      formState,
+      previousStatus,
+      previousAppointmentAt,
+      relatedReminders
+    });
   }
 
   async function updateRelatedAppointmentReminders(appointment, finalMeta, selectedBeneficiary, formState) {
@@ -418,7 +434,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       && log.meta.appointment_type === appointment.type
       && log.meta.appointment_at === appointment.appointmentAt
     ));
-    const terminalStatus = ['Realizada', 'Cancelada', 'No asistió'].includes(finalMeta.appointment_status);
+    const closesReminder = CLOSED_REMINDER_STATUSES.includes(finalMeta.appointment_status);
     for (const log of related) {
       const reminderAt = reminderDateTime(finalMeta.appointment_at, log.meta.reminder_time);
       const message = appointmentReminderMessage(formState, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, organization);
@@ -427,8 +443,8 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
       await actions.updateEmailLog(log.id, {
         subject: `Recordatorio: ${finalMeta.appointment_type || appointment.type}`,
         message,
-        status: terminalStatus ? finalMeta.appointment_status : log.status,
-        result: terminalStatus ? 'Recordatorio cerrado por el estado de la cita.' : 'Recordatorio actualizado con la cita.',
+        status: closesReminder ? (finalMeta.appointment_status === 'Pendiente' ? 'Sin enviar' : finalMeta.appointment_status) : log.status,
+        result: closesReminder ? 'Recordatorio cerrado por el estado de la cita.' : 'Recordatorio actualizado con la cita.',
         sent_at: reminderAt,
         attachments: [{
           ...log.meta,
@@ -440,6 +456,80 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           whatsapp_url: channel === 'WhatsApp' && phone ? buildWhatsAppUrl(phone, message) : ''
         }]
       });
+    }
+    return related.length;
+  }
+
+  async function applyNewAppointmentStatusAutomation(finalMeta, selectedBeneficiary, formState) {
+    const status = finalMeta.appointment_status || 'Pendiente';
+    if (SILENT_APPOINTMENT_STATUSES.includes(status)) return;
+    if (status === 'Confirmada') {
+      await sendAppointmentStatusNotification(status, selectedBeneficiary, formState, finalMeta);
+      await createAppointmentReminders(selectedBeneficiary, formState, finalMeta, { skipImmediate: true });
+      return;
+    }
+    if (status === 'Reprogramada' || status === 'Cancelada') {
+      await sendAppointmentStatusNotification(status, selectedBeneficiary, formState, finalMeta);
+    }
+  }
+
+  async function applyAppointmentStatusAutomation({
+    appointment,
+    finalMeta,
+    selectedBeneficiary,
+    formState,
+    previousStatus,
+    previousAppointmentAt,
+    relatedReminders
+  }) {
+    const status = finalMeta.appointment_status || 'Pendiente';
+    if (SILENT_APPOINTMENT_STATUSES.includes(status)) return;
+    const statusChanged = previousStatus !== status;
+    const appointmentMoved = String(previousAppointmentAt || '') !== String(finalMeta.appointment_at || '');
+    if (status === 'Confirmada' && statusChanged) {
+      await sendAppointmentStatusNotification(status, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, formState, finalMeta);
+      if (!relatedReminders) await createAppointmentReminders(selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, formState, finalMeta, { skipImmediate: true });
+      return;
+    }
+    if (status === 'Reprogramada' && (statusChanged || appointmentMoved)) {
+      await sendAppointmentStatusNotification(status, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, formState, finalMeta);
+      return;
+    }
+    if (status === 'Cancelada' && statusChanged) {
+      await sendAppointmentStatusNotification(status, selectedBeneficiary || { full_name: finalMeta.beneficiary_name }, formState, finalMeta);
+    }
+  }
+
+  async function sendAppointmentStatusNotification(status, beneficiary, formState, appointmentMeta) {
+    const channels = selectedChannels(appointmentMeta.appointment_reminder_channel || formState.reminderChannel || 'Email');
+    const message = appointmentStatusMessage(status, formState, beneficiary, organization);
+    for (const channel of channels) {
+      const phone = normalizeWhatsAppPhone(beneficiary?.phone);
+      const recipient = channel === 'Email'
+        ? beneficiary?.email || beneficiary?.full_name || appointmentMeta.beneficiary_name
+        : phone ? `WhatsApp ${phone}` : beneficiary?.full_name || appointmentMeta.beneficiary_name;
+      const missing = channel === 'Email' ? !beneficiary?.email : !phone;
+      const subject = `Cita ${status.toLowerCase()}: ${formState.type}`;
+      const meta = {
+        ...appointmentMeta,
+        kind: 'appointment_status_notice',
+        channel,
+        appointment_status_notice: status,
+        scheduled_at: new Date().toISOString(),
+        whatsapp_url: channel === 'WhatsApp' && phone ? buildWhatsAppUrl(phone, message) : ''
+      };
+      if (missing) {
+        await createCommunicationLog({ recipient, subject, message, status: 'Error', result: `Sin ${channel === 'Email' ? 'email' : 'teléfono'} registrado.`, meta });
+      } else if (channel === 'Email') {
+        try {
+          const payload = await sendEmailViaApi({ to: beneficiary.email, subject, message, organization, logEmail: false });
+          await createCommunicationLog({ recipient, subject, message, status: 'Enviado', result: `Aviso de cita enviado. Resend: ${payload.id}`, meta });
+        } catch (error) {
+          await createCommunicationLog({ recipient, subject, message, status: 'Error', result: normalizeEmailError(error), meta });
+        }
+      } else {
+        await createCommunicationLog({ recipient, subject: `WhatsApp - ${subject}`, message, status: 'Pendiente', result: 'WhatsApp preparado para envío.', meta });
+      }
     }
   }
 
@@ -538,14 +628,16 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
     setNotice('Duración de la cita actualizada.');
   }
 
-  async function createAppointmentReminders(selectedBeneficiary, appointment, appointmentMeta) {
+  async function createAppointmentReminders(selectedBeneficiary, appointment, appointmentMeta, options = {}) {
+    if ((appointmentMeta.appointment_status || appointment.status) !== 'Confirmada') return;
     const channels = selectedChannels(appointment.reminderChannel);
-    for (const reminderId of appointment.reminders) {
+    const reminderIds = (appointment.reminders || []).filter((reminderId) => !(options.skipImmediate && reminderId === 'created'));
+    for (const reminderId of reminderIds) {
       const reminderAt = reminderDateTime(appointmentMeta.appointment_at, reminderId);
       for (const channel of channels) {
-        const phone = normalizeWhatsAppPhone(selectedBeneficiary.phone);
-        const recipient = channel === 'Email' ? selectedBeneficiary.email : phone ? `WhatsApp ${phone}` : selectedBeneficiary.full_name;
-        const missing = channel === 'Email' ? !selectedBeneficiary.email : !phone;
+        const phone = normalizeWhatsAppPhone(selectedBeneficiary?.phone);
+        const recipient = channel === 'Email' ? selectedBeneficiary?.email : phone ? `WhatsApp ${phone}` : selectedBeneficiary?.full_name || appointmentMeta.beneficiary_name;
+        const missing = channel === 'Email' ? !selectedBeneficiary?.email : !phone;
         const reminderMessage = appointmentReminderMessage(appointment, selectedBeneficiary, organization);
         const meta = {
           ...appointmentMeta,
@@ -1048,6 +1140,8 @@ function CalendarHourRow({ hour, days, onPickSlot, onEditAppointment, onDragOver
 }
 
 function CalendarAppointmentChip({ item, compact = false, onEdit }) {
+  const styles = appointmentStatusStyles(item.status);
+
   function startDrag(event, action) {
     event.stopPropagation();
     event.dataTransfer.effectAllowed = 'move';
@@ -1056,15 +1150,15 @@ function CalendarAppointmentChip({ item, compact = false, onEdit }) {
 
   return (
     <div
-      className="group rounded border border-brand-100 bg-white px-2 py-1 text-xs shadow-sm"
+      className={`group rounded border px-2 py-1 text-xs shadow-sm ${styles.chip}`}
       draggable
       onDragStart={(event) => startDrag(event, 'move')}
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" className="block w-full truncate text-left font-semibold text-brand-700" onClick={() => onEdit(item)}>
+      <button type="button" className={`block w-full truncate text-left font-semibold ${styles.text}`} onClick={() => onEdit(item)}>
         {compact ? `${item.type} · ${item.time}` : `${item.time} · ${item.type}`}
       </button>
-      {!compact && <p className="truncate text-[11px] text-slate-500">{item.beneficiaryName}</p>}
+      {!compact && <p className={`truncate text-[11px] ${styles.subtle}`}>{item.beneficiaryName}</p>}
       {!compact && (
         <button
           type="button"
@@ -1080,8 +1174,9 @@ function CalendarAppointmentChip({ item, compact = false, onEdit }) {
 }
 
 function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpenBeneficiary, canDelete }) {
+  const styles = appointmentStatusStyles(appointment.status);
   return (
-    <article className="rounded-md border border-slate-200 bg-white p-4">
+    <article className={`rounded-md border p-4 ${styles.card}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1174,14 +1269,82 @@ function CommunicationCard({ log, onOpenBeneficiary }) {
 }
 
 function StatusPill({ status }) {
-  const normalized = normalize(status);
-  let tone = 'bg-emerald-50 text-emerald-700 ring-emerald-200';
-  if (normalized.includes('error')) tone = 'bg-red-50 text-red-700 ring-red-200';
-  else if (normalized.includes('cancelada') || normalized.includes('no asistio')) tone = 'bg-slate-100 text-slate-700 ring-slate-200';
-  else if (normalized.includes('reprogramada')) tone = 'bg-blue-50 text-blue-700 ring-blue-200';
-  else if (normalized.includes('pendiente')) tone = 'bg-amber-50 text-amber-700 ring-amber-200';
-  else if (normalized.includes('confirmada')) tone = 'bg-brand-50 text-brand-700 ring-brand-100';
+  const tone = appointmentStatusStyles(status).pill;
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${tone}`}>{status || 'Enviado'}</span>;
+}
+
+function appointmentStatusStyles(status) {
+  const normalized = normalize(status);
+  if (normalized.includes('error')) {
+    return {
+      pill: 'bg-red-50 text-red-700 ring-red-200',
+      chip: 'border-red-200 bg-red-50',
+      card: 'border-red-200 bg-red-50',
+      text: 'text-red-800',
+      subtle: 'text-red-700'
+    };
+  }
+  if (normalized.includes('cancelada')) {
+    return {
+      pill: 'bg-red-50 text-red-700 ring-red-200',
+      chip: 'border-red-200 bg-red-50',
+      card: 'border-red-200 bg-red-50',
+      text: 'text-red-800',
+      subtle: 'text-red-700'
+    };
+  }
+  if (normalized.includes('no asistio')) {
+    return {
+      pill: 'bg-slate-900 text-white ring-slate-900',
+      chip: 'border-slate-700 bg-slate-900 text-white',
+      card: 'border-slate-700 bg-slate-100',
+      text: 'text-white',
+      subtle: 'text-slate-300'
+    };
+  }
+  if (normalized.includes('realizada')) {
+    return {
+      pill: 'bg-slate-100 text-slate-700 ring-slate-200',
+      chip: 'border-slate-300 bg-slate-100',
+      card: 'border-slate-200 bg-slate-50',
+      text: 'text-slate-700',
+      subtle: 'text-slate-500'
+    };
+  }
+  if (normalized.includes('reprogramada')) {
+    return {
+      pill: 'bg-blue-50 text-blue-700 ring-blue-200',
+      chip: 'border-blue-200 bg-blue-50',
+      card: 'border-blue-200 bg-blue-50',
+      text: 'text-blue-800',
+      subtle: 'text-blue-700'
+    };
+  }
+  if (normalized.includes('confirmada') || normalized.includes('enviado')) {
+    return {
+      pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+      chip: 'border-emerald-200 bg-emerald-50',
+      card: 'border-emerald-200 bg-emerald-50',
+      text: 'text-emerald-800',
+      subtle: 'text-emerald-700'
+    };
+  }
+  if (normalized.includes('pendiente')) {
+    return {
+      pill: 'bg-amber-50 text-amber-700 ring-amber-200',
+      chip: 'border-amber-200 bg-amber-50',
+      card: 'border-amber-200 bg-amber-50',
+      text: 'text-amber-800',
+      subtle: 'text-amber-700'
+    };
+  }
+  return {
+    pill: 'bg-slate-50 text-slate-700 ring-slate-200',
+    chip: 'border-slate-200 bg-white',
+    card: 'border-slate-200 bg-white',
+    text: 'text-slate-700',
+    subtle: 'text-slate-500'
+  };
 }
 
 function Metric({ label, value }) {
@@ -1294,6 +1457,7 @@ function resolveCampaignRecipients(data, form) {
 }
 
 function selectedChannels(value) {
+  if (!value) return ['Email'];
   return value === 'Ambos' ? ['Email', 'WhatsApp'] : [value];
 }
 
@@ -1304,6 +1468,12 @@ function scheduledDateTime(date, time) {
 
 function isFutureDate(value) {
   return value && new Date(value) > new Date();
+}
+
+function canProcessScheduledLog(log) {
+  if (log.meta.kind !== 'appointment_reminder') return true;
+  const status = normalize(log.meta.appointment_status || '');
+  return status.includes('confirmada') || status.includes('reprogramada');
 }
 
 function mapsUrl(location) {
@@ -1423,9 +1593,7 @@ function appointmentFormFromEntry(appointment, currentUser) {
     beneficiary_id: appointment.beneficiaryId || appointment.meta.beneficiary_id || '',
     family_id: appointment.familyId || appointment.meta.family_id || '',
     status: appointment.status || appointment.meta.appointment_status || 'Pendiente',
-    responsible: appointment.responsible || appointment.meta.responsible || currentUserName(currentUser),
-    reminderChannel: 'Email',
-    reminders: []
+    responsible: appointment.responsible || appointment.meta.responsible || currentUserName(currentUser)
   };
 }
 
@@ -1442,8 +1610,8 @@ function appointmentFormFromMeta(meta = {}) {
     responsible: meta.responsible || '',
     place: meta.place || '',
     notes: meta.notes || '',
-    reminderChannel: 'Email',
-    reminders: []
+    reminderChannel: meta.appointment_reminder_channel || 'Email',
+    reminders: Array.isArray(meta.appointment_reminders) ? meta.appointment_reminders : []
   };
 }
 
@@ -1485,10 +1653,32 @@ function appointmentSummaryMessage(form, beneficiary, family) {
   ].filter(Boolean).join('\n');
 }
 
+function appointmentStatusMessage(status, form, beneficiary, organization = {}) {
+  const association = organization.name || 'Asociación Pan y Esperanza';
+  const intro = status === 'Confirmada'
+    ? 'Su cita ha sido confirmada.'
+    : status === 'Reprogramada'
+      ? 'Su cita ha sido reprogramada con nueva fecha y hora.'
+      : 'Le informamos de que su cita ha sido cancelada.';
+  return [
+    intro,
+    '',
+    `Nombre del beneficiario: ${beneficiary?.full_name || form.beneficiary_name || '-'}`,
+    `Fecha: ${formatDate(scheduledDateTime(form.date, form.time))}`,
+    `Hora: ${form.time}`,
+    `Lugar: ${form.place || 'No indicado'}`,
+    `Motivo: ${form.type}`,
+    form.notes ? `Observaciones: ${form.notes}` : '',
+    `Asociación: ${association}`,
+    organization.phone ? `Teléfono de contacto: ${organization.phone}` : '',
+    form.place ? `Google Maps: ${mapsUrl(form.place)}` : ''
+  ].filter(Boolean).join('\n');
+}
+
 function appointmentReminderMessage(form, beneficiary, organization = {}) {
   const association = organization.name || 'Asociación Pan y Esperanza';
   return [
-    `Nombre del beneficiario: ${beneficiary.full_name}`,
+    `Nombre del beneficiario: ${beneficiary?.full_name || form.beneficiary_name || '-'}`,
     `Fecha: ${formatDate(scheduledDateTime(form.date, form.time))}`,
     `Hora: ${form.time}`,
     `Lugar: ${form.place || 'No indicado'}`,
