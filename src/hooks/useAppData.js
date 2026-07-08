@@ -2131,6 +2131,23 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     createVolunteer: async (payload) => {
       await dataStore.create('volunteers', payload);
+      await audit(`Creo voluntario ${payload.full_name || ''}`.trim());
+      await reload();
+    },
+    updateVolunteer: async (id, payload) => {
+      await dataStore.update('volunteers', id, payload);
+      await audit(`Actualizo voluntario ${payload.full_name || id}`.trim());
+      await reload();
+    },
+    deleteVolunteer: async (id) => {
+      if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar voluntarios definitivamente.');
+      await dataStore.remove('volunteers', id);
+      await audit('Elimino definitivamente un voluntario');
+      await reload();
+    },
+    createVolunteerHistory: async (payload) => {
+      await dataStore.create('volunteer_history', payload);
+      await audit(`Registro historial de voluntariado ${payload.activity || ''}`.trim());
       await reload();
     },
     updateOrganizationSettings: async (payload) => {

@@ -10,6 +10,7 @@ import {
   Home,
   PackageCheck,
   Search,
+  UserRoundCheck,
   Users
 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -28,9 +29,14 @@ const REPORTS = [
   { id: 'inventory', title: 'Inventario', icon: Boxes, description: 'Stock, lotes, caducidades, categorías y alertas operativas.' },
   { id: 'donors', title: 'Donantes', icon: Gift, description: 'CRM de donantes, dinero recibido, valor social y actividad.' },
   { id: 'economic', title: 'Económico', icon: Euro, description: 'Ingresos, gastos, caja, bancos, préstamos, deudas y valor social.' },
+  { id: 'volunteers', title: 'Voluntarios', icon: UserRoundCheck, description: 'Expedientes de voluntariado, disponibilidad, participaciones y colaboración.' },
   { id: 'annual', title: 'Memoria anual de actividad', icon: FileText, description: 'Informe institucional principal para administraciones y entidades colaboradoras.', featured: true },
   { id: 'statistics', title: 'Estadísticas', icon: BarChart3, description: 'Indicadores agregados de actividad social, inventario, donantes y economía.' }
 ];
+
+const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
+const VOLUNTEER_META_END = '[/PYE_VOLUNTEER_META]';
+const VOLUNTEER_PARTICIPATION_TYPES = ['reparto', 'recogida', 'clasificacion', 'evento', 'campana'];
 
 const initialFilters = {
   query: '',
@@ -290,6 +296,7 @@ function buildReports(data, filters) {
   const socialEvents = asArray(data.social_value_events);
   const donorRows = buildDonorRows(data, period);
   const economicRows = buildEconomicRows(data, period);
+  const volunteerRows = buildVolunteerRows(data, period);
   const stats = buildStatistics(data, period);
 
   return [
@@ -299,6 +306,7 @@ function buildReports(data, filters) {
     buildInventoryReport(inventory),
     buildDonorReport(donorRows),
     buildEconomicReport(economicRows, data, filters),
+    buildVolunteerReport(volunteerRows),
     buildAnnualReport(data, filters, stats, donorRows, economicRows),
     buildStatisticsReport(stats, beneficiaries, families, deliveries, inventory, donations, socialEvents)
   ];
@@ -563,6 +571,46 @@ function buildEconomicReport(rows, data, filters) {
   };
 }
 
+function buildVolunteerReport(rows) {
+  return {
+    id: 'volunteers',
+    title: 'Voluntarios',
+    icon: UserRoundCheck,
+    description: REPORTS[6].description,
+    tableTitle: 'Informe de voluntarios',
+    columns: [
+      { key: 'date', label: 'Fecha alta', type: 'date' },
+      { key: 'code', label: 'Código' },
+      { key: 'name', label: 'Voluntario' },
+      { key: 'status', label: 'Estado' },
+      { key: 'type', label: 'Disponibilidad' },
+      { key: 'tasks', label: 'Tareas habituales' },
+      { key: 'participations', label: 'Participaciones' },
+      { key: 'days', label: 'Días colaborados' },
+      { key: 'lastActivity', label: 'Última actividad', type: 'date' }
+    ],
+    metrics: [
+      { label: 'Voluntarios', value: rows.length },
+      { label: 'Activos', value: rows.filter((row) => row.status === 'Activo').length },
+      { label: 'Archivados', value: rows.filter((row) => row.status === 'Archivado').length },
+      { label: 'Participaciones', value: rows.reduce((sum, row) => sum + Number(row.participations || 0), 0) }
+    ],
+    sections: [
+      {
+        title: 'Disponibilidad',
+        value: `${new Set(rows.map((row) => row.type).filter(Boolean)).size} perfiles`,
+        detail: 'Agrupa la disponibilidad declarada por los voluntarios para planificar turnos.'
+      },
+      {
+        title: 'Colaboración',
+        value: `${rows.reduce((sum, row) => sum + Number(row.days || 0), 0)} días`,
+        detail: 'Suma de días colaborados registrados en el historial de voluntariado.'
+      }
+    ],
+    rows
+  };
+}
+
 function buildEconomicBreakdown(rows, data, filters) {
   const period = periodPredicate(filters || initialFilters);
   const accounts = reportFinancialAccounts(data);
@@ -709,6 +757,14 @@ function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
       result: `${donorRows.length} donantes`
     },
     {
+      id: 'annual-volunteers',
+      section: 'Voluntariado',
+      type: 'Voluntarios',
+      status: 'Incluido',
+      summary: `El equipo de voluntariado cuenta con ${stats.activeVolunteers || 0} personas activas y ${stats.volunteerParticipations || 0} participaciones registradas.`,
+      result: `${stats.activeVolunteers || 0} voluntarios activos · ${stats.volunteerParticipations || 0} participaciones`
+    },
+    {
       id: 'annual-economic',
       section: 'Resumen económico',
       type: 'Económico',
@@ -721,7 +777,7 @@ function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
     id: 'annual',
     title: 'Memoria anual de actividad',
     icon: FileText,
-    description: REPORTS[6].description,
+    description: REPORTS[7].description,
     tableTitle: 'Apartados de la memoria',
     columns: [
       { key: 'section', label: 'Apartado' },
@@ -734,6 +790,7 @@ function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
       { label: 'Beneficiarios activos', value: stats.activeBeneficiaries },
       { label: 'Familias', value: stats.families },
       { label: 'Entregas', value: stats.deliveries },
+      { label: 'Voluntarios activos', value: stats.activeVolunteers || 0 },
       { label: 'Valor social entregado', value: formatCurrency(stats.socialDelivered) }
     ],
     rows,
@@ -748,6 +805,8 @@ function buildStatisticsReport(stats) {
     { id: 'stat-families', group: 'Social', type: 'Familias', metric: 'Familias registradas', value: stats.families, status: 'Calculado' },
     { id: 'stat-minors', group: 'Social', type: 'Menores', metric: 'Menores registrados', value: stats.minors, status: 'Calculado' },
     { id: 'stat-deliveries', group: 'Entregas', type: 'Ayudas', metric: 'Entregas activas', value: stats.deliveries, status: 'Calculado' },
+    { id: 'stat-volunteers', group: 'Voluntariado', type: 'Voluntarios', metric: 'Voluntarios activos', value: stats.activeVolunteers, status: 'Calculado' },
+    { id: 'stat-volunteer-participations', group: 'Voluntariado', type: 'Participaciones', metric: 'Participaciones registradas', value: stats.volunteerParticipations, status: 'Calculado' },
     { id: 'stat-inventory', group: 'Inventario', type: 'Stock', metric: 'Productos en inventario', value: stats.inventoryItems, status: 'Calculado' },
     { id: 'stat-donors', group: 'Donantes', type: 'CRM', metric: 'Donantes registrados', value: stats.donors, status: 'Calculado' },
     { id: 'stat-money', group: 'Economía', type: 'Ingresos', metric: 'Dinero recibido', value: stats.moneyReceived, status: 'Calculado', valueType: 'currency' },
@@ -758,7 +817,7 @@ function buildStatisticsReport(stats) {
     id: 'statistics',
     title: 'Estadísticas',
     icon: BarChart3,
-    description: REPORTS[7].description,
+    description: REPORTS[8].description,
     tableTitle: 'Indicadores estadísticos',
     columns: [
       { key: 'group', label: 'Grupo' },
@@ -830,6 +889,39 @@ function buildDonorRows(data, period) {
   })).sort((a, b) => String(b.lastDonation || '').localeCompare(String(a.lastDonation || '')) || a.name.localeCompare(b.name));
 }
 
+function buildVolunteerRows(data, period) {
+  const volunteers = asArray(data.volunteers);
+  const historyByVolunteer = groupBy(asArray(data.volunteer_history), 'volunteer_id');
+  return volunteers
+    .map((volunteer, index) => {
+      const meta = volunteerReportMeta(volunteer.notes);
+      const joined = meta.joined_at || volunteer.created_at;
+      const history = historyByVolunteer.get(volunteer.id) || [];
+      const participations = history.filter(isVolunteerParticipation).filter((item) => period(item.date || item.created_at));
+      const dates = new Set(participations.map((item) => item.date).filter(Boolean));
+      const last = latestDate(participations, 'date');
+      const status = meta.status || (meta.archived_at ? 'Archivado' : 'Activo');
+      const code = meta.code || `VOL-${String(joined || new Date().getFullYear()).slice(0, 4)}-${String(index + 1).padStart(4, '0')}`;
+      return {
+        id: volunteer.id,
+        date: joined,
+        code,
+        name: volunteer.full_name || '-',
+        status,
+        type: volunteer.availability || 'Sin disponibilidad',
+        tasks: meta.tasks || '-',
+        participations: participations.length,
+        days: dates.size,
+        lastActivity: last,
+        phone: volunteer.phone || '-',
+        email: volunteer.email || '-',
+        search: [code, volunteer.full_name, status, volunteer.availability, meta.tasks, volunteer.phone, volunteer.email].join(' ')
+      };
+    })
+    .filter((row) => period(row.date || row.lastActivity))
+    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+}
+
 function buildEconomicRows(data, period) {
   const contactsById = new Map(asArray(data.accounting_contacts).map((contact) => [contact.id, contact]));
   const accountsById = new Map(asArray(data.financial_accounts).map((account) => [account.id, account]));
@@ -886,6 +978,8 @@ function buildStatistics(data, period) {
   const deliveries = asArray(data.deliveries).filter((item) => isActiveRecord(item) && period(item.delivered_at || item.created_at));
   const inventory = asArray(data.inventory_items);
   const donors = buildDonorRows(data, period);
+  const volunteerRows = buildVolunteerRows(data, period);
+  const volunteerParticipations = asArray(data.volunteer_history).filter((item) => isVolunteerParticipation(item) && period(item.date || item.created_at)).length;
   const moneyReceived = buildEconomicRows(data, period).filter((row) => row.direction === 'in').reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const socialReceived = asArray(data.social_value_events).filter((event) => event.value_type === 'received' && isActiveRecord(event) && period(event.social_value_at || event.created_at)).reduce((sum, event) => sum + Number(event.amount || 0), 0)
     + asArray(data.donations).filter((donation) => isActiveRecord(donation) && period(donation.donated_at || donation.created_at)).reduce((sum, donation) => sum + Number(donation.estimated_value || 0), 0);
@@ -898,6 +992,9 @@ function buildStatistics(data, period) {
     deliveries: deliveries.length,
     inventoryItems: inventory.length,
     donors: donors.length,
+    volunteers: volunteerRows.length,
+    activeVolunteers: volunteerRows.filter((row) => row.status === 'Activo').length,
+    volunteerParticipations,
     moneyReceived,
     socialReceived,
     socialDelivered
@@ -1080,7 +1177,9 @@ function availableYears(data = {}) {
     ...asArray(data.loan_movements).map((item) => item.payment_at || item.created_at),
     ...asArray(data.debt_records).map((item) => item.debt_at || item.created_at),
     ...asArray(data.debt_movements).map((item) => item.payment_at || item.created_at),
-    ...asArray(data.social_value_events).map((item) => item.social_value_at || item.created_at)
+    ...asArray(data.social_value_events).map((item) => item.social_value_at || item.created_at),
+    ...asArray(data.volunteers).map((item) => item.created_at),
+    ...asArray(data.volunteer_history).map((item) => item.date || item.created_at)
   ];
   dateFields.forEach((value) => {
     const year = String(value || '').slice(0, 4);
@@ -1103,6 +1202,23 @@ function safeFilename(value) {
 
 function safeSheetName(value) {
   return String(value || 'Informe').slice(0, 31).replace(/[\\/?*[\]:]/g, ' ');
+}
+
+function volunteerReportMeta(notes = '') {
+  const raw = String(notes || '');
+  const start = raw.indexOf(VOLUNTEER_META_START);
+  const end = raw.indexOf(VOLUNTEER_META_END);
+  if (start === -1 || end === -1 || end <= start) return {};
+  try {
+    return JSON.parse(raw.slice(start + VOLUNTEER_META_START.length, end).trim()) || {};
+  } catch {
+    return {};
+  }
+}
+
+function isVolunteerParticipation(item) {
+  const activity = normalize(item?.activity || '');
+  return VOLUNTEER_PARTICIPATION_TYPES.some((type) => activity.includes(type));
 }
 
 function asArray(value) {

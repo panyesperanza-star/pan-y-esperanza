@@ -176,7 +176,7 @@ export default function App() {
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    volunteers: <Volunteers data={sorted} actions={actions} />,
+    volunteers: <Volunteers data={sorted} actions={actions} currentUser={currentUser} />,
     reports: <Reports data={sorted} />,
     backup: <Backup data={sorted} actions={actions} currentUser={currentUser} />,
     provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
