@@ -45,7 +45,10 @@ const PROFILE_TABS = [
 
 export function Volunteers({ data, actions, currentUser }) {
   const [modal, setModal] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('code');
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
+  const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
   const canDelete = currentUser?.role === 'Superadministrador';
 
@@ -96,8 +99,27 @@ export function Volunteers({ data, actions, currentUser }) {
         actions={canManage && <Button onClick={() => setModal({ type: 'create' })}><Plus size={18} /> Nuevo voluntario</Button>}
       />
 
+      <section className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-panel md:grid-cols-[1fr_220px]">
+        <FormField label="Buscar voluntario">
+          <input
+            className={inputClass}
+            placeholder="Código, nombre, DNI, teléfono o email"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+        </FormField>
+        <FormField label="Ordenar por">
+          <select className={inputClass} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <option value="code">Código</option>
+            <option value="name">Nombre</option>
+            <option value="joined_at">Fecha de alta</option>
+            <option value="status">Estado</option>
+          </select>
+        </FormField>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {volunteers.map((volunteer) => (
+        {visibleVolunteers.map((volunteer) => (
           <VolunteerCard
             key={volunteer.id}
             volunteer={volunteer}
@@ -110,9 +132,9 @@ export function Volunteers({ data, actions, currentUser }) {
             onDelete={() => deleteVolunteer(volunteer)}
           />
         ))}
-        {!volunteers.length && (
+        {!visibleVolunteers.length && (
           <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">
-            Todavía no hay voluntarios registrados.
+            {volunteers.length ? 'No hay voluntarios que coincidan con la búsqueda.' : 'Todavía no hay voluntarios registrados.'}
           </div>
         )}
       </section>
@@ -581,6 +603,34 @@ function enrichVolunteers(volunteers = []) {
   return volunteers
     .map((volunteer, index) => parseVolunteer(volunteer, index))
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+}
+
+function filterAndSortVolunteers(volunteers = [], searchTerm = '', sortBy = 'code') {
+  const query = normalize(searchTerm);
+  const filtered = query
+    ? volunteers.filter((volunteer) => volunteerSearchText(volunteer).includes(query))
+    : volunteers;
+
+  return [...filtered].sort((a, b) => {
+    if (sortBy === 'name') return compareVolunteerValues(a.full_name, b.full_name) || compareVolunteerValues(a.code, b.code);
+    if (sortBy === 'joined_at') return compareVolunteerValues(a.joined_at, b.joined_at) || compareVolunteerValues(a.code, b.code);
+    if (sortBy === 'status') return compareVolunteerValues(a.status, b.status) || compareVolunteerValues(a.code, b.code);
+    return compareVolunteerValues(a.code, b.code);
+  });
+}
+
+function volunteerSearchText(volunteer) {
+  return [
+    volunteer.code,
+    volunteer.full_name,
+    volunteer.document_id,
+    volunteer.phone,
+    volunteer.email
+  ].map((value) => normalize(value)).join(' ');
+}
+
+function compareVolunteerValues(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
 }
 
 function parseVolunteer(volunteer, index = 0) {
