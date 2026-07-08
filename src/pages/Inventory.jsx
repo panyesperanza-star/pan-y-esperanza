@@ -4,6 +4,7 @@ import {
   ArrowUpCircle,
   Boxes,
   CalendarClock,
+  Download,
   PackageCheck,
   Pencil,
   Plus,
@@ -24,11 +25,33 @@ import { formatDate, normalize, todayISO } from '../lib/formatters';
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
 const unitSuggestions = ['unidades', 'kg', 'litros', 'paquetes', 'cajas'];
 const provenanceOptions = ['Compra', 'Donación', 'Cesión', 'Recuperación', 'Otro'];
+const DOCUMENT_TYPES = ['Factura', 'Albarán', 'Ticket', 'Transferencia', 'Bizum', 'PayPal', 'Documento interno', 'Sin documento'];
+const DOCUMENT_FIELD_LABELS = {
+  Factura: 'Número de factura',
+  Albarán: 'Número de albarán',
+  Ticket: 'Número de ticket',
+  Transferencia: 'Referencia bancaria',
+  Bizum: 'Código Bizum',
+  PayPal: 'ID de transacción',
+  'Documento interno': 'Número interno'
+};
+const DOCUMENT_FILE_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const inventoryMetaLabels = [
   'Procedencia',
   'Persona o entidad que entrega',
   'Persona que recibe',
   'Documento asociado',
+  'Tipo de documento',
+  'Número de factura',
+  'Número de albarán',
+  'Número de ticket',
+  'Referencia bancaria',
+  'Código Bizum',
+  'ID de transacción',
+  'Número interno',
+  'Archivo documento',
+  'Nombre archivo',
+  'Tipo archivo',
   'Referencia',
   'Quién entrega',
   'Quién recibe',
@@ -212,52 +235,56 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map((item) => (
-                <tr key={item.id} className="align-top">
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-ink">{item.name}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{item.donor || 'Sin donante'}{item.notes ? ` · ${item.notes}` : ''}</p>
-                  </td>
-                  <td className="px-4 py-3">{item.category || '-'}</td>
-                  <td className="px-4 py-3">{item.lot || '-'}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-ink">{formatQuantity(item.stock)} {item.unit}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">Mínimo: {formatQuantity(item.low_stock_threshold)}</p>
-                  </td>
-                  <td className="px-4 py-3">{item.location || '-'}</td>
-                  <td className="px-4 py-3">{formatDate(item.expires_at)}</td>
-                  <td className="px-4 py-3"><StatusBadges item={item} /></td>
-                  {hasProductActions && (
+              {filteredItems.map((item) => {
+                const parsed = parseInventoryNotes(item.notes || '');
+                return (
+                  <tr key={item.id} className="align-top">
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        {canManageProducts && (
-                          <Button
-                            variant="secondary"
-                            className="h-9 w-9 px-0"
-                            aria-label={`Editar ${item.name}`}
-                            title="Editar producto"
-                            onClick={() => setProductModal({ mode: 'edit', item })}
-                          >
-                            <Pencil size={16} />
-                          </Button>
-                        )}
-                        {(canDeleteDirectly || canRequestDeletion) && (
-                          <Button
-                            variant="danger"
-                            className="h-9 w-9 px-0"
-                            aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminación de'} ${item.name}`}
-                            title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}
-                            disabled={deletingId === item.id}
-                            onClick={() => setDeletionTarget({ item, relations: buildInventoryRelationWarnings(item, data) })}
-                          >
-                            <Trash2 size={16} />
-                          </Button>
-                        )}
-                      </div>
+                      <p className="font-semibold text-ink">{item.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{item.donor || 'Sin donante'}{parsed.visible ? ` · ${parsed.visible}` : ''}</p>
+                      {parsed.meta.Referencia && <p className="mt-1 text-xs font-semibold text-slate-500">{parsed.meta.Referencia}</p>}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-4 py-3">{item.category || '-'}</td>
+                    <td className="px-4 py-3">{item.lot || '-'}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-ink">{formatQuantity(item.stock)} {item.unit}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">Mínimo: {formatQuantity(item.low_stock_threshold)}</p>
+                    </td>
+                    <td className="px-4 py-3">{item.location || '-'}</td>
+                    <td className="px-4 py-3">{formatDate(item.expires_at)}</td>
+                    <td className="px-4 py-3"><StatusBadges item={item} /></td>
+                    {hasProductActions && (
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          {canManageProducts && (
+                            <Button
+                              variant="secondary"
+                              className="h-9 w-9 px-0"
+                              aria-label={`Editar ${item.name}`}
+                              title="Editar producto"
+                              onClick={() => setProductModal({ mode: 'edit', item })}
+                            >
+                              <Pencil size={16} />
+                            </Button>
+                          )}
+                          {(canDeleteDirectly || canRequestDeletion) && (
+                            <Button
+                              variant="danger"
+                              className="h-9 w-9 px-0"
+                              aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminación de'} ${item.name}`}
+                              title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}
+                              disabled={deletingId === item.id}
+                              onClick={() => setDeletionTarget({ item, relations: buildInventoryRelationWarnings(item, data) })}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
               {!filteredItems.length && (
                 <tr>
                   <td className="px-4 py-8 text-center text-slate-500" colSpan={7 + (hasProductActions ? 1 : 0)}>
@@ -303,7 +330,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                     <td className="px-4 py-3">{parsed.meta['Quién entrega'] || '-'}</td>
                     <td className="px-4 py-3">{parsed.meta['Quién recibe'] || '-'}</td>
                     <td className="px-4 py-3">{parsed.meta.Motivo || '-'}</td>
-                    <td className="px-4 py-3">{parsed.meta.Documento || '-'}</td>
+                    <td className="px-4 py-3"><InventoryDocumentCell meta={parsed.meta} /></td>
                     <td className="px-4 py-3">{item.responsible || '-'}</td>
                     <td className="px-4 py-3 text-slate-600">{parsed.visible || '-'}</td>
                   </tr>
@@ -321,6 +348,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         <Modal title={productModal.mode === 'edit' ? 'Editar producto' : 'Nuevo producto'} onClose={() => setProductModal(null)}>
           <ProductForm
             initial={productModal.item}
+            inventoryData={data}
             onSubmit={async (payload) => {
               if (productModal.mode === 'edit') await actions.updateInventoryItem(productModal.item.id, payload);
               else await actions.createInventoryItem(payload);
@@ -333,6 +361,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         <Modal title={`Registrar ${movementType.toLowerCase()}`} onClose={() => setMovementType(null)}>
           <MovementForm
             items={data.inventory_items}
+            movements={data.inventory_movements}
             movementType={movementType}
             currentUser={currentUser}
             onSubmit={async (payload) => {
@@ -365,7 +394,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
   );
 }
 
-function ProductForm({ initial, onSubmit }) {
+function ProductForm({ initial, inventoryData, onSubmit }) {
   const parsedNotes = parseInventoryNotes(initial?.notes || '');
   const [form, setForm] = useState(() => ({
     name: initial?.name || '',
@@ -375,8 +404,13 @@ function ProductForm({ initial, onSubmit }) {
     provenance: parsedNotes.meta.Procedencia || 'Donación',
     donor: initial?.donor || parsedNotes.meta['Persona o entidad que entrega'] || '',
     received_by: parsedNotes.meta['Persona que recibe'] || '',
-    document_name: parsedNotes.meta['Documento asociado'] || '',
-    reference: parsedNotes.meta.Referencia || '',
+    document_type: parsedNotes.meta['Tipo de documento'] || (parsedNotes.meta['Documento asociado'] ? 'Documento interno' : 'Sin documento'),
+    document_number: documentNumberFromMeta(parsedNotes.meta),
+    document_file_data_url: parsedNotes.meta['Archivo documento'] || '',
+    document_file_name: parsedNotes.meta['Nombre archivo'] || '',
+    document_file_type: parsedNotes.meta['Tipo archivo'] || '',
+    internal_document_number: parsedNotes.meta['Número interno'] || nextInventoryReference('INT', inventoryData),
+    reference: parsedNotes.meta.Referencia || nextInventoryReference('INV', inventoryData),
     location: initial?.location || '',
     unit: initial?.unit || 'unidades',
     low_stock_threshold: Number(initial?.low_stock_threshold || 0),
@@ -384,7 +418,7 @@ function ProductForm({ initial, onSubmit }) {
   }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const update = (field, value) => setForm((current) => (typeof field === 'object' ? { ...current, ...field } : { ...current, [field]: value }));
 
   async function submit(event) {
     event.preventDefault();
@@ -404,8 +438,8 @@ function ProductForm({ initial, onSubmit }) {
           Procedencia: form.provenance,
           'Persona o entidad que entrega': form.donor,
           'Persona que recibe': form.received_by,
-          'Documento asociado': form.document_name,
-          Referencia: form.reference
+          Referencia: form.reference,
+          ...buildDocumentMeta(form)
         })
       });
     } catch (submitError) {
@@ -432,8 +466,8 @@ function ProductForm({ initial, onSubmit }) {
       </FormField>
       <FormField label="Persona o entidad que entrega"><input className={inputClass} value={form.donor} onChange={(event) => update('donor', event.target.value)} /></FormField>
       <FormField label="Persona que recibe"><input className={inputClass} value={form.received_by} onChange={(event) => update('received_by', event.target.value)} /></FormField>
-      <FormField label="Documento asociado"><input className={inputClass} value={form.document_name} onChange={(event) => update('document_name', event.target.value)} placeholder="Factura, albarán, justificante..." /></FormField>
-      <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
+      <FormField label="Referencia"><input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} /></FormField>
+      <DocumentFields form={form} update={update} />
       <FormField label="Ubicación"><input className={inputClass} value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
       <FormField label="Unidad" required>
         <input className={inputClass} list="inventory-units" required value={form.unit} onChange={(event) => update('unit', event.target.value)} />
@@ -448,7 +482,7 @@ function ProductForm({ initial, onSubmit }) {
   );
 }
 
-function MovementForm({ items, movementType, currentUser, onSubmit }) {
+function MovementForm({ items, movements, movementType, currentUser, onSubmit }) {
   const eligibleItems = useMemo(
     () => items.filter((item) => movementType === 'Entrada' || Number(item.stock || 0) > 0),
     [items, movementType]
@@ -462,14 +496,20 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
     delivered_by: '',
     received_by: responsible,
     reason: movementType === 'Entrada' ? 'Entrada de material' : 'Salida de material',
-    document_name: '',
+    document_type: 'Sin documento',
+    document_number: '',
+    document_file_data_url: '',
+    document_file_name: '',
+    document_file_type: '',
+    internal_document_number: nextInventoryReference('INT', { inventory_items: items, inventory_movements: movements }),
+    reference: nextInventoryReference(movementType === 'Entrada' ? 'ENT' : 'SAL', { inventory_items: items, inventory_movements: movements }),
     responsible,
     notes: ''
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const selectedItem = eligibleItems.find((item) => item.id === form.item_id);
-  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const update = (field, value) => setForm((current) => (typeof field === 'object' ? { ...current, ...field } : { ...current, [field]: value }));
 
   async function submit(event) {
     event.preventDefault();
@@ -483,10 +523,11 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
         moved_at: form.moved_at,
         responsible: form.responsible,
         notes: buildInventoryNotes(form.notes, {
+          Referencia: form.reference,
           'Quién entrega': form.delivered_by,
           'Quién recibe': form.received_by,
           Motivo: form.reason,
-          Documento: form.document_name
+          ...buildDocumentMeta(form)
         })
       });
     } catch (submitError) {
@@ -524,7 +565,8 @@ function MovementForm({ items, movementType, currentUser, onSubmit }) {
       <FormField label="Quién entrega" required><input className={inputClass} required value={form.delivered_by} onChange={(event) => update('delivered_by', event.target.value)} /></FormField>
       <FormField label="Quién recibe" required><input className={inputClass} required value={form.received_by} onChange={(event) => update('received_by', event.target.value)} /></FormField>
       <FormField label="Motivo" required><input className={inputClass} required value={form.reason} onChange={(event) => update('reason', event.target.value)} /></FormField>
-      <FormField label="Documento"><input className={inputClass} value={form.document_name} onChange={(event) => update('document_name', event.target.value)} placeholder="Factura, albarán, justificante..." /></FormField>
+      <FormField label="Referencia"><input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} /></FormField>
+      <DocumentFields form={form} update={update} />
       <FormField label="Responsable" required><input className={inputClass} required value={form.responsible} onChange={(event) => update('responsible', event.target.value)} /></FormField>
       <div className="sm:col-span-2"><FormField label="Notas"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar movimiento'}</Button></div>
@@ -551,6 +593,86 @@ function StatusBadge({ label, tone }) {
 function MovementBadge({ type }) {
   const incoming = type === 'Entrada';
   return <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${incoming ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>{incoming ? <ArrowUpCircle size={14} /> : <ArrowDownCircle size={14} />}{type}</span>;
+}
+
+function DocumentFields({ form, update }) {
+  const numberLabel = DOCUMENT_FIELD_LABELS[form.document_type];
+
+  async function attachFile(file) {
+    if (!file) return;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('No se pudo adjuntar el documento.'));
+      reader.readAsDataURL(file);
+    });
+    update({
+      document_file_data_url: dataUrl,
+      document_file_name: file.name,
+      document_file_type: file.type || 'application/octet-stream'
+    });
+  }
+
+  function changeDocumentType(value) {
+    update({
+      document_type: value,
+      document_number: value === 'Documento interno' ? (form.document_number || form.internal_document_number) : ''
+    });
+  }
+
+  return (
+    <>
+      <FormField label="Tipo de documento">
+        <select className={inputClass} value={form.document_type} onChange={(event) => changeDocumentType(event.target.value)}>
+          {DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}
+        </select>
+      </FormField>
+      {numberLabel && (
+        <FormField label={numberLabel}>
+          <input
+            className={`${inputClass} ${form.document_type === 'Documento interno' ? 'bg-slate-50 text-slate-600' : ''}`}
+            readOnly={form.document_type === 'Documento interno'}
+            value={form.document_number}
+            onChange={(event) => update('document_number', event.target.value)}
+          />
+        </FormField>
+      )}
+      <FormField label="Adjuntar documento">
+        <input
+          className={inputClass}
+          type="file"
+          accept={DOCUMENT_FILE_ACCEPT}
+          onChange={(event) => attachFile(event.target.files?.[0])}
+        />
+        {form.document_file_name && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+            <span className="truncate">{form.document_file_name}</span>
+            <a className="inline-flex items-center gap-1 font-semibold text-brand" href={form.document_file_data_url} download={form.document_file_name}>
+              <Download size={14} /> Descargar
+            </a>
+          </div>
+        )}
+      </FormField>
+    </>
+  );
+}
+
+function InventoryDocumentCell({ meta }) {
+  const reference = meta.Referencia || '-';
+  const documentSummary = getDocumentSummary(meta);
+  const fileUrl = meta['Archivo documento'];
+  const fileName = meta['Nombre archivo'] || 'documento-inventario';
+  return (
+    <div className="space-y-1">
+      <p className="font-semibold text-ink">{reference}</p>
+      <p className="text-xs text-slate-600">{documentSummary}</p>
+      {fileUrl && (
+        <a className="inline-flex items-center gap-1 text-xs font-semibold text-brand" href={fileUrl} download={fileName}>
+          <Download size={14} /> Documento
+        </a>
+      )}
+    </div>
+  );
 }
 
 function FormError({ message }) {
@@ -658,6 +780,51 @@ function buildInventoryNotes(visibleNotes, meta = {}) {
     .map(([label, value]) => `${label}: ${value}`);
   const notes = String(visibleNotes || '').trim();
   return [...lines, notes].filter(Boolean).join('\n');
+}
+
+function nextInventoryReference(prefix, data = {}) {
+  const year = new Date().getFullYear();
+  const pattern = new RegExp(`${prefix}-${year}-(\\d{6})`, 'i');
+  const sources = [
+    ...(data.inventory_items || []).flatMap((item) => [item.notes]),
+    ...(data.inventory_movements || []).flatMap((movement) => [movement.notes]),
+    ...(data.donations || []).flatMap((donation) => [donation.reference, donation.notes])
+  ];
+  const lastNumber = sources.reduce((max, value) => {
+    const match = String(value || '').match(pattern);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `${prefix}-${year}-${String(lastNumber + 1).padStart(6, '0')}`;
+}
+
+function documentNumberFromMeta(meta = {}) {
+  return Object.values(DOCUMENT_FIELD_LABELS).map((label) => meta[label]).find(Boolean)
+    || meta['Documento asociado']
+    || meta.Documento
+    || '';
+}
+
+function buildDocumentMeta(form) {
+  const type = form.document_type || 'Sin documento';
+  const numberLabel = DOCUMENT_FIELD_LABELS[type];
+  const documentNumber = type === 'Documento interno'
+    ? form.document_number || form.internal_document_number
+    : form.document_number;
+  return {
+    'Tipo de documento': type,
+    ...(numberLabel && documentNumber ? { [numberLabel]: documentNumber } : {}),
+    ...(form.document_file_data_url ? { 'Archivo documento': form.document_file_data_url } : {}),
+    ...(form.document_file_name ? { 'Nombre archivo': form.document_file_name } : {}),
+    ...(form.document_file_type ? { 'Tipo archivo': form.document_file_type } : {})
+  };
+}
+
+function getDocumentSummary(meta = {}) {
+  const type = meta['Tipo de documento'] || (meta['Documento asociado'] || meta.Documento ? 'Documento interno' : '');
+  if (!type || type === 'Sin documento') return 'Sin documento';
+  const label = DOCUMENT_FIELD_LABELS[type];
+  const number = label ? meta[label] : documentNumberFromMeta(meta);
+  return [type, number].filter(Boolean).join(': ');
 }
 
 function formatQuantity(value) {

@@ -5,10 +5,9 @@ import { PageHeader } from '../components/PageHeader';
 
 const cleanupScopes = [
   { id: 'donations', label: 'Donaciones de prueba' },
-  { id: 'deliveries', label: 'Entregas de prueba' },
-  { id: 'loans', label: 'Préstamos de prueba' },
-  { id: 'debts', label: 'Deudas de prueba' },
-  { id: 'inventory', label: 'Inventario de prueba' }
+  { id: 'inventory', label: 'Inventario de prueba' },
+  { id: 'inventory_entries', label: 'Entradas de prueba' },
+  { id: 'inventory_exits', label: 'Salidas de prueba' }
 ];
 
 export function Backup({ data, actions, currentUser }) {

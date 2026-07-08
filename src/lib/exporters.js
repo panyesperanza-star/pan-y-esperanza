@@ -429,28 +429,152 @@ export async function exportReportPdf(data) {
   doc.save('Informe-Pan-y-Esperanza.pdf');
 }
 
-export async function printDonationCertificatePdf(donation, organization = {}) {
+export async function printDonationCertificatePdf(donation, organization = {}, donationView = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  const donatedAt = donation.donated_at || donationView.date || donation.created_at;
+  const certificateNumber = donation.reference || extractDonationReference(donation.notes) || donationView.reference || `DON-CERT-${new Date(donatedAt || Date.now()).getFullYear()}-${String(donation.id || donationView.id || '000001').slice(-6)}`;
+  const qr = await QRCode.toDataURL(JSON.stringify({
+    type: 'certificado-donacion',
+    number: certificateNumber,
+    donor: donation.donor || donationView.donor,
+    date: donatedAt
+  }));
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 42, 'F');
+  await addOfficialLogo(doc, 14, 11, 34, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(80, 95, 88);
+  doc.text(orgName, 52, 17);
+  doc.setFontSize(18);
+  doc.setTextColor(28, 45, 38);
+  doc.text('CERTIFICADO DE DONACIÓN', 52, 27);
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`Número de certificado: ${certificateNumber}`, 52, 34);
+  doc.addImage(qr, 'PNG', 166, 9, 26, 26);
+
+  doc.setTextColor(28, 45, 38);
+  doc.setFontSize(11);
+  doc.text('Datos de la entidad', 14, 55);
+  autoTable(doc, {
+    startY: 60,
+    body: [
+      ['Entidad', orgName],
+      ['CIF', organization.cif || '-'],
+      ['Dirección', organization.address || '-']
+    ],
+    styles: { fontSize: 9, cellPadding: 2.2 },
+    columnStyles: { 0: { fontStyle: 'bold' } }
+  });
+
+  doc.setFontSize(11);
+  doc.text('Datos de la donación', 14, doc.lastAutoTable.finalY + 11);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 16,
+    body: [
+      ['Donante', donation.donor || donationView.donor || '-'],
+      ['Tipo de donante', donation.donor_kind || donationView.donorKind || '-'],
+      ['Tipo de donación', donation.donation_type || donationView.concept || '-'],
+      ['Fecha', formatDate(donatedAt)],
+      ['Responsable', donation.responsible || donation.created_by_name || donationView.responsible || '-']
+    ],
+    styles: { fontSize: 9, cellPadding: 2.2 },
+    columnStyles: { 0: { fontStyle: 'bold' } }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Producto o concepto', 'Cantidad', 'Valor estimado']],
+    body: buildDonationProductRows(donation, donationView),
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9, cellPadding: 2.5 }
+  });
+
+  const observations = String(donation.notes || donationView.notes || '').replace(/^Referencia:\s*.*$/gim, '').trim();
+  if (observations) {
+    doc.setFontSize(10);
+    doc.text('Observaciones', 14, doc.lastAutoTable.finalY + 12);
+    doc.setFontSize(9);
+    doc.setTextColor(72, 84, 78);
+    doc.text(doc.splitTextToSize(observations, 182), 14, doc.lastAutoTable.finalY + 18);
+    doc.setTextColor(28, 45, 38);
+  }
+
+  const signatureY = 224;
+  doc.setDrawColor(208, 216, 212);
+  doc.roundedRect(14, signatureY, 82, 30, 2, 2);
+  doc.roundedRect(114, signatureY, 82, 30, 2, 2);
+  doc.setFontSize(9);
+  doc.text('Firma del responsable', 18, signatureY + 8);
+  doc.text('Firma / sello de la entidad', 118, signatureY + 8);
+
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  doc.text(doc.splitTextToSize('Este certificado acredita la donación registrada por la Asociación Pan y Esperanza en su sistema interno de gestión. El documento se emite con fines justificativos e informativos para el donante y para las entidades que proceda.', 180), 14, 270);
+  doc.save(`Certificado-donacion-${safePdfFilename(certificateNumber)}.pdf`);
+}
+
+export async function printDonorProfilePdf(profile, organization = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  await addOfficialLogo(doc, 14, 10, 34, 18);
+  doc.setFontSize(16);
+  doc.setTextColor(28, 45, 38);
+  doc.text('Expediente del Donante', 52, 20);
+  doc.setFontSize(10);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`${orgName} · Emitido el ${formatDate(new Date().toISOString())}`, 52, 28);
+
+  autoTable(doc, {
+    startY: 40,
+    body: [
+      ['Nombre', profile.name],
+      ['Tipo', profile.kind || '-'],
+      ['Persona de contacto', profile.contactPerson || '-'],
+      ['Documento', profile.documentId || '-'],
+      ['Teléfono', profile.phone || '-'],
+      ['Email', profile.email || '-'],
+      ['Dirección', profile.address || '-'],
+      ['Estado', profile.archived ? 'Archivado' : 'Activo']
+    ],
+    styles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 42 } }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 8,
+    head: [['Indicador', 'Valor']],
+    body: [
+      ['Número total de donaciones', profile.totalDonations || 0],
+      ['Dinero donado', formatMoney(profile.moneyDonated)],
+      ['Valor social donado', formatMoney(profile.socialDonated)],
+      ['Primera donación', formatDate(profile.firstDonation)],
+      ['Última donación', formatDate(profile.lastDonation)]
+    ],
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9 }
+  });
+
+  appendDonorHistoryTable(doc, profile, doc.lastAutoTable.finalY + 10, 'Historial de donaciones');
+  appendSimplePdfSection(doc, 'Certificados', profile.donations.filter((item) => item.rawDonation).map((item) => `${formatDate(item.date)} · ${item.concept} · ${extractDonationReference(item.rawDonation?.notes) || item.rawDonation?.reference || 'Certificado'}`));
+  appendSimplePdfSection(doc, 'Comunicaciones', profile.communications.map((item) => `${formatDateTime(item.sent_at || item.created_at)} · ${item.subject || 'Comunicación'} · ${item.status || item.result || '-'}`));
+  appendSimplePdfSection(doc, 'Observaciones', [profile.observations || 'No hay observaciones generales registradas.']);
+  doc.save(`Expediente-donante-${safePdfFilename(profile.name)}.pdf`);
+}
+
+export async function printDonorHistoryPdf(profile, organization = {}) {
   const doc = new jsPDF();
   await addOfficialLogo(doc, 14, 10, 34, 18);
   doc.setFontSize(16);
-  doc.text('Certificado de donación', 52, 20);
-  autoTable(doc, {
-    startY: 36,
-    body: [
-      ['Entidad', organization.name || 'Pan y Esperanza'],
-      ['CIF', organization.cif || '-'],
-      ['Dirección', organization.address || '-'],
-      ['Donante', donation.donor || '-'],
-      ['Tipo donante', donation.donor_kind || '-'],
-      ['Tipo donación', donation.donation_type || '-'],
-      ['Fecha', formatDate(donation.donated_at)],
-      ['Valor estimado', formatMoney(donation.estimated_value)],
-      ['Observaciones', donation.notes || '-']
-    ],
-    styles: { fontSize: 9 },
-    columnStyles: { 0: { fontStyle: 'bold' } }
-  });
-  doc.save(`Certificado-donacion-${donation.donor || donation.id}.pdf`);
+  doc.setTextColor(28, 45, 38);
+  doc.text('Historial de Donaciones', 52, 20);
+  doc.setFontSize(10);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`${profile.name} · ${organization.name || 'Asociación Pan y Esperanza'} · ${formatDate(new Date().toISOString())}`, 52, 28);
+  appendDonorHistoryTable(doc, profile, 42, 'Historial cronológico');
+  doc.save(`Historial-donaciones-${safePdfFilename(profile.name)}.pdf`);
 }
 
 export async function exportTreasuryPdf(data, indicators) {
@@ -1205,6 +1329,70 @@ function uniqueReportValues(values = []) {
 
 function normalizeTextForReport(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function extractDonationReference(notes = '') {
+  const match = String(notes || '').match(/\b[A-Z]{2,10}-\d{4}-\d{6}\b/i);
+  return match?.[0]?.toUpperCase() || '';
+}
+
+function buildDonationProductRows(donation = {}, donationView = {}) {
+  const product = donationView.product || donation.donation_type || donationView.concept || 'Donación monetaria';
+  const quantity = donationView.quantity
+    ? `${formatPlainQuantity(donationView.quantity)} ${donationView.unit || ''}`.trim()
+    : donation.quantity
+      ? `${formatPlainQuantity(donation.quantity)} ${donation.unit || ''}`.trim()
+      : donationView.category === 'money'
+        ? '1 aportación'
+        : '-';
+  const value = donationView.category === 'money'
+    ? formatMoney(donationView.moneyAmount)
+    : formatMoney(donation.estimated_value ?? donationView.socialAmount);
+  return [[product, quantity, value]];
+}
+
+function appendDonorHistoryTable(doc, profile, startY, title) {
+  const rows = (profile.donations || []).map((item) => [
+    formatDate(item.date),
+    item.category === 'money' ? 'Dinero' : 'En especie',
+    item.concept || '-',
+    item.product || '-',
+    item.quantity ? `${formatPlainQuantity(item.quantity)} ${item.unit || ''}`.trim() : '-',
+    formatMoney(item.category === 'money' ? item.moneyAmount : item.socialAmount),
+    item.status || '-'
+  ]);
+  doc.setFontSize(11);
+  doc.setTextColor(28, 45, 38);
+  doc.text(title, 14, startY);
+  autoTable(doc, {
+    startY: startY + 5,
+    head: [['Fecha', 'Tipo', 'Concepto', 'Producto', 'Cantidad', 'Valor', 'Estado']],
+    body: rows.length ? rows : [['-', '-', 'No hay donaciones registradas.', '-', '-', '-', '-']],
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 8, cellPadding: 2 }
+  });
+}
+
+function appendSimplePdfSection(doc, title, lines) {
+  let y = doc.__donorSectionY || ((doc.lastAutoTable?.finalY || 36) + 12);
+  if (y > 250) {
+    doc.addPage();
+    y = 20;
+  }
+  doc.setFontSize(11);
+  doc.setTextColor(28, 45, 38);
+  doc.text(title, 14, y);
+  doc.setFontSize(9);
+  doc.setTextColor(72, 84, 78);
+  const content = (lines || []).filter(Boolean);
+  const text = content.length ? content.map((line) => `• ${line}`).join('\n') : '• Sin registros.';
+  const wrapped = doc.splitTextToSize(text, 180);
+  doc.text(wrapped, 14, y + 8);
+  doc.__donorSectionY = y + 12 + (wrapped.length * 4.4);
+}
+
+function formatPlainQuantity(value) {
+  return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(Number(value || 0));
 }
 
 function safePdfFilename(value) {

@@ -28,7 +28,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { printDonationCertificatePdf } from '../lib/exporters';
+import { printDonationCertificatePdf, printDonorHistoryPdf, printDonorProfilePdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const DONOR_KIND_OPTIONS = ['Todos', 'Particular', 'Empresa', 'Iglesia', 'Asociacion', 'Fundacion', 'Administracion', 'Entidad', 'Anonimo'];
@@ -512,6 +512,8 @@ function DonorProfile({ profile, data, tab, setTab, canEdit, isSuperadmin, onEdi
               <ProfileMetric label="Última" value={formatDate(profile.lastDonation)} />
             </div>
             <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={() => printDonorProfilePdf(profile, data.organization_settings?.[0])}><Download size={16} /> Expediente PDF</Button>
+              <Button variant="secondary" onClick={() => printDonorHistoryPdf(profile, data.organization_settings?.[0])}><FileText size={16} /> Historial PDF</Button>
               {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
               {canEdit && (profile.archived
                 ? <Button variant="secondary" onClick={onUnarchive}><RotateCcw size={16} /> Desarchivar</Button>
@@ -591,13 +593,13 @@ function DonorHistory({ profile, data }) {
   const inKind = profile.donations.filter((item) => item.category === 'kind');
   return (
     <div className="grid gap-5 xl:grid-cols-2">
-      <DonationHistorySection title="Dinero" icon={Banknote} rows={money} data={data} />
-      <DonationHistorySection title="Donaciones en especie" icon={PackageCheck} rows={inKind} data={data} />
+      <DonationHistorySection title="Dinero" icon={Banknote} rows={money} profile={profile} data={data} />
+      <DonationHistorySection title="Donaciones en especie" icon={PackageCheck} rows={inKind} profile={profile} data={data} />
     </div>
   );
 }
 
-function DonationHistorySection({ title, icon: Icon, rows, data }) {
+function DonationHistorySection({ title, icon: Icon, rows, profile, data }) {
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
@@ -621,17 +623,34 @@ function DonationHistorySection({ title, icon: Icon, rows, data }) {
               <CompactMetric label="Documento" value={item.documentLabel || '-'} />
             </dl>
             {item.notes && <p className="mt-3 text-sm leading-6 text-slate-600">{item.notes}</p>}
-            {item.rawDonation && (
-              <div className="mt-3">
-                <Button variant="secondary" onClick={() => printDonationCertificatePdf(item.rawDonation, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
-              </div>
-            )}
+            <div className="mt-3">
+              <Button variant="secondary" onClick={() => printDonationCertificatePdf(donationCertificatePayload(item, profile), data.organization_settings?.[0], item)}><Download size={16} /> Certificado</Button>
+            </div>
           </article>
         ))}
         {!rows.length && <p className="rounded-md border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No hay registros en esta categoria.</p>}
       </div>
     </section>
   );
+}
+
+function donationCertificatePayload(item, profile) {
+  if (item.rawDonation) {
+    return {
+      ...item.rawDonation,
+      reference: item.reference || item.rawDonation.reference
+    };
+  }
+  return {
+    id: item.id,
+    donor: profile.name,
+    donor_kind: profile.kind,
+    donation_type: item.category === 'money' ? 'Donación monetaria' : item.concept,
+    donated_at: item.date,
+    estimated_value: item.category === 'money' ? item.moneyAmount : item.socialAmount,
+    reference: item.reference,
+    notes: item.notes || ''
+  };
 }
 
 function CompactMetric({ label, value }) {
@@ -645,7 +664,7 @@ function CompactMetric({ label, value }) {
 
 function DonorDocuments({ profile, data }) {
   const docs = profile.documents;
-  const certificates = profile.donations.filter((item) => item.rawDonation);
+  const certificates = profile.donations;
   return (
     <section className="space-y-3">
       {docs.map((doc) => (
@@ -666,7 +685,7 @@ function DonorDocuments({ profile, data }) {
             <p className="font-bold text-ink">Certificado de donación</p>
             <p className="mt-1 text-xs text-slate-500">{formatDate(item.date)} - {item.concept}</p>
           </div>
-          <Button variant="secondary" onClick={() => printDonationCertificatePdf(item.rawDonation, data.organization_settings?.[0])}><Download size={16} /> Descargar</Button>
+          <Button variant="secondary" onClick={() => printDonationCertificatePdf(donationCertificatePayload(item, profile), data.organization_settings?.[0], item)}><Download size={16} /> Descargar</Button>
         </article>
       ))}
       {!docs.length && !certificates.length && <EmptyState icon={FileText} title="Sin documentos" text="Los justificantes y certificados asociados al donante aparecerán aquí." />}
@@ -1026,7 +1045,7 @@ function buildDonorProfiles(data) {
     profile.donations = dedupeById(profile.donations)
       .map((donation) => {
         const document = donation.eventId ? (documentsByEvent.get(donation.eventId) || [])[0] : null;
-        return { ...donation, documentLabel: donation.documentLabel || document?.file_name || document?.document_number || '' };
+        return { ...donation, documentLabel: donation.documentLabel || document?.file_name || document?.document_number || '', reference: donation.reference || document?.document_number || '' };
       })
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     profile.documents = dedupeById(profile.documents);

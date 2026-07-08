@@ -386,11 +386,6 @@ export function useAppData(enabled = true, currentUser = null) {
     return String(value || '').trim();
   }
 
-  function normalizeReferencePrefix(value) {
-    const normalized = normalize(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
-    return normalized ? normalized.slice(0, 10) : 'DON';
-  }
-
   function collectOperationalReferences() {
     return [
       ...(data.donations || []).flatMap((item) => [item.reference, item.notes]),
@@ -400,9 +395,9 @@ export function useAppData(enabled = true, currentUser = null) {
     ].filter(Boolean).map(String);
   }
 
-  function nextDonationReference(donorName, dateValue = new Date()) {
+  function nextDonationReference(dateValue = new Date()) {
     const year = new Date(dateValue).getFullYear();
-    const prefix = normalizeReferencePrefix(donorName);
+    const prefix = 'DON';
     const references = collectOperationalReferences();
     const pattern = new RegExp(`${prefix}-${year}-(\\d{6})`, 'i');
     let last = references.reduce((max, value) => {
@@ -429,7 +424,12 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function isInternalDocumentType(value) {
     const type = normalize(value);
-    return type === 'documento interno' || type === 'document_internal' || type === 'internal_document' || type === 'sin documento' || type === 'no_document';
+    return type === 'documento interno' || type === 'document_internal' || type === 'internal_document';
+  }
+
+  function isNoDocumentType(value) {
+    const type = normalize(value);
+    return type === 'sin documento' || type === 'no_document';
   }
 
   function assertPositiveNumber(value, label = 'El importe') {
@@ -830,11 +830,13 @@ export function useAppData(enabled = true, currentUser = null) {
     }
     if (operationType === 'donation_money') {
       const date = operationDate(payload.operation_at);
-      const reference = cleanText(payload.reference) || nextDonationReference(payload.donor_name || payload.contact_name, date);
+      const reference = nextDonationReference(date);
       await registerMonetaryEconomicOperation({
         ...payload,
         reference,
-        document_number: payload.document_number || reference
+        document_number: (isInternalDocumentType(payload.document_type) || isNoDocumentType(payload.document_type))
+          ? payload.document_number
+          : payload.document_number || reference
       }, {
         eventType: 'donation_money',
         direction: 'in',
@@ -917,7 +919,7 @@ export function useAppData(enabled = true, currentUser = null) {
       if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donación en especie.');
       const amount = roundCurrency(quantity * unitValue);
       const title = cleanText(payload.concept) || `Donación en especie: ${item.name}`;
-      const reference = cleanText(payload.reference) || nextDonationReference(donorName || item.donor || item.name, date);
+      const reference = nextDonationReference(date);
       const event = await createAccountingEvent({
         event_type: 'donation_in_kind',
         occurred_at: date,
@@ -930,7 +932,9 @@ export function useAppData(enabled = true, currentUser = null) {
       await createEconomicDocument(event.id, {
         ...payload,
         document_type: payload.document_type || 'receipt',
-        document_number: payload.document_number || reference,
+        document_number: (isInternalDocumentType(payload.document_type) || isNoDocumentType(payload.document_type))
+          ? payload.document_number
+          : payload.document_number || reference,
         reference
       }, amount, date, contact?.id || null, true);
       const donation = await dataStore.create('donations', {
@@ -1274,7 +1278,9 @@ export function useAppData(enabled = true, currentUser = null) {
     const fileName = String(payload?.document_name || '').trim();
     const fileDataUrl = String(payload?.document_data_url || '').trim();
     const internalDocument = isInternalDocumentType(payload?.document_type);
-    const documentNumber = String(payload?.document_number || '').trim() || (internalDocument ? nextInternalDocumentNumber(documentAt) : '');
+    const noDocument = isNoDocumentType(payload?.document_type);
+    if (noDocument && !fileName && !fileDataUrl) return null;
+    const documentNumber = noDocument ? '' : String(payload?.document_number || '').trim() || (internalDocument ? nextInternalDocumentNumber(documentAt) : '');
     if (!fileName && !fileDataUrl && !documentNumber && payload?.force_document !== true) return null;
     const responsible = currentUserName();
     const concept = cleanText(payload?.concept || payload?.reason || payload?.notes || 'Operación registrada');
@@ -2248,13 +2254,12 @@ export function useAppData(enabled = true, currentUser = null) {
       if (currentUser?.role !== 'Superadministrador') {
         throw new Error('Solo el Superadministrador puede preparar el entorno de producción.');
       }
-      const selected = new Set(scopes);
+      const allowedScopes = new Set(['donations', 'inventory', 'inventory_entries', 'inventory_exits']);
+      const selected = new Set(scopes.filter((scope) => allowedScopes.has(scope)));
       const eventIds = new Set();
       const inventoryItemIds = new Set();
+      const inventoryMovementIds = new Set();
       const donationIds = new Set();
-      const deliveryIds = new Set();
-      const loanIds = new Set();
-      const debtIds = new Set();
 
       if (selected.has('donations')) {
         (data.donations || []).forEach((item) => donationIds.add(item.id));
@@ -2262,29 +2267,14 @@ export function useAppData(enabled = true, currentUser = null) {
           .filter((event) => ['donation_money', 'donation_in_kind'].includes(event.event_type) || event.source_module === 'donations')
           .forEach((event) => eventIds.add(event.id));
       }
-      if (selected.has('deliveries')) {
-        (data.deliveries || []).forEach((item) => deliveryIds.add(item.id));
-      }
-      if (selected.has('loans')) {
-        (data.loan_records || []).forEach((item) => {
-          loanIds.add(item.id);
-          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
-        });
-        (data.loan_movements || []).forEach((item) => {
-          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
-        });
-      }
-      if (selected.has('debts')) {
-        (data.debt_records || []).forEach((item) => {
-          debtIds.add(item.id);
-          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
-        });
-        (data.debt_movements || []).forEach((item) => {
-          if (item.accounting_event_id) eventIds.add(item.accounting_event_id);
-        });
-      }
       if (selected.has('inventory')) {
         (data.inventory_items || []).forEach((item) => inventoryItemIds.add(item.id));
+      }
+      if (selected.has('inventory_entries')) {
+        (data.inventory_movements || []).filter((item) => item.movement_type === 'Entrada').forEach((item) => inventoryMovementIds.add(item.id));
+      }
+      if (selected.has('inventory_exits')) {
+        (data.inventory_movements || []).filter((item) => item.movement_type === 'Salida').forEach((item) => inventoryMovementIds.add(item.id));
       }
 
       const removeRows = async (table, rows) => {
@@ -2296,19 +2286,24 @@ export function useAppData(enabled = true, currentUser = null) {
       const counts = {};
       counts.accounting_documents = await removeRows('accounting_documents', (data.accounting_documents || []).filter(eventRelated));
       counts.cash_bank_movements = await removeRows('cash_bank_movements', (data.cash_bank_movements || []).filter(eventRelated));
-      counts.loan_movements = await removeRows('loan_movements', (data.loan_movements || []).filter((row) => loanIds.has(row.loan_id) || eventRelated(row)));
-      counts.debt_movements = await removeRows('debt_movements', (data.debt_movements || []).filter((row) => debtIds.has(row.debt_id) || eventRelated(row)));
       counts.social_value_events = await removeRows('social_value_events', (data.social_value_events || []).filter((row) => (
         eventRelated(row)
         || donationIds.has(row.source_record_id)
-        || deliveryIds.has(row.source_record_id)
         || inventoryItemIds.has(row.inventory_item_id)
       )));
-      counts.deliveries = await removeRows('deliveries', (data.deliveries || []).filter((row) => deliveryIds.has(row.id)));
       counts.donations = await removeRows('donations', (data.donations || []).filter((row) => donationIds.has(row.id)));
-      counts.loan_records = await removeRows('loan_records', (data.loan_records || []).filter((row) => loanIds.has(row.id)));
-      counts.debt_records = await removeRows('debt_records', (data.debt_records || []).filter((row) => debtIds.has(row.id)));
-      counts.inventory_movements = await removeRows('inventory_movements', (data.inventory_movements || []).filter((row) => inventoryItemIds.has(row.item_id)));
+      const inventoryMovementsToRemove = (data.inventory_movements || []).filter((row) => inventoryItemIds.has(row.item_id) || inventoryMovementIds.has(row.id));
+      const stockByItem = new Map((data.inventory_items || []).map((item) => [item.id, Number(item.stock || 0)]));
+      for (const movement of inventoryMovementsToRemove.filter((row) => !inventoryItemIds.has(row.item_id))) {
+        const currentStock = stockByItem.get(movement.item_id);
+        if (currentStock === undefined) continue;
+        const nextStock = movement.movement_type === 'Entrada'
+          ? Math.max(0, currentStock - Number(movement.quantity || 0))
+          : currentStock + Number(movement.quantity || 0);
+        stockByItem.set(movement.item_id, nextStock);
+        await dataStore.update('inventory_items', movement.item_id, { stock: nextStock });
+      }
+      counts.inventory_movements = await removeRows('inventory_movements', inventoryMovementsToRemove);
       counts.inventory_items = await removeRows('inventory_items', (data.inventory_items || []).filter((row) => inventoryItemIds.has(row.id)));
       counts.accounting_events = await removeRows('accounting_events', (data.accounting_events || []).filter((row) => eventIds.has(row.id)));
 
