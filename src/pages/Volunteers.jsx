@@ -900,6 +900,8 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   const first = participations[0].date;
   const last = participations[participations.length - 1].date;
   const activityTypes = uniqueVolunteerActivityTypes(participations);
+  const associationName = certificateAssociationName(organization);
+  const participationText = `${participations.length} ${participations.length === 1 ? 'participación registrada' : 'participaciones registradas'}`;
   const logo = await imageUrlToDataUrl(officialLogoUrl);
   doc.addImage(logo, 'PNG', 14, 12, 28, 20);
   doc.setFont('helvetica', 'bold');
@@ -912,10 +914,10 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   const paragraphs = [
-    `La ${organization.name || 'Asociación Pan y Esperanza'} certifica que ${volunteer.full_name}, con código de voluntario ${volunteer.code}, consta en el expediente de voluntariado de la entidad.`,
-    `Según la información registrada, su periodo de colaboración comprende desde ${formatDate(first)} hasta ${formatDate(last)}, con ${participations.length} participaciones anotadas en el historial de colaboración.`,
-    `Las actividades registradas corresponden a: ${activityTypes.join(', ')}.`,
-    'El presente certificado se emite a solicitud de la persona interesada y refleja exclusivamente la información obrante en el expediente interno de la asociación.'
+    `La ${associationName} hace constar que ${volunteer.full_name}, con código de voluntario ${volunteer.code}, figura en el expediente de voluntariado de la entidad.`,
+    `De acuerdo con la información registrada, su periodo de colaboración comprende desde ${formatDate(first)} hasta ${formatDate(last)}, con ${participationText} en el historial de colaboración.`,
+    `Durante este periodo ha colaborado en las siguientes actividades: ${activityTypes.join(', ')}.`,
+    'Este certificado se expide a solicitud de la persona interesada y recoge exclusivamente la información obrante en el expediente interno de la entidad.'
   ];
   let y = 68;
   paragraphs.forEach((paragraph) => {
@@ -923,15 +925,6 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
     doc.text(lines, 14, y);
     y += lines.length * 6 + 8;
   });
-  doc.setFillColor(247, 250, 246);
-  doc.roundedRect(14, y, 176, 34, 2, 2, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.text('Resumen de colaboración', 20, y + 9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Periodo: ${formatDate(first)} - ${formatDate(last)}`, 20, y + 17);
-  doc.text(`Número de participaciones: ${participations.length}`, 20, y + 24);
-  const activityLines = doc.splitTextToSize(`Tipos de actividades: ${activityTypes.join(', ')}`, 160);
-  doc.text(activityLines, 20, y + 31);
   doc.setFont('helvetica', 'bold');
   doc.text('Firma y sello de la entidad', 14, 230);
   doc.setDrawColor(180, 190, 185);
@@ -940,6 +933,11 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   doc.text(`Fecha de emisión: ${formatDate(todayISO())}`, 118, 244);
   doc.text('Responsable de la Asociación', 118, 254);
   doc.save(`Certificado-colaboracion-${safeFilename(volunteer.code)}.pdf`);
+}
+
+function certificateAssociationName(organization = {}) {
+  const name = String(organization.name || 'Pan y Esperanza').trim();
+  return normalize(name).startsWith('asociacion') ? name : `Asociación ${name}`;
 }
 
 function uniqueVolunteerActivityTypes(participations) {
