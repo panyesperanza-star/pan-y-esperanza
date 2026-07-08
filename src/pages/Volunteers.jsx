@@ -1078,10 +1078,9 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   const paragraphs = [
-    `La ${associationName} hace constar que ${volunteer.full_name}, con código de voluntario ${volunteer.code}, figura en el expediente de voluntariado de la entidad.`,
-    `De acuerdo con la información registrada, su periodo de colaboración comprende desde ${formatDate(first)} hasta ${formatDate(last)}, con ${participationText} en el historial de colaboración.`,
-    `Durante este periodo ha colaborado en las siguientes actividades: ${activityTypes.join(', ')}.`,
-    'Este certificado se expide a solicitud de la persona interesada y recoge exclusivamente la información obrante en el expediente interno de la entidad.'
+    `La ${associationName} CERTIFICA que D./D.ª ${volunteer.full_name}, con código de voluntario ${volunteer.code}, ha colaborado como persona voluntaria en las actividades desarrolladas por la entidad durante el periodo indicado en el presente certificado.`,
+    `El periodo de colaboración registrado comprende desde ${formatDate(first)} hasta ${formatDate(last)}, con ${participationText} en el historial de colaboración.`,
+    'Durante el periodo indicado ha participado en las siguientes actividades de voluntariado:'
   ];
   let y = 68;
   paragraphs.forEach((paragraph) => {
@@ -1089,6 +1088,14 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
     doc.text(lines, 14, y);
     y += lines.length * 6 + 8;
   });
+  activityTypes.forEach((activity) => {
+    const lines = doc.splitTextToSize(`• ${formatCertificateActivity(activity)}.`, 168);
+    doc.text(lines, 20, y);
+    y += lines.length * 6 + 4;
+  });
+  y += 4;
+  const closingLines = doc.splitTextToSize(`Su colaboración ha contribuido al desarrollo de las actividades solidarias y de atención social realizadas por ${associationName} en beneficio de las personas atendidas por la entidad.`, 176);
+  doc.text(closingLines, 14, y);
   doc.setFont('helvetica', 'bold');
   doc.text('Firma y sello de la entidad', 14, 230);
   doc.setDrawColor(180, 190, 185);
@@ -1110,6 +1117,10 @@ function uniqueVolunteerActivityTypes(participations) {
     return PARTICIPATION_TYPES.find((type) => activity.includes(normalize(type))) || item.activity || 'Participación voluntaria';
   });
   return Array.from(new Set(types)).sort((a, b) => String(a).localeCompare(String(b), 'es', { sensitivity: 'base' }));
+}
+
+function formatCertificateActivity(activity) {
+  return String(activity || 'Participación voluntaria').trim().replace(/[.;:]$/, '');
 }
 
 function imageUrlToDataUrl(url) {
