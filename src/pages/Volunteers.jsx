@@ -224,6 +224,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={() => printVolunteerCardPdf(volunteer, data.organization_settings?.[0])}><Printer size={16} /> Carné PDF</Button>
+            <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
             {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {volunteer.status === 'Archivado' ? 'Reactivar' : 'Archivar'}</Button>}
@@ -844,6 +845,169 @@ function volunteerQrPayload(volunteer, organization) {
     `Estado: ${volunteer.status}`,
     `Alta: ${formatDate(volunteer.joined_at)}`
   ].join('\n');
+}
+
+async function printVolunteerProfilePdf(volunteer, history = [], communications = [], organization = {}) {
+  const doc = new jsPDF();
+  const logo = await imageUrlToDataUrl(officialLogoUrl);
+  const organizationName = organization.name || 'Asociación Pan y Esperanza';
+  const participations = participationRows(history);
+  const documents = documentRows(history);
+  const observations = observationRows(history);
+  const stats = volunteerStats(volunteer, history);
+  const timeline = [...history].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  let y = drawVolunteerProfilePdfHeader(doc, { volunteer, organizationName, logo });
+
+  y = drawVolunteerPdfSection(doc, 'Datos personales', y);
+  y = drawVolunteerPdfLines(doc, [
+    `Nombre completo: ${volunteer.full_name || '-'}`,
+    `Código: ${volunteer.code || '-'}`,
+    `Documento: ${volunteer.document_id || '-'}`,
+    `Estado: ${volunteer.status || '-'}`,
+    `Fecha de alta: ${formatDate(volunteer.joined_at)}`,
+    `Teléfono: ${volunteer.phone || '-'}`,
+    `Email: ${volunteer.email || '-'}`,
+    `Dirección: ${volunteer.address || '-'}`,
+    `Contacto de emergencia: ${volunteer.emergency_contact || '-'}${volunteer.emergency_phone ? ` · ${volunteer.emergency_phone}` : ''}`
+  ], y);
+
+  y = drawVolunteerPdfSection(doc, 'Formación y disponibilidad', y + 4);
+  y = drawVolunteerPdfLines(doc, [
+    `Formación indicada: ${volunteer.training || '-'}`,
+    `Disponibilidad: ${volunteer.availability || '-'}`,
+    `Tareas habituales: ${volunteer.tasks || '-'}`
+  ], y);
+
+  y = drawVolunteerPdfSection(doc, 'Participaciones', y + 4);
+  y = drawVolunteerPdfLines(doc, [
+    `Total de participaciones: ${stats.total}`,
+    `Días colaborados: ${stats.days}`,
+    `Última actividad: ${stats.last ? `${formatDate(stats.last)} · ${stats.lastActivity || 'Actividad registrada'}` : '-'}`
+  ], y);
+  y = drawVolunteerPdfList(doc, participations.map((item) => volunteerHistoryLine(item)), y, 'No hay participaciones registradas.');
+
+  y = drawVolunteerPdfSection(doc, 'Historial cronológico de actividades', y + 4);
+  y = drawVolunteerPdfList(doc, timeline.map((item) => volunteerHistoryLine(item)), y, 'Todavía no hay historial registrado.');
+
+  y = drawVolunteerPdfSection(doc, 'Documentación', y + 4);
+  y = drawVolunteerPdfList(doc, documents.map((item) => volunteerDocumentLine(item)), y, 'No hay documentación registrada.');
+
+  y = drawVolunteerPdfSection(doc, 'Comunicaciones', y + 4);
+  y = drawVolunteerPdfList(doc, communications.map((item) => volunteerCommunicationLine(item)), y, 'No hay comunicaciones registradas.');
+
+  y = drawVolunteerPdfSection(doc, 'Observaciones', y + 4);
+  drawVolunteerPdfList(doc, observations.map((item) => volunteerHistoryLine(item)), y, 'No hay observaciones registradas.');
+
+  drawVolunteerProfilePdfFooter(doc);
+  doc.save(`Expediente-voluntario-${safeFilename(volunteer.code || volunteer.full_name || 'voluntario')}.pdf`);
+}
+
+function drawVolunteerProfilePdfHeader(doc, { volunteer, organizationName, logo }) {
+  doc.addImage(logo, 'PNG', 14, 10, 32, 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(23, 33, 27);
+  doc.text(organizationName, 52, 20);
+  doc.setFontSize(18);
+  doc.setTextColor(36, 126, 80);
+  doc.text('EXPEDIENTE DEL VOLUNTARIO', 14, 44);
+  doc.setTextColor(23, 33, 27);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Emitido: ${formatDate(todayISO())}`, 14, 52);
+  doc.text(`Expediente: ${volunteer.code || '-'}`, 14, 58);
+
+  if (volunteer.photo_data_url) {
+    doc.addImage(volunteer.photo_data_url, imageFormat(volunteer.photo_data_url), 162, 14, 28, 32);
+  } else {
+    doc.setFillColor(219, 236, 226);
+    doc.roundedRect(162, 14, 28, 32, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text(initials(volunteer.full_name), 176, 33, { align: 'center' });
+  }
+
+  doc.setDrawColor(36, 126, 80);
+  doc.line(14, 64, 196, 64);
+  return 74;
+}
+
+function drawVolunteerPdfSection(doc, title, y) {
+  y = ensureVolunteerPdfSpace(doc, y, 16);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(36, 126, 80);
+  doc.text(title.toUpperCase(), 14, y);
+  doc.setDrawColor(219, 236, 226);
+  doc.line(14, y + 2, 196, y + 2);
+  doc.setTextColor(23, 33, 27);
+  return y + 9;
+}
+
+function drawVolunteerPdfLines(doc, lines, y) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  lines.forEach((line) => {
+    const wrapped = doc.splitTextToSize(line, 178);
+    y = ensureVolunteerPdfSpace(doc, y, wrapped.length * 5 + 3);
+    doc.text(wrapped, 16, y);
+    y += wrapped.length * 5 + 2;
+  });
+  return y;
+}
+
+function drawVolunteerPdfList(doc, lines, y, emptyText) {
+  const rows = lines.length ? lines : [emptyText];
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  rows.forEach((line) => {
+    const wrapped = doc.splitTextToSize(`- ${line}`, 176);
+    y = ensureVolunteerPdfSpace(doc, y, wrapped.length * 5 + 4);
+    doc.text(wrapped, 18, y);
+    y += wrapped.length * 5 + 3;
+  });
+  return y;
+}
+
+function ensureVolunteerPdfSpace(doc, y, minHeight = 12) {
+  if (y + minHeight <= 276) return y;
+  doc.addPage();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(36, 126, 80);
+  doc.text('EXPEDIENTE DEL VOLUNTARIO', 14, 18);
+  doc.setDrawColor(219, 236, 226);
+  doc.line(14, 22, 196, 22);
+  doc.setTextColor(23, 33, 27);
+  return 32;
+}
+
+function drawVolunteerProfilePdfFooter(doc) {
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Documento interno del expediente de voluntariado.', 14, 286);
+    doc.text(`Página ${page} de ${pageCount}`, 178, 286);
+  }
+  doc.setTextColor(23, 33, 27);
+}
+
+function volunteerHistoryLine(item) {
+  const parsed = parseHistoryJson(item.notes);
+  const text = parsed.text || parsed.notes || item.notes || '';
+  return `${formatDate(item.date)} · ${item.activity || 'Actividad'}${text ? ` · ${text}` : ''}`;
+}
+
+function volunteerDocumentLine(item) {
+  const doc = parseHistoryJson(item.notes);
+  return `${formatDate(item.date)} · ${String(item.activity || 'Documento').replace('Documento: ', '')} · ${doc.file_name || 'Documento registrado'}${doc.notes ? ` · ${doc.notes}` : ''}`;
+}
+
+function volunteerCommunicationLine(item) {
+  return `${formatDateTime(item.sent_at)} · ${item.subject || 'Comunicación'} · ${item.recipient || '-'} · ${item.status || 'Registrada'}${item.result ? ` · ${item.result}` : ''}`;
 }
 
 async function printVolunteerCardPdf(volunteer, organization = {}) {
