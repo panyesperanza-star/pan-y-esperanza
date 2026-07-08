@@ -224,7 +224,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={() => printVolunteerCardPdf(volunteer, data.organization_settings?.[0])}><Printer size={16} /> Carné PDF</Button>
-            <Button type="button" variant="secondary" onClick={() => printVolunteerCertificatePdf(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
+            <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
             {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {volunteer.status === 'Archivado' ? 'Reactivar' : 'Archivar'}</Button>}
             {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Eliminar</Button>}
@@ -885,11 +885,21 @@ async function printVolunteerCardPdf(volunteer, organization = {}) {
   doc.save(`Carne-voluntario-${safeFilename(volunteer.code)}.pdf`);
 }
 
+function downloadVolunteerCertificate(volunteer, history, organization = {}) {
+  if (!participationRows(history).length) {
+    window.alert('Todavía no existen colaboraciones registradas para generar el certificado.');
+    return;
+  }
+  printVolunteerCertificatePdf(volunteer, history, organization);
+}
+
 async function printVolunteerCertificatePdf(volunteer, history, organization = {}) {
   const doc = new jsPDF();
-  const participations = participationRows(history);
-  const first = participations.length ? participations[participations.length - 1].date : volunteer.joined_at;
-  const last = participations.length ? participations[0].date : todayISO();
+  const participations = participationRows(history).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  if (!participations.length) return;
+  const first = participations[0].date;
+  const last = participations[participations.length - 1].date;
+  const activityTypes = uniqueVolunteerActivityTypes(participations);
   const logo = await imageUrlToDataUrl(officialLogoUrl);
   doc.addImage(logo, 'PNG', 14, 12, 28, 20);
   doc.setFont('helvetica', 'bold');
@@ -904,6 +914,7 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   const paragraphs = [
     `La ${organization.name || 'Asociación Pan y Esperanza'} certifica que ${volunteer.full_name}, con código de voluntario ${volunteer.code}, consta en el expediente de voluntariado de la entidad.`,
     `Según la información registrada, su periodo de colaboración comprende desde ${formatDate(first)} hasta ${formatDate(last)}, con ${participations.length} participaciones anotadas en el historial de colaboración.`,
+    `Las actividades registradas corresponden a: ${activityTypes.join(', ')}.`,
     'El presente certificado se emite a solicitud de la persona interesada y refleja exclusivamente la información obrante en el expediente interno de la asociación.'
   ];
   let y = 68;
@@ -912,6 +923,15 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
     doc.text(lines, 14, y);
     y += lines.length * 6 + 8;
   });
+  doc.setFillColor(247, 250, 246);
+  doc.roundedRect(14, y, 176, 34, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.text('Resumen de colaboración', 20, y + 9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Periodo: ${formatDate(first)} - ${formatDate(last)}`, 20, y + 17);
+  doc.text(`Número de participaciones: ${participations.length}`, 20, y + 24);
+  const activityLines = doc.splitTextToSize(`Tipos de actividades: ${activityTypes.join(', ')}`, 160);
+  doc.text(activityLines, 20, y + 31);
   doc.setFont('helvetica', 'bold');
   doc.text('Firma y sello de la entidad', 14, 230);
   doc.setDrawColor(180, 190, 185);
@@ -920,6 +940,14 @@ async function printVolunteerCertificatePdf(volunteer, history, organization = {
   doc.text(`Fecha de emisión: ${formatDate(todayISO())}`, 118, 244);
   doc.text('Responsable de la Asociación', 118, 254);
   doc.save(`Certificado-colaboracion-${safeFilename(volunteer.code)}.pdf`);
+}
+
+function uniqueVolunteerActivityTypes(participations) {
+  const types = participations.map((item) => {
+    const activity = normalize(item.activity);
+    return PARTICIPATION_TYPES.find((type) => activity.includes(normalize(type))) || item.activity || 'Participación voluntaria';
+  });
+  return Array.from(new Set(types)).sort((a, b) => String(a).localeCompare(String(b), 'es', { sensitivity: 'base' }));
 }
 
 function imageUrlToDataUrl(url) {
