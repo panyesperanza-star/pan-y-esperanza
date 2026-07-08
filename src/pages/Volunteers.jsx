@@ -402,7 +402,7 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
     document_id: parsed.document_id || '',
     phone: parsed.phone || '',
     email: parsed.email || '',
-    code: parsed.code || nextVolunteerCode(volunteers),
+    code: parsed.code || nextVolunteerCode(volunteers, parsed.id),
     joined_at: parsed.joined_at || todayISO(),
     status: parsed.status || 'Activo',
     address: parsed.address || '',
@@ -427,7 +427,10 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
   return (
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
       <FormField label="Nombre completo" required><input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} /></FormField>
-      <FormField label="Código de voluntario" required><input className={inputClass} required value={form.code} onChange={(event) => update('code', event.target.value)} /></FormField>
+      <FormField label="Código de voluntario" required>
+        <input className={`${inputClass} bg-slate-50 font-semibold text-slate-600`} required readOnly value={form.code} />
+        <p className="mt-1 text-xs text-slate-500">Código generado automáticamente y no editable.</p>
+      </FormField>
       <FormField label="DNI"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
       <FormField label="Fecha de alta"><input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} /></FormField>
       <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}><option>Activo</option><option>Archivado</option></select></FormField>
@@ -625,9 +628,12 @@ function buildVolunteerNotes(visibleNotes, meta) {
 }
 
 function volunteerPayloadFromForm(form, volunteers, current = null) {
+  const code = current
+    ? nextAvailableVolunteerCode(volunteers, current.code || form.code, current.id)
+    : nextAvailableVolunteerCode(volunteers, form.code);
   const meta = {
     ...(current?.meta || {}),
-    code: form.code || current?.code || nextVolunteerCode(volunteers),
+    code,
     joined_at: form.joined_at || todayISO(),
     status: form.status || 'Activo',
     address: form.address || '',
@@ -668,13 +674,37 @@ function fallbackVolunteerCode(index, dateValue) {
   return `VOL-${year}-${String(index + 1).padStart(4, '0')}`;
 }
 
-function nextVolunteerCode(volunteers) {
-  const year = new Date().getFullYear();
-  const last = volunteers.reduce((max, volunteer) => {
-    const match = String(volunteer.code || '').match(new RegExp(`VOL-${year}-(\\d{4})`));
+function normalizeVolunteerCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function nextVolunteerCode(volunteers, currentId = '') {
+  return nextAvailableVolunteerCode(volunteers, '', currentId);
+}
+
+function nextAvailableVolunteerCode(volunteers, preferred = '', currentId = '') {
+  const usedCodes = new Set(
+    (volunteers || [])
+      .filter((volunteer) => volunteer.id !== currentId)
+      .map((volunteer) => normalizeVolunteerCode(volunteer.code))
+      .filter(Boolean)
+  );
+  const normalizedPreferred = normalizeVolunteerCode(preferred);
+  const preferredMatch = normalizedPreferred.match(/^VOL-(\d{4})-(\d{4})$/);
+  const year = preferredMatch?.[1] || String(new Date().getFullYear());
+  const highest = Array.from(usedCodes).reduce((max, code) => {
+    const match = code.match(new RegExp(`^VOL-${year}-(\\d{4})$`));
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
-  return `VOL-${year}-${String(last + 1).padStart(4, '0')}`;
+  let nextNumber = preferredMatch ? Number(preferredMatch[2]) : highest + 1;
+  let candidate = `VOL-${year}-${String(nextNumber).padStart(4, '0')}`;
+
+  while (usedCodes.has(candidate)) {
+    nextNumber += 1;
+    candidate = `VOL-${year}-${String(nextNumber).padStart(4, '0')}`;
+  }
+
+  return candidate;
 }
 
 function volunteerHistoryFor(data, volunteerId) {

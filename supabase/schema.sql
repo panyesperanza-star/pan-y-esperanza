@@ -625,6 +625,17 @@ create index inventory_low_stock_idx on public.inventory_items (stock, low_stock
 create index treasury_incomes_date_idx on public.treasury_incomes (income_at desc);
 create index treasury_expenses_date_idx on public.treasury_expenses (expense_at desc);
 create index treasury_loans_status_idx on public.treasury_loans (status, loan_at desc);
+create unique index volunteers_code_unique_idx
+  on public.volunteers (
+    upper(substring(
+      coalesce(notes, '')
+      from '\[PYE_VOLUNTEER_META\]\s*\{[^}]*"code"\s*:\s*"([^"]+)"'
+    ))
+  )
+  where substring(
+    coalesce(notes, '')
+    from '\[PYE_VOLUNTEER_META\]\s*\{[^}]*"code"\s*:\s*"([^"]+)"'
+  ) is not null;
 
 -- Cierre de produccion del modulo Inventario.
 -- view = consultar, create = registrar movimientos,
