@@ -602,6 +602,15 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
     setNotice('Cita eliminada definitivamente.');
   }
 
+  async function deleteAttendanceJustification(record) {
+    if (currentUser?.role !== 'Superadministrador') {
+      setNotice('Solo el Superadministrador puede eliminar justificantes definitivamente.');
+      return;
+    }
+    await actions.deleteEmailLog(record.id);
+    setNotice(`Justificante ${record.number} eliminado definitivamente.`);
+  }
+
   async function moveAppointment(appointmentId, date, time = '') {
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment) return;
@@ -747,10 +756,12 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           onResizeAppointment={resizeAppointment}
           onStatusChange={changeAppointmentStatus}
           onDeleteAppointment={deleteAppointment}
+          onDeleteJustification={deleteAttendanceJustification}
           onShowDay={setSelectedAgendaDay}
           onOpenBeneficiary={openBeneficiary}
           onLogCommunication={createCommunicationLog}
           canDeleteAppointments={currentUser?.role === 'Superadministrador'}
+          canDeleteJustifications={currentUser?.role === 'Superadministrador'}
         />
       )}
 
@@ -918,10 +929,12 @@ function AgendaPanel({
   onResizeAppointment,
   onStatusChange,
   onDeleteAppointment,
+  onDeleteJustification,
   onShowDay,
   onOpenBeneficiary,
   onLogCommunication,
-  canDeleteAppointments
+  canDeleteAppointments,
+  canDeleteJustifications
 }) {
   const [showFreeJustification, setShowFreeJustification] = useState(false);
   const [freeJustificationForm, setFreeJustificationForm] = useState(() => initialFreeJustificationForm());
@@ -931,6 +944,7 @@ function AgendaPanel({
   const selectedDayAppointments = selectedAgendaDay ? appointments.filter((appointment) => appointment.date === selectedAgendaDay) : [];
   const freeJustificationPeople = useMemo(() => buildFreeJustificationPeople(data), [data]);
   const filteredFreeJustificationPeople = useMemo(() => filterFreeJustificationPeople(freeJustificationPeople, freeJustificationSearch), [freeJustificationPeople, freeJustificationSearch]);
+  const attendanceJustificationRecords = useMemo(() => buildAttendanceJustificationRecords(data.email_logs || []), [data.email_logs]);
 
   function updateFreeJustification(field, value) {
     setFreeJustificationNotice('');
@@ -960,6 +974,29 @@ function AgendaPanel({
     }
     await printAttendanceJustificationPdf(buildFreeJustificationAppointment(freeJustificationForm), buildFreeJustificationPerson(freeJustificationForm), organization);
     setFreeJustificationNotice('Justificante generado correctamente.');
+  }
+
+  async function saveFreeJustification() {
+    const validation = validateFreeJustificationForm(freeJustificationForm);
+    if (validation) {
+      setFreeJustificationNotice(validation);
+      return;
+    }
+    const number = nextAttendanceJustificationNumber(data.email_logs || [], freeJustificationForm.date);
+    const message = freeJustificationMessage(freeJustificationForm, organization);
+    await onLogCommunication?.({
+      recipient: freeJustificationForm.full_name,
+      subject: `Justificante de asistencia ${number}`,
+      message,
+      status: 'Emitido',
+      result: `Justificante ${number} guardado correctamente.`,
+      meta: freeJustificationLogMeta(freeJustificationForm, 'Documento', {
+        kind: 'attendance_justification_record',
+        justification_number: number,
+        issued_at: new Date().toISOString()
+      })
+    });
+    setFreeJustificationNotice(`Justificante ${number} guardado correctamente.`);
   }
 
   async function sendFreeJustificationEmail() {
@@ -1038,6 +1075,103 @@ function AgendaPanel({
     setFreeJustificationNotice('WhatsApp abierto correctamente. Revise el mensaje antes de enviarlo.');
   }
 
+  async function viewSavedJustification(record) {
+    const { doc } = await createAttendanceJustificationPdf(buildSavedJustificationAppointment(record), buildSavedJustificationPerson(record), organization);
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  async function downloadSavedJustification(record) {
+    await printAttendanceJustificationPdf(buildSavedJustificationAppointment(record), buildSavedJustificationPerson(record), organization);
+    setFreeJustificationNotice(`Justificante ${record.number} descargado.`);
+  }
+
+  async function emailSavedJustification(record) {
+    if (!record.email) {
+      setFreeJustificationNotice('Este justificante no tiene email asociado.');
+      return;
+    }
+    const formState = formFromAttendanceJustificationRecord(record);
+    const subject = `Justificante de asistencia ${record.number}`;
+    const message = freeJustificationMessage(formState, organization);
+    setFreeJustificationNotice(`Enviando justificante ${record.number} por email...`);
+    try {
+      const { doc, filename } = await createAttendanceJustificationPdf(buildSavedJustificationAppointment(record), buildSavedJustificationPerson(record), organization);
+      const blob = doc.output('blob');
+      const payload = await sendEmailViaApi({
+        to: record.email,
+        subject,
+        message,
+        attachments: [{ filename, blob, size: blob.size, contentType: 'application/pdf' }],
+        organization,
+        logEmail: false
+      });
+      await onLogCommunication?.({
+        recipient: record.email,
+        subject,
+        message,
+        status: 'Enviado',
+        result: `Justificante ${record.number} enviado. Resend: ${payload.id}`,
+        meta: freeJustificationLogMeta(formState, 'Email', {
+          kind: 'attendance_justification_send',
+          justification_number: record.number,
+          filename
+        })
+      });
+      setFreeJustificationNotice(`Justificante ${record.number} enviado por email correctamente.`);
+    } catch (error) {
+      const result = normalizeEmailError(error);
+      await onLogCommunication?.({
+        recipient: record.email,
+        subject,
+        message,
+        status: 'Error',
+        result,
+        meta: freeJustificationLogMeta(formState, 'Email', {
+          kind: 'attendance_justification_send',
+          justification_number: record.number
+        })
+      });
+      setFreeJustificationNotice(result);
+    }
+  }
+
+  async function whatsAppSavedJustification(record) {
+    const phone = normalizeWhatsAppPhone(record.phone);
+    if (!phone) {
+      setFreeJustificationNotice('Este justificante no tiene teléfono válido para WhatsApp.');
+      return;
+    }
+    const formState = formFromAttendanceJustificationRecord(record);
+    const subject = `Justificante de asistencia ${record.number}`;
+    const message = freeJustificationMessage(formState, organization);
+    const url = buildWhatsAppUrl(phone, message);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    await onLogCommunication?.({
+      recipient: `WhatsApp ${phone}`,
+      subject: `WhatsApp - ${subject}`,
+      message,
+      status: 'Pendiente',
+      result: 'WhatsApp preparado para envío.',
+      meta: freeJustificationLogMeta(formState, 'WhatsApp', {
+        kind: 'attendance_justification_send',
+        justification_number: record.number,
+        whatsapp_url: url
+      })
+    });
+    setFreeJustificationNotice('WhatsApp abierto correctamente. Revise el mensaje antes de enviarlo.');
+  }
+
+  async function deleteSavedJustification(record) {
+    if (!canDeleteJustifications) return;
+    const confirmed = window.confirm(`Vas a eliminar definitivamente el justificante ${record.number}.\n\nEsta acción no se puede deshacer. ¿Continuar?`);
+    if (!confirmed) return;
+    await onDeleteJustification?.(record);
+    setFreeJustificationNotice(`Justificante ${record.number} eliminado definitivamente.`);
+  }
+
   return (
     <div className="space-y-5">
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
@@ -1061,11 +1195,22 @@ function AgendaPanel({
           update={updateFreeJustification}
           setSearch={setFreeJustificationSearch}
           onSelectPerson={selectFreeJustificationPerson}
+          onSave={saveFreeJustification}
           onDownload={downloadFreeJustification}
           onEmail={sendFreeJustificationEmail}
           onWhatsApp={sendFreeJustificationWhatsApp}
         />
       )}
+
+      <AttendanceJustificationsHistory
+        records={attendanceJustificationRecords}
+        canDelete={canDeleteJustifications}
+        onView={viewSavedJustification}
+        onDownload={downloadSavedJustification}
+        onEmail={emailSavedJustification}
+        onWhatsApp={whatsAppSavedJustification}
+        onDelete={deleteSavedJustification}
+      />
 
       <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
       <section ref={formRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
@@ -1176,6 +1321,7 @@ function FreeAttendanceJustificationPanel({
   update,
   setSearch,
   onSelectPerson,
+  onSave,
   onDownload,
   onEmail,
   onWhatsApp
@@ -1188,6 +1334,7 @@ function FreeAttendanceJustificationPanel({
           <p className="mt-1 text-sm text-slate-600">Puede autocompletar desde un expediente existente o escribir los datos manualmente.</p>
         </div>
         <div className="flex min-w-0 flex-wrap gap-2">
+          <Button className="max-w-full whitespace-nowrap" type="button" onClick={onSave}><FileText size={16} /> Guardar justificante</Button>
           <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onDownload}><Download size={16} /> Descargar PDF</Button>
           <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onEmail}><Mail size={16} /> Enviar email</Button>
           <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onWhatsApp}><MessageCircle size={16} /> Enviar WhatsApp</Button>
@@ -1264,6 +1411,59 @@ function FreeAttendanceJustificationPanel({
             </FormField>
           </div>
         </section>
+      </div>
+    </section>
+  );
+}
+
+function AttendanceJustificationsHistory({ records, canDelete, onView, onDownload, onEmail, onWhatsApp, onDelete }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="font-bold text-ink">Justificantes emitidos</h3>
+          <p className="mt-1 text-sm text-slate-600">Historial permanente de justificantes de asistencia guardados.</p>
+        </div>
+        <span className="text-sm font-semibold text-slate-500">{records.length} registros</span>
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Número</th>
+              <th>Fecha</th>
+              <th>Persona</th>
+              <th>Tipo</th>
+              <th>Responsable</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {records.map((record) => (
+              <tr key={record.id}>
+                <td className="px-4 py-3 font-bold text-ink">{record.number}</td>
+                <td>{formatDate(record.date)}</td>
+                <td>{record.person}</td>
+                <td>{record.type}</td>
+                <td>{record.responsible || '-'}</td>
+                <td>
+                  <div className="flex flex-wrap gap-2">
+                    <Button className="whitespace-nowrap" type="button" variant="secondary" onClick={() => onView(record)}><FileText size={15} /> Ver PDF</Button>
+                    <Button className="whitespace-nowrap" type="button" variant="secondary" onClick={() => onDownload(record)}><Download size={15} /> Descargar</Button>
+                    <Button className="whitespace-nowrap" type="button" variant="secondary" onClick={() => onEmail(record)}><Mail size={15} /> Email</Button>
+                    <Button className="whitespace-nowrap" type="button" variant="secondary" onClick={() => onWhatsApp(record)}><MessageCircle size={15} /> WhatsApp</Button>
+                    {canDelete && <Button className="whitespace-nowrap" type="button" variant="danger" onClick={() => onDelete(record)}><Trash2 size={15} /> Eliminar</Button>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!records.length && (
+              <tr>
+                <td className="px-4 py-5 text-center text-slate-500" colSpan="6">Todavía no hay justificantes emitidos.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );
@@ -1804,6 +2004,8 @@ function freeJustificationLogMeta(form, channel, extra = {}) {
     person_ref: form.person_ref,
     person_name: form.full_name,
     document_id: form.document_id,
+    email: form.email,
+    phone: form.phone,
     attendance_type: form.type,
     appointment_at: scheduledDateTime(form.date, form.entry_time),
     entry_time: form.entry_time,
@@ -1813,6 +2015,75 @@ function freeJustificationLogMeta(form, channel, extra = {}) {
     notes: form.notes,
     ...extra
   };
+}
+
+function buildAttendanceJustificationRecords(logs = []) {
+  return logs
+    .map(enrichLog)
+    .filter((log) => log.meta.kind === 'attendance_justification_record')
+    .map((log) => {
+      const meta = log.meta || {};
+      const appointmentAt = meta.appointment_at || log.sent_at || log.created_at || '';
+      return {
+        id: log.id,
+        number: meta.justification_number || extractAttendanceJustificationNumber(log.subject) || 'JAS-SIN-NUMERO',
+        date: String(appointmentAt).slice(0, 10),
+        entry_time: meta.entry_time || String(appointmentAt).slice(11, 16) || '',
+        exit_time: meta.exit_time || '',
+        person: meta.person_name || log.recipient || '-',
+        document_id: meta.document_id || '',
+        type: meta.attendance_type || 'Asistencia',
+        responsible: meta.responsible || '',
+        place: meta.place || '',
+        notes: meta.notes || '',
+        email: meta.email || '',
+        phone: meta.phone || '',
+        person_ref: meta.person_ref || '',
+        issuedAt: meta.issued_at || log.sent_at || log.created_at || '',
+        meta,
+        log
+      };
+    })
+    .sort((a, b) => String(b.issuedAt || b.date).localeCompare(String(a.issuedAt || a.date)));
+}
+
+function nextAttendanceJustificationNumber(logs = [], date = todayISO()) {
+  const year = String(date || todayISO()).slice(0, 4);
+  const max = buildAttendanceJustificationRecords(logs).reduce((currentMax, record) => {
+    const match = String(record.number || '').match(/^JAS-(\d{4})-(\d{6})$/);
+    if (!match || match[1] !== year) return currentMax;
+    return Math.max(currentMax, Number(match[2] || 0));
+  }, 0);
+  return `JAS-${year}-${String(max + 1).padStart(6, '0')}`;
+}
+
+function extractAttendanceJustificationNumber(value) {
+  return String(value || '').match(/JAS-\d{4}-\d{6}/)?.[0] || '';
+}
+
+function formFromAttendanceJustificationRecord(record) {
+  return {
+    person_ref: record.person_ref || '',
+    type: record.type || 'Asistencia',
+    full_name: record.person || '',
+    document_id: record.document_id || '',
+    date: record.date || todayISO(),
+    entry_time: record.entry_time || '09:00',
+    exit_time: record.exit_time || '',
+    place: record.place || '',
+    responsible: record.responsible || '',
+    notes: record.notes || '',
+    email: record.email || '',
+    phone: record.phone || ''
+  };
+}
+
+function buildSavedJustificationAppointment(record) {
+  return buildFreeJustificationAppointment(formFromAttendanceJustificationRecord(record));
+}
+
+function buildSavedJustificationPerson(record) {
+  return buildFreeJustificationPerson(formFromAttendanceJustificationRecord(record));
 }
 
 function latestDeliveriesByBeneficiary(deliveries = []) {
