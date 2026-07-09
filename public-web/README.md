@@ -4,6 +4,13 @@ Sitio público oficial de la Asociación Pan y Esperanza.
 
 Este proyecto es independiente del ERP. Solo se conecta al ERP mediante variables públicas de Supabase para leer métricas agregadas de impacto si las tablas o vistas públicas están disponibles.
 
+## Identidad pública
+
+- Correo: panyesperanza@gmail.com
+- Teléfono y WhatsApp: +34 611 88 91 67
+- Instagram: https://www.instagram.com/panyesperanzamadrid/
+- TikTok: https://www.tiktok.com/@panyesperanzamadrid
+
 ## Comandos
 
 ```bash

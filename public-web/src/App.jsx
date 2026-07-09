@@ -13,6 +13,7 @@ import {
   MessageCircle,
   PackageCheck,
   Phone,
+  PlayCircle,
   ShieldCheck,
   Users,
   X
@@ -20,22 +21,40 @@ import {
 import { loadPublicImpact } from './lib/impact.js';
 
 const platformUrl = import.meta.env.VITE_PLATFORM_URL || 'https://pan-y-esperanza.vercel.app';
-const contactEmail = 'info@panyesperanza.org';
-const contactPhone = '910 000 000';
-const contactPhoneCompact = '34910000000';
-const address = 'Calle Solidaridad 10, Madrid';
+const contactEmail = 'panyesperanza@gmail.com';
+const contactPhone = '+34 611 88 91 67';
+const contactPhoneCompact = '34611889167';
+const instagramUrl = 'https://www.instagram.com/panyesperanzamadrid/';
+const tiktokUrl = 'https://www.tiktok.com/@panyesperanzamadrid';
+const socialHandle = '@panyesperanzamadrid';
+const address = 'Madrid';
+
+const media = (file) => `/media/${file}`;
 
 const images = {
-  hero: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=2400&q=85',
-  story: 'https://images.unsplash.com/photo-1593113598332-cd288d649433?auto=format&fit=crop&w=1400&q=85',
-  food: 'https://images.unsplash.com/photo-1599059813005-11265ba4b4ce?auto=format&fit=crop&w=1200&q=85',
-  social: 'https://images.unsplash.com/photo-1469571486292-0ba58a3f068b?auto=format&fit=crop&w=1200&q=85',
-  volunteer: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=1200&q=85',
-  donation: 'https://images.unsplash.com/photo-1542810634-71277d95dcbb?auto=format&fit=crop&w=1200&q=85',
+  hero: media('hero-pan-y-esperanza.jpg'),
+  story: media('voluntariado-preparacion.jpg'),
+  food: media('reparto-alimentos.jpg'),
+  social: media('entrega-familia.jpg'),
+  volunteer: media('voluntariado-equipo.jpg'),
+  donation: media('donacion-nestle.jpg'),
+  donationNescafe: media('donacion-nescafe.jpg'),
+  donationLacteos: media('donacion-lacteos.jpg'),
+  reception: media('recepcion-productos.jpg'),
+  logistics: media('logistica-carga.jpg'),
+  storage: media('almacen-clasificacion.jpg'),
+  preparation: media('preparacion-lotes.jpg'),
+  product: media('producto-lacteo.jpg'),
+  delivery: media('entrega-familia.jpg'),
   guidance: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=1200&q=85',
-  galleryA: 'https://images.unsplash.com/photo-1509099836639-18ba1795216d?auto=format&fit=crop&w=1200&q=85',
-  galleryB: 'https://images.unsplash.com/photo-1593113630400-ea4288922497?auto=format&fit=crop&w=1200&q=85',
-  galleryC: 'https://images.unsplash.com/photo-1560252829-804f1aedf1be?auto=format&fit=crop&w=1200&q=85'
+  galleryA: media('historia-donaciones.jpg'),
+  galleryB: media('historia-voluntariado.jpg'),
+  galleryC: media('historia-reparto.jpg')
+};
+
+const video = {
+  src: media('conoce-pan-y-esperanza.mp4'),
+  poster: media('video-poster.jpg')
 };
 
 const navItems = [
@@ -106,22 +125,32 @@ const collaboration = [
 
 const campaigns = [
   {
+    label: 'Donaciones',
+    title: 'Recepción de productos Nestlé',
+    text: 'Productos recibidos para reforzar las entregas y sostener la ayuda alimentaria a familias.',
+    date: 'Colaboración real',
+    image: images.donation
+  },
+  {
+    label: 'Recepción',
+    title: 'Recepción de productos lácteos',
+    text: 'Organización de productos frescos y lácteos antes de su clasificación y posterior reparto.',
+    date: 'Logística solidaria',
+    image: images.reception
+  },
+  {
+    label: 'Preparación',
+    title: 'Preparación de lotes',
+    text: 'El voluntariado clasifica, revisa y prepara los productos para que cada entrega llegue ordenada.',
+    date: 'Trabajo de equipo',
+    image: images.preparation
+  },
+  {
     label: 'Reparto',
-    title: 'Preparación de lotes familiares',
-    text: 'Campañas periódicas para preparar alimentos y productos básicos antes de cada entrega.',
-    date: 'Actividad permanente'
-  },
-  {
-    label: 'Recogida',
-    title: 'Alimentos de primera necesidad',
-    text: 'Recogemos aceite, leche, conservas, arroz, legumbres, productos infantiles e higiene.',
-    date: 'Abierta todo el año'
-  },
-  {
-    label: 'Voluntariado',
-    title: 'Equipo de apoyo en almacén',
-    text: 'Necesitamos apoyo para clasificar productos, revisar caducidades y preparar pedidos.',
-    date: 'Turnos semanales'
+    title: 'Preparación de reparto',
+    text: 'Coordinación de carga, transporte y entrega para que las donaciones lleguen a su destino.',
+    date: 'Ayuda directa',
+    image: images.logistics
   }
 ];
 
@@ -171,13 +200,15 @@ const donationActions = [
     title: '❤️ Donar alimentos',
     text: 'Aportaciones de alimentos no perecederos, higiene y productos básicos para preparar entregas familiares.',
     href: '#contacto',
-    cta: 'Coordinar donación'
+    cta: 'Coordinar donación',
+    image: images.donationLacteos
   },
   {
     title: '💶 Donar dinero',
     text: 'Ayuda para compras urgentes, transporte, material de apoyo y necesidades concretas detectadas por la asociación.',
     href: '#contacto',
-    cta: 'Solicitar información'
+    cta: 'Solicitar información',
+    image: images.donationNescafe
   }
 ];
 
@@ -192,7 +223,6 @@ const volunteerWays = [
 const transparencyItems = [
   ['Memoria anual', 'Resumen de actividad, personas atendidas, recursos movilizados y líneas de trabajo.'],
   ['Estatutos', 'Documento institucional de la Asociación Pan y Esperanza.'],
-  ['Certificados', 'Documentación acreditativa y justificantes de colaboración.'],
   ['Colaboradores', 'Entidades, empresas y personas que apoyan la actividad social.'],
   ['Preguntas frecuentes', 'Respuestas claras sobre solicitud de ayuda, donaciones, voluntariado y contacto con la entidad.'],
   ['Cuentas anuales', 'Información económica institucional preparada para publicación y consulta.'],
@@ -200,10 +230,9 @@ const transparencyItems = [
 ];
 
 const footerSocialLinks = [
-  ['Facebook', import.meta.env.VITE_FACEBOOK_URL || '#contacto'],
-  ['Instagram', import.meta.env.VITE_INSTAGRAM_URL || '#contacto'],
-  ['TikTok', import.meta.env.VITE_TIKTOK_URL || '#contacto'],
-  ['WhatsApp', `https://wa.me/${contactPhoneCompact}`]
+  ['Instagram', socialHandle, instagramUrl],
+  ['TikTok', socialHandle, tiktokUrl],
+  ['WhatsApp', contactPhone, `https://wa.me/${contactPhoneCompact}`]
 ];
 
 const footerLegalLinks = [
@@ -212,10 +241,59 @@ const footerLegalLinks = [
   ['Cookies', '#transparencia']
 ];
 
+const galleryGroups = [
+  {
+    title: 'Donaciones',
+    text: 'Productos recibidos gracias a colaboraciones y aportaciones solidarias.',
+    photos: [
+      [images.donationNescafe, 'Productos Nescafé recibidos por la asociación'],
+      [images.donation, 'Productos Nestlé preparados para su clasificación'],
+      [images.donationLacteos, 'Productos lácteos recibidos']
+    ]
+  },
+  {
+    title: 'Voluntariado',
+    text: 'Personas que sostienen la actividad diaria con tiempo, cercanía y compromiso.',
+    photos: [
+      [images.volunteer, 'Equipo voluntario preparando productos'],
+      [images.story, 'Voluntaria organizando cajas para la actividad'],
+      [images.preparation, 'Preparación de lotes por parte del voluntariado']
+    ]
+  },
+  {
+    title: 'Preparación',
+    text: 'Clasificación y organización antes de cada entrega.',
+    photos: [
+      [images.storage, 'Productos organizados en el punto de preparación'],
+      [images.preparation, 'Preparación de lotes de productos'],
+      [images.product, 'Producto lácteo recibido para las entregas']
+    ]
+  },
+  {
+    title: 'Logística',
+    text: 'Recepción, carga y transporte de los productos donados.',
+    photos: [
+      [images.reception, 'Productos preparados en vehículo para transporte'],
+      [images.logistics, 'Carga de productos durante una recepción'],
+      [images.food, 'Entrega de productos desde vehículo']
+    ]
+  },
+  {
+    title: 'Repartos',
+    text: 'Ayuda directa y acompañamiento a personas y familias.',
+    photos: [
+      [images.delivery, 'Familia recibiendo productos de apoyo'],
+      [images.galleryC, 'Personas recibiendo productos preparados'],
+      [images.food, 'Reparto de alimentos coordinado por la asociación']
+    ]
+  }
+];
+
 export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [impact, setImpact] = useState({ loading: true, data: null });
   const [formNotice, setFormNotice] = useState('');
+  const [videoVisible, setVideoVisible] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -237,7 +315,7 @@ export function App() {
     const subject = encodeURIComponent(`[Web Pan y Esperanza] ${form.get('type') || 'Contacto'}`);
     const body = encodeURIComponent([
       `Nombre: ${form.get('name') || ''}`,
-      `Telefono: ${form.get('phone') || ''}`,
+      `Teléfono: ${form.get('phone') || ''}`,
       `Email: ${form.get('email') || ''}`,
       `Mensaje: ${form.get('message') || ''}`
     ].join('\n'));
@@ -299,6 +377,30 @@ export function App() {
           <figure className="story-media">
             <img src={images.story} alt="Personas voluntarias preparando ayuda alimentaria" />
             <figcaption>Trabajo coordinado, atención humana y colaboración de barrio.</figcaption>
+          </figure>
+        </section>
+
+        <section id="video" className="section video-section">
+          <div className="section-heading">
+            <p className="eyebrow">Conoce Pan y Esperanza</p>
+            <h2>Una asociación viva, hecha de manos que ayudan.</h2>
+            <p>
+              Un vistazo real al trabajo diario: recepción de productos, preparación de lotes, logística y
+              acompañamiento a las personas atendidas.
+            </p>
+          </div>
+          <figure className="video-card">
+            {videoVisible ? (
+              <video controls preload="metadata" poster={video.poster} aria-label="Vídeo de presentación de Asociación Pan y Esperanza">
+                <source src={video.src} type="video/mp4" />
+              </video>
+            ) : (
+              <button className="video-preview" type="button" onClick={() => setVideoVisible(true)} aria-label="Mostrar vídeo Conoce Pan y Esperanza">
+                <img src={video.poster} alt="Miniatura del vídeo Conoce Pan y Esperanza" />
+                <span className="video-play" aria-hidden="true"><PlayCircle size={64} /></span>
+              </button>
+            )}
+            <figcaption>El vídeo no se reproduce automáticamente. Pulsa para verlo cuando quieras.</figcaption>
           </figure>
         </section>
 
@@ -395,6 +497,7 @@ export function App() {
           <div className="donation-actions">
             {donationActions.map((action) => (
               <article className="donation-action" key={action.title}>
+                <img src={action.image} alt="" loading="lazy" />
                 <h3>{action.title}</h3>
                 <p>{action.text}</p>
                 <a className="button primary" href={action.href}>{action.cta} <ArrowRight size={18} /></a>
@@ -432,10 +535,13 @@ export function App() {
           <div className="campaign-grid">
             {campaigns.map((item) => (
               <article className="campaign-card" key={item.title}>
-                <span>{item.label}</span>
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
-                <small><CalendarDays size={15} /> {item.date}</small>
+                <img src={item.image} alt="" loading="lazy" />
+                <div>
+                  <span>{item.label}</span>
+                  <h3>{item.title}</h3>
+                  <p>{item.text}</p>
+                  <small><CalendarDays size={15} /> {item.date}</small>
+                </div>
               </article>
             ))}
           </div>
@@ -446,13 +552,18 @@ export function App() {
             <p className="eyebrow">Galería</p>
             <h2>La solidaridad también se ve.</h2>
           </div>
-          <div className="gallery-grid">
-            <img src={images.galleryA} alt="Actividad solidaria con familias" loading="lazy" />
-            <img src={images.galleryB} alt="Preparación de ayuda y donaciones" loading="lazy" />
-            <div className="video-tile">
-              <img src={images.galleryC} alt="Equipo de voluntariado" loading="lazy" />
-              <span>Vídeos y campañas</span>
-            </div>
+          <div className="gallery-groups">
+            {galleryGroups.map((group) => (
+              <article className="gallery-group" key={group.title}>
+                <div>
+                  <h3>{group.title}</h3>
+                  <p>{group.text}</p>
+                </div>
+                <div className="gallery-photo-grid">
+                  {group.photos.map(([src, alt]) => <img src={src} alt={alt} loading="lazy" key={src + alt} />)}
+                </div>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -486,7 +597,9 @@ export function App() {
             <div className="contact-lines">
               <a href={`mailto:${contactEmail}`}><Mail size={18} /> {contactEmail}</a>
               <a href={`tel:${contactPhoneCompact}`}><Phone size={18} /> {contactPhone}</a>
-              <a href={`https://wa.me/${contactPhoneCompact}`} target="_blank" rel="noreferrer"><MessageCircle size={18} /> WhatsApp</a>
+              <a href={`https://wa.me/${contactPhoneCompact}`} target="_blank" rel="noreferrer"><MessageCircle size={18} /> WhatsApp {contactPhone}</a>
+              <a href={instagramUrl} target="_blank" rel="noreferrer"><Users size={18} /> Instagram {socialHandle}</a>
+              <a href={tiktokUrl} target="_blank" rel="noreferrer"><Users size={18} /> TikTok {socialHandle}</a>
               <a href={mapsUrl()} target="_blank" rel="noreferrer"><MapPin size={18} /> {address}</a>
             </div>
             <p className="schedule">Horario de atención: con cita previa y según campañas activas.</p>
@@ -498,7 +611,7 @@ export function App() {
             className="map"
             title="Mapa Asociación Pan y Esperanza"
             loading="lazy"
-            src="https://www.google.com/maps?q=Calle%20Solidaridad%2010%2C%20Madrid&output=embed"
+            src={mapsEmbedUrl()}
           />
         </section>
       </main>
@@ -514,8 +627,8 @@ export function App() {
           </div>
           <div className="footer-column">
             <h3>Redes</h3>
-            {footerSocialLinks.map(([label, href]) => (
-              <a key={label} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined}>{label}</a>
+            {footerSocialLinks.map(([label, display, href]) => (
+              <a key={label} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined}>{label}: {display}</a>
             ))}
           </div>
           <div className="footer-column">
@@ -667,4 +780,8 @@ function formatDate(value) {
 
 function mapsUrl() {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
+
+function mapsEmbedUrl() {
+  return `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
 }
