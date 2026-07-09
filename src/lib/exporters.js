@@ -150,13 +150,18 @@ export async function printDeliveryReceiptPdf(delivery, beneficiary, deliveries 
 }
 
 export async function printAttendanceJustificationPdf(appointment, beneficiary = {}, organization = {}) {
+  const { doc, filename } = await createAttendanceJustificationPdf(appointment, beneficiary, organization);
+  doc.save(filename);
+}
+
+export async function createAttendanceJustificationPdf(appointment, beneficiary = {}, organization = {}) {
   const doc = new jsPDF();
   const orgName = organization.name || 'Asociación Pan y Esperanza';
   const personName = beneficiary.full_name || appointment.beneficiaryName || appointment.meta?.beneficiary_name || '-';
   const documentId = beneficiary.document_id || appointment.beneficiaryDocumentId || '-';
   const startAt = appointment.appointmentAt || appointment.meta?.appointment_at || '';
-  const startTime = String(startAt || '').slice(11, 16) || '-';
-  const endTime = appointmentEndTime(startAt, appointment.duration || appointment.meta?.duration);
+  const startTime = appointment.entryTime || appointment.meta?.entry_time || String(startAt || '').slice(11, 16) || '-';
+  const endTime = appointment.exitTime || appointment.meta?.exit_time || appointmentEndTime(startAt, appointment.duration || appointment.meta?.duration);
   const issuedAt = new Date().toISOString();
 
   doc.setFillColor(246, 249, 246);
@@ -211,7 +216,10 @@ export async function printAttendanceJustificationPdf(appointment, beneficiary =
   doc.setFontSize(8);
   doc.setTextColor(91, 105, 98);
   doc.text(doc.splitTextToSize('Documento emitido por la Asociación Pan y Esperanza con fines justificativos e informativos. La información procede de la cita registrada en la agenda interna de la entidad.', 180), 14, 270);
-  doc.save(`Justificante-asistencia-${safePdfFilename(personName)}-${safePdfFilename(formatDate(startAt))}.pdf`);
+  return {
+    doc,
+    filename: `Justificante-asistencia-${safePdfFilename(personName)}-${safePdfFilename(formatDate(startAt))}.pdf`
+  };
 }
 
 export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries = [], organization = {}) {

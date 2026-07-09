@@ -4,6 +4,7 @@ import {
   Clock3,
   Download,
   ExternalLink,
+  FileText,
   Mail,
   MapPin,
   Megaphone,
@@ -19,7 +20,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
 import { DOCUMENT_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printAttendanceJustificationPdf, printDeliveryReceiptPdf } from '../lib/exporters';
+import { createAttendanceJustificationPdf, printAttendanceJustificationPdf, printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
 const TABS = [
@@ -33,6 +34,7 @@ const CAMPAIGN_TYPES = ['Reparto de alimentos', 'Aviso importante', 'Cambio de h
 const RECIPIENT_GROUPS = ['Todos los beneficiarios', 'Solo activos', 'Solo familias', 'Solo urgentes', 'Selección manual'];
 const CHANNELS = ['Email', 'WhatsApp', 'Ambos'];
 const APPOINTMENT_TYPES = ['Entrevista', 'Entrega de alimentos', 'Entrega de documentación', 'Recogida de documentación', 'Actividad', 'Reunión', 'Formación', 'Voluntariado', 'Seguimiento', 'Visita'];
+const FREE_JUSTIFICATION_TYPES = ['Asistencia', 'Entrevista', 'Información', 'Entrega de documentación', 'Reunión', 'Actividad', 'Voluntariado', 'Otro'];
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Realizada', 'Reprogramada', 'Cancelada', 'No asistió'];
 const SILENT_APPOINTMENT_STATUSES = ['Pendiente', 'Realizada', 'No asistió'];
 const CLOSED_REMINDER_STATUSES = ['Pendiente', 'Realizada', 'Cancelada', 'No asistió'];
@@ -747,6 +749,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           onDeleteAppointment={deleteAppointment}
           onShowDay={setSelectedAgendaDay}
           onOpenBeneficiary={openBeneficiary}
+          onLogCommunication={createCommunicationLog}
           canDeleteAppointments={currentUser?.role === 'Superadministrador'}
         />
       )}
@@ -917,12 +920,154 @@ function AgendaPanel({
   onDeleteAppointment,
   onShowDay,
   onOpenBeneficiary,
+  onLogCommunication,
   canDeleteAppointments
 }) {
+  const [showFreeJustification, setShowFreeJustification] = useState(false);
+  const [freeJustificationForm, setFreeJustificationForm] = useState(() => initialFreeJustificationForm());
+  const [freeJustificationSearch, setFreeJustificationSearch] = useState('');
+  const [freeJustificationNotice, setFreeJustificationNotice] = useState('');
   const familyOptions = data.families.filter((family) => !form.beneficiary_id || data.beneficiaries.some((item) => item.id === form.beneficiary_id && item.family_id === family.id));
   const selectedDayAppointments = selectedAgendaDay ? appointments.filter((appointment) => appointment.date === selectedAgendaDay) : [];
+  const freeJustificationPeople = useMemo(() => buildFreeJustificationPeople(data), [data]);
+  const filteredFreeJustificationPeople = useMemo(() => filterFreeJustificationPeople(freeJustificationPeople, freeJustificationSearch), [freeJustificationPeople, freeJustificationSearch]);
+
+  function updateFreeJustification(field, value) {
+    setFreeJustificationNotice('');
+    setFreeJustificationForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectFreeJustificationPerson(person) {
+    if (!person) return;
+    setFreeJustificationNotice('');
+    setFreeJustificationSearch(`${person.group} · ${person.name}`);
+    setFreeJustificationForm((current) => ({
+      ...current,
+      person_ref: person.ref,
+      full_name: person.name || current.full_name,
+      document_id: person.document_id || '',
+      email: person.email || '',
+      phone: person.phone || '',
+      place: current.place || person.address || ''
+    }));
+  }
+
+  async function downloadFreeJustification() {
+    const validation = validateFreeJustificationForm(freeJustificationForm);
+    if (validation) {
+      setFreeJustificationNotice(validation);
+      return;
+    }
+    await printAttendanceJustificationPdf(buildFreeJustificationAppointment(freeJustificationForm), buildFreeJustificationPerson(freeJustificationForm), organization);
+    setFreeJustificationNotice('Justificante generado correctamente.');
+  }
+
+  async function sendFreeJustificationEmail() {
+    const validation = validateFreeJustificationForm(freeJustificationForm);
+    if (validation) {
+      setFreeJustificationNotice(validation);
+      return;
+    }
+    if (!freeJustificationForm.email) {
+      setFreeJustificationNotice('Indica un email para enviar el justificante.');
+      return;
+    }
+    const appointment = buildFreeJustificationAppointment(freeJustificationForm);
+    const person = buildFreeJustificationPerson(freeJustificationForm);
+    const subject = `Justificante de asistencia - ${person.full_name}`;
+    const message = freeJustificationMessage(freeJustificationForm, organization);
+    setFreeJustificationNotice('Generando PDF y enviando email...');
+    try {
+      const { doc, filename } = await createAttendanceJustificationPdf(appointment, person, organization);
+      const blob = doc.output('blob');
+      const attachment = { filename, blob, size: blob.size, contentType: 'application/pdf' };
+      const payload = await sendEmailViaApi({
+        to: freeJustificationForm.email,
+        subject,
+        message,
+        attachments: [attachment],
+        organization,
+        logEmail: false
+      });
+      await onLogCommunication?.({
+        recipient: freeJustificationForm.email,
+        subject,
+        message,
+        status: 'Enviado',
+        result: `Justificante enviado. Resend: ${payload.id}`,
+        meta: freeJustificationLogMeta(freeJustificationForm, 'Email', { filename })
+      });
+      setFreeJustificationNotice('Justificante enviado por email correctamente.');
+    } catch (error) {
+      const result = normalizeEmailError(error);
+      await onLogCommunication?.({
+        recipient: freeJustificationForm.email,
+        subject,
+        message,
+        status: 'Error',
+        result,
+        meta: freeJustificationLogMeta(freeJustificationForm, 'Email')
+      });
+      setFreeJustificationNotice(result);
+    }
+  }
+
+  async function sendFreeJustificationWhatsApp() {
+    const validation = validateFreeJustificationForm(freeJustificationForm);
+    if (validation) {
+      setFreeJustificationNotice(validation);
+      return;
+    }
+    const phone = normalizeWhatsAppPhone(freeJustificationForm.phone);
+    if (!phone) {
+      setFreeJustificationNotice('Indica un teléfono válido para WhatsApp.');
+      return;
+    }
+    const subject = `Justificante de asistencia - ${freeJustificationForm.full_name}`;
+    const message = freeJustificationMessage(freeJustificationForm, organization);
+    const url = buildWhatsAppUrl(phone, message);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    await onLogCommunication?.({
+      recipient: `WhatsApp ${phone}`,
+      subject: `WhatsApp - ${subject}`,
+      message,
+      status: 'Pendiente',
+      result: 'WhatsApp preparado para envío.',
+      meta: freeJustificationLogMeta(freeJustificationForm, 'WhatsApp', { whatsapp_url: url })
+    });
+    setFreeJustificationNotice('WhatsApp abierto correctamente. Revise el mensaje antes de enviarlo.');
+  }
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+    <div className="space-y-5">
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-bold text-ink">Justificantes de asistencia</h3>
+            <p className="mt-1 text-sm text-slate-600">Genere justificantes desde una cita o de forma libre, sin obligar a crear un expediente.</p>
+          </div>
+          <Button type="button" onClick={() => setShowFreeJustification((current) => !current)}>
+            <FileText size={18} /> {showFreeJustification ? 'Cerrar justificante' : 'Nuevo justificante'}
+          </Button>
+        </div>
+      </section>
+
+      {showFreeJustification && (
+        <FreeAttendanceJustificationPanel
+          form={freeJustificationForm}
+          search={freeJustificationSearch}
+          people={filteredFreeJustificationPeople}
+          notice={freeJustificationNotice}
+          update={updateFreeJustification}
+          setSearch={setFreeJustificationSearch}
+          onSelectPerson={selectFreeJustificationPerson}
+          onDownload={downloadFreeJustification}
+          onEmail={sendFreeJustificationEmail}
+          onWhatsApp={sendFreeJustificationWhatsApp}
+        />
+      )}
+
+      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
       <section ref={formRef} className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-bold text-ink">{editingAppointmentId ? 'Editar cita' : 'Nueva cita'}</h3>
@@ -1018,7 +1163,109 @@ function AgendaPanel({
           </div>
         </section>
       </section>
+      </div>
     </div>
+  );
+}
+
+function FreeAttendanceJustificationPanel({
+  form,
+  search,
+  people,
+  notice,
+  update,
+  setSearch,
+  onSelectPerson,
+  onDownload,
+  onEmail,
+  onWhatsApp
+}) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-bold text-ink">Nuevo justificante</h3>
+          <p className="mt-1 text-sm text-slate-600">Puede autocompletar desde un expediente existente o escribir los datos manualmente.</p>
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-2">
+          <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onDownload}><Download size={16} /> Descargar PDF</Button>
+          <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onEmail}><Mail size={16} /> Enviar email</Button>
+          <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={onWhatsApp}><MessageCircle size={16} /> Enviar WhatsApp</Button>
+        </div>
+      </div>
+
+      {notice && <p className="mt-4 rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">{notice}</p>}
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <FormField label="Buscar persona existente">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+              <input
+                className={`${inputClass} pl-9`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Beneficiario, familia, donante o voluntario"
+              />
+            </div>
+          </FormField>
+          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+            {people.map((person) => (
+              <button
+                key={person.ref}
+                type="button"
+                className="block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm transition hover:border-brand-300 hover:bg-brand-50"
+                onClick={() => onSelectPerson(person)}
+              >
+                <span className="block font-semibold text-ink">{person.name}</span>
+                <span className="text-xs text-slate-500">{person.group} · {person.detail || 'Sin detalle adicional'}</span>
+              </button>
+            ))}
+            {search && !people.length && <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">No hay coincidencias. Puede completar el justificante manualmente.</p>}
+          </div>
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-2">
+          <FormField label="Tipo" required>
+            <select className={inputClass} value={form.type} onChange={(event) => update('type', event.target.value)}>
+              {FREE_JUSTIFICATION_TYPES.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </FormField>
+          <FormField label="Nombre y apellidos" required>
+            <input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} />
+          </FormField>
+          <FormField label="Documento">
+            <input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} placeholder="Opcional" />
+          </FormField>
+          <FormField label="Fecha" required>
+            <input className={inputClass} type="date" required value={form.date} onChange={(event) => update('date', event.target.value)} />
+          </FormField>
+          <FormField label="Hora de entrada" required>
+            <input className={inputClass} type="time" required value={form.entry_time} onChange={(event) => update('entry_time', event.target.value)} />
+          </FormField>
+          <FormField label="Hora de salida" required>
+            <input className={inputClass} type="time" required value={form.exit_time} onChange={(event) => update('exit_time', event.target.value)} />
+          </FormField>
+          <FormField label="Lugar" required>
+            <input className={inputClass} required value={form.place} onChange={(event) => update('place', event.target.value)} />
+          </FormField>
+          <FormField label="Responsable" required>
+            <input className={inputClass} required value={form.responsible} onChange={(event) => update('responsible', event.target.value)} />
+          </FormField>
+          <FormField label="Email para envío">
+            <input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="Opcional" />
+          </FormField>
+          <FormField label="Teléfono WhatsApp">
+            <input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="Opcional" />
+          </FormField>
+          <div className="md:col-span-2">
+            <FormField label="Observaciones">
+              <textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} />
+            </FormField>
+          </div>
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -1181,26 +1428,26 @@ function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpen
   const styles = appointmentStatusStyles(appointment.status);
   const canPrintAttendance = ['Confirmada', 'Realizada'].includes(appointment.status);
   return (
-    <article className={`rounded-md border p-4 ${styles.card}`}>
+    <article className={`overflow-hidden rounded-md border p-4 ${styles.card}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" className="text-left text-sm font-bold text-ink hover:text-brand-700" onClick={() => onEdit(appointment)}>{appointment.type}</button>
             <StatusPill status={appointment.status} />
           </div>
-          <p className="mt-1 text-sm text-slate-600">{appointment.beneficiaryName} · {formatDateTime(appointment.appointmentAt)}</p>
-          <p className="mt-1 text-sm text-slate-500">{appointment.place || 'Lugar no indicado'} · {appointment.duration || 'Duración no indicada'}</p>
-          {appointment.notes && <p className="mt-2 text-sm text-slate-600">{appointment.notes}</p>}
+          <p className="mt-1 break-words text-sm text-slate-600">{appointment.beneficiaryName} · {formatDateTime(appointment.appointmentAt)}</p>
+          <p className="mt-1 break-words text-sm text-slate-500">{appointment.place || 'Lugar no indicado'} · {appointment.duration || 'Duración no indicada'}</p>
+          {appointment.notes && <p className="mt-2 break-words text-sm text-slate-600">{appointment.notes}</p>}
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <select className={`${inputClass} w-40`} value={appointment.status} onChange={(event) => onStatusChange(appointment, event.target.value)}>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:max-w-[52%] sm:justify-end">
+          <select className={`${inputClass} h-10 w-40 max-w-full shrink-0`} value={appointment.status} onChange={(event) => onStatusChange(appointment, event.target.value)}>
             {APPOINTMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
           </select>
-          <Button type="button" variant="secondary" onClick={() => onEdit(appointment)}><CalendarPlus size={16} /> Editar</Button>
-          {appointment.mapUrl && <Button type="button" variant="secondary" onClick={() => window.open(appointment.mapUrl, '_blank', 'noopener,noreferrer')}><MapPin size={16} /> Mapa</Button>}
-          {canPrintAttendance && <Button type="button" variant="secondary" onClick={() => printAttendanceJustificationPdf(appointment, appointment.beneficiary, organization)}><Download size={16} /> Justificante</Button>}
-          <Button type="button" variant="secondary" onClick={() => onOpenBeneficiary(appointment.beneficiaryId)}><ExternalLink size={16} /> Abrir expediente</Button>
-          {canDelete && <Button type="button" variant="danger" onClick={() => onDelete(appointment)}><Trash2 size={16} /> Eliminar</Button>}
+          <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={() => onEdit(appointment)}><CalendarPlus size={16} /> Editar</Button>
+          {appointment.mapUrl && <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={() => window.open(appointment.mapUrl, '_blank', 'noopener,noreferrer')}><MapPin size={16} /> Mapa</Button>}
+          {canPrintAttendance && <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={() => printAttendanceJustificationPdf(appointment, appointment.beneficiary, organization)}><Download size={16} /> Justificante</Button>}
+          <Button className="max-w-full whitespace-nowrap" type="button" variant="secondary" onClick={() => onOpenBeneficiary(appointment.beneficiaryId)}><ExternalLink size={16} /> Abrir expediente</Button>
+          {canDelete && <Button className="max-w-full whitespace-nowrap" type="button" variant="danger" onClick={() => onDelete(appointment)}><Trash2 size={16} /> Eliminar</Button>}
         </div>
       </div>
     </article>
@@ -1401,6 +1648,170 @@ function initialAppointmentForm(data, currentUser) {
     notes: '',
     reminderChannel: 'Email',
     reminders: ['24h']
+  };
+}
+
+function initialFreeJustificationForm() {
+  return {
+    person_ref: '',
+    type: 'Asistencia',
+    full_name: '',
+    document_id: '',
+    date: todayISO(),
+    entry_time: '09:00',
+    exit_time: '',
+    place: '',
+    responsible: '',
+    notes: '',
+    email: '',
+    phone: ''
+  };
+}
+
+function buildFreeJustificationPeople(data = {}) {
+  const rows = [];
+  (data.beneficiaries || []).forEach((item) => {
+    rows.push({
+      ref: `beneficiary:${item.id}`,
+      group: 'Beneficiario',
+      name: item.full_name || item.code || 'Beneficiario',
+      detail: [item.code, item.document_id, item.phone].filter(Boolean).join(' · '),
+      document_id: item.document_id || '',
+      email: item.email || '',
+      phone: item.phone || '',
+      address: item.address_full || item.address || '',
+      searchText: normalize([item.code, item.full_name, item.document_id, item.phone, item.email].join(' '))
+    });
+  });
+  (data.families || []).forEach((item) => {
+    rows.push({
+      ref: `family:${item.id}`,
+      group: 'Familia',
+      name: item.responsible_name || item.family_code || 'Familia',
+      detail: [item.family_code, item.phone, item.email].filter(Boolean).join(' · '),
+      document_id: '',
+      email: item.email || '',
+      phone: item.phone || '',
+      address: item.address || '',
+      searchText: normalize([item.family_code, item.responsible_name, item.phone, item.email, item.address].join(' '))
+    });
+  });
+  (data.accounting_contacts || [])
+    .filter((item) => normalize(item.contact_type) === 'donor')
+    .forEach((item) => {
+      rows.push({
+        ref: `donor:${item.id}`,
+        group: 'Donante',
+        name: item.name || 'Donante',
+        detail: [item.document_id, item.phone, item.email].filter(Boolean).join(' · '),
+        document_id: item.document_id || '',
+        email: item.email || '',
+        phone: item.phone || '',
+        address: item.address || '',
+        searchText: normalize([item.name, item.document_id, item.phone, item.email, item.address].join(' '))
+      });
+    });
+  (data.volunteers || []).forEach((item) => {
+    rows.push({
+      ref: `volunteer:${item.id}`,
+      group: 'Voluntario',
+      name: item.full_name || item.code || 'Voluntario',
+      detail: [item.code, item.document_id, item.phone].filter(Boolean).join(' · '),
+      document_id: item.document_id || '',
+      email: item.email || '',
+      phone: item.phone || '',
+      address: item.address || '',
+      searchText: normalize([item.code, item.full_name, item.document_id, item.phone, item.email].join(' '))
+    });
+  });
+  return rows.sort((a, b) => `${a.group} ${a.name}`.localeCompare(`${b.group} ${b.name}`, 'es'));
+}
+
+function filterFreeJustificationPeople(people = [], search = '') {
+  const query = normalize(search);
+  if (!query) return people.slice(0, 8);
+  return people.filter((person) => person.searchText.includes(query)).slice(0, 10);
+}
+
+function validateFreeJustificationForm(form) {
+  if (!String(form.full_name || '').trim()) return 'Indica el nombre y apellidos.';
+  if (!form.date) return 'Indica la fecha.';
+  if (!form.entry_time) return 'Indica la hora de entrada.';
+  if (!form.exit_time) return 'Indica la hora de salida.';
+  if (timeToMinutes(form.exit_time) <= timeToMinutes(form.entry_time)) return 'La hora de salida debe ser posterior a la hora de entrada.';
+  if (!String(form.place || '').trim()) return 'Indica el lugar.';
+  if (!String(form.responsible || '').trim()) return 'Indica el responsable.';
+  return '';
+}
+
+function buildFreeJustificationAppointment(form) {
+  const appointmentAt = scheduledDateTime(form.date, form.entry_time);
+  const durationMinutes = Math.max(15, timeToMinutes(form.exit_time) - timeToMinutes(form.entry_time));
+  return {
+    type: form.type,
+    appointmentAt,
+    entryTime: form.entry_time,
+    exitTime: form.exit_time,
+    duration: minutesToDuration(durationMinutes),
+    place: form.place,
+    responsible: form.responsible,
+    notes: form.notes,
+    beneficiaryName: form.full_name,
+    beneficiaryDocumentId: form.document_id,
+    meta: {
+      appointment_type: form.type,
+      appointment_at: appointmentAt,
+      entry_time: form.entry_time,
+      exit_time: form.exit_time,
+      duration: minutesToDuration(durationMinutes),
+      place: form.place,
+      responsible: form.responsible,
+      notes: form.notes
+    }
+  };
+}
+
+function buildFreeJustificationPerson(form) {
+  return {
+    full_name: form.full_name,
+    document_id: form.document_id,
+    email: form.email,
+    phone: form.phone
+  };
+}
+
+function freeJustificationMessage(form, organization = {}) {
+  return [
+    `Justificante de asistencia - ${organization.name || 'Asociación Pan y Esperanza'}`,
+    '',
+    `Nombre: ${form.full_name}`,
+    form.document_id ? `Documento: ${form.document_id}` : '',
+    `Fecha: ${formatDate(form.date)}`,
+    `Horario: ${form.entry_time} - ${form.exit_time}`,
+    `Lugar: ${form.place}`,
+    `Motivo: ${form.type}`,
+    `Responsable: ${form.responsible}`,
+    form.notes ? `Observaciones: ${form.notes}` : '',
+    '',
+    'La Asociación Pan y Esperanza hace constar la asistencia indicada en el justificante emitido.'
+  ].filter(Boolean).join('\n');
+}
+
+function freeJustificationLogMeta(form, channel, extra = {}) {
+  return {
+    kind: 'attendance_justification',
+    channel,
+    person_ref: form.person_ref,
+    person_name: form.full_name,
+    document_id: form.document_id,
+    attendance_type: form.type,
+    appointment_at: scheduledDateTime(form.date, form.entry_time),
+    entry_time: form.entry_time,
+    exit_time: form.exit_time,
+    place: form.place,
+    responsible: form.responsible,
+    notes: form.notes,
+    ...extra
   };
 }
 
