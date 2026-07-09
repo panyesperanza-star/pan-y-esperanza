@@ -2254,18 +2254,24 @@ export function useAppData(enabled = true, currentUser = null) {
       if (currentUser?.role !== 'Superadministrador') {
         throw new Error('Solo el Superadministrador puede preparar el entorno de producción.');
       }
-      const allowedScopes = new Set(['donations', 'inventory', 'inventory_entries', 'inventory_exits']);
+      const allowedScopes = new Set(['donations', 'inventory', 'inventory_entries', 'inventory_exits', 'accounting_movements', 'agenda', 'communications']);
       const selected = new Set(scopes.filter((scope) => allowedScopes.has(scope)));
       const eventIds = new Set();
       const inventoryItemIds = new Set();
       const inventoryMovementIds = new Set();
       const donationIds = new Set();
+      const emailLogIds = new Set();
+      const appointmentLogKinds = new Set(['appointment', 'appointment_reminder', 'appointment_status_notice']);
+      const emailLogMeta = (log) => (Array.isArray(log.attachments) ? (log.attachments.find((item) => item?.kind) || {}) : {});
 
       if (selected.has('donations')) {
         (data.donations || []).forEach((item) => donationIds.add(item.id));
         (data.accounting_events || [])
           .filter((event) => ['donation_money', 'donation_in_kind'].includes(event.event_type) || event.source_module === 'donations')
           .forEach((event) => eventIds.add(event.id));
+      }
+      if (selected.has('accounting_movements')) {
+        (data.accounting_events || []).forEach((event) => eventIds.add(event.id));
       }
       if (selected.has('inventory')) {
         (data.inventory_items || []).forEach((item) => inventoryItemIds.add(item.id));
@@ -2276,6 +2282,12 @@ export function useAppData(enabled = true, currentUser = null) {
       if (selected.has('inventory_exits')) {
         (data.inventory_movements || []).filter((item) => item.movement_type === 'Salida').forEach((item) => inventoryMovementIds.add(item.id));
       }
+      if (selected.has('agenda')) {
+        (data.email_logs || []).filter((log) => appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
+      }
+      if (selected.has('communications')) {
+        (data.email_logs || []).filter((log) => !appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
+      }
 
       const removeRows = async (table, rows) => {
         for (const row of rows) await dataStore.remove(table, row.id);
@@ -2284,8 +2296,25 @@ export function useAppData(enabled = true, currentUser = null) {
 
       const eventRelated = (row) => row.accounting_event_id && eventIds.has(row.accounting_event_id);
       const counts = {};
-      counts.accounting_documents = await removeRows('accounting_documents', (data.accounting_documents || []).filter(eventRelated));
-      counts.cash_bank_movements = await removeRows('cash_bank_movements', (data.cash_bank_movements || []).filter(eventRelated));
+      const accountingDocumentsToRemove = (data.accounting_documents || []).filter(eventRelated);
+      const cashBankMovementsToRemove = (data.cash_bank_movements || []).filter(eventRelated);
+      const loanMovementsToRemove = (data.loan_movements || []).filter(eventRelated);
+      const debtMovementsToRemove = (data.debt_movements || []).filter(eventRelated);
+      const auditRecordIds = new Set([
+        ...eventIds,
+        ...accountingDocumentsToRemove.map((row) => row.id),
+        ...cashBankMovementsToRemove.map((row) => row.id),
+        ...loanMovementsToRemove.map((row) => row.id),
+        ...debtMovementsToRemove.map((row) => row.id)
+      ]);
+      counts.accounting_audit_trail = await removeRows('accounting_audit_trail', (data.accounting_audit_trail || []).filter((row) => (
+        selected.has('accounting_movements')
+        || auditRecordIds.has(row.record_id)
+      )));
+      counts.accounting_documents = await removeRows('accounting_documents', accountingDocumentsToRemove);
+      counts.cash_bank_movements = await removeRows('cash_bank_movements', cashBankMovementsToRemove);
+      counts.loan_movements = await removeRows('loan_movements', loanMovementsToRemove);
+      counts.debt_movements = await removeRows('debt_movements', debtMovementsToRemove);
       counts.social_value_events = await removeRows('social_value_events', (data.social_value_events || []).filter((row) => (
         eventRelated(row)
         || donationIds.has(row.source_record_id)
@@ -2306,6 +2335,7 @@ export function useAppData(enabled = true, currentUser = null) {
       counts.inventory_movements = await removeRows('inventory_movements', inventoryMovementsToRemove);
       counts.inventory_items = await removeRows('inventory_items', (data.inventory_items || []).filter((row) => inventoryItemIds.has(row.id)));
       counts.accounting_events = await removeRows('accounting_events', (data.accounting_events || []).filter((row) => eventIds.has(row.id)));
+      counts.email_logs = await removeRows('email_logs', (data.email_logs || []).filter((row) => emailLogIds.has(row.id)));
 
       await audit(`Preparó entorno de producción. Limpieza: ${Object.entries(counts).map(([key, value]) => `${key}:${value}`).join(', ')}`);
       await reload();

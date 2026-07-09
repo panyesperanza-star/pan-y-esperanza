@@ -7,7 +7,10 @@ const cleanupScopes = [
   { id: 'donations', label: 'Donaciones de prueba' },
   { id: 'inventory', label: 'Inventario de prueba' },
   { id: 'inventory_entries', label: 'Entradas de prueba' },
-  { id: 'inventory_exits', label: 'Salidas de prueba' }
+  { id: 'inventory_exits', label: 'Salidas de prueba' },
+  { id: 'accounting_movements', label: 'Movimientos contables de prueba' },
+  { id: 'agenda', label: 'Agenda de prueba' },
+  { id: 'communications', label: 'Comunicaciones de prueba' }
 ];
 
 export function Backup({ data, actions, currentUser }) {

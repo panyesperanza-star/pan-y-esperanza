@@ -58,6 +58,7 @@ const DONATION_DOCUMENT_TYPES = [
   { value: 'transfer', label: 'Transferencia', numberLabel: 'Referencia bancaria' },
   { value: 'bizum', label: 'Bizum', numberLabel: 'Código Bizum' },
   { value: 'paypal', label: 'PayPal', numberLabel: 'ID de transacción PayPal' },
+  { value: 'check', label: 'Cheque', numberLabel: 'Número de cheque' },
   { value: 'internal_document', label: 'Documento interno', numberLabel: 'Número interno', readOnly: true },
   { value: 'no_document', label: 'Sin documento' }
 ];
@@ -399,6 +400,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
   const initialType = OPERATION_TYPES.some((item) => item.value === initialOperationType) ? initialOperationType : 'income';
   const initialLoan = pendingLoans.find((loan) => loan.id === initialLoanId) || pendingLoans[0];
   const initialDebt = pendingDebts.find((debt) => debt.id === initialDebtId) || pendingDebts[0];
+  const initialOperationAt = toDateTimeInputValue().slice(0, 10);
   const initialDocumentType = defaultDocumentTypeForOperation(initialType);
   const initialAmount = initialType === 'loan_repayment'
     ? initialLoan?.outstanding || ''
@@ -407,12 +409,12 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       : '';
   const [form, setForm] = useState(() => ({
     operation_type: initialType,
-    operation_at: toDateTimeInputValue().slice(0, 10),
+    operation_at: initialOperationAt,
     amount: initialAmount,
     concept: '',
     financial_account_id: accounts[0]?.id || '',
     payment_method: 'Transferencia',
-    reference: '',
+    reference: initialType === 'donation_money' ? nextAccountingDonationReference(data, initialOperationAt) : '',
     contact_name: '',
     supplier_name: '',
     donor_contact_id: '',
@@ -482,6 +484,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       operation_type: value,
       document_type: nextDocumentType,
       document_number: nextDocumentType === 'internal_document' ? nextAccountingInternalDocumentNumber(data, state.operation_at) : '',
+      reference: value === 'donation_money' ? nextAccountingDonationReference(data, state.operation_at) : '',
       concept: '',
       amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : value === 'donation_in_kind' ? '' : state.amount,
       loan_id: pendingLoans[0]?.id || state.loan_id,
@@ -499,6 +502,13 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       document_number: normalizedType === 'internal_document' ? nextAccountingInternalDocumentNumber(data, form.operation_at) : ''
     });
   }, [data, form.document_type, form.operation_at, form.operation_type]);
+
+  useEffect(() => {
+    if (form.operation_type !== 'donation_money') return;
+    const nextReference = nextAccountingDonationReference(data, form.operation_at);
+    if (form.reference === nextReference) return;
+    update('reference', nextReference);
+  }, [data, form.operation_at, form.operation_type, form.reference]);
 
   async function submit(event) {
     event.preventDefault();
@@ -571,7 +581,8 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       </FormField>
       <FormField label="Fecha" required><input className={inputClass} type="date" required value={form.operation_at} onChange={(event) => update({
         operation_at: event.target.value,
-        document_number: form.document_type === 'internal_document' ? nextAccountingInternalDocumentNumber(data, event.target.value) : form.document_number
+        document_number: form.document_type === 'internal_document' ? nextAccountingInternalDocumentNumber(data, event.target.value) : form.document_number,
+        reference: form.operation_type === 'donation_money' ? nextAccountingDonationReference(data, event.target.value) : form.reference
       })} /></FormField>
 
       {cannotSubmit && <OperationBlocker type={form.operation_type} />}
@@ -647,7 +658,13 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
           {(needsAccount || form.operation_type === 'transfer' || form.operation_type === 'correction') && (
             <>
               <FormField label="Método"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
-              <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
+              {form.operation_type === 'donation_money' ? (
+                <FormField label="Referencia interna">
+                  <input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} />
+                </FormField>
+              ) : (
+                <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
+              )}
             </>
           )}
           {DONATION_OPERATION_TYPES.has(form.operation_type) ? (
@@ -2623,6 +2640,22 @@ function nextAccountingInternalDocumentNumber(data, dateValue = new Date()) {
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
   return `INT-${year}-${String(last + 1).padStart(6, '0')}`;
+}
+
+function nextAccountingDonationReference(data, dateValue = new Date()) {
+  const year = new Date(dateValue || new Date()).getFullYear();
+  const pattern = new RegExp(`DON-${year}-(\\d{6})`, 'i');
+  const sources = [
+    ...asArray(data.donations).flatMap((item) => [item.reference, item.notes]),
+    ...asArray(data.cash_bank_movements).flatMap((item) => [item.reference, item.notes]),
+    ...asArray(data.accounting_documents).flatMap((item) => [item.document_number, item.notes]),
+    ...asArray(data.accounting_events).flatMap((item) => [item.title, item.description])
+  ];
+  const last = sources.reduce((max, value) => {
+    const match = String(value || '').match(pattern);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `DON-${year}-${String(last + 1).padStart(6, '0')}`;
 }
 
 function normalizeDonationDocumentType(value) {

@@ -19,7 +19,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
 import { DOCUMENT_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printDeliveryReceiptPdf } from '../lib/exporters';
+import { printAttendanceJustificationPdf, printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
 const TABS = [
@@ -32,7 +32,7 @@ const TABS = [
 const CAMPAIGN_TYPES = ['Reparto de alimentos', 'Aviso importante', 'Cambio de horario', 'Solicitud de documentación', 'Evento', 'Campaña personalizada'];
 const RECIPIENT_GROUPS = ['Todos los beneficiarios', 'Solo activos', 'Solo familias', 'Solo urgentes', 'Selección manual'];
 const CHANNELS = ['Email', 'WhatsApp', 'Ambos'];
-const APPOINTMENT_TYPES = ['Entrevista', 'Entrega de documentación', 'Seguimiento', 'Reunión', 'Visita'];
+const APPOINTMENT_TYPES = ['Entrevista', 'Entrega de alimentos', 'Entrega de documentación', 'Recogida de documentación', 'Actividad', 'Reunión', 'Formación', 'Voluntariado', 'Seguimiento', 'Visita'];
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Realizada', 'Reprogramada', 'Cancelada', 'No asistió'];
 const SILENT_APPOINTMENT_STATUSES = ['Pendiente', 'Realizada', 'No asistió'];
 const CLOSED_REMINDER_STATUSES = ['Pendiente', 'Realizada', 'Cancelada', 'No asistió'];
@@ -731,6 +731,7 @@ export function Communications({ data, actions, currentUser, navigationTarget, o
           calendarDays={calendarDays}
           calendarDate={calendarDate}
           calendarMode={calendarMode}
+          organization={organization}
           selectedAgendaDay={selectedAgendaDay}
           update={updateAppointment}
           toggleReminder={toggleReminder}
@@ -900,6 +901,7 @@ function AgendaPanel({
   calendarDays,
   calendarDate,
   calendarMode,
+  organization,
   selectedAgendaDay,
   update,
   toggleReminder,
@@ -987,6 +989,7 @@ function AgendaPanel({
                   onDelete={onDeleteAppointment}
                   onOpenBeneficiary={onOpenBeneficiary}
                   canDelete={canDeleteAppointments}
+                  organization={organization}
                 />
               ))}
               {!selectedDayAppointments.length && <EmptyText text="No hay citas registradas para este día." />}
@@ -1008,6 +1011,7 @@ function AgendaPanel({
                 onDelete={onDeleteAppointment}
                 onOpenBeneficiary={onOpenBeneficiary}
                 canDelete={canDeleteAppointments}
+                organization={organization}
               />
             ))}
             {!appointments.length && <EmptyText text="Todavía no hay citas en la agenda." />}
@@ -1173,8 +1177,9 @@ function CalendarAppointmentChip({ item, compact = false, onEdit }) {
   );
 }
 
-function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpenBeneficiary, canDelete }) {
+function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpenBeneficiary, canDelete, organization }) {
   const styles = appointmentStatusStyles(appointment.status);
+  const canPrintAttendance = ['Confirmada', 'Realizada'].includes(appointment.status);
   return (
     <article className={`rounded-md border p-4 ${styles.card}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1193,6 +1198,7 @@ function AppointmentCard({ appointment, onEdit, onStatusChange, onDelete, onOpen
           </select>
           <Button type="button" variant="secondary" onClick={() => onEdit(appointment)}><CalendarPlus size={16} /> Editar</Button>
           {appointment.mapUrl && <Button type="button" variant="secondary" onClick={() => window.open(appointment.mapUrl, '_blank', 'noopener,noreferrer')}><MapPin size={16} /> Mapa</Button>}
+          {canPrintAttendance && <Button type="button" variant="secondary" onClick={() => printAttendanceJustificationPdf(appointment, appointment.beneficiary, organization)}><Download size={16} /> Justificante</Button>}
           <Button type="button" variant="secondary" onClick={() => onOpenBeneficiary(appointment.beneficiaryId)}><ExternalLink size={16} /> Abrir expediente</Button>
           {canDelete && <Button type="button" variant="danger" onClick={() => onDelete(appointment)}><Trash2 size={16} /> Eliminar</Button>}
         </div>
@@ -1506,8 +1512,10 @@ function buildAppointmentEntries(logs, data) {
         id: log.id,
         meta: log.meta,
         type: log.meta.appointment_type || 'Cita',
+        beneficiary,
         beneficiaryId: log.meta.beneficiary_id,
         beneficiaryName: log.meta.beneficiary_name || beneficiary?.full_name || 'Beneficiario',
+        beneficiaryDocumentId: beneficiary?.document_id || '',
         familyId: log.meta.family_id || beneficiary?.family_id || '',
         appointmentAt,
         date: String(appointmentAt || '').slice(0, 10),

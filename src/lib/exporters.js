@@ -149,6 +149,71 @@ export async function printDeliveryReceiptPdf(delivery, beneficiary, deliveries 
   doc.save(`Justificante-${receiptNumber}.pdf`);
 }
 
+export async function printAttendanceJustificationPdf(appointment, beneficiary = {}, organization = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  const personName = beneficiary.full_name || appointment.beneficiaryName || appointment.meta?.beneficiary_name || '-';
+  const documentId = beneficiary.document_id || appointment.beneficiaryDocumentId || '-';
+  const startAt = appointment.appointmentAt || appointment.meta?.appointment_at || '';
+  const startTime = String(startAt || '').slice(11, 16) || '-';
+  const endTime = appointmentEndTime(startAt, appointment.duration || appointment.meta?.duration);
+  const issuedAt = new Date().toISOString();
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 42, 'F');
+  await addOfficialLogo(doc, 14, 10, 34, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(80, 95, 88);
+  doc.text(orgName, 52, 17);
+  doc.setFontSize(18);
+  doc.setTextColor(28, 45, 38);
+  doc.text('JUSTIFICANTE DE ASISTENCIA', 52, 28);
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`Fecha de emisión: ${formatDate(issuedAt)}`, 52, 35);
+
+  autoTable(doc, {
+    startY: 58,
+    body: [
+      ['Nombre de la persona', personName],
+      ['Documento identificativo', documentId],
+      ['Fecha', formatDate(startAt)],
+      ['Hora de inicio', startTime],
+      ['Hora de finalización', endTime],
+      ['Lugar', appointment.place || appointment.meta?.place || '-'],
+      ['Motivo de la cita', appointment.type || appointment.meta?.appointment_type || 'Cita'],
+      ['Responsable', appointment.responsible || appointment.meta?.responsible || '-']
+    ],
+    theme: 'plain',
+    styles: { fontSize: 10, cellPadding: 3, textColor: [23, 33, 27] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: [36, 126, 80] }, 1: { cellWidth: 125 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  const y = doc.lastAutoTable.finalY + 18;
+  doc.setFontSize(11);
+  doc.setTextColor(28, 45, 38);
+  doc.text(doc.splitTextToSize('La Asociación Pan y Esperanza hace constar que la persona anteriormente identificada ha asistido a la actividad indicada en la fecha y horario señalados.', 180), 14, y);
+
+  const signatureY = 178;
+  doc.setDrawColor(208, 216, 212);
+  doc.roundedRect(14, signatureY, 82, 34, 2, 2);
+  doc.roundedRect(114, signatureY, 82, 34, 2, 2);
+  doc.setFontSize(9);
+  doc.setTextColor(28, 45, 38);
+  doc.text('Firma del responsable', 18, signatureY + 9);
+  doc.text('Sello de la entidad', 118, signatureY + 9);
+
+  doc.setDrawColor(36, 126, 80);
+  doc.line(18, signatureY + 25, 88, signatureY + 25);
+  doc.line(118, signatureY + 25, 188, signatureY + 25);
+
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  doc.text(doc.splitTextToSize('Documento emitido por la Asociación Pan y Esperanza con fines justificativos e informativos. La información procede de la cita registrada en la agenda interna de la entidad.', 180), 14, 270);
+  doc.save(`Justificante-asistencia-${safePdfFilename(personName)}-${safePdfFilename(formatDate(startAt))}.pdf`);
+}
+
 export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries = [], organization = {}) {
   const doc = new jsPDF();
   const receiptNumber = delivery.receipt_number || nextReceiptNumber(deliveries, delivery.delivered_at);
@@ -1393,6 +1458,23 @@ function appendSimplePdfSection(doc, title, lines) {
 
 function formatPlainQuantity(value) {
   return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(Number(value || 0));
+}
+
+function appointmentEndTime(startAt, durationText) {
+  if (!startAt) return '-';
+  const date = new Date(startAt);
+  if (Number.isNaN(date.getTime())) return '-';
+  const minutes = appointmentDurationMinutes(durationText);
+  date.setMinutes(date.getMinutes() + minutes);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function appointmentDurationMinutes(value) {
+  const text = String(value || '').toLowerCase();
+  const number = Number((text.match(/\d+/) || [30])[0]);
+  if (!Number.isFinite(number) || number <= 0) return 30;
+  if (text.includes('hora')) return number * 60;
+  return number;
 }
 
 function safePdfFilename(value) {
