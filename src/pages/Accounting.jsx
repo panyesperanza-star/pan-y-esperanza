@@ -57,7 +57,7 @@ const DONATION_DOCUMENT_TYPES = [
   { value: 'ticket', label: 'Ticket', numberLabel: 'Número de ticket' },
   { value: 'transfer', label: 'Transferencia', numberLabel: 'Referencia bancaria' },
   { value: 'bizum', label: 'Bizum', numberLabel: 'Código Bizum' },
-  { value: 'paypal', label: 'PayPal', numberLabel: 'ID de transacción' },
+  { value: 'paypal', label: 'PayPal', numberLabel: 'ID de transacción PayPal' },
   { value: 'internal_document', label: 'Documento interno', numberLabel: 'Número interno', readOnly: true },
   { value: 'no_document', label: 'Sin documento' }
 ];
@@ -489,6 +489,16 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       target_movement_id: value === 'correction' ? correctableMovements[0]?.id || '' : value === 'void' ? activeMovements[0]?.id || '' : state.target_movement_id
     }));
   }
+
+  useEffect(() => {
+    if (!DONATION_OPERATION_TYPES.has(form.operation_type)) return;
+    const normalizedType = normalizeDonationDocumentType(form.document_type);
+    if (normalizedType === form.document_type) return;
+    update({
+      document_type: normalizedType,
+      document_number: normalizedType === 'internal_document' ? nextAccountingInternalDocumentNumber(data, form.operation_at) : ''
+    });
+  }, [data, form.document_type, form.operation_at, form.operation_type]);
 
   async function submit(event) {
     event.preventDefault();
@@ -2613,6 +2623,10 @@ function nextAccountingInternalDocumentNumber(data, dateValue = new Date()) {
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
   return `INT-${year}-${String(last + 1).padStart(6, '0')}`;
+}
+
+function normalizeDonationDocumentType(value) {
+  return DONATION_DOCUMENT_TYPES.some((type) => type.value === value) ? value : 'internal_document';
 }
 
 function defaultDocumentTypeForOperation(type) {
