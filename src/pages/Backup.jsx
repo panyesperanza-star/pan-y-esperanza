@@ -96,7 +96,7 @@ export function Backup({ data, actions, currentUser }) {
             <Upload size={18} /> Restaurar copia
             <input className="hidden" type="file" accept="application/json" onChange={importBackup} />
           </label>
-          <Button variant="secondary" onClick={actions.resetDemo}>Restaurar demo</Button>
+          {import.meta.env.DEV && <Button variant="secondary" onClick={actions.resetDemo}>Restaurar demo</Button>}
         </div>
         <p className="mt-4 text-sm text-slate-500">En produccion con Supabase, esta exportacion manual complementa las copias programadas del proyecto y del almacenamiento.</p>
       </section>

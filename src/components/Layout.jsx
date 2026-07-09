@@ -10,6 +10,7 @@ const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, 
 export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, children }) {
   const [open, setOpen] = useState(false);
   const modules = MODULES.filter((module) => canAccess(currentUser, module.id));
+  const canShowDemoReset = import.meta.env.DEV && showReset;
   const nav = (
     <nav className="space-y-1">
       {modules.map((module) => {
@@ -28,7 +29,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
         <div className="flex h-16 items-center justify-between px-4">
           <button className="focus-ring rounded-md p-2" onClick={() => setOpen(true)} aria-label="Menu"><Menu size={22} /></button>
           <BrandLogo className="h-10 w-auto" showText={false} />
-          {showReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /></Button>}
+          {canShowDemoReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /></Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /></Button>
         </div>
       </header>
@@ -41,7 +42,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
         </div>
         <div className="mt-8">{nav}</div>
         <div className="absolute bottom-5 left-5 right-5 grid gap-2">
-          {showReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>}
+          {canShowDemoReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Cerrar sesión</Button>
         </div>
       </aside>

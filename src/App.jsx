@@ -186,8 +186,10 @@ export default function App() {
   const selectedPage = active && canAccess(currentUser, active) ? active : firstAccessibleModule;
   const pageContent = isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
+  const showDemoControls = import.meta.env.DEV && !isSystemSuperadmin(currentUser);
+
   return (
-    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={!isSystemSuperadmin(currentUser)}>
+    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={showDemoControls}>
       {!hasSupabaseConfig && <div className="mb-5 flex gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><Database size={18} /> Modo demo local activo. Configura Supabase para usar PostgreSQL.</div>}
       {error && <div className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={18} /> {error}</div>}
       {pageContent}
