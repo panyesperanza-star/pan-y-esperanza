@@ -6,7 +6,13 @@ import { build } from 'vite';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = path.join(rootDir, 'dist');
 
-await build({ root: rootDir });
+await build({
+  root: rootDir,
+  build: {
+    outDir: path.join(distDir, 'client'),
+    emptyOutDir: true,
+  },
+});
 
 await mkdir(path.join(distDir, 'server'), { recursive: true });
 await mkdir(path.join(distDir, '.openai'), { recursive: true });
