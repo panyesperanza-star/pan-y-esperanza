@@ -50,6 +50,17 @@ const OPERATION_TYPES = [
 const MONEY_OUT_OPERATION_TYPES = new Set(['expense', 'inventory_purchase', 'economic_help', 'loan_repayment', 'debt_payment']);
 const ACCOUNT_OPERATION_TYPES = new Set(['income', 'expense', 'donation_money', 'inventory_purchase', 'economic_help', 'loan_received', 'loan_repayment', 'debt_payment']);
 const INVENTORY_OPERATION_TYPES = new Set(['donation_in_kind', 'inventory_purchase']);
+const DONATION_OPERATION_TYPES = new Set(['donation_money', 'donation_in_kind']);
+const DONATION_DOCUMENT_TYPES = [
+  { value: 'invoice', label: 'Factura', numberLabel: 'Número de factura' },
+  { value: 'delivery_note', label: 'Albarán', numberLabel: 'Número de albarán' },
+  { value: 'ticket', label: 'Ticket', numberLabel: 'Número de ticket' },
+  { value: 'transfer', label: 'Transferencia', numberLabel: 'Referencia bancaria' },
+  { value: 'bizum', label: 'Bizum', numberLabel: 'Código Bizum' },
+  { value: 'paypal', label: 'PayPal', numberLabel: 'ID de transacción' },
+  { value: 'internal_document', label: 'Documento interno', numberLabel: 'Número interno', readOnly: true },
+  { value: 'no_document', label: 'Sin documento' }
+];
 const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
 const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
 
@@ -388,6 +399,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
   const initialType = OPERATION_TYPES.some((item) => item.value === initialOperationType) ? initialOperationType : 'income';
   const initialLoan = pendingLoans.find((loan) => loan.id === initialLoanId) || pendingLoans[0];
   const initialDebt = pendingDebts.find((debt) => debt.id === initialDebtId) || pendingDebts[0];
+  const initialDocumentType = defaultDocumentTypeForOperation(initialType);
   const initialAmount = initialType === 'loan_repayment'
     ? initialLoan?.outstanding || ''
     : initialType === 'debt_payment'
@@ -432,8 +444,8 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
     correction_reason: '',
     void_reason: '',
     due_at: '',
-    document_type: defaultDocumentTypeForOperation(initialType),
-    document_number: '',
+    document_type: initialDocumentType,
+    document_number: initialDocumentType === 'internal_document' ? nextAccountingInternalDocumentNumber(data) : '',
     document_name: '',
     document_data_url: '',
     document_notes: '',
@@ -469,6 +481,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       ...state,
       operation_type: value,
       document_type: nextDocumentType,
+      document_number: nextDocumentType === 'internal_document' ? nextAccountingInternalDocumentNumber(data, state.operation_at) : '',
       concept: '',
       amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : value === 'donation_in_kind' ? '' : state.amount,
       loan_id: pendingLoans[0]?.id || state.loan_id,
@@ -546,7 +559,10 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
           {OPERATION_TYPES.filter((item) => item.value !== 'void' || isSuperadmin).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
       </FormField>
-      <FormField label="Fecha" required><input className={inputClass} type="date" required value={form.operation_at} onChange={(event) => update('operation_at', event.target.value)} /></FormField>
+      <FormField label="Fecha" required><input className={inputClass} type="date" required value={form.operation_at} onChange={(event) => update({
+        operation_at: event.target.value,
+        document_number: form.document_type === 'internal_document' ? nextAccountingInternalDocumentNumber(data, event.target.value) : form.document_number
+      })} /></FormField>
 
       {cannotSubmit && <OperationBlocker type={form.operation_type} />}
 
@@ -624,8 +640,14 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
               <FormField label="Referencia"><input className={inputClass} value={form.reference} onChange={(event) => update('reference', event.target.value)} /></FormField>
             </>
           )}
-          <FormField label="Tipo de documento"><select className={inputClass} value={form.document_type} onChange={(event) => update('document_type', event.target.value)}><option value="invoice">Factura</option><option value="ticket">Ticket</option><option value="transfer">Transferencia</option><option value="bizum">Bizum</option><option value="paypal">PayPal</option><option value="receipt">Recibo</option><option value="internal_document">Documento interno</option><option value="no_document">Sin documento</option><option value="contract">Contrato</option><option value="proof">Justificante</option><option value="other">Otro</option></select></FormField>
-          <FormField label="Número de documento"><input className={inputClass} value={form.document_number} onChange={(event) => update('document_number', event.target.value)} /></FormField>
+          {DONATION_OPERATION_TYPES.has(form.operation_type) ? (
+            <DonationDocumentFields form={form} update={update} data={data} />
+          ) : (
+            <>
+              <FormField label="Tipo de documento"><select className={inputClass} value={form.document_type} onChange={(event) => update('document_type', event.target.value)}><option value="invoice">Factura</option><option value="ticket">Ticket</option><option value="transfer">Transferencia</option><option value="bizum">Bizum</option><option value="paypal">PayPal</option><option value="receipt">Recibo</option><option value="internal_document">Documento interno</option><option value="no_document">Sin documento</option><option value="contract">Contrato</option><option value="proof">Justificante</option><option value="other">Otro</option></select></FormField>
+              <FormField label="Número de documento"><input className={inputClass} value={form.document_number} onChange={(event) => update('document_number', event.target.value)} /></FormField>
+            </>
+          )}
           <FileAttachmentField form={form} setForm={setForm} />
           <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
         </>
@@ -641,6 +663,37 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         <Button type="submit" disabled={saving || cannotSubmit}>{saving ? 'Registrando...' : submitLabelForOperation(form.operation_type)}</Button>
       </div>
     </form>
+  );
+}
+
+function DonationDocumentFields({ form, update, data }) {
+  const selected = DONATION_DOCUMENT_TYPES.find((item) => item.value === form.document_type) || DONATION_DOCUMENT_TYPES[0];
+
+  function changeDocumentType(value) {
+    update({
+      document_type: value,
+      document_number: value === 'internal_document' ? nextAccountingInternalDocumentNumber(data, form.operation_at) : ''
+    });
+  }
+
+  return (
+    <>
+      <FormField label="Tipo de documento">
+        <select className={inputClass} value={selected.value} onChange={(event) => changeDocumentType(event.target.value)}>
+          {DONATION_DOCUMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+        </select>
+      </FormField>
+      {selected.numberLabel && (
+        <FormField label={selected.numberLabel}>
+          <input
+            className={`${inputClass} ${selected.readOnly ? 'bg-slate-50 text-slate-600' : ''}`}
+            readOnly={selected.readOnly}
+            value={form.document_number}
+            onChange={(event) => update('document_number', event.target.value)}
+          />
+        </FormField>
+      )}
+    </>
   );
 }
 
@@ -2551,12 +2604,23 @@ function accountTypeLabel(type) {
   return labels[type] || type || 'Cuenta';
 }
 
+function nextAccountingInternalDocumentNumber(data, dateValue = new Date()) {
+  const year = new Date(dateValue || new Date()).getFullYear();
+  const pattern = new RegExp(`INT-${year}-(\\d{6})`, 'i');
+  const sources = asArray(data.accounting_documents).flatMap((document) => [document.document_number, document.notes]);
+  const last = sources.reduce((max, value) => {
+    const match = String(value || '').match(pattern);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `INT-${year}-${String(last + 1).padStart(6, '0')}`;
+}
+
 function defaultDocumentTypeForOperation(type) {
   const labels = {
     income: 'receipt',
     expense: 'ticket',
-    donation_money: 'receipt',
-    donation_in_kind: 'receipt',
+    donation_money: 'internal_document',
+    donation_in_kind: 'internal_document',
     inventory_purchase: 'invoice',
     economic_help: 'proof',
     loan_received: 'contract',
