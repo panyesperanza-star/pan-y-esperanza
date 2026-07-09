@@ -254,31 +254,31 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
       </div>
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1240px] text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Email</th><th>Teléfono</th><th>Cargo</th><th>Estado</th><th>Último acceso</th><th>Creado</th><th>Creado por</th><th className="text-right pr-4">Acciones</th></tr></thead>
+        <table className="w-full min-w-[1320px] table-fixed text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[180px] px-4 py-3">Usuario</th><th className="w-[210px]">Email</th><th className="w-[120px]">Teléfono</th><th className="w-[150px]">Cargo</th><th className="w-[110px]">Estado</th><th className="w-[150px]">Último acceso</th><th className="w-[150px]">Creado</th><th className="w-[140px]">Creado por</th><th className="w-[310px] pr-4 text-right">Acciones</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((user) => {
               const status = getUserStatus(user);
               const isCurrentUser = user.id === currentUser?.id;
               return (
                 <tr key={user.id}>
-                  <td className="px-4 py-3"><div className="flex items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 rounded-full object-cover" />}<span className="font-semibold">{user.first_name} {user.last_name}</span></div></td>
-                  <td>{user.email}</td>
-                  <td>{user.phone || '-'}</td>
-                  <td>{user.position || user.role}</td>
+                  <td className="px-4 py-3"><div className="flex min-w-0 items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />}<span className="truncate font-semibold">{user.first_name} {user.last_name}</span></div></td>
+                  <td className="break-words pr-3">{user.email}</td>
+                  <td className="break-words pr-3">{user.phone || '-'}</td>
+                  <td className="break-words pr-3">{user.position || user.role}</td>
                   <td><span className={`rounded-md px-2 py-1 text-xs font-bold ${status === 'Activo' ? 'bg-brand-50 text-brand-700' : status === 'Bloqueado' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{status}</span></td>
-                  <td>{formatDateTime(user.last_access_at)}</td>
-                  <td>{formatDateTime(user.created_at)}</td>
-                  <td>{user.created_by || '-'}</td>
-                  <td className="pr-4">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {canEdit && <Button variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
-                      {canEdit && <Button variant="secondary" onClick={async () => { const password = window.prompt('Nueva contraseña temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contraseña temporal actualizada.'); } }}>Restablecer contraseña</Button>}
+                  <td className="pr-3">{formatDateTime(user.last_access_at)}</td>
+                  <td className="pr-3">{formatDateTime(user.created_at)}</td>
+                  <td className="break-words pr-3">{user.created_by || '-'}</td>
+                  <td className="pr-4 py-3 align-top">
+                    <div className="flex max-w-full flex-wrap justify-end gap-2">
+                      {canEdit && <Button className="whitespace-nowrap" variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
+                      {canEdit && <Button className="whitespace-nowrap" variant="secondary" onClick={async () => { const password = window.prompt('Nueva contraseña temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contraseña temporal actualizada.'); } }}>Restablecer contraseña</Button>}
                       {canEdit && (status === 'Activo'
-                        ? <Button variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
-                        : <Button variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
-                      {canEdit && status !== 'Bloqueado' && <Button variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
-                      {canDelete && <Button variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>}
+                        ? <Button className="whitespace-nowrap" variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
+                        : <Button className="whitespace-nowrap" variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
+                      {canEdit && status !== 'Bloqueado' && <Button className="whitespace-nowrap" variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
+                      {canDelete && <Button className="whitespace-nowrap" variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>}
                     </div>
                   </td>
                 </tr>

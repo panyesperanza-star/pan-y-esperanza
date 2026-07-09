@@ -38,9 +38,9 @@ const OPERATION_TYPES = [
   { value: 'donation_in_kind', label: 'Donación en especie', icon: Gift, tone: 'bg-pink-50 text-pink-700' },
   { value: 'inventory_purchase', label: 'Compra de inventario', icon: PackageCheck, tone: 'bg-cyan-50 text-cyan-700' },
   { value: 'economic_help', label: 'Ayuda económica', icon: HandCoins, tone: 'bg-amber-50 text-amber-700' },
-  { value: 'loan_received', label: 'Préstamo recibido', icon: HandCoins, tone: 'bg-violet-50 text-violet-700' },
-  { value: 'loan_repayment', label: 'Devolución de préstamo', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
-  { value: 'supplier_debt', label: 'Deuda con proveedor', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
+  { value: 'loan_received', label: 'Préstamo', icon: HandCoins, tone: 'bg-violet-50 text-violet-700' },
+  { value: 'loan_repayment', label: 'Devolución', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
+  { value: 'supplier_debt', label: 'Deuda', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
   { value: 'debt_payment', label: 'Pago de deuda', icon: Receipt, tone: 'bg-orange-50 text-orange-700' },
   { value: 'transfer', label: 'Transferencia entre cuentas', icon: RefreshCw, tone: 'bg-slate-100 text-slate-700' },
   { value: 'correction', label: 'Corrección', icon: RefreshCw, tone: 'bg-blue-50 text-blue-700' },
@@ -1977,12 +1977,12 @@ function buildRecentMovements(context) {
     rows.push({
       key: `loan-${loan.id}`,
       date: loan.loan_at || loan.created_at,
-      type: 'Préstamo recibido',
-      concept: loan.reason || loan.notes || 'Préstamo registrado',
+      type: 'Préstamo',
+      concept: loan.reason || loan.notes || 'Préstamo',
       contact: contactName(contactsById.get(loan.contact_id)),
       amount: Number(loan.principal_amount || 0),
       direction: 'in',
-      status: statusLabel(loanStatusFromOutstanding(Number(loan.principal_amount || 0), outstanding)),
+      status: loanDisplayStatus(Number(loan.principal_amount || 0), outstanding),
       method: accountMethod(accountsById.get(receivedMovement?.financial_account_id), receivedMovement?.movement_type)
     });
   });
@@ -1993,8 +1993,8 @@ function buildRecentMovements(context) {
     rows.push({
       key: `loan-movement-${movement.id}`,
       date: movement.payment_at || movement.created_at,
-      type: movement.movement_type === 'full_repayment' ? 'Devolución total' : 'Devolución parcial',
-      concept: movement.notes || loan?.reason || 'Movimiento de préstamo',
+      type: 'Devolución',
+      concept: movement.notes || loan?.reason || 'Devolución de préstamo',
       contact: contactName(contactsById.get(loan?.contact_id)),
       amount: Number(movement.amount || 0),
       direction: movement.movement_type === 'loan_received' ? 'in' : 'out',
@@ -2008,12 +2008,12 @@ function buildRecentMovements(context) {
     rows.push({
       key: `debt-${debt.id}`,
       date: debt.debt_at || debt.created_at,
-      type: 'Deuda registrada',
-      concept: debt.reason || debt.notes || 'Deuda registrada',
+      type: 'Deuda',
+      concept: debt.reason || debt.notes || 'Deuda',
       contact: contactName(contactsById.get(debt.contact_id)),
       amount: Number(debt.original_amount || 0),
       direction: 'neutral',
-      status: statusLabel(debtStatusFromOutstanding(Number(debt.original_amount || 0), outstanding)),
+      status: debtDisplayStatus(Number(debt.original_amount || 0), outstanding),
       method: 'Pendiente'
     });
   });
@@ -2023,8 +2023,8 @@ function buildRecentMovements(context) {
     rows.push({
       key: `debt-movement-${movement.id}`,
       date: movement.payment_at || movement.created_at,
-      type: movement.movement_type === 'full_payment' ? 'Pago total de deuda' : 'Pago parcial de deuda',
-      concept: movement.notes || debt?.reason || 'Movimiento de deuda',
+      type: 'Pago de deuda',
+      concept: movement.notes || debt?.reason || 'Pago de deuda',
       contact: contactName(contactsById.get(debt?.contact_id)),
       amount: Number(movement.amount || 0),
       direction: 'out',
@@ -2083,7 +2083,7 @@ function buildRecentMovements(context) {
       key: `treasury-loan-${loan.id}`,
       date: loan.loan_at || loan.created_at,
       type: 'Préstamo',
-      concept: loan.concept || 'Préstamo de tesorería',
+      concept: loan.concept || 'Préstamo',
       contact: loan.person || '-',
       amount: Number(loan.amount || 0),
       direction: isPendingTreasuryLoan(loan) ? 'in' : 'neutral',
@@ -2345,7 +2345,7 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
       {
         key: `loan-open-${loan.id}`,
         date: loan.loan_at || loan.created_at,
-        label: 'Préstamo recibido',
+        label: 'Préstamo',
         amount: principal,
         kind: 'received'
       },
@@ -2354,7 +2354,7 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
         .map((movement) => ({
           key: `loan-movement-${movement.id}`,
           date: movement.payment_at || movement.created_at,
-          label: movement.movement_type === 'full_repayment' ? 'Devolución total' : 'Devolución parcial',
+          label: 'Devolución',
           amount: Number(movement.amount || 0),
           kind: 'payment'
         }))
@@ -2364,13 +2364,13 @@ function buildLoanSummaries(records, movements, contactsById, accountsById) {
       raw: loan,
       contactId: loan.contact_id,
       contactName: contactName(contactsById.get(loan.contact_id)),
-      reason: loan.reason || loan.notes || 'Préstamo registrado',
+      reason: loan.reason || loan.notes || 'Préstamo',
       date: loan.loan_at || loan.created_at,
       principal,
       repaid,
       outstanding,
       status,
-      statusLabel: statusLabel(status),
+      statusLabel: loanDisplayStatus(principal, outstanding),
       accountName: accountMethod(accountsById.get(receivedMovement?.financial_account_id), receivedMovement?.movement_type),
       history
     };
@@ -2389,14 +2389,14 @@ function buildDebtSummaries(records, movements, contactsById, accountsById, toda
       {
         key: `debt-open-${debt.id}`,
         date: debt.debt_at || debt.created_at,
-        label: 'Deuda registrada',
+        label: 'Deuda',
         amount: original,
         kind: 'debt'
       },
       ...relatedMovements.map((movement) => ({
         key: `debt-movement-${movement.id}`,
         date: movement.payment_at || movement.created_at,
-        label: movement.movement_type === 'full_payment' ? 'Pago total' : 'Pago parcial',
+        label: 'Pago de deuda',
         amount: Number(movement.amount || 0),
         kind: 'payment',
         accountName: accountMethod(accountsById.get(movement.financial_account_id), movement.movement_type)
@@ -2407,14 +2407,14 @@ function buildDebtSummaries(records, movements, contactsById, accountsById, toda
       raw: debt,
       contactId: debt.contact_id,
       contactName: contactName(contactsById.get(debt.contact_id)),
-      reason: debt.reason || debt.notes || 'Deuda registrada',
+      reason: debt.reason || debt.notes || 'Deuda',
       date: debt.debt_at || debt.created_at,
       dueAt: debt.due_at || '',
       original,
       paid,
       outstanding,
       status,
-      statusLabel: statusLabel(status),
+      statusLabel: debtDisplayStatus(original, outstanding),
       isOverdue: outstanding > 0 && Boolean(debt.due_at) && Number.isFinite(daysToDue) && daysToDue < 0,
       isUpcoming: outstanding > 0 && Boolean(debt.due_at) && Number.isFinite(daysToDue) && daysToDue >= 0 && daysToDue <= 14,
       history
@@ -2507,6 +2507,16 @@ function loanStatusFromOutstanding(principal, outstanding) {
 function debtStatusFromOutstanding(original, outstanding) {
   if (outstanding <= 0) return 'paid';
   return outstanding >= Number(original || 0) ? 'active' : 'partially_paid';
+}
+
+function loanDisplayStatus(principal, outstanding) {
+  if (Number(outstanding || 0) <= 0) return 'Devuelto';
+  return 'Pendiente';
+}
+
+function debtDisplayStatus(original, outstanding) {
+  if (Number(outstanding || 0) <= 0) return 'Pagado';
+  return 'Pendiente';
 }
 
 function daysUntil(targetDate, today) {

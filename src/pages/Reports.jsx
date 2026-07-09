@@ -925,6 +925,8 @@ function buildVolunteerRows(data, period) {
 function buildEconomicRows(data, period) {
   const contactsById = new Map(asArray(data.accounting_contacts).map((contact) => [contact.id, contact]));
   const accountsById = new Map(asArray(data.financial_accounts).map((account) => [account.id, account]));
+  const activeLoanMovements = asArray(data.loan_movements).filter(isActiveRecord);
+  const activeDebtMovements = asArray(data.debt_movements).filter(isActiveRecord);
   const rows = [];
   asArray(data.accounting_events)
     .filter((event) => isActiveRecord(event) && period(event.occurred_at || event.created_at))
@@ -962,10 +964,10 @@ function buildEconomicRows(data, period) {
     .forEach((expense) => rows.push({ id: `expense-${expense.id}`, date: expense.expense_at, type: 'Gasto', concept: expense.concept || expense.category || '-', contact: expense.supplier || expense.responsible || '-', amount: Number(expense.amount || 0), direction: 'out', status: expense.status || 'Registrado', source: 'Tesorería histórica', search: [expense.concept, expense.category, expense.supplier, expense.responsible].join(' ') }));
   asArray(data.loan_records)
     .filter((loan) => isActiveRecord(loan) && period(loan.loan_at || loan.created_at))
-    .forEach((loan) => rows.push({ id: `loan-${loan.id}`, date: loan.loan_at, type: 'Préstamo recibido', concept: loan.reason || loan.notes || '-', contact: contactsById.get(loan.contact_id)?.name || '-', amount: Number(loan.principal_amount || 0), direction: 'in', status: loan.status || 'Activo', source: 'Préstamos', search: [loan.reason, loan.notes, contactsById.get(loan.contact_id)?.name].join(' ') }));
+    .forEach((loan) => rows.push({ id: `loan-${loan.id}`, date: loan.loan_at, type: 'Préstamo', concept: loan.reason || loan.notes || '-', contact: contactsById.get(loan.contact_id)?.name || '-', amount: Number(loan.principal_amount || 0), direction: 'in', status: loanOutstandingForReport(loan, activeLoanMovements) > 0 ? 'Pendiente' : 'Devuelto', source: 'Préstamos', search: [loan.reason, loan.notes, contactsById.get(loan.contact_id)?.name].join(' ') }));
   asArray(data.debt_records)
     .filter((debt) => isActiveRecord(debt) && period(debt.debt_at || debt.created_at))
-    .forEach((debt) => rows.push({ id: `debt-${debt.id}`, date: debt.debt_at, type: 'Deuda con proveedor', concept: debt.reason || debt.notes || '-', contact: contactsById.get(debt.contact_id)?.name || '-', amount: Number(debt.original_amount || 0), direction: 'neutral', status: debt.status || 'Activa', source: 'Deudas', search: [debt.reason, debt.notes, contactsById.get(debt.contact_id)?.name].join(' ') }));
+    .forEach((debt) => rows.push({ id: `debt-${debt.id}`, date: debt.debt_at, type: 'Deuda', concept: debt.reason || debt.notes || '-', contact: contactsById.get(debt.contact_id)?.name || '-', amount: Number(debt.original_amount || 0), direction: 'neutral', status: debtOutstandingForReport(debt, activeDebtMovements) > 0 ? 'Pendiente' : 'Pagado', source: 'Deudas', search: [debt.reason, debt.notes, contactsById.get(debt.contact_id)?.name].join(' ') }));
   asArray(data.social_value_events)
     .filter((event) => isActiveRecord(event) && period(event.social_value_at || event.created_at))
     .forEach((event) => rows.push({ id: `social-${event.id}`, date: event.social_value_at || event.created_at, type: event.value_type === 'received' ? 'Valor social recibido' : 'Valor social entregado', concept: event.notes || event.event_type || '-', contact: contactsById.get(event.contact_id)?.name || '-', amount: Number(event.amount || 0), direction: 'social', status: event.status || 'Registrado', source: 'Valor social', search: [event.notes, event.event_type, contactsById.get(event.contact_id)?.name].join(' ') }));
