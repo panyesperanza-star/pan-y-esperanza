@@ -244,6 +244,20 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
     }
   }
 
+  async function resetPassword(user) {
+    const password = window.prompt('Nueva contraseña temporal');
+    if (password) {
+      await actions.resetUserPassword(user.id, password);
+      setMessage('Contraseña temporal actualizada.');
+    }
+  }
+
+  async function runSecondaryUserAction(user, action) {
+    if (action === 'reset-password') await resetPassword(user);
+    if (action === 'block') await blockUser(user);
+    if (action === 'delete') await deleteUser(user);
+  }
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -254,8 +268,8 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
       </div>
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1320px] table-fixed text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[180px] px-4 py-3">Usuario</th><th className="w-[210px]">Email</th><th className="w-[120px]">Teléfono</th><th className="w-[150px]">Cargo</th><th className="w-[110px]">Estado</th><th className="w-[150px]">Último acceso</th><th className="w-[150px]">Creado</th><th className="w-[140px]">Creado por</th><th className="w-[310px] pr-4 text-right">Acciones</th></tr></thead>
+        <table className="w-full min-w-[1360px] table-fixed text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[160px] px-4 py-3">Usuario</th><th className="w-[190px]">Email</th><th className="w-[110px]">Teléfono</th><th className="w-[130px]">Cargo</th><th className="w-[105px]">Estado</th><th className="w-[135px]">Último acceso</th><th className="w-[135px]">Creado</th><th className="w-[120px]">Creado por</th><th className="w-[280px] pr-4 text-right">Acciones</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((user) => {
               const status = getUserStatus(user);
@@ -272,13 +286,27 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
                   <td className="break-words pr-3">{user.created_by || '-'}</td>
                   <td className="pr-4 py-3 align-top">
                     <div className="flex max-w-full flex-wrap justify-end gap-2">
-                      {canEdit && <Button className="whitespace-nowrap" variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
-                      {canEdit && <Button className="whitespace-nowrap" variant="secondary" onClick={async () => { const password = window.prompt('Nueva contraseña temporal'); if (password) { await actions.resetUserPassword(user.id, password); setMessage('Contraseña temporal actualizada.'); } }}>Restablecer contraseña</Button>}
+                      {canEdit && <Button className="shrink-0 whitespace-nowrap" variant="secondary" onClick={() => setEditing(user)}>Editar</Button>}
                       {canEdit && (status === 'Activo'
-                        ? <Button className="whitespace-nowrap" variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
-                        : <Button className="whitespace-nowrap" variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
-                      {canEdit && status !== 'Bloqueado' && <Button className="whitespace-nowrap" variant="secondary" disabled={isCurrentUser} onClick={() => blockUser(user)}>Bloquear</Button>}
-                      {canDelete && <Button className="whitespace-nowrap" variant="danger" disabled={isCurrentUser} onClick={() => deleteUser(user)}>Eliminar</Button>}
+                        ? <Button className="shrink-0 whitespace-nowrap" variant="secondary" disabled={isCurrentUser} onClick={() => deactivateUser(user)}>Desactivar usuario</Button>
+                        : <Button className="shrink-0 whitespace-nowrap" variant="secondary" onClick={() => reactivateUser(user)}>Reactivar usuario</Button>)}
+                      {(canEdit || canDelete) && (
+                        <select
+                          className={`${inputClass} h-10 w-40 shrink-0`}
+                          defaultValue=""
+                          aria-label={`Más acciones para ${user.first_name} ${user.last_name}`}
+                          onChange={(event) => {
+                            const action = event.target.value;
+                            event.target.value = '';
+                            if (action) void runSecondaryUserAction(user, action);
+                          }}
+                        >
+                          <option value="">Más acciones</option>
+                          {canEdit && <option value="reset-password">Restablecer contraseña</option>}
+                          {canEdit && status !== 'Bloqueado' && !isCurrentUser && <option value="block">Bloquear</option>}
+                          {canDelete && !isCurrentUser && <option value="delete">Eliminar</option>}
+                        </select>
+                      )}
                     </div>
                   </td>
                 </tr>
