@@ -125,12 +125,91 @@ const campaigns = [
   }
 ];
 
+const inspiringStories = [
+  {
+    title: 'Una ayuda que llega a tiempo',
+    text: 'Historias de acompañamiento cotidiano, escucha y apoyo básico para personas y familias en momentos de dificultad.',
+    image: images.galleryA
+  },
+  {
+    title: 'Red de barrio, esperanza compartida',
+    text: 'Colaboraciones entre voluntariado, comercios y personas donantes que hacen posible una respuesta cercana y organizada.',
+    image: images.galleryB
+  },
+  {
+    title: 'Volver a mirar la semana con calma',
+    text: 'Próximamente compartiremos testimonios reales autorizados sobre el impacto de la ayuda recibida.',
+    image: images.story
+  }
+];
+
+const processSteps = [
+  {
+    title: 'Contactas',
+    text: 'Nos escribes o llamas para explicar brevemente tu situación.',
+    icon: MessageCircle
+  },
+  {
+    title: 'Te escuchamos',
+    text: 'Recogemos la información necesaria con cercanía y discreción.',
+    icon: HeartHandshake
+  },
+  {
+    title: 'Valoramos tu situación',
+    text: 'Revisamos el caso y la documentación disponible.',
+    icon: ShieldCheck
+  },
+  {
+    title: 'Te acompañamos',
+    text: 'Organizamos la ayuda posible y mantenemos el seguimiento.',
+    icon: HandHeart
+  }
+];
+
+const donationActions = [
+  {
+    title: '❤️ Donar alimentos',
+    text: 'Aportaciones de alimentos no perecederos, higiene y productos básicos para preparar entregas familiares.',
+    href: '#contacto',
+    cta: 'Coordinar donación'
+  },
+  {
+    title: '💶 Donar dinero',
+    text: 'Ayuda para compras urgentes, transporte, material de apoyo y necesidades concretas detectadas por la asociación.',
+    href: '#contacto',
+    cta: 'Solicitar información'
+  }
+];
+
+const volunteerWays = [
+  'Clasificación de alimentos',
+  'Preparación de lotes',
+  'Reparto',
+  'Recogida',
+  'Apoyo administrativo'
+];
+
 const transparencyItems = [
   ['Memoria anual', 'Resumen de actividad, personas atendidas, recursos movilizados y líneas de trabajo.'],
   ['Estatutos', 'Documento institucional de la Asociación Pan y Esperanza.'],
   ['Certificados', 'Documentación acreditativa y justificantes de colaboración.'],
   ['Colaboradores', 'Entidades, empresas y personas que apoyan la actividad social.'],
+  ['Preguntas frecuentes', 'Respuestas claras sobre solicitud de ayuda, donaciones, voluntariado y contacto con la entidad.'],
+  ['Cuentas anuales', 'Información económica institucional preparada para publicación y consulta.'],
   ['Política de privacidad', 'Información sobre protección de datos y uso responsable de la información.']
+];
+
+const footerSocialLinks = [
+  ['Facebook', import.meta.env.VITE_FACEBOOK_URL || '#contacto'],
+  ['Instagram', import.meta.env.VITE_INSTAGRAM_URL || '#contacto'],
+  ['TikTok', import.meta.env.VITE_TIKTOK_URL || '#contacto'],
+  ['WhatsApp', `https://wa.me/${contactPhoneCompact}`]
+];
+
+const footerLegalLinks = [
+  ['Política de privacidad', '#transparencia'],
+  ['Aviso legal', '#transparencia'],
+  ['Cookies', '#transparencia']
 ];
 
 export function App() {
@@ -177,7 +256,7 @@ export function App() {
           {navItems.map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}
         </nav>
         <div className="header-actions">
-          <a className="platform-link" href={platformUrl} target="_blank" rel="noreferrer">Acceso plataforma</a>
+          <a className="platform-link" href={platformUrl} target="_blank" rel="noreferrer">Acceso equipo</a>
           <button className="menu-button" type="button" aria-label="Abrir menú" onClick={() => setMenuOpen((value) => !value)}>
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -233,6 +312,26 @@ export function App() {
           </div>
         </section>
 
+        <section id="historias" className="section stories-section">
+          <div className="section-heading">
+            <p className="eyebrow">Historias que inspiran</p>
+            <h2>La ayuda cobra sentido en la vida de las personas.</h2>
+          </div>
+          <div className="stories-grid">
+            {inspiringStories.map((story) => <StoryCard key={story.title} story={story} />)}
+          </div>
+        </section>
+
+        <section id="como-funciona" className="section process-section">
+          <div className="section-heading">
+            <p className="eyebrow">¿Cómo funciona?</p>
+            <h2>Un proceso sencillo, humano y respetuoso.</h2>
+          </div>
+          <div className="process-grid">
+            {processSteps.map((step, index) => <ProcessStep key={step.title} step={step} showArrow={index < processSteps.length - 1} />)}
+          </div>
+        </section>
+
         <section id="impacto" className="impact-section">
           <div className="impact-copy">
             <p className="eyebrow">Nuestro impacto</p>
@@ -244,7 +343,7 @@ export function App() {
             <p className="impact-status">
               {impact.loading && 'Actualizando datos...'}
               {!impact.loading && impact.data?.source === 'erp' && `Actualizado desde el ERP${impact.data.updatedAt ? ` el ${formatDate(impact.data.updatedAt)}` : ''}.`}
-              {!impact.loading && impact.data?.source !== 'erp' && 'Datos pendientes de publicación pública desde el ERP.'}
+              {!impact.loading && impact.data?.source !== 'erp' && 'Datos públicos sincronizándose.'}
             </p>
           </div>
           <div className="impact-grid">
@@ -293,7 +392,15 @@ export function App() {
               comercio, iglesia, fundación o entidad colaboradora, coordinamos recogidas y justificantes.
             </p>
           </div>
-          <a className="button primary" href="#contacto">Hablar con la asociación <ArrowRight size={18} /></a>
+          <div className="donation-actions">
+            {donationActions.map((action) => (
+              <article className="donation-action" key={action.title}>
+                <h3>{action.title}</h3>
+                <p>{action.text}</p>
+                <a className="button primary" href={action.href}>{action.cta} <ArrowRight size={18} /></a>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section id="voluntariado" className="section volunteer-section">
@@ -307,6 +414,12 @@ export function App() {
               El voluntariado sostiene el día a día: clasificar alimentos, preparar lotes, apoyar campañas,
               acompañar en entregas y ayudar en tareas administrativas.
             </p>
+            <div className="volunteer-help">
+              <h3>¿Cómo puedes ayudar?</h3>
+              <ul>
+                {volunteerWays.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
             <a className="text-link" href="#contacto">Quiero formar parte del equipo <ArrowRight size={17} /></a>
           </div>
         </section>
@@ -391,13 +504,44 @@ export function App() {
       </main>
 
       <footer className="site-footer">
-        <div>
-          <img src="/logo-pan-y-esperanza.png" alt="" />
-          <p>Asociación Pan y Esperanza</p>
+        <div className="footer-grid">
+          <div className="footer-brand">
+            <img src="/logo-pan-y-esperanza.png" alt="" />
+            <div>
+              <p>Asociación Pan y Esperanza</p>
+              <span>Ayuda alimentaria, acompañamiento social y esperanza compartida.</span>
+            </div>
+          </div>
+          <div className="footer-column">
+            <h3>Redes</h3>
+            {footerSocialLinks.map(([label, href]) => (
+              <a key={label} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined}>{label}</a>
+            ))}
+          </div>
+          <div className="footer-column">
+            <h3>Contacto</h3>
+            <a href={`mailto:${contactEmail}`}>Correo</a>
+            <a href={`tel:${contactPhoneCompact}`}>Teléfono</a>
+            <a href={`https://wa.me/${contactPhoneCompact}`} target="_blank" rel="noreferrer">WhatsApp</a>
+          </div>
+          <div className="footer-column">
+            <h3>Legal</h3>
+            {footerLegalLinks.map(([label, href]) => <a key={label} href={href}>{label}</a>)}
+            <a href={platformUrl} target="_blank" rel="noreferrer">Acceso equipo</a>
+          </div>
         </div>
-        <p>El presente sitio muestra información pública de la entidad. La gestión interna se realiza desde la plataforma privada.</p>
-        <a href={platformUrl} target="_blank" rel="noreferrer">Acceso plataforma</a>
+        <p className="footer-note">El presente sitio muestra información pública de la entidad. La gestión interna se realiza desde la plataforma privada.</p>
       </footer>
+      <a
+        className="floating-whatsapp"
+        href={`https://wa.me/${contactPhoneCompact}?text=${encodeURIComponent('Hola, me gustaría contactar con la Asociación Pan y Esperanza.')}`}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Abrir WhatsApp"
+      >
+        <MessageCircle size={25} />
+        <span>WhatsApp</span>
+      </a>
     </div>
   );
 }
@@ -428,8 +572,33 @@ function WorkCard({ area }) {
 function ImpactStat({ stat, loading }) {
   return (
     <article className="impact-stat">
-      <strong>{loading ? '...' : stat.value}</strong>
+      <strong className={!loading && String(stat.value).length > 8 ? 'is-pending' : undefined}>{loading ? '...' : stat.value}</strong>
       <span>{stat.label}</span>
+    </article>
+  );
+}
+
+function StoryCard({ story }) {
+  return (
+    <article className="story-card">
+      <img src={story.image} alt="" loading="lazy" />
+      <div>
+        <h3>{story.title}</h3>
+        <p>{story.text}</p>
+        <a href="#historias">Leer historia <ArrowRight size={16} /></a>
+      </div>
+    </article>
+  );
+}
+
+function ProcessStep({ step, showArrow }) {
+  const Icon = step.icon;
+  return (
+    <article className="process-card">
+      <div className="process-icon"><Icon size={26} /></div>
+      <h3>{step.title}</h3>
+      <p>{step.text}</p>
+      {showArrow && <span className="process-arrow" aria-hidden="true">→</span>}
     </article>
   );
 }
@@ -484,7 +653,7 @@ function buildImpactStats(data) {
     ['Empresas colaboradoras', data?.companies]
   ].map(([label, value]) => ({
     label,
-    value: value === null || value === undefined ? '—' : formatNumber(value)
+    value: value === null || value === undefined ? 'Próximamente' : formatNumber(value)
   }));
 }
 
