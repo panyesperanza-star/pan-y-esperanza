@@ -31,7 +31,7 @@ const media = (file) => `/media/${file}`;
 
 const images = {
   hero: media('hero-pan-y-esperanza.jpg'),
-  story: media('descarga-furgoneta.jpg'),
+  story: media('voluntariado-preparacion.jpg'),
   food: media('entrega-caja-beneficiaria.jpg'),
   social: media('entrega-familia.jpg'),
   volunteer: media('voluntariado-carga.jpg'),
