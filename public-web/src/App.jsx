@@ -4,7 +4,6 @@ import {
   Building2,
   CalendarDays,
   CircleDollarSign,
-  FileText,
   HandHeart,
   HeartHandshake,
   Mail,
@@ -222,14 +221,15 @@ const volunteerWays = [
   'Apoyo administrativo'
 ];
 
-const transparencyItems = [
-  ['Memoria anual', 'Resumen de actividad, personas atendidas, recursos movilizados y líneas de trabajo.'],
-  ['Estatutos', 'Documento institucional de la Asociación Pan y Esperanza.'],
-  ['Colaboradores', 'Entidades, empresas y personas que apoyan la actividad social.'],
-  ['Preguntas frecuentes', 'Respuestas claras sobre solicitud de ayuda, donaciones, voluntariado y contacto con la entidad.'],
-  ['Cuentas anuales', 'Información económica institucional preparada para publicación y consulta.'],
-  ['Política de privacidad', 'Información sobre protección de datos y uso responsable de la información.']
+const commitmentItems = [
+  'Atención digna y respetuosa.',
+  'Protección de datos personales.',
+  'Transparencia en la gestión.',
+  'Colaboración con empresas e instituciones.',
+  'Gestión responsable de las donaciones.'
 ];
+
+const commitmentNote = 'Si una administración pública, empresa colaboradora o entidad necesita documentación institucional, puede solicitarla directamente a través de nuestro correo de contacto.';
 
 const footerSocialLinks = [
   ['Instagram', socialHandle, instagramUrl],
@@ -240,7 +240,7 @@ const footerSocialLinks = [
 const footerLegalLinks = [
   ['Política de privacidad', '#transparencia'],
   ['Aviso legal', '#transparencia'],
-  ['Cookies', '#transparencia']
+  ['Política de cookies', '#transparencia']
 ];
 
 const galleryGroups = [
@@ -529,24 +529,23 @@ export function App() {
 
         <section id="transparencia" className="section transparency-section">
           <div className="section-copy">
-            <p className="eyebrow">Transparencia</p>
-            <h2>Información institucional clara y accesible.</h2>
+            <p className="eyebrow">Nuestro compromiso</p>
+            <h2>Una gestión responsable, humana y transparente.</h2>
             <p>
-              La asociación mantiene documentación institucional, memorias de actividad y materiales de
-              seguimiento para administraciones, entidades colaboradoras y personas interesadas.
+              Pan y Esperanza trabaja para que cada ayuda se gestione con cercanía, cuidado y responsabilidad.
             </p>
           </div>
           <div className="transparency-list">
-            {transparencyItems.map(([title, text]) => (
+            {commitmentItems.map((title) => (
               <article key={title}>
-                <FileText size={20} />
+                <ShieldCheck size={20} />
                 <div>
                   <h3>{title}</h3>
-                  <p>{text}</p>
                 </div>
               </article>
             ))}
           </div>
+          <p className="transparency-note">{commitmentNote}</p>
         </section>
 
         <section id="contacto" className="contact-section">

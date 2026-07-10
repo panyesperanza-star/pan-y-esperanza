@@ -877,6 +877,14 @@ textarea {
   color: var(--green);
 }
 
+.transparency-note {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  max-width: 860px;
+  color: #52665c;
+  line-height: 1.7;
+}
+
 .contact-section {
   grid-template-columns: 0.85fr 0.9fr;
   align-items: stretch;
