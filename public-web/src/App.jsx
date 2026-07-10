@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Building2,
@@ -13,7 +13,6 @@ import {
   MessageCircle,
   PackageCheck,
   Phone,
-  PlayCircle,
   ShieldCheck,
   Users,
   X
@@ -33,23 +32,26 @@ const media = (file) => `/media/${file}`;
 
 const images = {
   hero: media('hero-pan-y-esperanza.jpg'),
-  story: media('voluntariado-preparacion.jpg'),
-  food: media('reparto-alimentos.jpg'),
+  story: media('descarga-furgoneta.jpg'),
+  food: media('entrega-caja-beneficiaria.jpg'),
   social: media('entrega-familia.jpg'),
-  volunteer: media('voluntariado-equipo.jpg'),
-  donation: media('donacion-nestle.jpg'),
+  volunteer: media('voluntariado-carga.jpg'),
+  donation: media('productos-pales.jpg'),
   donationNescafe: media('donacion-nescafe.jpg'),
   donationLacteos: media('donacion-lacteos.jpg'),
   reception: media('recepcion-productos.jpg'),
-  logistics: media('logistica-carga.jpg'),
+  logistics: media('cajas-leche-furgoneta.jpg'),
   storage: media('almacen-clasificacion.jpg'),
   preparation: media('preparacion-lotes.jpg'),
   product: media('producto-lacteo.jpg'),
   delivery: media('entrega-familia.jpg'),
   guidance: media('entrega-familia.jpg'),
-  galleryA: media('historia-donaciones.jpg'),
-  galleryB: media('historia-voluntariado.jpg'),
-  galleryC: media('historia-reparto.jpg')
+  galleryA: media('entrega-caja-beneficiaria.jpg'),
+  galleryB: media('beneficiarias-productos.jpg'),
+  galleryC: media('pale-l-casei.jpg'),
+  galleryD: media('cajas-leche-furgoneta.jpg'),
+  galleryE: media('descarga-furgoneta.jpg'),
+  galleryF: media('productos-pales.jpg')
 };
 
 const video = {
@@ -167,7 +169,7 @@ const inspiringStories = [
   },
   {
     title: 'Volver a mirar la semana con calma',
-    text: 'Cada reparto refleja una cadena de colaboración real: productos recibidos, manos voluntarias y familias acompañadas.',
+    text: 'La ayuda llega gracias a una cadena sencilla y real: productos recibidos, voluntariado organizado y familias atendidas con cercanía.',
     image: images.story
   }
 ];
@@ -243,75 +245,15 @@ const footerLegalLinks = [
 
 const galleryGroups = [
   {
-    title: 'Recepción de donaciones',
-    text: 'El recorrido comienza con productos recibidos gracias a empresas, entidades y personas colaboradoras.',
-    photos: [
-      [images.donation, 'Productos Nestlé preparados para su clasificación'],
-      [images.donationNescafe, 'Productos Nescafé recibidos por la asociación'],
-      [images.donationLacteos, 'Productos lácteos recibidos']
-    ]
-  },
-  {
-    title: 'Descarga',
-    text: 'Las donaciones se descargan y se colocan para poder revisarlas con orden.',
-    photos: [
-      [images.reception, 'Productos preparados para su descarga y recepción'],
-      [images.logistics, 'Carga y movimiento de productos donados'],
-      [images.product, 'Productos lácteos recibidos para las entregas']
-    ]
-  },
-  {
-    title: 'Clasificación',
-    text: 'Antes de preparar los lotes, el voluntariado clasifica productos y revisa su estado.',
-    photos: [
-      [images.storage, 'Productos organizados en el punto de preparación'],
-      [images.volunteer, 'Equipo voluntario clasificando productos'],
-      [images.story, 'Voluntaria organizando cajas para la actividad']
-    ]
-  },
-  {
-    title: 'Preparación',
-    text: 'Los productos se convierten en lotes listos para entregar a las personas atendidas.',
-    photos: [
-      [images.preparation, 'Preparación de lotes de productos'],
-      [images.galleryB, 'Preparación de ayuda alimentaria'],
-      [images.storage, 'Productos preparados para organizar entregas']
-    ]
-  },
-  {
-    title: 'Carga de la furgoneta',
-    text: 'La logística permite que la ayuda llegue desde el punto de preparación hasta las familias.',
-    photos: [
-      [images.logistics, 'Carga de productos para reparto'],
-      [images.reception, 'Productos preparados en vehículo para transporte'],
-      [images.food, 'Productos listos para entrega']
-    ]
-  },
-  {
-    title: 'Entrega a beneficiarios',
-    text: 'El recorrido culmina en la entrega directa y en el acompañamiento cercano.',
-    photos: [
-      [images.delivery, 'Familia recibiendo productos de apoyo'],
-      [images.galleryC, 'Personas recibiendo productos preparados'],
-      [images.food, 'Reparto de alimentos coordinado por la asociación']
-    ]
-  },
-  {
-    title: 'Voluntariado',
-    text: 'Personas que sostienen la actividad diaria con tiempo, cercanía y compromiso.',
-    photos: [
-      [images.volunteer, 'Equipo voluntario preparando productos'],
-      [images.story, 'Voluntaria organizando cajas para la actividad'],
-      [images.preparation, 'Preparación de lotes por parte del voluntariado']
-    ]
-  },
-  {
     title: 'Galería',
-    text: 'Momentos reales de una asociación viva y en movimiento.',
+    text: 'Seis momentos reales del recorrido de la ayuda: recepción, logística, preparación y entrega.',
     photos: [
-      [images.galleryA, 'Donaciones recibidas por Pan y Esperanza'],
-      [images.galleryB, 'Voluntariado preparando productos'],
-      [images.galleryC, 'Entrega de ayuda alimentaria']
+      [images.galleryA, 'Entrega de una caja de productos a una beneficiaria'],
+      [images.galleryB, 'Dos beneficiarias con productos recibidos'],
+      [images.galleryC, 'Palé de L. Casei preparado para reparto'],
+      [images.galleryD, 'Cajas de leche organizadas en la furgoneta'],
+      [images.galleryE, 'Carga y descarga de productos en la furgoneta'],
+      [images.galleryF, 'Productos recibidos y organizados en palés']
     ]
   }
 ];
@@ -320,10 +262,6 @@ export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [impact, setImpact] = useState({ loading: true, data: null });
   const [formNotice, setFormNotice] = useState('');
-  const [videoVisible, setVideoVisible] = useState(false);
-  const [videoPlaying, setVideoPlaying] = useState(false);
-  const videoRef = useRef(null);
-  const musicRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -337,31 +275,7 @@ export function App() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => () => stopInstrumentalMusic(musicRef), []);
-
   const impactStats = useMemo(() => buildImpactStats(impact.data), [impact.data]);
-
-  function playVideoWithMusic() {
-    setVideoVisible(true);
-    const videoElement = videoRef.current;
-    if (!videoElement) return;
-    videoElement.muted = true;
-    videoElement.volume = 0;
-    if (videoElement.ended) videoElement.currentTime = 0;
-    startInstrumentalMusic(musicRef);
-    videoElement.play()
-      .then(() => setVideoPlaying(true))
-      .catch(() => {
-        stopInstrumentalMusic(musicRef);
-        setVideoPlaying(false);
-      });
-  }
-
-  function pauseVideoWithMusic() {
-    videoRef.current?.pause();
-    stopInstrumentalMusic(musicRef);
-    setVideoPlaying(false);
-  }
 
   function submitContact(event) {
     event.preventDefault();
@@ -444,39 +358,10 @@ export function App() {
             </p>
           </div>
           <figure className="video-card">
-            <div className="video-frame">
-              <video
-                ref={videoRef}
-                className={videoVisible ? 'is-visible' : undefined}
-                muted
-                playsInline
-                preload="metadata"
-                poster={video.poster}
-                aria-label="Vídeo de presentación de Asociación Pan y Esperanza"
-                onPause={() => {
-                  stopInstrumentalMusic(musicRef);
-                  setVideoPlaying(false);
-                }}
-                onEnded={() => {
-                  stopInstrumentalMusic(musicRef);
-                  setVideoPlaying(false);
-                }}
-              >
-                <source src={video.src} type="video/mp4" />
-              </video>
-              {!videoVisible && (
-                <button className="video-preview" type="button" onClick={playVideoWithMusic} aria-label="Reproducir vídeo Conoce Pan y Esperanza">
-                  <img src={video.poster} alt="Miniatura del vídeo Conoce Pan y Esperanza" />
-                  <span className="video-play" aria-hidden="true"><PlayCircle size={64} /></span>
-                </button>
-              )}
-            </div>
-            {videoVisible && (
-              <button className="video-toggle" type="button" onClick={videoPlaying ? pauseVideoWithMusic : playVideoWithMusic}>
-                {videoPlaying ? 'Pausar vídeo' : 'Reproducir vídeo'}
-              </button>
-            )}
-            <figcaption>El vídeo no se reproduce automáticamente y se muestra sin su audio original, con acompañamiento instrumental suave.</figcaption>
+            <video controls muted playsInline preload="metadata" poster={video.poster} aria-label="Vídeo de presentación de Asociación Pan y Esperanza">
+              <source src={video.src} type="video/mp4" />
+            </video>
+            <figcaption>El vídeo no se reproduce automáticamente y se muestra completamente silenciado.</figcaption>
           </figure>
         </section>
 
@@ -843,72 +728,6 @@ function buildImpactStats(data) {
     label,
     value: formatNumber(value)
   }));
-}
-
-function startInstrumentalMusic(musicRef) {
-  if (musicRef.current) return;
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext) return;
-
-  const context = new AudioContext();
-  context.resume?.();
-  const master = context.createGain();
-  master.gain.value = 0.045;
-  master.connect(context.destination);
-
-  const chords = [
-    [261.63, 329.63, 392.00],
-    [220.00, 261.63, 329.63],
-    [174.61, 220.00, 261.63],
-    [196.00, 246.94, 293.66]
-  ];
-  let chordIndex = 0;
-  const activeNodes = [];
-
-  function playChord() {
-    const now = context.currentTime;
-    const chord = chords[chordIndex % chords.length];
-    chordIndex += 1;
-
-    chord.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(index === 0 ? 0.18 : 0.11, now + 0.4);
-      gain.gain.linearRampToValueAtTime(0, now + 2.8);
-      oscillator.connect(gain);
-      gain.connect(master);
-      oscillator.start(now);
-      oscillator.stop(now + 3);
-      activeNodes.push(oscillator, gain);
-    });
-  }
-
-  playChord();
-  const interval = window.setInterval(playChord, 2400);
-  musicRef.current = { context, interval, activeNodes };
-}
-
-function stopInstrumentalMusic(musicRef) {
-  const music = musicRef.current;
-  if (!music) return;
-  window.clearInterval(music.interval);
-  music.activeNodes.forEach((node) => {
-    try {
-      if (typeof node.stop === 'function') node.stop();
-    } catch {
-      // Node already stopped.
-    }
-    try {
-      node.disconnect();
-    } catch {
-      // Node already disconnected.
-    }
-  });
-  music.context.close?.();
-  musicRef.current = null;
 }
 
 function formatNumber(value) {

@@ -460,11 +460,6 @@ textarea {
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
 }
 
-.video-frame {
-  position: relative;
-  background: #0c1d14;
-}
-
 .video-card video,
 .video-preview {
   display: block;
@@ -475,17 +470,8 @@ textarea {
   background: #0c1d14;
 }
 
-.video-card video {
-  opacity: 0;
-}
-
-.video-card video.is-visible {
-  opacity: 1;
-}
-
 .video-preview {
-  position: absolute;
-  inset: 0;
+  position: relative;
   padding: 0;
   border: 0;
   color: white;
@@ -506,21 +492,6 @@ textarea {
   color: rgba(255, 255, 255, 0.92);
   pointer-events: none;
   text-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
-}
-
-.video-toggle {
-  position: absolute;
-  right: 18px;
-  bottom: 62px;
-  z-index: 2;
-  border: 0;
-  border-radius: 999px;
-  padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #123727;
-  font-weight: 900;
-  cursor: pointer;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
 .video-card figcaption {
@@ -618,6 +589,11 @@ textarea {
   display: block;
   font-size: clamp(2rem, 5vw, 3.5rem);
   line-height: 1;
+}
+
+.impact-stat strong.is-pending {
+  font-size: clamp(1.25rem, 2.2vw, 1.75rem);
+  line-height: 1.15;
 }
 
 .impact-stat span {
@@ -1172,12 +1148,6 @@ textarea {
 
   .work-card {
     min-width: 0;
-  }
-
-  .video-toggle {
-    position: static;
-    width: calc(100% - 24px);
-    margin: 12px;
   }
 
   .floating-whatsapp {
