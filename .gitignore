@@ -1,4 +1,12 @@
 node_modules
 dist
 .env
+.env.local
+.env.development
+.env.production
+.env.*.local
 .vercel
+outputs/
+*.log
+*.tmp
+coverage/

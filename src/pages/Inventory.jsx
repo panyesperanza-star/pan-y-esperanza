@@ -1,14 +1,26 @@
 import {
+  Activity,
   AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
   Boxes,
+  Brain,
   CalendarClock,
+  CalendarDays,
+  ClipboardList,
   Download,
+  DollarSign,
+  Filter,
+  ImageIcon,
+  MapPin,
+  Package,
   PackageCheck,
   Pencil,
   Plus,
   Search,
+  Sparkles,
+  Tag,
+  Truck,
   Trash2
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -18,7 +30,6 @@ import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { StatCard } from '../components/StatCard';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
@@ -64,6 +75,9 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
   const [movementType, setMovementType] = useState(null);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('Todas');
+  const [locationFilter, setLocationFilter] = useState('Todas');
+  const [donorFilter, setDonorFilter] = useState('Todos');
+  const [quickFilter, setQuickFilter] = useState('Todos');
   const [status, setStatus] = useState('Todos');
   const [pageError, setPageError] = useState('');
   const [deletingId, setDeletingId] = useState('');
@@ -79,15 +93,35 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
     () => ['Todas', ...new Set(data.inventory_items.map((item) => item.category).filter(Boolean))],
     [data.inventory_items]
   );
+  const locations = useMemo(
+    () => ['Todas', ...new Set(data.inventory_items.map((item) => item.location).filter(Boolean))],
+    [data.inventory_items]
+  );
+  const donors = useMemo(
+    () => ['Todos', ...new Set(data.inventory_items.map((item) => item.donor).filter(Boolean))],
+    [data.inventory_items]
+  );
   const summary = useMemo(() => calculateSummary(data.inventory_items), [data.inventory_items]);
+  const inventoryCenter = useMemo(() => buildInventoryCenter(data), [data]);
+  const quickFilters = useMemo(() => buildQuickFilters(inventoryCenter), [inventoryCenter]);
+  const latestMovementByItem = useMemo(() => buildLatestMovementByItem(data.inventory_movements || []), [data.inventory_movements]);
 
   useEffect(() => {
     if (navigationTarget?.moduleId !== 'inventory') return;
     setSearch('');
     setCategory('Todas');
-    if (navigationTarget.filter === 'stock-critical') setStatus('Stock critico');
-    else if (navigationTarget.filter === 'expiring-soon') setStatus('Caducidad proxima');
-    else if (!navigationTarget.filter) setStatus('Todos');
+    setLocationFilter('Todas');
+    setDonorFilter('Todos');
+    if (navigationTarget.filter === 'stock-critical') {
+      setStatus('Stock critico');
+      setQuickFilter('Solo criticos');
+    } else if (navigationTarget.filter === 'expiring-soon') {
+      setStatus('Caducidad proxima');
+      setQuickFilter('Proximos a caducar');
+    } else if (!navigationTarget.filter) {
+      setStatus('Todos');
+      setQuickFilter('Todos');
+    }
   }, [navigationTarget]);
 
   const filteredItems = useMemo(() => {
@@ -97,10 +131,13 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         const searchable = normalize([item.name, item.category, item.lot, item.location, item.donor].join(' '));
         return (!query || searchable.includes(query))
           && (category === 'Todas' || item.category === category)
-          && matchesStatus(item, status);
+          && (locationFilter === 'Todas' || item.location === locationFilter)
+          && (donorFilter === 'Todos' || item.donor === donorFilter)
+          && matchesStatus(item, status)
+          && matchesQuickFilter(item, quickFilter, data);
       })
       .sort(compareInventoryItems);
-  }, [category, data.inventory_items, search, status]);
+  }, [category, data, data.inventory_items, donorFilter, locationFilter, quickFilter, search, status]);
 
   async function deleteProduct(item, payload) {
     setPageError('');
@@ -173,15 +210,46 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </div>
       )}
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Productos y lotes" value={summary.total} icon={Boxes} />
-        <StatCard label="Alertas de stock" value={summary.stockAlerts} icon={AlertTriangle} />
-        <StatCard label="Alertas de caducidad" value={summary.expiring} icon={CalendarClock} />
-        <StatCard label="Sin alertas" value={summary.correct} icon={PackageCheck} />
-      </div>
+      <InventoryOperationsOverview insights={inventoryCenter} summary={summary} />
 
-      <section className="mb-5 border-y border-slate-200 bg-white py-4">
-        <div className="grid gap-3 px-4 md:grid-cols-[minmax(0,1fr)_220px_220px]">
+      <InventoryVisualIndicators insights={inventoryCenter} />
+
+      <InventoryQuickActions
+        canRegisterMovements={canRegisterMovements}
+        canManageProducts={canManageProducts}
+        onCreateProduct={() => setProductModal({ mode: 'create' })}
+        onEntry={() => setMovementType('Entrada')}
+        onExit={() => setMovementType('Salida')}
+        onRegularization={() => setMovementType('Entrada')}
+      />
+
+      <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-brand-50 p-2 text-brand-700"><Filter size={18} /></div>
+            <div>
+              <h3 className="font-bold text-ink">Filtros operativos</h3>
+              <p className="text-sm text-slate-500">Localiza lotes por estado, origen, ubicación o prioridad de salida.</p>
+            </div>
+          </div>
+          <span className="rounded-md bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-600">{filteredItems.length} registros visibles</span>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {quickFilters.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setQuickFilter(item.id)}
+              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                quickFilter === item.id ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {item.label}
+              <span className={`rounded px-1.5 py-0.5 text-xs ${quickFilter === item.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>{item.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <label className="relative block">
             <span className="sr-only">Buscar inventario</span>
             <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={18} />
@@ -196,6 +264,18 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
             <span className="sr-only">Filtrar por categoría</span>
             <select className={inputClass} value={category} onChange={(event) => setCategory(event.target.value)}>
               {categories.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Filtrar por ubicación</span>
+            <select className={inputClass} value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}>
+              {locations.map((item) => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Filtrar por donante</span>
+            <select className={inputClass} value={donorFilter} onChange={(event) => setDonorFilter(event.target.value)}>
+              {donors.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
           <label>
@@ -215,20 +295,26 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </div>
       </section>
 
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h3 className="font-bold text-ink">Existencias</h3>
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-bold text-ink">Existencias</h3>
+            <p className="text-sm text-slate-500">Productos, lotes, origen, ubicación y estado visual.</p>
+          </div>
           <span className="text-sm text-slate-500">{filteredItems.length} registros</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-left text-sm">
+          <table className="w-full min-w-[1360px] text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Categoría</th>
                 <th className="px-4 py-3">Lote</th>
-                <th className="px-4 py-3">Stock</th>
+                <th className="px-4 py-3">Cantidad</th>
                 <th className="px-4 py-3">Ubicación</th>
+                <th className="px-4 py-3">Donante</th>
+                <th className="px-4 py-3">Entrada</th>
                 <th className="px-4 py-3">Caducidad</th>
                 <th className="px-4 py-3">Estado</th>
                 {hasProductActions && <th className="px-4 py-3 text-right">Acciones</th>}
@@ -237,20 +323,35 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
             <tbody className="divide-y divide-slate-100">
               {filteredItems.map((item) => {
                 const parsed = parseInventoryNotes(item.notes || '');
+                const latestEntry = latestMovementByItem.get(`${item.id}:Entrada`);
                 return (
-                  <tr key={item.id} className="align-top">
+                  <tr key={item.id} className="align-top transition hover:bg-slate-50/70">
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-ink">{item.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{item.donor || 'Sin donante'}{parsed.visible ? ` · ${parsed.visible}` : ''}</p>
-                      {parsed.meta.Referencia && <p className="mt-1 text-xs font-semibold text-slate-500">{parsed.meta.Referencia}</p>}
+                      <div className="flex min-w-[240px] items-start gap-3">
+                        <InventoryProductImage item={item} />
+                        <div>
+                          <p className="font-semibold text-ink">{item.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">{parsed.visible || 'Sin notas operativas'}</p>
+                          {parsed.meta.Referencia && <p className="mt-1 text-xs font-semibold text-slate-500">{parsed.meta.Referencia}</p>}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">{item.category || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600"><Tag size={13} /> {item.category || '-'}</span>
+                    </td>
                     <td className="px-4 py-3">{item.lot || '-'}</td>
                     <td className="px-4 py-3">
                       <p className="font-semibold text-ink">{formatQuantity(item.stock)} {item.unit}</p>
                       <p className="mt-0.5 text-xs text-slate-500">Mínimo: {formatQuantity(item.low_stock_threshold)}</p>
                     </td>
-                    <td className="px-4 py-3">{item.location || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1 text-slate-700"><MapPin size={14} className="text-slate-400" /> {item.location || '-'}</span>
+                    </td>
+                    <td className="px-4 py-3">{item.donor || 'Sin donante'}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-700">{latestEntry ? formatDate(latestEntry.moved_at) : '-'}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{latestEntry?.responsible || ''}</p>
+                    </td>
                     <td className="px-4 py-3">{formatDate(item.expires_at)}</td>
                     <td className="px-4 py-3"><StatusBadges item={item} /></td>
                     {hasProductActions && (
@@ -287,7 +388,7 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
               })}
               {!filteredItems.length && (
                 <tr>
-                  <td className="px-4 py-8 text-center text-slate-500" colSpan={7 + (hasProductActions ? 1 : 0)}>
+                  <td className="px-4 py-8 text-center text-slate-500" colSpan={9 + (hasProductActions ? 1 : 0)}>
                     No hay productos que coincidan con los filtros.
                   </td>
                 </tr>
@@ -297,7 +398,13 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </div>
       </section>
 
-      <section className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel">
+      <aside className="space-y-5">
+        <InventoryAiPanel insights={inventoryCenter} />
+        <InventoryActivityPanel timeline={inventoryCenter.timeline} />
+      </aside>
+      </div>
+
+      <section id="inventory-movements" className="mt-5 overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h3 className="font-bold text-ink">Movimientos</h3>
           <span className="text-sm text-slate-500">{data.inventory_movements.length} registros</span>
@@ -391,6 +498,190 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
         </Modal>
       )}
     </>
+  );
+}
+
+function InventoryOperationsOverview({ insights, summary }) {
+  const metrics = [
+    { label: 'Total de productos', value: insights.totalProducts, detail: `${summary.correct} sin alertas`, icon: Package },
+    { label: 'Total de lotes', value: insights.totalLots, detail: 'Registros activos de inventario', icon: Boxes },
+    { label: 'Valor aproximado', value: formatMoney(insights.estimatedValue), detail: 'Según valor unitario disponible', icon: DollarSign },
+    { label: 'Productos críticos', value: insights.criticalProducts, detail: 'Agotados, bajo mínimo o caducados', icon: AlertTriangle },
+    { label: 'Próximos a caducar', value: insights.expiringSoon, detail: 'Lotes con salida prioritaria', icon: CalendarClock },
+    { label: 'Última entrada', value: formatMovementShort(insights.latestEntry), detail: insights.latestEntry?.item_name || 'Sin registros', icon: ArrowUpCircle },
+    { label: 'Última salida', value: formatMovementShort(insights.latestExit), detail: insights.latestExit?.item_name || 'Sin registros', icon: ArrowDownCircle }
+  ];
+
+  return (
+    <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-ink">Centro de Gestión de Inventario</h3>
+          <p className="mt-1 text-sm text-slate-500">Control operativo de productos, lotes, caducidades, entradas y salidas.</p>
+        </div>
+        <div className="inline-flex w-fit items-center gap-2 rounded-md bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">
+          <PackageCheck size={16} /> Inventario como fuente de verdad
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((item) => <InventoryMetric key={item.label} {...item} />)}
+      </div>
+    </section>
+  );
+}
+
+function InventoryMetric({ label, value, detail, icon: Icon }) {
+  return (
+    <article className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{label}</p>
+          <p className="mt-2 text-2xl font-bold text-ink">{value}</p>
+          <p className="mt-1 text-xs text-slate-500">{detail}</p>
+        </div>
+        <div className="rounded-md bg-white p-2 text-brand-700 shadow-sm"><Icon size={20} /></div>
+      </div>
+    </article>
+  );
+}
+
+function InventoryVisualIndicators({ insights }) {
+  const indicators = [
+    { label: 'Stock correcto', value: insights.stockCorrect, detail: 'Sin incidencias activas', icon: PackageCheck, tone: 'emerald' },
+    { label: 'Stock bajo', value: insights.lowStock, detail: 'Por debajo del mínimo', icon: AlertTriangle, tone: 'amber' },
+    { label: 'Próxima caducidad', value: insights.expiringSoon, detail: 'Requiere prioridad de salida', icon: CalendarClock, tone: 'orange' },
+    { label: 'Producto agotado', value: insights.outOfStock, detail: 'Sin unidades disponibles', icon: Boxes, tone: 'red' },
+    { label: 'Donaciones pendientes', value: insights.pendingDonations, detail: 'Pendientes de registrar', icon: Truck, tone: 'blue' }
+  ];
+
+  return (
+    <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      {indicators.map((item) => <InventoryIndicator key={item.label} {...item} />)}
+    </section>
+  );
+}
+
+function InventoryIndicator({ label, value, detail, icon: Icon, tone }) {
+  const tones = {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    orange: 'border-orange-200 bg-orange-50 text-orange-700',
+    red: 'border-red-200 bg-red-50 text-red-700',
+    blue: 'border-sky-200 bg-sky-50 text-sky-700'
+  };
+  return (
+    <article className={`rounded-md border p-4 ${tones[tone]}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{label}</p>
+          <p className="mt-2 text-2xl font-bold">{value}</p>
+          <p className="mt-1 text-xs opacity-80">{detail}</p>
+        </div>
+        <div className="rounded-md bg-white/70 p-2"><Icon size={20} /></div>
+      </div>
+    </article>
+  );
+}
+
+function InventoryQuickActions({ canRegisterMovements, canManageProducts, onCreateProduct, onEntry, onExit, onRegularization }) {
+  return (
+    <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="font-bold text-ink">Acciones rápidas</h3>
+          <p className="text-sm text-slate-500">Accesos directos para coordinar entradas, salidas, campañas y movimientos.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <QuickActionLink href="/donations" icon={Truck}>Registrar donación</QuickActionLink>
+          <Button variant="secondary" disabled={!canRegisterMovements} onClick={onEntry}><ArrowUpCircle size={16} /> Nueva entrada</Button>
+          <Button variant="secondary" disabled={!canRegisterMovements} onClick={onExit}><ArrowDownCircle size={16} /> Nueva salida</Button>
+          <Button variant="secondary" disabled={!canRegisterMovements} onClick={onRegularization}><ClipboardList size={16} /> Regularización</Button>
+          {canManageProducts && <Button onClick={onCreateProduct}><Plus size={16} /> Producto</Button>}
+          <QuickActionLink href="/agenda" icon={CalendarDays}>Abrir Agenda</QuickActionLink>
+          <QuickActionLink href="/agenda" icon={Sparkles}>Crear campaña</QuickActionLink>
+          <Button variant="subtle" onClick={() => document.getElementById('inventory-movements')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><Activity size={16} /> Ver movimientos</Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function QuickActionLink({ href, icon: Icon, children }) {
+  return (
+    <a className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" href={href}>
+      <Icon size={16} /> {children}
+    </a>
+  );
+}
+
+function InventoryProductImage({ item }) {
+  const src = item.photo_url || item.image_url || item.photo || item.image || item.picture_url || '';
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={`Fotografía de ${item.name}`}
+        loading="lazy"
+        className="h-14 w-14 shrink-0 rounded-md border border-slate-200 object-cover"
+      />
+    );
+  }
+  return (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-slate-400">
+      <ImageIcon size={20} />
+    </div>
+  );
+}
+
+function InventoryAiPanel({ insights }) {
+  const recommendations = [
+    `${insights.expiringSoon} lotes con prioridad por caducidad`,
+    `${insights.lowStock + insights.outOfStock} productos requieren revisión de stock`,
+    `${insights.pendingDonations} donaciones pueden convertirse en entrada`
+  ];
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-brand-50 p-2 text-brand-700"><Brain size={18} /></div>
+        <div>
+          <h3 className="font-bold text-ink">Recomendaciones inteligentes</h3>
+          <p className="mt-1 text-sm text-slate-500">Preparado para priorizar salidas, detectar riesgo de caducidad y sugerir campañas.</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {recommendations.map((item) => (
+          <div key={item} className="rounded-md bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">{item}</div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function InventoryActivityPanel({ timeline }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-brand-50 p-2 text-brand-700"><Activity size={18} /></div>
+        <div>
+          <h3 className="font-bold text-ink">Actividad reciente</h3>
+          <p className="mt-1 text-sm text-slate-500">Entradas, salidas, regularizaciones, donaciones y campañas.</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        {timeline.map((item) => (
+          <article key={item.id} className="relative border-l border-slate-200 pl-4">
+            <span className={`absolute -left-1.5 top-1 h-3 w-3 rounded-full ${item.dot}`} />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-bold text-ink">{item.title}</p>
+              <span className="text-xs text-slate-500">{formatDate(item.date)}</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+            <span className="mt-2 inline-flex rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">{item.type}</span>
+          </article>
+        ))}
+        {!timeline.length && <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">Sin actividad registrada.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -706,6 +997,170 @@ function calculateSummary(items) {
   }, { total: 0, stockAlerts: 0, expiring: 0, correct: 0 });
 }
 
+function buildInventoryCenter(data = {}) {
+  const items = data.inventory_items || [];
+  const movements = data.inventory_movements || [];
+  const donations = data.donations || [];
+  const campaigns = data.campanas || [];
+  const productNames = new Set(items.map((item) => normalize(item.name)).filter(Boolean));
+  const outOfStock = items.filter((item) => Number(item.stock || 0) <= 0);
+  const lowStock = items.filter((item) => Number(item.stock || 0) > 0 && Number(item.stock || 0) <= Number(item.low_stock_threshold || 0));
+  const expiringSoon = items.filter((item) => {
+    const days = daysUntil(item.expires_at);
+    return days !== null && days >= 0 && days <= 30;
+  });
+  const expired = items.filter((item) => {
+    const days = daysUntil(item.expires_at);
+    return days !== null && days < 0;
+  });
+  const stockCorrect = items.filter((item) => !getItemSignals(item).length);
+  const pendingDonations = inventoryDonationCandidates(donations);
+
+  return {
+    totalProducts: productNames.size || items.length,
+    totalLots: items.length,
+    estimatedValue: items.reduce((total, item) => total + (Number(item.stock || 0) * inventoryUnitValue(item)), 0),
+    criticalProducts: new Set([...outOfStock, ...lowStock, ...expired].map((item) => item.id)).size,
+    expiringSoon: expiringSoon.length,
+    lowStock: lowStock.length,
+    outOfStock: outOfStock.length,
+    stockCorrect: stockCorrect.length,
+    pendingDonations: pendingDonations.length,
+    recentDonationItems: items.filter((item) => itemHasRecentDonation(item, data)).length,
+    latestEntry: latestMovement(movements, 'Entrada'),
+    latestExit: latestMovement(movements, 'Salida'),
+    timeline: buildInventoryTimeline({ movements, donations, campaigns })
+  };
+}
+
+function buildQuickFilters(insights) {
+  return [
+    { id: 'Todos', label: 'Todos', count: insights.totalLots },
+    { id: 'Solo criticos', label: 'Solo críticos', count: insights.criticalProducts },
+    { id: 'Proximos a caducar', label: 'Próximos a caducar', count: insights.expiringSoon },
+    { id: 'Sin stock', label: 'Sin stock', count: insights.outOfStock },
+    { id: 'Donaciones recientes', label: 'Donaciones recientes', count: insights.recentDonationItems }
+  ];
+}
+
+function matchesQuickFilter(item, quickFilter, data = {}) {
+  if (quickFilter === 'Todos') return true;
+  const labels = getItemSignals(item).map((signal) => signal.label);
+  if (quickFilter === 'Solo criticos') return labels.includes('Agotado') || labels.includes('Stock bajo') || labels.includes('Caducado');
+  if (quickFilter === 'Proximos a caducar') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
+  if (quickFilter === 'Sin stock') return labels.includes('Agotado');
+  if (quickFilter === 'Donaciones recientes') return itemHasRecentDonation(item, data);
+  return true;
+}
+
+function buildLatestMovementByItem(movements = []) {
+  return movements.reduce((map, movement) => {
+    const key = `${movement.item_id}:${movement.movement_type}`;
+    const current = map.get(key);
+    if (!current || String(movement.moved_at || '').localeCompare(String(current.moved_at || '')) > 0) map.set(key, movement);
+    return map;
+  }, new Map());
+}
+
+function latestMovement(movements = [], type) {
+  return movements
+    .filter((item) => item.movement_type === type)
+    .sort((a, b) => String(b.moved_at || '').localeCompare(String(a.moved_at || '')))[0];
+}
+
+function buildInventoryTimeline({ movements = [], donations = [], campaigns = [] }) {
+  const movementRows = movements.map((movement) => {
+    const parsed = parseInventoryNotes(movement.notes || '');
+    const reason = parsed.meta.Motivo || parsed.visible || '';
+    const regularization = normalize(reason).includes('regulariz');
+    return {
+      id: `movement-${movement.id}`,
+      date: movement.moved_at,
+      title: movement.item_name || 'Producto',
+      detail: `${formatQuantity(movement.quantity)} unidades - ${reason || movement.responsible || 'Movimiento registrado'}`,
+      type: regularization ? 'Regularización' : movement.movement_type,
+      dot: regularization ? 'bg-amber-500' : movement.movement_type === 'Entrada' ? 'bg-emerald-500' : 'bg-sky-500'
+    };
+  });
+
+  const donationRows = inventoryDonationCandidates(donations).map((donation) => ({
+    id: `donation-${donation.id}`,
+    date: donation.donated_at || donation.created_at,
+    title: donation.donor || 'Donación',
+    detail: donation.donation_type || donation.notes || 'Donación pendiente de registrar',
+    type: 'Donación',
+    dot: 'bg-blue-500'
+  }));
+
+  const campaignRows = campaigns.slice(0, 6).map((campaign) => ({
+    id: `campaign-${campaign.id}`,
+    date: campaign.start_date || campaign.created_at,
+    title: campaign.name || 'Campaña',
+    detail: campaign.observations || campaign.description || campaign.status || 'Campaña operativa',
+    type: 'Campaña',
+    dot: 'bg-brand-600'
+  }));
+
+  return [...movementRows, ...donationRows, ...campaignRows]
+    .filter((item) => item.date || item.title)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    .slice(0, 6);
+}
+
+function itemHasRecentDonation(item, data = {}) {
+  const normalizedDonor = normalize(item.donor);
+  const recentDonationDonors = new Set(inventoryDonationCandidates(data.donations || [])
+    .filter((donation) => isRecentDate(donation.donated_at || donation.created_at, 30))
+    .map((donation) => normalize(donation.donor))
+    .filter(Boolean));
+  const hasDonorMatch = normalizedDonor && recentDonationDonors.has(normalizedDonor);
+  const hasRecentEntry = (data.inventory_movements || []).some((movement) => (
+    movement.item_id === item.id
+    && movement.movement_type === 'Entrada'
+    && isRecentDate(movement.moved_at, 30)
+  ));
+  return hasDonorMatch || hasRecentEntry;
+}
+
+function inventoryDonationCandidates(donations = []) {
+  return donations.filter((donation) => {
+    const text = normalize([donation.donation_type, donation.operation_type, donation.category, donation.notes].join(' '));
+    const status = normalize(donation.status || donation.estado || '');
+    const isInventoryDonation = text.includes('alimentos') || text.includes('especie') || text.includes('producto') || text.includes('material');
+    const isOpen = !status || status.includes('pend') || status.includes('recib') || status.includes('registr');
+    return isInventoryDonation && isOpen && !donation.inventory_movement_id;
+  });
+}
+
+function isRecentDate(value, days) {
+  if (!value) return false;
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today.getTime() - target.getTime()) / 86400000);
+  return diff >= 0 && diff <= days;
+}
+
+function inventoryUnitValue(item) {
+  return positiveNumber(item.unit_value)
+    ?? positiveNumber(item.estimated_unit_value)
+    ?? positiveNumber(item.economic_value)
+    ?? positiveNumber(item.price)
+    ?? positiveNumber(item.cost)
+    ?? 0;
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function formatMovementShort(movement) {
+  if (!movement) return '-';
+  return formatDate(movement.moved_at);
+}
+
 function matchesStatus(item, status) {
   if (status === 'Todos') return true;
   const labels = getItemSignals(item).map((signal) => signal.label);
@@ -825,6 +1280,10 @@ function getDocumentSummary(meta = {}) {
   const label = DOCUMENT_FIELD_LABELS[type];
   const number = label ? meta[label] : documentNumberFromMeta(meta);
   return [type, number].filter(Boolean).join(': ');
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
 }
 
 function formatQuantity(value) {

@@ -45,7 +45,8 @@ import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPh
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printBeneficiaryPdf, printDeliveryReceiptPdf, printSocialAttentionReportPdf } from '../lib/exporters';
-import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, todayISO } from '../lib/formatters';
+import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 import { DeliveryForm } from './Deliveries';
 
@@ -320,6 +321,8 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
             canDelete={canDelete}
             onEdit={() => { setProfileId(null); setEditing(profile); }}
             onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
+            onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
+            onCreateCampaign={() => onNavigate?.({ moduleId: 'agenda', filter: 'campaigns', profileId: profile.id })}
             onAddFamilyMember={(familyId) => {
               setProfileId(null);
               setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries), family_id: familyId });
@@ -503,15 +506,13 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
   }
 
   function validateUniqueFields() {
-    const documentId = normalizeDocument(form.document_id);
-    const duplicateDocument = documentId ? beneficiaries.find((item) => normalizeDocument(item.document_id) === documentId && item.id !== form.id) : null;
+    const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
     if (duplicateDocument) {
       setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese documento.' });
       documentInputRef.current?.focus();
       return false;
     }
-    const code = normalize(form.code);
-    const duplicateCode = code ? beneficiaries.find((item) => normalize(item.code) === code && item.id !== form.id) : null;
+    const duplicateCode = findDuplicateBeneficiaryCode(beneficiaries, form, form.id);
     if (duplicateCode) {
       setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese código.' });
       codeInputRef.current?.focus();
@@ -705,7 +706,7 @@ function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onAddFamilyMember }) {
+function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
@@ -724,6 +725,8 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const canCreateDelivery = canDo(currentUser, 'deliveries', 'create') && !familyArchived;
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
+  const timeline = buildProfessionalTimeline({ beneficiary, deliveries: activeDeliveries, documents, history });
+  const documentPreview = documents.slice(0, 4);
 
   const tabs = [
     { id: 'overview', label: 'Resumen', icon: CircleUserRound },
@@ -793,10 +796,12 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   }
 
   return (
-    <div className="-m-5">
-      <CrmHeader
+    <div className="-m-5 bg-slate-50">
+      <ProfessionalCrmHeader
         beneficiary={beneficiary}
         family={family}
+        deliveries={activeDeliveries}
+        history={history}
         canEdit={canEdit}
         canDelete={canDelete}
         canCreateDelivery={canCreateDelivery}
@@ -820,43 +825,73 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
 
       {notice && <div className="mx-5 mt-4 rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
 
-      <ProfileSummaryCards
-        beneficiary={beneficiary}
-        deliveries={activeDeliveries}
-        documents={documents}
-        incidents={incidents}
-        valuation={valuation}
-      />
+      <main className="space-y-6 p-5 sm:p-7">
+        <QuickCaseActions
+          canCreateDelivery={canCreateDelivery}
+          canEdit={canEdit}
+          onDelivery={() => setDeliveryOpen(true)}
+          onNote={() => setTab('social')}
+          onDocument={() => setTab('documents')}
+          onCreateCampaign={onCreateCampaign}
+          onOpenAgenda={onOpenAgenda || onNewAppointment}
+          onNotice={() => { setNotice(''); setEmailOpen(true); }}
+        />
 
-      <nav className="mt-6 overflow-x-auto border-y border-slate-200 bg-white px-5 sm:px-7" aria-label="Secciones del expediente">
-        <div className="flex min-w-max gap-1">
-          {tabs.map(({ id, label, icon: Icon, count }) => (
-            <button key={id} className={`focus-ring flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>
-              <Icon size={17} /> {label}{count !== undefined && <span className={`rounded-full px-2 py-0.5 text-xs ${tab === id ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>}
-            </button>
-          ))}
-        </div>
-      </nav>
+        <SocialCaseSummaryCards
+          beneficiary={beneficiary}
+          family={family}
+          deliveries={activeDeliveries}
+          documents={documents}
+          incidents={incidents}
+          valuation={valuation}
+          history={history}
+        />
 
-      <main className="bg-slate-50/70 p-5 sm:p-7">
-        {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} deliveries={activeDeliveries} history={history} />}
-        {tab === 'personal' && <PersonalDataPanel beneficiary={beneficiary} />}
-        {tab === 'family' && (
-          <FamilyPanel
-            beneficiary={beneficiary}
-            family={family}
-            members={familyMembers}
-            archived={familyArchived}
-            canAddMember={canCreateBeneficiary && !familyArchived}
-            canCreateFamily={canCreateFamily && canEdit}
-            onAddMember={() => onAddFamilyMember(family.id)}
-            onCreateFamily={() => setFamilyOpen(true)}
-          />
-        )}
-        {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
-        {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} />}
-        {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
-        {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
+        <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+          <ProfessionalTimeline entries={timeline} />
+          <div className="space-y-6">
+            <ProfessionalDocumentsPreview
+              documents={documentPreview}
+              total={documents.length}
+              canEdit={canEdit}
+              onOpenDocuments={() => setTab('documents')}
+            />
+            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} />
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <nav className="overflow-x-auto border-b border-slate-200 bg-white px-4 sm:px-6" aria-label="Secciones del expediente">
+            <div className="flex min-w-max gap-1">
+              {tabs.map(({ id, label, icon: Icon, count }) => (
+                <button key={id} className={`focus-ring flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>
+                  <Icon size={17} /> {label}{count !== undefined && <span className={`rounded-full px-2 py-0.5 text-xs ${tab === id ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>}
+                </button>
+              ))}
+            </div>
+          </nav>
+
+          <div className="bg-slate-50/70 p-5 sm:p-6">
+            {tab === 'overview' && <OverviewPanel beneficiary={beneficiary} family={family} deliveries={activeDeliveries} history={history} />}
+            {tab === 'personal' && <PersonalDataPanel beneficiary={beneficiary} />}
+            {tab === 'family' && (
+              <FamilyPanel
+                beneficiary={beneficiary}
+                family={family}
+                members={familyMembers}
+                archived={familyArchived}
+                canAddMember={canCreateBeneficiary && !familyArchived}
+                canCreateFamily={canCreateFamily && canEdit}
+                onAddMember={() => onAddFamilyMember(family.id)}
+                onCreateFamily={() => setFamilyOpen(true)}
+              />
+            )}
+            {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
+            {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} />}
+            {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
+            {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
+          </div>
+        </section>
       </main>
 
       {emailOpen && (
@@ -898,6 +933,215 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         </Modal>
       )}
     </div>
+  );
+}
+
+function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
+  const latestDelivery = getLatestDelivery(deliveries);
+  const priority = socialPriorityLabel(beneficiary, history);
+  const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
+  const responsible = assignedResponsibleLabel(beneficiary, family);
+
+  return (
+    <header className="relative overflow-hidden border-b border-slate-200 bg-white">
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-600" />
+      <div className="relative px-5 py-6 sm:px-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 pt-10 sm:flex-row sm:items-end">
+            <BeneficiaryPhoto beneficiary={beneficiary} canEdit={canEdit} canDelete={canDelete} onChange={onPhotoChange} />
+            <div className="min-w-0 flex-1 rounded-2xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-200">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge active={beneficiary.is_active} />
+                <SocialSituationBadge value={beneficiary.situation} />
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${priorityBadgeTone(priority)}`}>Prioridad {priority}</span>
+              </div>
+              <h2 className="mt-2 break-words text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
+                <span className="font-mono font-bold text-brand-700">{beneficiary.code}</span>
+                <span>{beneficiary.document_id || 'Sin documento'}</span>
+                <span>{family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-2 rounded-2xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-200 sm:grid-cols-2 lg:w-[430px]">
+            <HeaderMetric icon={Clock3} label="Ultima ayuda recibida" value={latestDelivery ? formatDate(latestDelivery.delivered_at) : 'Sin entregas'} />
+            <HeaderMetric icon={CalendarDays} label="Proxima revision" value={nextReview} />
+            <HeaderMetric icon={UserRound} label="Responsable asignado" value={responsible} />
+            <HeaderMetric icon={HeartHandshake} label="Frecuencia de ayuda" value={helpFrequencyLabel(deliveries)} />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3 lg:min-w-[560px]">
+            <MetaLine icon={CalendarDays} text={`Alta: ${formatDate(beneficiary.joined_at)}`} />
+            <MetaLine icon={Phone} text={beneficiary.phone || 'Telefono no registrado'} />
+            <MetaLine icon={MapPin} text={beneficiary.address_full || 'Direccion no registrada'} />
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
+            {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
+            <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
+            <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
+            <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
+            <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
+            <Button variant="secondary" onClick={onNewAppointment}><CalendarPlus size={17} /> Nueva cita</Button>
+            {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function HeaderMetric({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-start gap-2">
+        <span className="rounded-lg bg-white p-2 text-brand-700 shadow-sm"><Icon size={17} /></span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-sm font-bold text-ink">{value || '-'}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDocument, onCreateCampaign, onOpenAgenda, onNotice }) {
+  const actions = [
+    { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
+    { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },
+    { label: 'Subir documento', icon: Upload, onClick: onDocument, enabled: canEdit },
+    { label: 'Crear campaña', icon: CalendarPlus, onClick: onCreateCampaign, enabled: Boolean(onCreateCampaign) },
+    { label: 'Abrir Agenda', icon: CalendarDays, onClick: onOpenAgenda, enabled: Boolean(onOpenAgenda) },
+    { label: 'Enviar aviso', icon: Mail, onClick: onNotice, enabled: true }
+  ];
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Acciones rapidas del expediente">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="font-bold text-ink">Acciones rapidas</h3>
+          <p className="text-sm text-slate-500">Tareas frecuentes del expediente social.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+          {actions.map(({ label, icon: Icon, onClick, enabled, primary }) => (
+            <Button key={label} variant={primary ? 'primary' : 'secondary'} onClick={onClick} disabled={!enabled}>
+              <Icon size={17} /> {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SocialCaseSummaryCards({ beneficiary, family, deliveries, documents, incidents, valuation, history }) {
+  const summary = [
+    { label: 'Unidad familiar', value: family ? family.family_code : 'Sin unidad', detail: family?.responsible_name || '', icon: Users, tone: 'brand' },
+    { label: 'Hijos', value: beneficiary.minors_count || 0, detail: `${beneficiary.family_members || 1} miembro(s) registrados`, icon: UserPlus, tone: 'blue' },
+    { label: 'Situacion laboral', value: beneficiary.employment_status || 'No registrada', detail: beneficiary.marital_status || '', icon: ClipboardList, tone: 'slate' },
+    { label: 'Necesidades especiales', value: beneficiary.special_needs || specialNeedsLabel(beneficiary), detail: 'Seguimiento social', icon: HeartHandshake, tone: 'amber' },
+    { label: 'Alergias', value: beneficiary.allergies || allergyLabel(beneficiary), detail: 'Dato sanitario operativo', icon: CheckCircle2, tone: 'violet' },
+    { label: 'Riesgo social', value: socialPriorityLabel(beneficiary, history), detail: incidents ? `${incidents} incidencia(s)` : 'Sin incidencias abiertas', icon: ClipboardList, tone: socialPriorityLabel(beneficiary, history) === 'Alta' ? 'red' : 'brand' },
+    { label: 'Frecuencia de ayuda', value: helpFrequencyLabel(deliveries), detail: deliveries.length ? `${deliveries.length} entrega(s)` : 'Sin entregas', icon: Clock3, tone: 'blue' },
+    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'Valoracion parcial' : `${documents.length} documento(s)`, icon: Euro, tone: 'amber' }
+  ];
+  const tones = {
+    brand: 'bg-brand-50 text-brand-700',
+    blue: 'bg-blue-50 text-blue-700',
+    amber: 'bg-amber-50 text-amber-700',
+    violet: 'bg-violet-50 text-violet-700',
+    red: 'bg-red-50 text-red-700',
+    slate: 'bg-slate-100 text-slate-700'
+  };
+  return (
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumen social del expediente">
+      {summary.map(({ label, value, detail, icon: Icon, tone }) => (
+        <article key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className={`inline-flex rounded-xl p-2 ${tones[tone] || tones.slate}`}><Icon size={18} /></span>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 break-words text-lg font-bold text-ink">{value === 0 ? 0 : value || '-'}</p>
+          {detail && <p className="mt-1 text-xs font-medium text-slate-500">{detail}</p>}
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function ProfessionalTimeline({ entries }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <SectionHeading icon={CalendarDays} title="Cronologia del expediente" description="Alta, entregas, renovaciones, documentos, incidencias y notas sociales." />
+      <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
+        {entries.slice(0, 8).map((item) => (
+          <article key={item.key} className="relative flex gap-4">
+            <span className={`z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-white ${item.tone}`}><item.icon size={17} /></span>
+            <div className="flex-1 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-ink">{item.title}</h4>
+                  <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+                </div>
+                <time className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">{formatDate(item.date)}</time>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!entries.length && <div className="mt-4"><EmptyState icon={CalendarDays} title="Sin cronologia" text="Todavia no hay eventos relevantes en el expediente." /></div>}
+    </section>
+  );
+}
+
+function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocuments }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <SectionHeading icon={Paperclip} title="Documentacion" description={`${total} documento(s) asociados al expediente.`} />
+        <Button variant="secondary" onClick={onOpenDocuments}>{canEdit ? 'Gestionar' : 'Ver'}</Button>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {documents.map((doc) => {
+          const status = documentStatus(doc);
+          return (
+            <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start gap-3">
+                <span className="rounded-lg bg-white p-2 text-brand-700 shadow-sm"><FileText size={18} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{doc.document_type || 'Documento'} · {formatDate(doc.uploaded_at)}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${documentStatusTone(status)}`}>{status}</span>
+              </div>
+              {doc.file_data_url && <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-600" href={doc.file_data_url} download={doc.file_name}>Abrir documento</a>}
+            </article>
+          );
+        })}
+        {!documents.length && <EmptyState icon={Paperclip} title="Sin documentos" text="Todavia no se ha adjuntado documentacion." />}
+      </div>
+    </section>
+  );
+}
+
+function IntelligentCaseBlock({ beneficiary, documents, deliveries, history }) {
+  const pendingDocs = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
+  const latestDelivery = getLatestDelivery(deliveries);
+  return (
+    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="rounded-xl bg-white p-2 text-brand-700 shadow-sm"><NotebookTabs size={20} /></span>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Preparado para Sprint IA</p>
+          <h3 className="mt-1 text-lg font-bold text-ink">Resumen inteligente del expediente</h3>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 text-sm text-slate-700">
+        <p className="rounded-xl bg-white p-3">Se preparara un resumen social de {beneficiary.full_name} cuando se active IA.</p>
+        <p className="rounded-xl bg-white p-3">{pendingDocs ? `${pendingDocs} documento(s) pendientes de revision.` : 'Documentacion sin pendientes destacados.'}</p>
+        <p className="rounded-xl bg-white p-3">{latestDelivery ? `Ultima ayuda registrada el ${formatDate(latestDelivery.delivered_at)}.` : 'Sin entregas registradas todavia.'}</p>
+        <p className="rounded-xl bg-white p-3">{history.length ? `${history.length} registro(s) de seguimiento disponibles para analizar.` : 'Sin historial social registrado.'}</p>
+      </div>
+    </section>
   );
 }
 
@@ -1157,6 +1401,117 @@ function isArchivedFamily(family) {
   return String(family.notes || '')
     .split(/\r?\n/)
     .some((line) => line.startsWith(FAMILY_ARCHIVE_MARKER));
+}
+
+function socialPriorityLabel(beneficiary, history = []) {
+  const situation = normalize(beneficiary.situation);
+  if (situation.includes('urgente') || situation.includes('prioritario')) return 'Alta';
+  if (history.some((item) => normalize(item.entry_type).includes('incidencia'))) return 'Alta';
+  if (situation.includes('seguimiento') || situation.includes('vulnerable')) return 'Media';
+  return 'Normal';
+}
+
+function priorityBadgeTone(priority) {
+  if (priority === 'Alta') return 'bg-red-50 text-red-700 ring-red-200';
+  if (priority === 'Media') return 'bg-amber-50 text-amber-700 ring-amber-200';
+  return 'bg-brand-50 text-brand-700 ring-brand-100';
+}
+
+function nextReviewLabel(beneficiary, latestDelivery, history = []) {
+  const explicit = beneficiary.next_review_at || beneficiary.review_at || beneficiary.renewal_at;
+  if (explicit) return formatDate(explicit);
+  const latestHistory = [...history].sort((a, b) => String(b.date || b.created_at || '').localeCompare(String(a.date || a.created_at || '')))[0];
+  const base = latestHistory?.date || latestDelivery?.delivered_at || beneficiary.last_help_at || beneficiary.joined_at;
+  if (!base) return 'Sin programar';
+  const date = new Date(base);
+  if (Number.isNaN(date.getTime())) return 'Sin programar';
+  date.setDate(date.getDate() + 30);
+  return formatDate(date.toISOString().slice(0, 10));
+}
+
+function assignedResponsibleLabel(beneficiary, family) {
+  return beneficiary.assigned_responsible || beneficiary.responsible || beneficiary.case_worker || family?.responsible_name || 'Sin asignar';
+}
+
+function helpFrequencyLabel(deliveries = []) {
+  if (deliveries.length >= 3) return 'Recurrente';
+  if (deliveries.length >= 1) return 'Puntual';
+  return 'Sin entregas';
+}
+
+function specialNeedsLabel(beneficiary) {
+  const source = `${beneficiary.special_needs || ''} ${beneficiary.notes || ''}`;
+  if (normalize(source).includes('necesidad')) return 'Revisar notas';
+  return 'No registradas';
+}
+
+function allergyLabel(beneficiary) {
+  const source = `${beneficiary.allergies || ''} ${beneficiary.notes || ''}`;
+  if (normalize(source).includes('alerg')) return 'Revisar notas';
+  return 'No registradas';
+}
+
+function documentStatus(doc) {
+  const notes = normalize(doc.notes);
+  if (notes.includes('caduc')) return 'Caducado';
+  if (notes.includes('pendiente') || !doc.file_data_url) return 'Pendiente';
+  return 'Revisado';
+}
+
+function documentStatusTone(status) {
+  if (status === 'Caducado') return 'bg-red-50 text-red-700';
+  if (status === 'Pendiente') return 'bg-amber-50 text-amber-700';
+  return 'bg-brand-50 text-brand-700';
+}
+
+function buildProfessionalTimeline({ beneficiary, deliveries = [], documents = [], history = [] }) {
+  const entries = [
+    {
+      key: `alta-${beneficiary.id}`,
+      date: beneficiary.joined_at || beneficiary.first_attention_at,
+      title: 'Alta del expediente',
+      detail: beneficiary.first_attention_at ? `Primera atencion: ${formatDate(beneficiary.first_attention_at)}` : 'Registro inicial del beneficiario.',
+      icon: UserPlus,
+      tone: 'bg-brand-50 text-brand-700'
+    },
+    ...deliveries.map((delivery) => ({
+      key: `delivery-${delivery.id}`,
+      date: delivery.delivered_at || delivery.created_at,
+      title: 'Entrega registrada',
+      detail: [delivery.help_type || 'Ayuda', delivery.inventory_item_name, delivery.quantity ? `Cantidad ${delivery.quantity}` : '', delivery.responsible].filter(Boolean).join(' · '),
+      icon: PackageCheck,
+      tone: 'bg-blue-50 text-blue-700'
+    })),
+    ...documents.map((doc) => ({
+      key: `document-${doc.id}`,
+      date: doc.uploaded_at || doc.created_at,
+      title: `Documento ${documentStatus(doc).toLowerCase()}`,
+      detail: [doc.document_type || 'Documento', doc.file_name].filter(Boolean).join(' · '),
+      icon: Paperclip,
+      tone: documentStatus(doc) === 'Pendiente' ? 'bg-amber-50 text-amber-700' : 'bg-violet-50 text-violet-700'
+    })),
+    ...history.map((item) => ({
+      key: `history-${item.id}`,
+      date: item.date || item.created_at,
+      title: timelineTitleForHistory(item),
+      detail: item.notes || 'Registro social del expediente.',
+      icon: trackingIconFor(item.entry_type),
+      tone: trackingToneFor(item.entry_type)
+    }))
+  ];
+  return entries
+    .filter((item) => item.date || item.detail)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function timelineTitleForHistory(item) {
+  const type = normalize(item.entry_type);
+  const notes = normalize(item.notes);
+  if (type.includes('renovacion') || notes.includes('renovacion')) return 'Renovacion';
+  if (type.includes('incidencia') || notes.includes('incidencia')) return 'Incidencia';
+  if (notes.includes('donacion extraordinaria')) return 'Donacion extraordinaria';
+  if (type.includes('observacion')) return 'Nota social';
+  return item.entry_type || 'Seguimiento social';
 }
 
 function calculateDeliveriesValue(deliveries, inventoryItems = []) {

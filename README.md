@@ -50,20 +50,13 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 ## Ejecutar localmente
 
 ```bash
-cd outputs
 npm install
 npm run dev
 ```
 
 Abre la URL que indique Vite, normalmente `http://localhost:5173`.
 
-Si no configuras Supabase, la aplicacion funciona en modo demo con `localStorage`.
-
-Usuario inicial en modo demo:
-
-- Email: `elizabeth@panyesperanza.org`
-- Contrasena: `Elizabeth2026!`
-- Rol: `Superadministrador`
+Si no configuras Supabase, la aplicacion puede usar almacenamiento local unicamente para desarrollo. En produccion, Supabase debe estar configurado.
 
 ## Configurar Supabase
 
@@ -81,7 +74,7 @@ VITE_SUPABASE_ANON_KEY=tu_clave_anon_publica
 VITE_SUPABASE_STORAGE_BUCKET=documentos
 SUPABASE_SERVICE_ROLE_KEY=solo_en_backend_vercel
 RESEND_API_KEY=re_xxxxxxxxx
-FROM_EMAIL=panyesperanza@gmail.com
+FROM_EMAIL=info@panyesperanza.org
 PUBLIC_LOGO_URL=https://tu-dominio.org/logo-pan-y-esperanza.png
 ```
 
@@ -127,7 +120,7 @@ Ejemplo de `.env` local:
 
 ```bash
 RESEND_API_KEY=
-FROM_EMAIL=panyesperanza@gmail.com
+FROM_EMAIL=info@panyesperanza.org
 ```
 
 En Vercel, crea esas mismas variables en Project Settings > Environment Variables. `RESEND_API_KEY` solo se lee en la funcion serverless `api/send-justificantes.js`; nunca se importa en React ni se expone al navegador.
@@ -223,7 +216,7 @@ Ejemplo de creacion temporal:
 curl -X POST https://TU_DOMINIO/api/emergency-create-user \
   -H "Content-Type: application/json" \
   -H "x-repair-secret: TU_SECRETO" \
-  -d "{\"email\":\"usuario@dominio.org\",\"password\":\"Temporal2026!\",\"first_name\":\"Nombre\",\"last_name\":\"Apellidos\",\"role\":\"Voluntario\",\"position\":\"Voluntario\"}"
+  -d "{\"email\":\"usuario@dominio.org\",\"password\":\"<contrasena-temporal-segura>\",\"first_name\":\"Nombre\",\"last_name\":\"Apellidos\",\"role\":\"Voluntario\",\"position\":\"Voluntario\"}"
 ```
 
 Importante: elimina los archivos `api/emergency-admin-repair.js`, `api/emergency-create-user.js` y `api/_emergencyRepair.js`, y retira `EMERGENCY_REPAIR_SECRET`, antes de cerrar la produccion final.

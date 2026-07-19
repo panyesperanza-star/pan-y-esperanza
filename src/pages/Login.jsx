@@ -6,8 +6,8 @@ import { FormField, inputClass } from '../components/FormField';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
 export function Login({ onAccess }) {
-  const [email, setEmail] = useState('elizabeth@panyesperanza.org');
-  const [password, setPassword] = useState('Elizabeth2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [mode, setMode] = useState(() => new URLSearchParams(window.location.search).get('reset_token') ? 'reset' : 'login');
   const [error, setError] = useState('');

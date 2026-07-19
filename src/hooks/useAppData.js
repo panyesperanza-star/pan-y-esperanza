@@ -1,22 +1,121 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion, isSystemSuperadmin } from '../lib/auth';
-import { constrainRolePermissionMatrix } from '../lib/constants';
 import { dataStore } from '../lib/dataStore';
 import { sendEmailViaApi } from '../lib/emailClient';
-import { nextBeneficiaryCode, nextReceiptNumber, normalize, normalizeDocument } from '../lib/formatters';
+import { normalize } from '../lib/formatters';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
-import { getApiHeaders } from '../lib/apiAuth';
+import { AgendaOperativaRepository } from '../services/agenda/AgendaOperativaRepository';
+import { AgendaOperativaService } from '../services/agenda/AgendaOperativaService';
+import { BeneficiarioPortalRepository } from '../services/beneficiaryPortal/BeneficiarioPortalRepository';
+import { BeneficiarioPortalService } from '../services/beneficiaryPortal/BeneficiarioPortalService';
+import { BeneficiarioRepository } from '../services/beneficiaries/BeneficiarioRepository';
+import { BeneficiarioService } from '../services/beneficiaries/BeneficiarioService';
+import { CampanaRepository } from '../services/campaigns/CampanaRepository';
+import { CampanaService } from '../services/campaigns/CampanaService';
+import { ColaboradorRepository } from '../services/collaborators/ColaboradorRepository';
+import { ColaboradorService } from '../services/collaborators/ColaboradorService';
+import { ConfiguracionRepository } from '../services/configuration/ConfiguracionRepository';
+import { ConfiguracionService } from '../services/configuration/ConfiguracionService';
+import { IARepository } from '../services/ai/IARepository';
+import { IAService } from '../services/ai/IAService';
+import { DashboardService } from '../services/dashboard/DashboardService';
+import { PriorityRepository } from '../services/priorities/PriorityRepository';
+import { PriorityEngineService } from '../services/priorities/PriorityEngineService';
+import { EntregaRepository } from '../services/deliveries/EntregaRepository';
+import { EntregaService } from '../services/deliveries/EntregaService';
+import { DonacionRepository } from '../services/donations/DonacionRepository';
+import { DonacionService } from '../services/donations/DonacionService';
+import { DonanteRepository } from '../services/donors/DonanteRepository';
+import { DonanteService } from '../services/donors/DonanteService';
+import { InformeRepository } from '../services/reports/InformeRepository';
+import { InformeService } from '../services/reports/InformeService';
+import { InventarioRepository } from '../services/inventory/InventarioRepository';
+import { InventarioService } from '../services/inventory/InventarioService';
+import { NotificacionRepository } from '../services/notifications/NotificacionRepository';
+import { NotificacionService } from '../services/notifications/NotificacionService';
+import { createRepositoryAdapter } from '../services/repositories/RepositoryProvider';
+import { RecursoRepository } from '../services/resources/RecursoRepository';
+import { RecursoService } from '../services/resources/RecursoService';
+import { UsuarioRepository } from '../services/users/UsuarioRepository';
+import { UsuarioService } from '../services/users/UsuarioService';
+import { VoluntarioRepository } from '../services/volunteers/VoluntarioRepository';
+import { VoluntarioService } from '../services/volunteers/VoluntarioService';
+
+const EMPTY_TABLE = Object.freeze([]);
+const EMPTY_APP_DATA = Object.freeze({
+  organization_settings: EMPTY_TABLE,
+  families: EMPTY_TABLE,
+  beneficiaries: EMPTY_TABLE,
+  social_history: EMPTY_TABLE,
+  beneficiary_documents: EMPTY_TABLE,
+  beneficiary_portal_accounts: EMPTY_TABLE,
+  beneficiary_portal_otps: EMPTY_TABLE,
+  beneficiary_portal_notices: EMPTY_TABLE,
+  beneficiary_portal_renewals: EMPTY_TABLE,
+  beneficiary_portal_profile_updates: EMPTY_TABLE,
+  collaborators: EMPTY_TABLE,
+  collaborator_portal_otps: EMPTY_TABLE,
+  collaborator_portal_profile_updates: EMPTY_TABLE,
+  collaborator_portal_requests: EMPTY_TABLE,
+  collaborator_certificates: EMPTY_TABLE,
+  donors: EMPTY_TABLE,
+  donor_portal_otps: EMPTY_TABLE,
+  donor_portal_profile_updates: EMPTY_TABLE,
+  donor_certificates: EMPTY_TABLE,
+  portal_sessions: EMPTY_TABLE,
+  deliveries: EMPTY_TABLE,
+  email_logs: EMPTY_TABLE,
+  inventory_items: EMPTY_TABLE,
+  inventory_movements: EMPTY_TABLE,
+  donations: EMPTY_TABLE,
+  accounting_events: EMPTY_TABLE,
+  financial_accounts: EMPTY_TABLE,
+  cash_bank_movements: EMPTY_TABLE,
+  accounting_contacts: EMPTY_TABLE,
+  accounting_documents: EMPTY_TABLE,
+  loan_records: EMPTY_TABLE,
+  loan_movements: EMPTY_TABLE,
+  debt_records: EMPTY_TABLE,
+  debt_movements: EMPTY_TABLE,
+  social_value_events: EMPTY_TABLE,
+  deletion_requests: EMPTY_TABLE,
+  accounting_audit_trail: EMPTY_TABLE,
+  treasury_incomes: EMPTY_TABLE,
+  treasury_expenses: EMPTY_TABLE,
+  treasury_loans: EMPTY_TABLE,
+  treasury_accounts: EMPTY_TABLE,
+  volunteers: EMPTY_TABLE,
+  volunteer_history: EMPTY_TABLE,
+  notificaciones: EMPTY_TABLE,
+  agenda_operativa: EMPTY_TABLE,
+  campanas: EMPTY_TABLE,
+  campana_beneficiarios: EMPTY_TABLE,
+  campana_productos: EMPTY_TABLE,
+  campana_voluntarios: EMPTY_TABLE,
+  campana_entregas: EMPTY_TABLE,
+  campana_agenda_eventos: EMPTY_TABLE,
+  categorias_recursos: EMPTY_TABLE,
+  recursos: EMPTY_TABLE,
+  roles: EMPTY_TABLE,
+  audit_logs: EMPTY_TABLE,
+  app_users: EMPTY_TABLE
+});
 
 export function useAppData(enabled = true, currentUser = null) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const appData = data || EMPTY_APP_DATA;
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await dataStore.loadAll());
+      const repository = createRepository();
+      setData({
+        ...EMPTY_APP_DATA,
+        ...(await repository.loadAll(Object.keys(EMPTY_APP_DATA)))
+      });
     } catch (err) {
       setError(err.message || 'No se pudieron cargar los datos.');
     } finally {
@@ -31,7 +130,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function audit(action) {
     try {
-      await dataStore.create('audit_logs', {
+      await repositoryCreate('audit_logs', {
         user_name: currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'Sistema',
         user_email: currentUser?.email || '',
         action,
@@ -40,20 +139,6 @@ export function useAppData(enabled = true, currentUser = null) {
     } catch (error) {
       console.warn('[Pan y Esperanza] No se pudo registrar auditoria:', error);
     }
-  }
-
-  function sanitizeBeneficiaryPayload(payload) {
-    const {
-      __family_mode,
-      __new_family,
-      __new_family_enabled,
-      ...beneficiaryPayload
-    } = payload || {};
-    return {
-      ...beneficiaryPayload,
-      document_id: normalizeDocument(beneficiaryPayload.document_id),
-      family_id: beneficiaryPayload.family_id || null
-    };
   }
 
   function sanitizeFamilyPayload(payload) {
@@ -88,96 +173,314 @@ export function useAppData(enabled = true, currentUser = null) {
       || 'Usuario';
   }
 
-  function sanitizeInventoryItemPayload(payload) {
-    const { stock, ...editable } = payload || {};
-    const item = {
-      ...editable,
-      name: String(editable.name || '').trim(),
-      category: String(editable.category || '').trim(),
-      lot: String(editable.lot || '').trim(),
-      donor: String(editable.donor || '').trim(),
-      location: String(editable.location || '').trim(),
-      unit: String(editable.unit || '').trim(),
-      low_stock_threshold: Number(editable.low_stock_threshold || 0),
-      notes: String(editable.notes || '').trim()
-    };
-    if (!item.name) throw new Error('El nombre del producto es obligatorio.');
-    if (!item.category) throw new Error('La categoria del producto es obligatoria.');
-    if (!item.unit) throw new Error('La unidad del producto es obligatoria.');
-    if (!Number.isFinite(item.low_stock_threshold) || item.low_stock_threshold < 0) {
-      throw new Error('El stock minimo no puede ser negativo.');
-    }
-    return item;
-  }
-
-  function assertUniqueInventoryItem(payload, currentId) {
-    const duplicate = data.inventory_items.find((item) => (
-      item.id !== currentId
-      && normalize(item.name) === normalize(payload.name)
-      && normalize(item.lot) === normalize(payload.lot)
-    ));
-    if (duplicate) {
-      throw new Error(`Ya existe ${payload.name}${payload.lot ? ` con el lote ${payload.lot}` : ' sin lote asignado'}.`);
-    }
-  }
-
-  function sanitizeInventoryMovement(payload) {
-    const movementType = payload?.movement_type;
-    const quantity = Number(payload?.quantity || 0);
-    const item = data.inventory_items.find((entry) => entry.id === payload?.item_id);
-    if (!item) throw new Error('Selecciona un producto válido.');
-    if (!['Entrada', 'Salida'].includes(movementType)) throw new Error('El tipo de movimiento no es válido.');
-    if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad debe ser mayor que cero.');
-    const responsible = String(payload.responsible || '').trim();
-    if (!responsible) throw new Error('El responsable del movimiento es obligatorio.');
-    if (movementType === 'Salida' && quantity > Number(item.stock || 0)) {
-      throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
-    }
-    return {
-      item,
-      movement: {
-        item_id: item.id,
-        movement_type: movementType,
-        quantity,
-        moved_at: payload.moved_at || new Date().toISOString().slice(0, 10),
-        responsible,
-        notes: String(payload.notes || '').trim()
-      }
-    };
-  }
-
-  function buildDeliveryTrackingNote(delivery, beneficiary, item, quantity) {
-    const parts = [
-      `Se registra una entrega de ${delivery.help_type || 'ayuda'} a ${beneficiary.full_name || 'la persona beneficiaria'}.`
-    ];
-    if (item?.name) parts.push(`Producto: ${item.name}.`);
-    if (quantity) parts.push(`Cantidad: ${quantity}${item?.unit ? ` ${item.unit}` : ''}.`);
-    if (delivery.receipt_number) parts.push(`Justificante: ${delivery.receipt_number}.`);
-    parts.push(`Responsable: ${delivery.responsible || currentUserName()}.`);
-    if (delivery.notes) parts.push(`Observaciones: ${delivery.notes}`);
-    return parts.join(' ');
-  }
-
-  function isLastActiveSuperadmin(userId) {
-    const existing = data.app_users.find((user) => user.id === userId);
-    return existing?.role === 'Superadministrador'
-      && data.app_users.filter((user) => user.role === 'Superadministrador' && user.is_active && (user.status || 'Activo') === 'Activo' && user.id !== userId).length === 0;
-  }
-
-  function sanitizeUserPayload(payload) {
-    const status = payload.status || (payload.is_active === false ? 'Inactivo' : 'Activo');
-    return {
-      ...payload,
-      permission_matrix: constrainRolePermissionMatrix(payload.role, payload.permission_matrix || {}),
-      status,
-      is_active: status === 'Activo'
-    };
-  }
-
   function assertPermission(moduleId, actionId) {
     if (!canDo(currentUser, moduleId, actionId)) {
-      throw new Error(`No tienes permiso para ${actionId === 'delete' ? 'eliminar' : 'realizar esta acción'} en este módulo.`);
+      throw new Error(`No tienes permiso para ${actionId === 'delete' ? 'eliminar' : 'realizar esta acciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n'} en este mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³dulo.`);
     }
+  }
+
+  function createRepository() {
+    return createRepositoryAdapter({ dataStore, supabase, hasSupabaseConfig });
+  }
+
+  async function repositoryList(table) {
+    return createRepository().list(table);
+  }
+
+  async function repositoryCreate(table, payload) {
+    return createRepository().create(table, payload);
+  }
+
+  async function repositoryUpdate(table, id, payload) {
+    return createRepository().update(table, id, payload);
+  }
+
+  async function repositoryRemove(table, id) {
+    return createRepository().remove(table, id);
+  }
+
+  async function repositoryReplaceLocalData(payload) {
+    return createRepository().replaceLocalData(payload);
+  }
+
+  async function repositoryResetLocalDemo() {
+    return createRepository().resetLocalDemo();
+  }
+
+  function createInventarioService(repositoryAdapter = createRepository(), notificacionService = null) {
+    return new InventarioService({
+      repository: new InventarioRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      inventoryItems: appData.inventory_items || [],
+      audit,
+      assertPermission,
+      notificacionService,
+      hasSupabaseConfig
+    });
+  }
+
+  function createDashboardService(notificacionService = null) {
+    return new DashboardService({ notificacionService });
+  }
+  function createPriorityEngineService({
+    repositoryAdapter = createRepository(),
+    notificacionService = null,
+    agendaOperativaService = null,
+    dashboardService = null
+  } = {}) {
+    return new PriorityEngineService({
+      repository: new PriorityRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      notificacionService,
+      agendaOperativaService,
+      dashboardService,
+      audit,
+      currentUser
+    });
+  }
+
+  function createNotificacionService(repositoryAdapter = createRepository(), dashboardService = null) {
+    return new NotificacionService({
+      repository: new NotificacionRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      notifications: appData.notificaciones || [],
+      audit,
+      dashboardService,
+      currentUser
+    });
+  }
+
+  function createBeneficiarioService(repositoryAdapter = createRepository(), notificacionService = null) {
+    return new BeneficiarioService({
+      repository: new BeneficiarioRepository({ dataStore, repository: repositoryAdapter }),
+      beneficiaries: appData.beneficiaries || [],
+      audit,
+      assertPermission,
+      notificacionService
+    });
+  }
+
+  function createDonacionService(inventarioService = createInventarioService(), dashboardService = createDashboardService(), repositoryAdapter = createRepository(), notificacionService = null) {
+    return new DonacionService({
+      repository: new DonacionRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      inventarioService,
+      dashboardService,
+      notificacionService,
+      data: appData,
+      audit,
+      accountingAuditTrail,
+      assertPermission,
+      assertAccountingSuperadmin,
+      currentUserName,
+      isActiveAccountingRow
+    });
+  }
+
+  function createRecursoService(repositoryAdapter = createRepository(), notificacionService = null) {
+    return new RecursoService({
+      repository: new RecursoRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      resources: appData.recursos || [],
+      audit,
+      assertPermission,
+      notificacionService,
+      currentUser
+    });
+  }
+
+  function createVoluntarioService({
+    repositoryAdapter = createRepository(),
+    usuarioService = null,
+    entregaService = null,
+    dashboardService = createDashboardService(),
+    notificacionService = null
+  } = {}) {
+    return new VoluntarioService({
+      repository: new VoluntarioRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      volunteers: appData.volunteers || [],
+      audit,
+      assertCanDelete: () => {
+        if (currentUser?.role !== 'Superadministrador') {
+          throw new Error('Solo el Superadministrador puede eliminar voluntarios definitivamente.');
+        }
+      },
+      usuarioService,
+      entregaService,
+      dashboardService,
+      notificacionService
+    });
+  }
+
+  function createInformeService({
+    repositoryAdapter = createRepository(),
+    beneficiarioService = null,
+    inventarioService = null,
+    entregaService = null,
+    donacionService = null,
+    voluntarioService = null,
+    recursoService = null
+  } = {}) {
+    return new InformeService({
+      repository: new InformeRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      data: appData,
+      audit,
+      beneficiarioService,
+      inventarioService,
+      entregaService,
+      donacionService,
+      voluntarioService,
+      recursoService
+    });
+  }
+
+  function createConfiguracionService({
+    repositoryAdapter = createRepository(),
+    usuarioService = null,
+    dashboardService = createDashboardService(),
+    notificacionService = null
+  } = {}) {
+    return new ConfiguracionService({
+      repository: new ConfiguracionRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      settings: appData.organization_settings?.[0] || {},
+      audit,
+      usuarioService,
+      dashboardService,
+      notificacionService
+    });
+  }
+
+  function createEntregaService({
+    repositoryAdapter = createRepository(),
+    beneficiarioService = null,
+    inventarioService = null,
+    dashboardService = createDashboardService(),
+    configuracionService = null,
+    notificacionService = null
+  } = {}) {
+    return new EntregaService({
+      repository: new EntregaRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      beneficiarioService: beneficiarioService || createBeneficiarioService(repositoryAdapter, notificacionService),
+      inventarioService: inventarioService || createInventarioService(repositoryAdapter, notificacionService),
+      dashboardService,
+      configuracionService,
+      notificacionService,
+      deliveries: appData.deliveries || [],
+      beneficiaries: appData.beneficiaries || [],
+      families: appData.families || [],
+      inventoryItems: appData.inventory_items || [],
+      audit,
+      assertPermission,
+      assertCanDelete: assertSuperadmin,
+      assertCancelFallback: () => {
+        if (currentUser?.role !== 'Superadministrador') {
+          throw new Error('La funcion de anulacion no esta disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperacion segura.');
+        }
+      },
+      canCancel: () => canDo(currentUser, 'deliveries', 'edit') || canDo(currentUser, 'deliveries', 'create'),
+      currentUser,
+      currentUserName,
+      hasSupabaseConfig,
+      isMissingCancelDeliveryRpcError,
+      voidDeliverySocialValueEvents
+    });
+  }
+
+  function createBeneficiarioPortalService({
+    repositoryAdapter = createRepository(),
+    beneficiarioService = null,
+    entregaService = null,
+    recursoService = null,
+    notificacionService = null
+  } = {}) {
+    return new BeneficiarioPortalService({
+      repository: new BeneficiarioPortalRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      beneficiaries: appData.beneficiaries || [],
+      deliveries: appData.deliveries || [],
+      documents: appData.beneficiary_documents || [],
+      socialHistory: appData.social_history || [],
+      resources: appData.recursos || [],
+      notifications: appData.notificaciones || [],
+      audit,
+      beneficiarioService,
+      entregaService,
+      recursoService,
+      notificacionService
+    });
+  }
+
+  function createColaboradorService({
+    repositoryAdapter = createRepository(),
+    donacionService = null,
+    recursoService = null,
+    notificacionService = null,
+    dashboardService = null
+  } = {}) {
+    return new ColaboradorService({
+      repository: new ColaboradorRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      collaborators: appData.collaborators || [],
+      donations: appData.donations || [],
+      resources: appData.recursos || [],
+      campaigns: appData.campanas || [],
+      certificates: appData.collaborator_certificates || [],
+      audit,
+      donacionService,
+      recursoService,
+      notificacionService,
+      dashboardService
+    });
+  }
+
+  function createDonanteService({
+    repositoryAdapter = createRepository(),
+    donacionService = null,
+    notificacionService = null,
+    dashboardService = null
+  } = {}) {
+    return new DonanteService({
+      repository: new DonanteRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      donors: appData.donors || [],
+      donations: appData.donations || [],
+      campaigns: appData.campanas || [],
+      certificates: appData.donor_certificates || [],
+      audit,
+      donacionService,
+      notificacionService,
+      dashboardService
+    });
+  }
+
+  function createIAService({
+    repositoryAdapter = createRepository(),
+    configuracionService = null
+  } = {}) {
+    return new IAService({
+      repository: new IARepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      audit,
+      currentUser,
+      configuracionService
+    });
+  }
+
+  function createAgendaOperativaService({
+    repositoryAdapter = createRepository(),
+    beneficiarioService = null,
+    entregaService = null,
+    inventarioService = null,
+    voluntarioService = null,
+    donacionService = null,
+    dashboardService = createDashboardService(),
+    notificacionService = null
+  } = {}) {
+    return new AgendaOperativaService({
+      repository: new AgendaOperativaRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      data: appData,
+      audit,
+      assertPermission,
+      beneficiarioService,
+      entregaService,
+      inventarioService,
+      voluntarioService,
+      donacionService,
+      dashboardService,
+      notificacionService,
+      currentUser
+    });
   }
 
   function assertSuperadmin() {
@@ -188,7 +491,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function assertSystemSuperadmin() {
     if (!isSystemSuperadmin(currentUser)) {
-      throw new Error('Solo el Superadministrador del sistema puede resolver solicitudes de eliminación.');
+      throw new Error('Solo el Superadministrador del sistema puede resolver solicitudes de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n.');
     }
   }
 
@@ -196,11 +499,11 @@ export function useAppData(enabled = true, currentUser = null) {
     if (isSystemSuperadmin(currentUser)) {
       throw new Error('El Superadministrador del sistema debe resolver solicitudes desde el panel del proveedor.');
     }
-    if (canDeleteDefinitively(currentUser, permissionModuleForDeletion(moduleId), data.organization_settings?.[0] || {})) {
+    if (canDeleteDefinitively(currentUser, permissionModuleForDeletion(moduleId), appData.organization_settings?.[0] || {})) {
       throw new Error('Pan y Esperanza puede eliminar definitivamente este registro sin enviar solicitud.');
     }
-    if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId), data.organization_settings?.[0] || {})) {
-      throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este módulo.');
+    if (!canRequestDefinitiveDeletion(currentUser, permissionModuleForDeletion(moduleId), appData.organization_settings?.[0] || {})) {
+      throw new Error('No tienes permiso para solicitar eliminaciones definitivas en este mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³dulo.');
     }
   }
 
@@ -225,16 +528,16 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   function associationMeta() {
-    const organization = data.organization_settings?.[0] || {};
+    const organization = appData.organization_settings?.[0] || {};
     return {
       association_id: organization.id || 'main',
-      association_name: organization.name || 'Asociación sin nombre'
+      association_name: organization.name || 'AsociaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n sin nombre'
     };
   }
 
   function providerEmail() {
-    const organization = data.organization_settings?.[0] || {};
-    const systemOwner = (data.app_users || []).find((user) => isSystemSuperadmin(user));
+    const organization = appData.organization_settings?.[0] || {};
+    const systemOwner = (appData.app_users || []).find((user) => isSystemSuperadmin(user));
     return import.meta.env.VITE_SYSTEM_PROVIDER_EMAIL
       || import.meta.env.VITE_PROVIDER_EMAIL
       || organization.system_provider_email
@@ -248,23 +551,23 @@ export function useAppData(enabled = true, currentUser = null) {
   async function notifyDeletionRequestProvider(request) {
     const to = providerEmail();
     if (!to) {
-      await audit(`Solicitud de eliminación ${request.id} creada sin correo de proveedor configurado`);
+      await audit(`Solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n ${request.id} creada sin correo de proveedor configurado`);
       return;
     }
     await sendEmailViaApi({
       to,
-      subject: `Solicitud de eliminación pendiente - ${request.association_name}`,
+      subject: `Solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n pendiente - ${request.association_name}`,
       message: [
-        'Se ha recibido una solicitud de eliminación definitiva.',
+        'Se ha recibido una solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n definitiva.',
         '',
-        `Asociación: ${request.association_name}`,
+        `AsociaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n: ${request.association_name}`,
         `Usuario: ${request.requester_name || request.requester_email || '-'}`,
         `Registro solicitado: ${request.record_label || request.record_id}`,
-        `Módulo: ${request.module}`,
+        `MÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³dulo: ${request.module}`,
         `Motivo: ${request.reason}`,
         request.notes ? `Observaciones: ${request.notes}` : ''
       ].filter(Boolean).join('\n'),
-      organization: data.organization_settings?.[0] || {}
+      organization: appData.organization_settings?.[0] || {}
     });
   }
 
@@ -272,15 +575,15 @@ export function useAppData(enabled = true, currentUser = null) {
     if (!request?.requester_email) return;
     await sendEmailViaApi({
       to: request.requester_email,
-      subject: `Solicitud de eliminación rechazada - ${request.record_label || request.record_id}`,
+      subject: `Solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n rechazada - ${request.record_label || request.record_id}`,
       message: [
-        'La solicitud de eliminación definitiva ha sido rechazada por el proveedor del sistema.',
+        'La solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n definitiva ha sido rechazada por el proveedor del sistema.',
         '',
         `Registro: ${request.record_label || request.record_id}`,
         `Motivo de la solicitud: ${request.reason}`,
         `Motivo del rechazo: ${resolutionReason}`
       ].join('\n'),
-      organization: data.organization_settings?.[0] || {}
+      organization: appData.organization_settings?.[0] || {}
     });
   }
 
@@ -288,7 +591,7 @@ export function useAppData(enabled = true, currentUser = null) {
     try {
       await sender();
     } catch (error) {
-      console.warn('[eliminaciones] No se pudo enviar notificación:', error);
+      console.warn('[eliminaciones] No se pudo enviar notificaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n:', error);
       await audit(`${auditMessage}: ${error.message || 'error de correo'}`);
     }
   }
@@ -297,46 +600,46 @@ export function useAppData(enabled = true, currentUser = null) {
     const moduleId = request.module;
     const recordId = request.record_id;
     if (moduleId === 'deliveries') {
-      await dataStore.remove('deliveries', recordId);
+      await createEntregaService().remove(recordId);
       return 'entrega';
     }
     if (moduleId === 'beneficiaries') {
-      await dataStore.remove('beneficiaries', recordId);
+      await createBeneficiarioService().remove(recordId);
       return 'beneficiario';
     }
     if (moduleId === 'inventory') {
-      await dataStore.remove('inventory_items', recordId);
+      await createInventarioService().removeItem(recordId);
       return 'producto de inventario';
     }
     if (moduleId === 'donations') {
-      await dataStore.remove('donations', recordId);
-      return 'donación';
+      await createDonacionService().removeDonation(recordId);
+      return 'donaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n';
     }
     if (moduleId === 'treasury_incomes') {
-      await dataStore.remove('treasury_incomes', recordId);
+      await repositoryRemove('treasury_incomes', recordId);
       return 'ingreso de tesoreria';
     }
     if (moduleId === 'treasury_expenses') {
-      await dataStore.remove('treasury_expenses', recordId);
+      await repositoryRemove('treasury_expenses', recordId);
       return 'gasto de tesoreria';
     }
     if (moduleId === 'treasury_loans') {
-      await dataStore.remove('treasury_loans', recordId);
-      return 'préstamo de tesorería';
+      await repositoryRemove('treasury_loans', recordId);
+      return 'prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo de tesorerÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a';
     }
     if (moduleId === 'treasury_accounts') {
-      await dataStore.remove('treasury_accounts', recordId);
+      await repositoryRemove('treasury_accounts', recordId);
       return 'cuenta de tesoreria';
     }
     if (moduleId === 'financial_accounts') {
-      await dataStore.remove('financial_accounts', recordId);
+      await repositoryRemove('financial_accounts', recordId);
       return 'cuenta contable';
     }
-    throw new Error(`El módulo ${moduleId} todavía no tiene ejecutor de eliminación definitiva.`);
+    throw new Error(`El mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³dulo ${moduleId} todavÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a no tiene ejecutor de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n definitiva.`);
   }
 
   async function accountingAuditTrail(tableName, recordId, action, previousData, nextData) {
-    await dataStore.create('accounting_audit_trail', {
+    await repositoryCreate('accounting_audit_trail', {
       table_name: tableName,
       record_id: recordId || null,
       action,
@@ -350,7 +653,7 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   function findFinancialAccount(accountId) {
-    const account = (data.financial_accounts || []).find((item) => item.id === accountId);
+    const account = (appData.financial_accounts || []).find((item) => item.id === accountId);
     if (!account || account.status === 'voided' || account.is_active === false) {
       throw new Error('Selecciona una cuenta activa de Caja o Banco.');
     }
@@ -371,7 +674,7 @@ export function useAppData(enabled = true, currentUser = null) {
   function assertNoUnauthorizedNegativeBalance(account, nextBalance, allowNegativeBalance) {
     if (nextBalance >= 0) return;
     if (currentUser?.role === 'Superadministrador' && allowNegativeBalance === true) return;
-    throw new Error(`La operación dejaría saldo negativo en ${account.name}. Saldo disponible: ${Number(account.current_balance || 0).toFixed(2)} EUR.`);
+    throw new Error(`La operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n dejarÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a saldo negativo en ${account.name}. Saldo disponible: ${Number(account.current_balance || 0).toFixed(2)} EUR.`);
   }
 
   function operationDate(value) {
@@ -388,10 +691,10 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function collectOperationalReferences() {
     return [
-      ...(data.donations || []).flatMap((item) => [item.reference, item.notes]),
-      ...(data.cash_bank_movements || []).flatMap((item) => [item.reference, item.notes]),
-      ...(data.accounting_documents || []).flatMap((item) => [item.document_number, item.notes]),
-      ...(data.accounting_events || []).flatMap((item) => [item.title, item.description])
+      ...(appData.donations || []).flatMap((item) => [item.reference, item.notes]),
+      ...(appData.cash_bank_movements || []).flatMap((item) => [item.reference, item.notes]),
+      ...(appData.accounting_documents || []).flatMap((item) => [item.document_number, item.notes]),
+      ...(appData.accounting_events || []).flatMap((item) => [item.title, item.description])
     ].filter(Boolean).map(String);
   }
 
@@ -457,7 +760,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function latestSocialUnitValueForItem(itemId) {
     if (!itemId) return null;
-    const event = activeAccountingRows(data.social_value_events || [])
+    const event = activeAccountingRows(appData.social_value_events || [])
       .filter((entry) => entry.value_type === 'received' && entry.inventory_item_id === itemId)
       .sort((a, b) => String(b.social_value_at || b.created_at || '').localeCompare(String(a.social_value_at || a.created_at || '')))[0];
     const quantity = positiveNumberOrNull(event?.quantity);
@@ -491,7 +794,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function accountingEventForRow(row) {
     if (!row?.accounting_event_id) return null;
-    return (data.accounting_events || []).find((event) => event.id === row.accounting_event_id) || null;
+    return (appData.accounting_events || []).find((event) => event.id === row.accounting_event_id) || null;
   }
 
   function isActiveAccountingRow(row) {
@@ -505,7 +808,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function outstandingLoanAmount(loan) {
     if (!isActiveAccountingRow(loan)) return 0;
-    const paid = activeAccountingRows(data.loan_movements || [])
+    const paid = activeAccountingRows(appData.loan_movements || [])
       .filter((movement) => movement.loan_id === loan.id && movement.movement_type !== 'loan_received')
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
     return Math.max(0, Number(loan.principal_amount || 0) - paid);
@@ -513,7 +816,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   function outstandingDebtAmount(debt) {
     if (!isActiveAccountingRow(debt)) return 0;
-    const paid = activeAccountingRows(data.debt_movements || [])
+    const paid = activeAccountingRows(appData.debt_movements || [])
       .filter((movement) => movement.debt_id === debt.id)
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
     return Math.max(0, Number(debt.original_amount || 0) - paid);
@@ -523,7 +826,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const safeType = ['supplier', 'donor', 'lender', 'creditor', 'beneficiary', 'other'].includes(contactType) ? contactType : 'other';
     const contactId = cleanText(payload.contact_id || payload.id);
     if (contactId) {
-      const existingById = (data.accounting_contacts || []).find((contact) => (
+      const existingById = (appData.accounting_contacts || []).find((contact) => (
         contact.id === contactId
         && normalize(contact.contact_type || 'other') === normalize(safeType)
       ));
@@ -531,12 +834,12 @@ export function useAppData(enabled = true, currentUser = null) {
     }
     const name = cleanText(payload.name || payload.contact_name);
     if (!name && !contactId) return null;
-    const existing = name ? (data.accounting_contacts || []).find((contact) => (
+    const existing = name ? (appData.accounting_contacts || []).find((contact) => (
       normalize(contact.name) === normalize(name)
       && normalize(contact.contact_type || 'other') === normalize(safeType)
     )) : null;
     if (existing) return existing;
-    const latestContacts = await dataStore.list('accounting_contacts').catch(() => data.accounting_contacts || []);
+    const latestContacts = await repositoryList('accounting_contacts').catch(() => appData.accounting_contacts || []);
     const latestById = contactId ? (latestContacts || []).find((contact) => (
       contact.id === contactId
       && normalize(contact.contact_type || 'other') === normalize(safeType)
@@ -548,7 +851,7 @@ export function useAppData(enabled = true, currentUser = null) {
       && normalize(contact.contact_type || 'other') === normalize(safeType)
     )) : null;
     if (latestExisting) return latestExisting;
-    const contact = await dataStore.create('accounting_contacts', {
+    const contact = await repositoryCreate('accounting_contacts', {
       contact_type: safeType,
       name,
       document_id: cleanText(payload.document_id),
@@ -562,34 +865,8 @@ export function useAppData(enabled = true, currentUser = null) {
     return contact;
   }
 
-  function sanitizeDonorContactPayload(payload = {}, current = {}) {
-    const name = cleanText(payload.name || payload.contact_name || current.name);
-    if (!name) throw new Error('El nombre del donante es obligatorio.');
-    return {
-      contact_type: 'donor',
-      name,
-      document_id: cleanText(payload.document_id),
-      email: cleanText(payload.email),
-      phone: cleanText(payload.phone),
-      address: cleanText(payload.address),
-      notes: cleanText(payload.notes),
-      is_active: payload.is_active !== undefined ? payload.is_active !== false : current.is_active !== false,
-      updated_at: new Date().toISOString()
-    };
-  }
-
-  function donorHasDonationRelations(contact) {
-    if (!contact) return false;
-    const contactId = contact.id;
-    const donorName = normalize(contact.name);
-    return (data.accounting_events || []).some((event) => event.contact_id === contactId && event.event_type === 'donation_money' && isActiveAccountingRow(event))
-      || (data.social_value_events || []).some((event) => event.contact_id === contactId && event.value_type === 'received' && event.event_type === 'in_kind_donation' && isActiveAccountingRow(event))
-      || (data.donations || []).some((donation) => normalize(donation.donor) === donorName && !['voided', 'anulada', 'anulado'].includes(normalize(donation.status || donation.state)))
-      || (data.treasury_incomes || []).some((income) => normalize(income.donor) === donorName && normalize([income.category, income.concept].join(' ')).includes('donacion'));
-  }
-
   async function createAccountingEvent(payload) {
-    const event = await dataStore.create('accounting_events', {
+    const event = await repositoryCreate('accounting_events', {
       status: 'active',
       currency: 'EUR',
       source_module: 'accounting',
@@ -602,7 +879,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function updateAccountingEventSource(event, sourceModule, sourceRecordId) {
     if (!event?.id || !sourceRecordId) return event;
-    const updated = await dataStore.update('accounting_events', event.id, {
+    const updated = await repositoryUpdate('accounting_events', event.id, {
       source_module: sourceModule,
       source_record_id: sourceRecordId,
       updated_at: new Date().toISOString()
@@ -614,7 +891,7 @@ export function useAppData(enabled = true, currentUser = null) {
   async function createCashBankMovementForEvent({ event, account, movementType, amount, date, paymentMethod, reference, notes, allowNegativeBalance }) {
     const nextBalance = Number(account.current_balance || 0) + movementDelta({ movement_type: movementType, amount });
     assertNoUnauthorizedNegativeBalance(account, nextBalance, allowNegativeBalance === true);
-    const movement = await dataStore.create('cash_bank_movements', {
+    const movement = await repositoryCreate('cash_bank_movements', {
       accounting_event_id: event.id,
       financial_account_id: account.id,
       movement_type: movementType,
@@ -644,62 +921,18 @@ export function useAppData(enabled = true, currentUser = null) {
   async function registerInventoryEntryForOperation(item, payload, quantity, notes) {
     const movedAt = operationDate(payload.operation_at || payload.moved_at);
     const responsible = cleanText(payload.responsible) || currentUserName();
-    if (hasSupabaseConfig) {
-      const { data: movement, error } = await supabase.rpc('register_inventory_movement', {
-        p_item_id: item.id,
-        p_movement_type: 'Entrada',
-        p_quantity: quantity,
-        p_moved_at: movedAt,
-        p_responsible: responsible,
-        p_notes: notes
-      });
-      if (error) throw error;
-      return movement;
-    }
-    const nextStock = Number(item.stock || 0) + quantity;
-    await dataStore.update('inventory_items', item.id, { stock: nextStock });
-    const movement = await dataStore.create('inventory_movements', {
+    return createInventarioService().createMovement({
       item_id: item.id,
-      item_name: item.name,
       movement_type: 'Entrada',
       quantity,
       moved_at: movedAt,
       responsible,
       notes
-    });
-    await audit(`Registro entrada de inventario ${item.name}`.trim());
-    return movement;
+    }, { requirePermission: false });
   }
 
   async function resolveInventoryItemForOperation(payload, donorName = '') {
-    if (payload.inventory_item_mode !== 'new') {
-      const item = (data.inventory_items || []).find((entry) => entry.id === payload.inventory_item_id);
-      if (!item) throw new Error('Selecciona un producto de inventario.');
-      return item;
-    }
-    const existing = (data.inventory_items || []).find((entry) => (
-      normalize(entry.name) === normalize(payload.inventory_name)
-      && normalize(entry.lot) === normalize(payload.inventory_lot)
-    ));
-    if (existing) return existing;
-    const itemPayload = sanitizeInventoryItemPayload({
-      name: payload.inventory_name,
-      category: payload.inventory_category || 'Alimentos',
-      lot: payload.inventory_lot || '',
-      expires_at: payload.inventory_expires_at || '',
-      donor: payload.inventory_donor || donorName || '',
-      location: payload.inventory_location || '',
-      unit: payload.inventory_unit || 'unidades',
-      low_stock_threshold: payload.inventory_low_stock_threshold || 0,
-      notes: payload.inventory_notes || ''
-    });
-    assertUniqueInventoryItem(itemPayload);
-    const created = await dataStore.create('inventory_items', {
-      ...itemPayload,
-      ...(!hasSupabaseConfig ? { stock: 0 } : {})
-    });
-    await audit(`Creo producto de inventario ${created.name}`.trim());
-    return created;
+    return createInventarioService().resolveItemForOperation(payload, donorName);
   }
 
   async function registerMonetaryEconomicOperation(payload, options) {
@@ -763,7 +996,7 @@ export function useAppData(enabled = true, currentUser = null) {
       amount,
       financial_account_id: source.id
     });
-    const outMovement = await dataStore.create('cash_bank_movements', {
+    const outMovement = await repositoryCreate('cash_bank_movements', {
       accounting_event_id: createdEvent.id,
       financial_account_id: source.id,
       movement_type: 'transfer_out',
@@ -776,7 +1009,7 @@ export function useAppData(enabled = true, currentUser = null) {
       notes: reason,
       ...userMeta()
     });
-    const inMovement = await dataStore.create('cash_bank_movements', {
+    const inMovement = await repositoryCreate('cash_bank_movements', {
       accounting_event_id: createdEvent.id,
       financial_account_id: target.id,
       movement_type: 'transfer_in',
@@ -811,7 +1044,7 @@ export function useAppData(enabled = true, currentUser = null) {
         documentType: 'receipt',
         forceDocument: false
       });
-      await audit(`Contabilidad: nueva operación ingreso ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: nueva operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n ingreso ${payload.concept || ''}`.trim());
       return;
     }
     if (operationType === 'expense') {
@@ -825,7 +1058,7 @@ export function useAppData(enabled = true, currentUser = null) {
         documentType: 'ticket',
         forceDocument: true
       });
-      await audit(`Contabilidad: nueva operación gasto ${payload.concept || ''}`.trim());
+      await audit(`Contabilidad: nueva operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n gasto ${payload.concept || ''}`.trim());
       return;
     }
     if (operationType === 'donation_money') {
@@ -842,29 +1075,29 @@ export function useAppData(enabled = true, currentUser = null) {
         direction: 'in',
         contactType: 'donor',
         contactName: payload.donor_name || payload.contact_name,
-        defaultConcept: 'Donación monetaria',
-        label: 'Donación monetaria',
+        defaultConcept: 'DonaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n monetaria',
+        label: 'DonaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n monetaria',
         documentType: 'receipt',
         forceDocument: false
       });
-      await audit(`Contabilidad: donación monetaria ${payload.donor_name || ''}`.trim());
+      await createDonacionService().recordEconomicDonation(payload);
       return;
     }
     if (operationType === 'economic_help') {
-      const beneficiary = (data.beneficiaries || []).find((item) => item.id === payload.beneficiary_id);
+      const beneficiary = (appData.beneficiaries || []).find((item) => item.id === payload.beneficiary_id);
       const result = await registerMonetaryEconomicOperation(payload, {
         eventType: 'expense',
         direction: 'out',
         contactType: 'beneficiary',
         contactName: beneficiary?.full_name || payload.beneficiary_name || payload.contact_name,
-        defaultConcept: 'Ayuda económica',
-        label: 'Ayuda económica',
+        defaultConcept: 'Ayuda econÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³mica',
+        label: 'Ayuda econÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³mica',
         documentType: 'proof',
         forceDocument: true,
         sourceModule: 'beneficiaries',
         sourceRecordId: beneficiary?.id || null
       });
-      const socialEvent = await dataStore.create('social_value_events', {
+      const socialEvent = await repositoryCreate('social_value_events', {
         accounting_event_id: result.event.id,
         value_type: 'delivered',
         event_type: 'delivery',
@@ -880,7 +1113,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'create', null, socialEvent);
-      await audit(`Contabilidad: ayuda económica ${beneficiary?.full_name || payload.beneficiary_name || ''}`.trim());
+      await audit(`Contabilidad: ayuda econÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³mica ${beneficiary?.full_name || payload.beneficiary_name || ''}`.trim());
       return;
     }
     if (operationType === 'inventory_purchase') {
@@ -916,15 +1149,15 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       const item = await resolveInventoryItemForOperation(payload, donorName);
       const unitValue = resolveInventoryUnitValueForOperation(payload, item, quantity);
-      if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donación en especie.');
+      if (unitValue === null) throw new Error('Indica el valor unitario estimado de la donaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n en especie.');
       const amount = roundCurrency(quantity * unitValue);
-      const title = cleanText(payload.concept) || `Donación en especie: ${item.name}`;
+      const title = cleanText(payload.concept) || `DonaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n en especie: ${item.name}`;
       const reference = nextDonationReference(date);
       const event = await createAccountingEvent({
         event_type: 'donation_in_kind',
         occurred_at: date,
         title,
-        description: [cleanText(payload.notes) || 'Donación en especie registrada sin afectar caja ni banco.', `Referencia: ${reference}`].filter(Boolean).join(' '),
+        description: [cleanText(payload.notes) || 'DonaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n en especie registrada sin afectar caja ni banco.', `Referencia: ${reference}`].filter(Boolean).join(' '),
         amount,
         contact_id: contact?.id || null,
         financial_account_id: null
@@ -937,16 +1170,17 @@ export function useAppData(enabled = true, currentUser = null) {
           : payload.document_number || reference,
         reference
       }, amount, date, contact?.id || null, true);
-      const donation = await dataStore.create('donations', {
-        donor: donorName || 'Donante',
-        donor_kind: payload.donor_kind || 'Particular',
-        donation_type: payload.donation_type || item.category || item.name,
-        donated_at: date,
-        estimated_value: amount,
-        notes: [`Referencia: ${reference}`, cleanText(payload.notes || title)].filter(Boolean).join('\n')
+      const { donation, inventoryMovement } = await createDonacionService().recordInKindDonation({
+        payload,
+        item,
+        quantity,
+        amount,
+        date,
+        reference,
+        title,
+        donorName
       });
-      const inventoryMovement = await registerInventoryEntryForOperation(item, payload, quantity, `Donación en especie: ${title}`);
-      const socialEvent = await dataStore.create('social_value_events', {
+      const socialEvent = await repositoryCreate('social_value_events', {
         accounting_event_id: event.id,
         value_type: 'received',
         event_type: 'in_kind_donation',
@@ -965,7 +1199,6 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'create', null, socialEvent);
       await updateAccountingEventSource(event, 'donations', donation.id);
-      await audit(`Contabilidad: donación en especie ${donorName || item.name}`.trim());
       return;
     }
     if (operationType === 'loan_received') {
@@ -979,13 +1212,13 @@ export function useAppData(enabled = true, currentUser = null) {
         phone: payload.contact_phone,
         address: payload.contact_address
       });
-      if (!contact) throw new Error('Indica quién concede el préstamo.');
-      const title = cleanText(payload.concept) || 'Préstamo recibido';
+      if (!contact) throw new Error('Indica quiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©n concede el prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo.');
+      const title = cleanText(payload.concept) || 'PrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo recibido';
       const event = await createAccountingEvent({
         event_type: 'loan',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Préstamo recibido registrado automáticamente.',
+        description: cleanText(payload.notes) || 'PrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo recibido registrado automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente.',
         amount,
         contact_id: contact.id,
         financial_account_id: account.id
@@ -994,7 +1227,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...payload,
         document_type: payload.document_type || 'contract'
       }, amount, date, contact.id, true);
-      const loan = await dataStore.create('loan_records', {
+      const loan = await repositoryCreate('loan_records', {
         accounting_event_id: event.id,
         contact_id: contact.id,
         document_id: document?.id || null,
@@ -1007,7 +1240,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('loan_records', loan.id, 'create', null, loan);
-      const loanMovement = await dataStore.create('loan_movements', {
+      const loanMovement = await repositoryCreate('loan_movements', {
         loan_id: loan.id,
         accounting_event_id: event.id,
         financial_account_id: account.id,
@@ -1032,25 +1265,25 @@ export function useAppData(enabled = true, currentUser = null) {
         allowNegativeBalance: payload.allow_negative_balance
       });
       await updateAccountingEventSource(event, 'loan_records', loan.id);
-      await audit(`Contabilidad: préstamo recibido ${title}`.trim());
+      await audit(`Contabilidad: prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo recibido ${title}`.trim());
       return;
     }
     if (operationType === 'loan_repayment') {
-      const loan = activeAccountingRows(data.loan_records || []).find((item) => item.id === payload.loan_id);
-      if (!loan) throw new Error('Selecciona un préstamo pendiente.');
+      const loan = activeAccountingRows(appData.loan_records || []).find((item) => item.id === payload.loan_id);
+      if (!loan) throw new Error('Selecciona un prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo pendiente.');
       const outstanding = outstandingLoanAmount(loan);
-      if (outstanding <= 0) throw new Error('Este préstamo no tiene saldo pendiente.');
+      if (outstanding <= 0) throw new Error('Este prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo no tiene saldo pendiente.');
       const amount = assertPositiveNumber(payload.amount);
-      if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente del préstamo: ${outstanding.toFixed(2)} EUR.`);
+      if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente del prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo: ${outstanding.toFixed(2)} EUR.`);
       const date = operationDate(payload.operation_at);
       const account = findFinancialAccount(payload.financial_account_id);
-      const contact = (data.accounting_contacts || []).find((item) => item.id === loan.contact_id);
-      const title = cleanText(payload.concept) || `Devolución de préstamo: ${loan.reason}`;
+      const contact = (appData.accounting_contacts || []).find((item) => item.id === loan.contact_id);
+      const title = cleanText(payload.concept) || `DevoluciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n de prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo: ${loan.reason}`;
       const event = await createAccountingEvent({
         event_type: 'loan',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Devolución de préstamo registrada automáticamente.',
+        description: cleanText(payload.notes) || 'DevoluciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n de prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo registrada automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente.',
         amount,
         contact_id: loan.contact_id,
         financial_account_id: account.id,
@@ -1074,7 +1307,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       const nextOutstanding = Math.max(0, outstanding - amount);
       const movementType = nextOutstanding === 0 ? 'full_repayment' : 'partial_repayment';
-      const loanMovement = await dataStore.create('loan_movements', {
+      const loanMovement = await repositoryCreate('loan_movements', {
         loan_id: loan.id,
         accounting_event_id: event.id,
         financial_account_id: account.id,
@@ -1087,12 +1320,12 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('loan_movements', loanMovement.id, 'create', null, loanMovement);
-      const updatedLoan = await dataStore.update('loan_records', loan.id, {
+      const updatedLoan = await repositoryUpdate('loan_records', loan.id, {
         status: nextOutstanding === 0 ? 'repaid' : 'partially_repaid',
         updated_at: new Date().toISOString()
       });
       await accountingAuditTrail('loan_records', loan.id, 'update_status', loan, updatedLoan);
-      await audit(`Contabilidad: devolución de préstamo ${contact?.name || loan.reason}`.trim());
+      await audit(`Contabilidad: devoluciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n de prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo ${contact?.name || loan.reason}`.trim());
       return;
     }
     if (operationType === 'supplier_debt') {
@@ -1120,7 +1353,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...payload,
         document_type: payload.document_type || 'invoice'
       }, amount, date, contact.id, true);
-      const debt = await dataStore.create('debt_records', {
+      const debt = await repositoryCreate('debt_records', {
         accounting_event_id: event.id,
         contact_id: contact.id,
         document_id: document?.id || null,
@@ -1139,7 +1372,7 @@ export function useAppData(enabled = true, currentUser = null) {
       return;
     }
     if (operationType === 'debt_payment') {
-      const debt = activeAccountingRows(data.debt_records || []).find((item) => item.id === payload.debt_id);
+      const debt = activeAccountingRows(appData.debt_records || []).find((item) => item.id === payload.debt_id);
       if (!debt) throw new Error('Selecciona una deuda pendiente.');
       const outstanding = outstandingDebtAmount(debt);
       if (outstanding <= 0) throw new Error('Esta deuda no tiene saldo pendiente.');
@@ -1147,13 +1380,13 @@ export function useAppData(enabled = true, currentUser = null) {
       if (amount > outstanding) throw new Error(`El importe supera el saldo pendiente de la deuda: ${outstanding.toFixed(2)} EUR.`);
       const date = operationDate(payload.operation_at);
       const account = findFinancialAccount(payload.financial_account_id);
-      const contact = (data.accounting_contacts || []).find((item) => item.id === debt.contact_id);
+      const contact = (appData.accounting_contacts || []).find((item) => item.id === debt.contact_id);
       const title = cleanText(payload.concept) || `Pago de deuda: ${debt.reason}`;
       const event = await createAccountingEvent({
         event_type: 'debt',
         occurred_at: date,
         title,
-        description: cleanText(payload.notes) || 'Pago de deuda registrado automáticamente.',
+        description: cleanText(payload.notes) || 'Pago de deuda registrado automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente.',
         amount,
         contact_id: debt.contact_id,
         financial_account_id: account.id,
@@ -1177,7 +1410,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       const nextOutstanding = Math.max(0, outstanding - amount);
       const movementType = nextOutstanding === 0 ? 'full_payment' : 'partial_payment';
-      const debtMovement = await dataStore.create('debt_movements', {
+      const debtMovement = await repositoryCreate('debt_movements', {
         debt_id: debt.id,
         accounting_event_id: event.id,
         financial_account_id: account.id,
@@ -1190,7 +1423,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('debt_movements', debtMovement.id, 'create', null, debtMovement);
-      const updatedDebt = await dataStore.update('debt_records', debt.id, {
+      const updatedDebt = await repositoryUpdate('debt_records', debt.id, {
         status: nextOutstanding === 0 ? 'paid' : 'partially_paid',
         updated_at: new Date().toISOString()
       });
@@ -1207,7 +1440,7 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       return;
     }
-    throw new Error('Selecciona un tipo de operación válido.');
+    throw new Error('Selecciona un tipo de operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
   }
 
   function sanitizeFinancialAccountPayload(payload, initial = {}) {
@@ -1216,7 +1449,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const allowed = ['cash', 'bank', 'bizum', 'paypal', 'card', 'other'];
     const openingBalance = Number(payload?.opening_balance || 0);
     if (!name) throw new Error('El nombre de la cuenta es obligatorio.');
-    if (!allowed.includes(accountType)) throw new Error('El tipo de cuenta no es válido.');
+    if (!allowed.includes(accountType)) throw new Error('El tipo de cuenta no es vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
     if (!Number.isFinite(openingBalance) || openingBalance < 0) throw new Error('El saldo inicial no puede ser negativo.');
     return {
       name,
@@ -1238,7 +1471,7 @@ export function useAppData(enabled = true, currentUser = null) {
     const allowed = ['cash_in', 'cash_out', 'bank_in', 'bank_out'];
     const amount = Number(payload?.amount || 0);
     const reason = String(payload?.reason || payload?.notes || '').trim();
-    if (!allowed.includes(movementType)) throw new Error('El tipo de movimiento no es válido.');
+    if (!allowed.includes(movementType)) throw new Error('El tipo de movimiento no es vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('El importe debe ser mayor que cero.');
     if (reason.length < 3) throw new Error('El motivo es obligatorio.');
     const account = findFinancialAccount(payload?.financial_account_id);
@@ -1283,11 +1516,11 @@ export function useAppData(enabled = true, currentUser = null) {
     const documentNumber = noDocument ? '' : String(payload?.document_number || '').trim() || (internalDocument ? nextInternalDocumentNumber(documentAt) : '');
     if (!fileName && !fileDataUrl && !documentNumber && payload?.force_document !== true) return null;
     const responsible = currentUserName();
-    const concept = cleanText(payload?.concept || payload?.reason || payload?.notes || 'Operación registrada');
+    const concept = cleanText(payload?.concept || payload?.reason || payload?.notes || 'OperaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n registrada');
     const donor = cleanText(payload?.donor_name || payload?.contact_name || payload?.supplier_name || payload?.lender_name || payload?.creditor_name);
     const internalNotes = internalDocument
       ? [
-        'Justificante interno generado automáticamente.',
+        'Justificante interno generado automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente.',
         donor ? `Donante/persona o entidad: ${donor}.` : '',
         `Concepto: ${concept}.`,
         `Responsable: ${responsible}.`
@@ -1311,7 +1544,7 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function createAccountingDocumentForEvent(eventId, documentPayload) {
     if (!documentPayload) return null;
-    const document = await dataStore.create('accounting_documents', {
+    const document = await repositoryCreate('accounting_documents', {
       ...documentPayload,
       accounting_event_id: eventId
     });
@@ -1321,39 +1554,12 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function applyAccountBalance(account, nextBalance, actionLabel) {
     const previous = { ...account };
-    const updated = await dataStore.update('financial_accounts', account.id, {
+    const updated = await repositoryUpdate('financial_accounts', account.id, {
       current_balance: nextBalance,
       updated_at: new Date().toISOString()
     });
     await accountingAuditTrail('financial_accounts', account.id, actionLabel, previous, updated);
     return updated;
-  }
-
-  async function readApiJson(response) {
-    const text = await response.text();
-    try {
-      return text ? JSON.parse(text) : {};
-    } catch {
-      return { error: 'Respuesta no válida del servidor.' };
-    }
-  }
-
-  function formatApiError(result, fallback) {
-    const base = result.error || fallback;
-    if (!result.step) return base;
-    const details = result.details ? ` Detalles: ${JSON.stringify(result.details)}` : '';
-    return `${base} Paso: ${result.step}.${details}`;
-  }
-
-  async function adminUserRequest(action, payload = {}) {
-    const response = await fetch('/api/admin-user', {
-      method: 'POST',
-      headers: await getApiHeaders(),
-      body: JSON.stringify({ action, ...payload })
-    });
-    const result = await readApiJson(response);
-    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operación de usuarios.'));
-    return result;
   }
 
   function isMissingCancelDeliveryRpcError(error) {
@@ -1373,10 +1579,10 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   async function voidDeliverySocialValueEvents(delivery, reason) {
-    const socialEvents = activeAccountingRows(data.social_value_events || [])
+    const socialEvents = activeAccountingRows(appData.social_value_events || [])
       .filter((event) => deliverySocialEventMatches(delivery, event));
     for (const socialEvent of socialEvents) {
-      const updated = await dataStore.update('social_value_events', socialEvent.id, {
+      const updated = await repositoryUpdate('social_value_events', socialEvent.id, {
         status: 'voided',
         voided_at: new Date().toISOString(),
         void_reason: reason,
@@ -1384,55 +1590,6 @@ export function useAppData(enabled = true, currentUser = null) {
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'void_delivery', socialEvent, updated);
     }
-  }
-
-  async function cancelDeliveryWithoutRpc(delivery, cleanReason) {
-    if (currentUser?.role !== 'Superadministrador') {
-      throw new Error('La función de anulación no está disponible en Supabase. Solo el Superadministrador puede usar la ruta de recuperación segura.');
-    }
-
-    const cancelledAt = new Date().toISOString();
-    const cancelledByName = currentUserName();
-    const item = data.inventory_items.find((entry) => entry.id === delivery.inventory_item_id);
-
-    if (hasSupabaseConfig && item) {
-      const { error } = await supabase.rpc('register_inventory_movement', {
-        p_item_id: item.id,
-        p_moved_at: cancelledAt.slice(0, 10),
-        p_movement_type: 'Entrada',
-        p_notes: `Reversión por anulación de entrega: ${cleanReason}`,
-        p_quantity: Number(delivery.quantity || 0),
-        p_responsible: cancelledByName
-      });
-      if (error) throw error;
-    } else if (item) {
-      await dataStore.update('inventory_items', item.id, { stock: Number(item.stock || 0) + Number(delivery.quantity || 0) });
-      await dataStore.create('inventory_movements', {
-        item_id: item.id,
-        item_name: item.name,
-        movement_type: 'Entrada',
-        quantity: Number(delivery.quantity || 0),
-        moved_at: cancelledAt,
-        responsible: cancelledByName,
-        notes: `Reversión por anulación de entrega: ${cleanReason}`
-      });
-    }
-
-    const updatedDelivery = await dataStore.update('deliveries', delivery.id, {
-      status: 'Anulada',
-      cancelled_at: cancelledAt,
-      cancelled_by: currentUser?.id || null,
-      cancelled_by_name: cancelledByName,
-      cancellation_reason: cleanReason
-    });
-    await voidDeliverySocialValueEvents(delivery, cleanReason);
-
-    const lastActiveDelivery = data.deliveries
-      .filter((item) => item.id !== delivery.id && item.beneficiary_id === delivery.beneficiary_id && item.status !== 'Anulada')
-      .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)))[0];
-    await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
-    await audit(`Anulo entrega ${delivery.receipt_number || delivery.id}. Motivo: ${cleanReason}`);
-    return updatedDelivery;
   }
 
   function isActiveAccountingRowAfterEventVoid(row, voidedEventId) {
@@ -1454,14 +1611,14 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function syncLoanStatusAfterEventVoid(loan, voidedEventId, voidedAt) {
     if (!loan || loan.accounting_event_id === voidedEventId || inactiveAccountingStatus(loan.status)) return;
-    const paid = (data.loan_movements || [])
+    const paid = (appData.loan_movements || [])
       .filter((movement) => movement.loan_id === loan.id
         && movement.movement_type !== 'loan_received'
         && isActiveAccountingRowAfterEventVoid(movement, voidedEventId))
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
     const nextStatus = loanStatusFromPaidAmount(loan, paid);
     if (loan.status === nextStatus) return;
-    const updated = await dataStore.update('loan_records', loan.id, {
+    const updated = await repositoryUpdate('loan_records', loan.id, {
       status: nextStatus,
       updated_at: voidedAt
     });
@@ -1470,12 +1627,12 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function syncDebtStatusAfterEventVoid(debt, voidedEventId, voidedAt) {
     if (!debt || debt.accounting_event_id === voidedEventId || inactiveAccountingStatus(debt.status)) return;
-    const paid = (data.debt_movements || [])
+    const paid = (appData.debt_movements || [])
       .filter((movement) => movement.debt_id === debt.id && isActiveAccountingRowAfterEventVoid(movement, voidedEventId))
       .reduce((total, movement) => total + Number(movement.amount || 0), 0);
     const nextStatus = debtStatusFromPaidAmount(debt, paid);
     if (debt.status === nextStatus) return;
-    const updated = await dataStore.update('debt_records', debt.id, {
+    const updated = await repositoryUpdate('debt_records', debt.id, {
       status: nextStatus,
       updated_at: voidedAt
     });
@@ -1488,8 +1645,8 @@ export function useAppData(enabled = true, currentUser = null) {
     const affectedLoanIds = new Set();
     const affectedDebtIds = new Set();
 
-    for (const movement of (data.loan_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
-      const updated = await dataStore.update('loan_movements', movement.id, {
+    for (const movement of (appData.loan_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await repositoryUpdate('loan_movements', movement.id, {
         status: 'voided',
         voided_at: voidedAt,
         void_reason: cleanReason,
@@ -1499,8 +1656,8 @@ export function useAppData(enabled = true, currentUser = null) {
       affectedLoanIds.add(movement.loan_id);
     }
 
-    for (const loan of (data.loan_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
-      const updated = await dataStore.update('loan_records', loan.id, {
+    for (const loan of (appData.loan_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await repositoryUpdate('loan_records', loan.id, {
         status: 'voided',
         voided_at: voidedAt,
         void_reason: cleanReason,
@@ -1511,11 +1668,11 @@ export function useAppData(enabled = true, currentUser = null) {
     }
 
     for (const loanId of affectedLoanIds) {
-      await syncLoanStatusAfterEventVoid((data.loan_records || []).find((loan) => loan.id === loanId), eventId, voidedAt);
+      await syncLoanStatusAfterEventVoid((appData.loan_records || []).find((loan) => loan.id === loanId), eventId, voidedAt);
     }
 
-    for (const movement of (data.debt_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
-      const updated = await dataStore.update('debt_movements', movement.id, {
+    for (const movement of (appData.debt_movements || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await repositoryUpdate('debt_movements', movement.id, {
         status: 'voided',
         voided_at: voidedAt,
         void_reason: cleanReason,
@@ -1525,8 +1682,8 @@ export function useAppData(enabled = true, currentUser = null) {
       affectedDebtIds.add(movement.debt_id);
     }
 
-    for (const debt of (data.debt_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
-      const updated = await dataStore.update('debt_records', debt.id, {
+    for (const debt of (appData.debt_records || []).filter((item) => item.accounting_event_id === eventId && !inactiveAccountingStatus(item.status))) {
+      const updated = await repositoryUpdate('debt_records', debt.id, {
         status: 'voided',
         voided_at: voidedAt,
         void_reason: cleanReason,
@@ -1537,27 +1694,188 @@ export function useAppData(enabled = true, currentUser = null) {
     }
 
     for (const debtId of affectedDebtIds) {
-      await syncDebtStatusAfterEventVoid((data.debt_records || []).find((debt) => debt.id === debtId), eventId, voidedAt);
+      await syncDebtStatusAfterEventVoid((appData.debt_records || []).find((debt) => debt.id === debtId), eventId, voidedAt);
     }
   }
 
-  const actions = useMemo(() => ({
+  const actions = useMemo(() => {
+    const repositoryAdapter = createRepository();
+    const dashboardService = createDashboardService();
+    const notificacionService = createNotificacionService(repositoryAdapter, dashboardService);
+    const usuarioService = new UsuarioService({
+      repository: new UsuarioRepository({ dataStore, repository: repositoryAdapter }),
+      users: appData.app_users || [],
+      audit
+    });
+    const beneficiarioService = createBeneficiarioService(repositoryAdapter, notificacionService);
+    const inventarioService = createInventarioService(repositoryAdapter, notificacionService);
+    const configuracionService = createConfiguracionService({
+      repositoryAdapter,
+      usuarioService,
+      dashboardService,
+      notificacionService
+    });
+    const donacionService = createDonacionService(inventarioService, dashboardService, repositoryAdapter, notificacionService);
+    const recursoService = createRecursoService(repositoryAdapter, notificacionService);
+    const colaboradorService = createColaboradorService({
+      repositoryAdapter,
+      donacionService,
+      recursoService,
+      notificacionService,
+      dashboardService
+    });
+    const donanteService = createDonanteService({
+      repositoryAdapter,
+      donacionService,
+      notificacionService,
+      dashboardService
+    });
+    const entregaService = createEntregaService({
+      repositoryAdapter,
+      beneficiarioService,
+      inventarioService,
+      dashboardService,
+      configuracionService,
+      notificacionService
+    });
+    const beneficiarioPortalService = createBeneficiarioPortalService({
+      repositoryAdapter,
+      beneficiarioService,
+      entregaService,
+      recursoService,
+      notificacionService
+    });
+    const voluntarioService = createVoluntarioService({
+      repositoryAdapter,
+      usuarioService,
+      entregaService,
+      dashboardService,
+      notificacionService
+    });
+    const informeService = createInformeService({
+      repositoryAdapter,
+      beneficiarioService,
+      inventarioService,
+      entregaService,
+      donacionService,
+      voluntarioService,
+      recursoService
+    });
+
+    const iaService = createIAService({
+      repositoryAdapter,
+      configuracionService
+    });
+    const agendaService = createAgendaOperativaService({
+      repositoryAdapter,
+      beneficiarioService,
+      entregaService,
+      inventarioService,
+      voluntarioService,
+      donacionService,
+      dashboardService,
+      notificacionService
+    });
+    const priorityEngineService = createPriorityEngineService({
+      repositoryAdapter,
+      notificacionService,
+      agendaOperativaService: agendaService,
+      dashboardService
+    });
+    const campanaService = new CampanaService({
+      repository: new CampanaRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      data: appData,
+      audit,
+      assertPermission,
+      inventarioService,
+      beneficiarioService,
+      agendaOperativaService: agendaService,
+      notificacionService,
+      dashboardService,
+      currentUser
+    });
+    dashboardService.configureIntegrations?.({
+      beneficiarioService,
+      inventarioService,
+      entregaService,
+      donacionService,
+      voluntarioService,
+      recursoService,
+      notificacionService,
+      agendaOperativaService: agendaService,
+      priorityEngineService
+    });
+
+    return ({
+    agenda: agendaService,
+    beneficiarioPortal: beneficiarioPortalService,
+    campanas: campanaService,
+    colaboradorPortal: colaboradorService,
+    configuracion: configuracionService,
+    dashboard: dashboardService,
+    donantePortal: donanteService,
+    ia: iaService,
+    notifications: notificacionService,
+    priorities: priorityEngineService,
+    reports: informeService,
     reloadData: reload,
+    markNotificationRead: async (id) => {
+      await notificacionService.markAsRead(id);
+      await reload();
+    },
+    markAllNotificationsRead: async () => {
+      await notificacionService.markAllAsRead();
+      await reload();
+    },
+    createAgendaEvent: async (payload) => {
+      const created = await agendaService.createEvent(payload);
+      await reload();
+      return created;
+    },
+    updateAgendaEvent: async (id, payload) => {
+      const updated = await agendaService.updateEvent(id, payload);
+      await reload();
+      return updated;
+    },
+    deleteAgendaEvent: async (id) => {
+      await agendaService.deleteEvent(id);
+      await reload();
+    },
+    createAgendaCampaign: async (payload) => {
+      const created = await agendaService.createCampaign(payload);
+      await reload();
+      return created;
+    },
+    updateAgendaCampaign: async (id, payload) => {
+      const updated = await agendaService.updateCampaign(id, payload);
+      await reload();
+      return updated;
+    },
+    cancelAgendaCampaign: async (id) => {
+      const updated = await agendaService.cancelCampaign(id);
+      await reload();
+      return updated;
+    },
+    generateOperationalCampaign: async (payload) => {
+      const result = await campanaService.generateCampaign(payload);
+      await reload();
+      return result;
+    },
     createDeletionRequest: async (payload) => {
       const moduleId = String(payload?.module || '').trim();
       assertDeletionRequester(moduleId);
       const reason = String(payload?.reason || '').trim();
-      if (reason.length < 5) throw new Error('Indica un motivo válido para solicitar la eliminación.');
+      if (reason.length < 5) throw new Error('Indica un motivo vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido para solicitar la eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n.');
       const recordId = String(payload?.record_id || '').trim();
       if (!recordId) throw new Error('No se ha indicado el registro que se desea eliminar.');
-      const existingPending = (data.deletion_requests || []).find((request) => (
+      const existingPending = (appData.deletion_requests || []).find((request) => (
         request.status === 'Pendiente'
         && request.module === moduleId
         && String(request.record_id) === recordId
       ));
       if (existingPending) throw new Error('Ya existe una solicitud pendiente para este registro.');
       const association = associationMeta();
-      const created = await dataStore.create('deletion_requests', {
+      const created = await repositoryCreate('deletion_requests', {
         ...association,
         module: moduleId,
         record_type: payload.record_type || moduleId,
@@ -1574,27 +1892,27 @@ export function useAppData(enabled = true, currentUser = null) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
-      await audit(`Solicitó eliminación definitiva de ${created.record_label || created.record_id}. Motivo: ${reason}`);
+      await audit(`SolicitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n definitiva de ${created.record_label || created.record_id}. Motivo: ${reason}`);
       await trySendDeletionEmail(
         () => notifyDeletionRequestProvider(created),
-        `Falló notificación al proveedor para solicitud ${created.id}`
+        `FallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ notificaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n al proveedor para solicitud ${created.id}`
       );
       await reload();
       return created;
     },
     resolveDeletionRequest: async (id, payload) => {
       assertSystemSuperadmin();
-      const request = (data.deletion_requests || []).find((item) => item.id === id);
+      const request = (appData.deletion_requests || []).find((item) => item.id === id);
       if (!request) throw new Error('La solicitud no existe.');
-      if (request.status !== 'Pendiente') throw new Error('La solicitud ya está resuelta.');
+      if (request.status !== 'Pendiente') throw new Error('La solicitud ya estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ resuelta.');
       const decision = payload?.decision === 'Aprobada' ? 'Aprobada' : 'Rechazada';
       const resolutionReason = String(payload?.resolution_reason || '').trim();
-      if (resolutionReason.length < 5) throw new Error('Indica un motivo de resolución válido.');
+      if (resolutionReason.length < 5) throw new Error('Indica un motivo de resoluciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
       let deletedRecordType = '';
       if (decision === 'Aprobada') {
         deletedRecordType = await executeApprovedDeletionRequest(request);
       }
-      const resolved = await dataStore.update('deletion_requests', id, {
+      const resolved = await repositoryUpdate('deletion_requests', id, {
         status: decision,
         resolved_at: new Date().toISOString(),
         resolved_by: currentUser?.id || null,
@@ -1603,29 +1921,24 @@ export function useAppData(enabled = true, currentUser = null) {
         resolution_reason: resolutionReason,
         updated_at: new Date().toISOString()
       });
-      await audit(`${decision === 'Aprobada' ? 'Aprobó y ejecutó' : 'Rechazó'} solicitud de eliminación ${request.record_label || request.record_id}. Motivo: ${resolutionReason}`);
+      await audit(`${decision === 'Aprobada' ? 'AprobÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ y ejecutÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³' : 'RechazÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³'} solicitud de eliminaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n ${request.record_label || request.record_id}. Motivo: ${resolutionReason}`);
       if (decision === 'Rechazada') {
         await trySendDeletionEmail(
           () => notifyDeletionRequestRejected(resolved, resolutionReason),
-          `Falló notificación de rechazo para solicitud ${id}`
+          `FallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ notificaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n de rechazo para solicitud ${id}`
         );
       }
       await reload();
       return { request: resolved, deletedRecordType };
     },
     createBeneficiary: async (payload) => {
-      dataStore.assertUniqueDocument(data.beneficiaries, payload);
-      await dataStore.create('beneficiaries', {
-        ...sanitizeBeneficiaryPayload(payload),
-        code: payload.code || nextBeneficiaryCode(data.beneficiaries)
-      });
-      await audit(`Creo beneficiario ${payload.full_name || ''}`.trim());
+      await beneficiarioService.create(payload);
       await reload();
     },
     createFamily: async (payload) => {
       assertPermission('families', 'create');
       const createdAt = payload?.created_at || new Date().toISOString();
-      const created = await dataStore.create('families', {
+      const created = await repositoryCreate('families', {
         ...sanitizeFamilyPayload(payload),
         created_at: createdAt,
         updated_at: payload?.updated_at || createdAt
@@ -1636,18 +1949,18 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     updateFamily: async (id, payload) => {
       assertPermission('families', 'edit');
-      const updated = await dataStore.update('families', id, sanitizeFamilyPayload(payload));
+      const updated = await repositoryUpdate('families', id, sanitizeFamilyPayload(payload));
       await audit(`Edito familia ${updated.family_code || updated.responsible_name || ''}`.trim());
       await reload();
       return updated;
     },
     archiveFamily: async (id, payload = {}) => {
       assertPermission('families', 'edit');
-      const family = data.families.find((item) => item.id === id);
+      const family = appData.families.find((item) => item.id === id);
       if (!family) throw new Error('La familia no existe.');
       const archivedAt = new Date().toISOString();
       const archiveReason = String(payload.reason || payload.archive_reason || '').trim();
-      const archived = await dataStore.update('families', id, {
+      const archived = await repositoryUpdate('families', id, {
         notes: withFamilyArchiveMarker(family.notes, archivedAt, currentUserName(), archiveReason),
         status: 'Archivada',
         archived_at: archivedAt,
@@ -1660,263 +1973,128 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     deleteFamily: async (id) => {
       if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar familias.');
-      const members = (data.beneficiaries || []).filter((item) => item.family_id === id);
+      const members = (appData.beneficiaries || []).filter((item) => item.family_id === id);
       if (members.length) throw new Error('Esta familia tiene miembros asociados.');
-      const family = data.families.find((item) => item.id === id);
-      await dataStore.remove('families', id);
+      const family = appData.families.find((item) => item.id === id);
+      await repositoryRemove('families', id);
       await audit(`Elimino familia ${family?.family_code || id}`.trim());
       await reload();
     },
     createBeneficiaryDocument: async (payload) => {
-      await dataStore.create('beneficiary_documents', payload);
+      await beneficiarioService.createDocument(payload);
       await reload();
     },
     deleteBeneficiaryDocument: async (id) => {
-      assertPermission('beneficiaries', 'delete');
-      await dataStore.remove('beneficiary_documents', id);
+      await beneficiarioService.removeDocument(id);
       await reload();
     },
     createSocialHistory: async (payload) => {
-      await dataStore.create('social_history', payload);
+      await beneficiarioService.createSocialHistory(payload);
       await reload();
     },
     updateBeneficiary: async (id, payload) => {
-      dataStore.assertUniqueDocument(data.beneficiaries, payload, id);
-      await dataStore.update('beneficiaries', id, sanitizeBeneficiaryPayload(payload));
-      await audit(`Edito beneficiario ${payload.full_name || ''}`.trim());
+      await beneficiarioService.update(id, payload);
       await reload();
     },
     deleteBeneficiary: async (id) => {
-      assertPermission('beneficiaries', 'delete');
-      await dataStore.remove('beneficiaries', id);
-      await audit('Elimino beneficiario');
+      await beneficiarioService.remove(id);
       await reload();
     },
     createDelivery: async (payload) => {
-      assertPermission('deliveries', 'create');
-      const beneficiary = data.beneficiaries.find((item) => item.id === payload.beneficiary_id);
-      const family = data.families.find((item) => item.id === beneficiary?.family_id);
-      const item = data.inventory_items.find((entry) => entry.id === payload.inventory_item_id);
-      const quantity = Number(payload.quantity || 0);
-      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('La cantidad de la entrega debe ser mayor que cero.');
-      if (item && quantity > Number(item.stock || 0)) {
-        throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
-      }
-      const createdDelivery = await dataStore.create('deliveries', {
-        ...payload,
-        receipt_number: payload.receipt_number || nextReceiptNumber(data.deliveries, payload.delivered_at),
-        beneficiary_name: beneficiary?.full_name || '',
-        family_id: family?.id || null,
-        family_name: family?.family_code || '',
-        inventory_item_name: item?.name || ''
-      });
-      if (beneficiary) {
-        await dataStore.create('social_history', {
-          beneficiary_id: beneficiary.id,
-          family_id: family?.id || null,
-          date: payload.delivered_at || new Date().toISOString().slice(0, 10),
-          entry_type: 'Entrega de ayuda',
-          notes: buildDeliveryTrackingNote(createdDelivery, beneficiary, item, quantity)
-        });
-      }
-      if (!hasSupabaseConfig && beneficiary) await dataStore.update('beneficiaries', beneficiary.id, { last_help_at: payload.delivered_at });
-      if (!hasSupabaseConfig && item && quantity > 0) {
-        const nextStock = Number(item.stock || 0) - quantity;
-        await dataStore.update('inventory_items', item.id, { stock: nextStock });
-        await dataStore.create('inventory_movements', {
-          item_id: item.id,
-          item_name: item.name,
-          movement_type: 'Salida',
-          quantity,
-          moved_at: payload.delivered_at,
-          responsible: payload.responsible,
-          notes: `Salida automatica por entrega a ${beneficiary?.full_name || 'beneficiario'}`
-        });
-      }
-      await audit(`Registro entrega a ${beneficiary?.full_name || 'beneficiario'}`);
+      await entregaService.create(payload);
       await reload();
     },
     deleteDelivery: async (id) => {
-      assertSuperadmin();
-      await dataStore.remove('deliveries', id);
-      await audit('Elimino definitivamente una entrega');
+      await entregaService.remove(id);
       await reload();
     },
     cancelDelivery: async (id, reason) => {
-      if (!canDo(currentUser, 'deliveries', 'edit') && !canDo(currentUser, 'deliveries', 'create')) {
-        throw new Error('No tienes permiso para anular entregas.');
-      }
-      const cleanReason = String(reason || '').trim();
-      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulación válido.');
-      const delivery = data.deliveries.find((item) => item.id === id);
-      if (!delivery || delivery.status === 'Anulada') throw new Error('La entrega no existe o ya está anulada.');
-      if (hasSupabaseConfig) {
-        const { error: cancelError } = await supabase.rpc('cancel_delivery', { p_delivery_id: id, p_reason: cleanReason });
-        if (cancelError) {
-          if (isMissingCancelDeliveryRpcError(cancelError)) await cancelDeliveryWithoutRpc(delivery, cleanReason);
-          else throw cancelError;
-        }
-      } else {
-        const cancelledAt = new Date().toISOString();
-        const cancelledByName = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || 'Usuario';
-        await dataStore.update('deliveries', id, {
-          status: 'Anulada',
-          cancelled_at: cancelledAt,
-          cancelled_by: currentUser?.id || null,
-          cancelled_by_name: cancelledByName,
-          cancellation_reason: cleanReason
-        });
-        const item = data.inventory_items.find((entry) => entry.id === delivery.inventory_item_id);
-        if (item) {
-          await dataStore.update('inventory_items', item.id, { stock: Number(item.stock || 0) + Number(delivery.quantity || 0) });
-          await dataStore.create('inventory_movements', {
-            item_id: item.id,
-            item_name: item.name,
-            movement_type: 'Entrada',
-            quantity: Number(delivery.quantity || 0),
-            moved_at: cancelledAt,
-            responsible: cancelledByName,
-            notes: `Reversión por anulación de entrega: ${cleanReason}`
-          });
-        }
-        const lastActiveDelivery = data.deliveries
-          .filter((item) => item.id !== id && item.beneficiary_id === delivery.beneficiary_id && item.status !== 'Anulada')
-          .sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)))[0];
-        await dataStore.update('beneficiaries', delivery.beneficiary_id, { last_help_at: lastActiveDelivery?.delivered_at || null });
-        await voidDeliverySocialValueEvents(delivery, cleanReason);
-      }
-      if (!hasSupabaseConfig) await audit(`Anulo entrega ${delivery.receipt_number || id}. Motivo: ${cleanReason}`);
+      await entregaService.cancel(id, reason);
       await reload();
     },
+    saveDeliverySignature: async (id, payload) => {
+      const updated = await entregaService.saveSignature(id, payload);
+      await reload();
+      return updated;
+    },
     createEmailLog: async (payload) => {
-      await dataStore.create('email_logs', payload);
+      await repositoryCreate('email_logs', payload);
       await reload();
     },
     updateEmailLog: async (id, payload) => {
-      await dataStore.update('email_logs', id, payload);
+      await repositoryUpdate('email_logs', id, payload);
       await reload();
     },
     deleteEmailLog: async (id) => {
       if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar citas definitivamente.');
-      await dataStore.remove('email_logs', id);
+      await repositoryRemove('email_logs', id);
       await audit('Elimino definitivamente una cita de agenda');
       await reload();
     },
     createInventoryItem: async (payload) => {
-      assertPermission('inventory', 'edit');
-      const item = sanitizeInventoryItemPayload(payload);
-      assertUniqueInventoryItem(item);
-      await dataStore.create('inventory_items', { ...item, ...(!hasSupabaseConfig ? { stock: 0 } : {}) });
-      await audit(`Creo producto de inventario ${item.name}`.trim());
+      await inventarioService.createItem(payload);
       await reload();
     },
     updateInventoryItem: async (id, payload) => {
-      assertPermission('inventory', 'edit');
-      const item = sanitizeInventoryItemPayload(payload);
-      assertUniqueInventoryItem(item, id);
-      await dataStore.update('inventory_items', id, item);
-      await audit(`Edito producto de inventario ${item.name}`.trim());
+      await inventarioService.updateItem(id, payload);
       await reload();
     },
     deleteInventoryItem: async (id) => {
-      assertPermission('inventory', 'delete');
-      const item = data.inventory_items.find((entry) => entry.id === id);
-      try {
-        await dataStore.remove('inventory_items', id);
-      } catch (error) {
-        if (error?.code === '23503') {
-          throw new Error('No se puede eliminar un producto con movimientos registrados.');
-        }
-        throw error;
-      }
-      await audit(`Elimino producto de inventario ${item?.name || ''}`.trim());
+      await inventarioService.removeItem(id);
       await reload();
     },
     createInventoryMovement: async (payload) => {
-      assertPermission('inventory', 'create');
-      const { item, movement } = sanitizeInventoryMovement(payload);
-      if (hasSupabaseConfig) {
-        const { error: movementError } = await supabase.rpc('register_inventory_movement', {
-          p_item_id: movement.item_id,
-          p_movement_type: movement.movement_type,
-          p_quantity: movement.quantity,
-          p_moved_at: movement.moved_at,
-          p_responsible: movement.responsible,
-          p_notes: movement.notes
-        });
-        if (movementError) throw movementError;
-      } else {
-        const nextStock = movement.movement_type === 'Entrada'
-          ? Number(item.stock || 0) + movement.quantity
-          : Number(item.stock || 0) - movement.quantity;
-        await dataStore.update('inventory_items', item.id, { stock: nextStock });
-        await dataStore.create('inventory_movements', { ...movement, item_name: item.name });
-      }
-      if (!hasSupabaseConfig) await audit(`Registro ${movement.movement_type.toLowerCase()} de inventario ${item.name}`.trim());
+      await inventarioService.createMovement(payload);
       await reload();
     },
     createDonorContact: async (payload) => {
-      assertPermission('accounting', 'create');
-      const cleanContact = sanitizeDonorContactPayload(payload, { is_active: true });
-      const latestContacts = await dataStore.list('accounting_contacts').catch(() => data.accounting_contacts || []);
-      const duplicate = (latestContacts || []).find((item) => (
-        normalize(item.contact_type) === 'donor'
-        && (
-          normalize(item.name) === normalize(cleanContact.name)
-          || (cleanContact.email && normalize(item.email) === normalize(cleanContact.email))
-        )
-      ));
-      if (duplicate) return duplicate;
-      const contact = await dataStore.create('accounting_contacts', {
-        ...cleanContact,
-        created_at: new Date().toISOString()
-      });
-      await accountingAuditTrail('accounting_contacts', contact.id, 'create_donor', null, contact);
-      await audit(`Donantes: creo ficha de donante ${contact.name}`.trim());
+      const contact = await donacionService.createDonorContact(payload);
       await reload();
       return contact;
     },
     updateDonorContact: async (id, payload) => {
-      assertPermission('accounting', 'edit');
-      const current = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
-      if (!current) throw new Error('El donante no existe.');
-      const cleanContact = sanitizeDonorContactPayload(payload, current);
-      const updated = await dataStore.update('accounting_contacts', id, cleanContact);
-      await accountingAuditTrail('accounting_contacts', id, 'update_donor', current, updated);
-      await audit(`Donantes: edito ficha de donante ${updated.name || current.name}`.trim());
+      const updated = await donacionService.updateDonorContact(id, payload);
       await reload();
       return updated;
     },
     archiveDonorContact: async (id, payload) => {
-      assertPermission('accounting', 'edit');
-      const current = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
-      if (!current) throw new Error('El donante no existe.');
-      const updated = await dataStore.update('accounting_contacts', id, {
-        notes: cleanText(payload?.notes ?? current.notes),
-        is_active: payload?.is_active !== false ? true : false,
-        updated_at: new Date().toISOString()
-      });
-      await accountingAuditTrail('accounting_contacts', id, updated.is_active === false ? 'archive_donor' : 'unarchive_donor', current, updated);
-      await audit(`Donantes: ${updated.is_active === false ? 'archivo' : 'desarchivo'} donante ${updated.name || current.name}`.trim());
+      const updated = await donacionService.archiveDonorContact(id, payload);
       await reload();
       return updated;
     },
     deleteDonorContact: async (id) => {
-      assertAccountingSuperadmin();
-      const contact = (data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
-      if (!contact) throw new Error('El donante no existe.');
-      if (donorHasDonationRelations(contact)) {
-        throw new Error('Este donante tiene donaciones registradas. Utilice Archivar.');
-      }
-      await dataStore.remove('accounting_contacts', id);
-      await accountingAuditTrail('accounting_contacts', id, 'delete_donor_without_donations', contact, null);
-      await audit(`Donantes: eliminó donante sin donaciones ${contact.name}`.trim());
+      await donacionService.deleteDonorContact(id);
       await reload();
+    },
+    createResource: async (payload) => {
+      const created = await recursoService.create(payload);
+      await reload();
+      return created;
+    },
+    updateResource: async (id, payload) => {
+      const updated = await recursoService.update(id, payload);
+      await reload();
+      return updated;
+    },
+    publishResource: async (id) => {
+      const updated = await recursoService.publish(id);
+      await reload();
+      return updated;
+    },
+    unpublishResource: async (id) => {
+      const updated = await recursoService.unpublish(id);
+      await reload();
+      return updated;
+    },
+    archiveResource: async (id) => {
+      const updated = await recursoService.archive(id);
+      await reload();
+      return updated;
     },
     createFinancialAccount: async (payload) => {
       assertPermission('accounting', 'create');
       const cleanAccount = sanitizeFinancialAccountPayload(payload);
-      const account = await dataStore.create('financial_accounts', {
+      const account = await repositoryCreate('financial_accounts', {
         ...cleanAccount,
         ...userMeta()
       });
@@ -1928,19 +2106,19 @@ export function useAppData(enabled = true, currentUser = null) {
       assertPermission('accounting', 'edit');
       const current = findFinancialAccount(id);
       const cleanAccount = sanitizeFinancialAccountPayload(payload, current);
-      const updated = await dataStore.update('financial_accounts', id, cleanAccount);
+      const updated = await repositoryUpdate('financial_accounts', id, cleanAccount);
       await accountingAuditTrail('financial_accounts', id, 'update', current, updated);
       await audit(`Contabilidad: edito cuenta ${updated.name || current.name}`.trim());
       await reload();
     },
     deleteFinancialAccount: async (id) => {
       assertAccountingSuperadmin();
-      const account = (data.financial_accounts || []).find((item) => item.id === id);
+      const account = (appData.financial_accounts || []).find((item) => item.id === id);
       if (!account) throw new Error('La cuenta no existe.');
-      const hasRelations = (data.cash_bank_movements || []).some((movement) => movement.financial_account_id === id)
-        || (data.accounting_events || []).some((event) => event.financial_account_id === id);
+      const hasRelations = (appData.cash_bank_movements || []).some((movement) => movement.financial_account_id === id)
+        || (appData.accounting_events || []).some((event) => event.financial_account_id === id);
       if (hasRelations) throw new Error('No se puede eliminar una cuenta con movimientos o eventos relacionados. Puedes desactivarla.');
-      await dataStore.remove('financial_accounts', id);
+      await repositoryRemove('financial_accounts', id);
       await accountingAuditTrail('financial_accounts', id, 'delete', account, null);
       await audit(`Contabilidad: elimino cuenta sin relaciones ${account.name}`.trim());
       await reload();
@@ -1954,9 +2132,9 @@ export function useAppData(enabled = true, currentUser = null) {
       const { account, movement, event, document } = sanitizeCashBankMovementPayload(payload);
       const nextBalance = Number(account.current_balance || 0) + movementDelta(movement);
       assertNoUnauthorizedNegativeBalance(account, nextBalance, payload?.allow_negative_balance === true);
-      const createdEvent = await dataStore.create('accounting_events', event);
+      const createdEvent = await repositoryCreate('accounting_events', event);
       await accountingAuditTrail('accounting_events', createdEvent.id, 'create', null, createdEvent);
-      const createdMovement = await dataStore.create('cash_bank_movements', {
+      const createdMovement = await repositoryCreate('cash_bank_movements', {
         ...movement,
         accounting_event_id: createdEvent.id
       });
@@ -1973,19 +2151,19 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     correctCashBankMovement: async (id, payload) => {
       assertPermission('accounting', 'edit');
-      const original = (data.cash_bank_movements || []).find((movement) => movement.id === id);
+      const original = (appData.cash_bank_movements || []).find((movement) => movement.id === id);
       if (!original) throw new Error('El movimiento no existe.');
       if (original.status === 'voided') throw new Error('No se puede corregir un movimiento anulado.');
       if (original.status === 'corrected') throw new Error('Este movimiento ya fue corregido.');
       if (String(original.movement_type || '').startsWith('transfer_')) {
         throw new Error('Para corregir una transferencia, anula la transferencia y registra una nueva.');
       }
-      const linkedEvent = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      const linkedEvent = (appData.accounting_events || []).find((item) => item.id === original.accounting_event_id);
       if (['loan', 'debt'].includes(linkedEvent?.event_type)) {
-        throw new Error('Para corregir un préstamo o deuda, anula el movimiento y registra la operación correcta desde Nueva operación.');
+        throw new Error('Para corregir un prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo o deuda, anula el movimiento y registra la operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n correcta desde Nueva operaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n.');
       }
       const correctionReason = String(payload?.correction_reason || '').trim();
-      if (correctionReason.length < 5) throw new Error('Indica un motivo de corrección válido.');
+      if (correctionReason.length < 5) throw new Error('Indica un motivo de correcciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
       const account = findFinancialAccount(original.financial_account_id);
       const { movement, event, document } = sanitizeCashBankMovementPayload({
         ...payload,
@@ -1996,7 +2174,7 @@ export function useAppData(enabled = true, currentUser = null) {
       const nextBalance = balanceAfterReversal + movementDelta(movement);
       assertNoUnauthorizedNegativeBalance(account, nextBalance, payload?.allow_negative_balance === true);
       const previousMovement = { ...original };
-      const correctedOriginal = await dataStore.update('cash_bank_movements', original.id, {
+      const correctedOriginal = await repositoryUpdate('cash_bank_movements', original.id, {
         status: 'corrected',
         void_reason: correctionReason,
         updated_at: new Date().toISOString()
@@ -2004,20 +2182,20 @@ export function useAppData(enabled = true, currentUser = null) {
       await accountingAuditTrail('cash_bank_movements', original.id, 'mark_corrected', previousMovement, correctedOriginal);
       const previousEvent = linkedEvent;
       if (previousEvent) {
-        const updatedEvent = await dataStore.update('accounting_events', previousEvent.id, {
+        const updatedEvent = await repositoryUpdate('accounting_events', previousEvent.id, {
           status: 'corrected',
           void_reason: correctionReason,
           updated_at: new Date().toISOString()
         });
         await accountingAuditTrail('accounting_events', previousEvent.id, 'mark_corrected', previousEvent, updatedEvent);
       }
-      const createdEvent = await dataStore.create('accounting_events', {
+      const createdEvent = await repositoryCreate('accounting_events', {
         ...event,
         correction_of_event_id: original.accounting_event_id || null,
-        description: `${event.description}. Corrección: ${correctionReason}`
+        description: `${event.description}. CorrecciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n: ${correctionReason}`
       });
       await accountingAuditTrail('accounting_events', createdEvent.id, 'create_correction', null, createdEvent);
-      const createdMovement = await dataStore.create('cash_bank_movements', {
+      const createdMovement = await repositoryCreate('cash_bank_movements', {
         ...movement,
         accounting_event_id: createdEvent.id
       });
@@ -2030,17 +2208,17 @@ export function useAppData(enabled = true, currentUser = null) {
     voidCashBankMovement: async (id, reason) => {
       assertAccountingSuperadmin();
       const cleanReason = String(reason || '').trim();
-      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulación válido.');
-      const original = (data.cash_bank_movements || []).find((movement) => movement.id === id);
+      if (cleanReason.length < 5) throw new Error('Indica un motivo de anulaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.');
+      const original = (appData.cash_bank_movements || []).find((movement) => movement.id === id);
       if (!original) throw new Error('El movimiento no existe.');
-      if (original.status === 'voided') throw new Error('El movimiento ya está anulado.');
+      if (original.status === 'voided') throw new Error('El movimiento ya estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ anulado.');
       const relatedMovements = original.accounting_event_id && String(original.movement_type || '').startsWith('transfer_')
-        ? (data.cash_bank_movements || []).filter((movement) => movement.accounting_event_id === original.accounting_event_id && movement.status !== 'voided')
+        ? (appData.cash_bank_movements || []).filter((movement) => movement.accounting_event_id === original.accounting_event_id && movement.status !== 'voided')
         : [original];
       for (const movement of relatedMovements) {
         const account = findFinancialAccount(movement.financial_account_id);
         const nextBalance = Number(account.current_balance || 0) - movementDelta(movement);
-        const updatedMovement = await dataStore.update('cash_bank_movements', movement.id, {
+        const updatedMovement = await repositoryUpdate('cash_bank_movements', movement.id, {
           status: 'voided',
           voided_at: new Date().toISOString(),
           void_reason: cleanReason,
@@ -2049,9 +2227,9 @@ export function useAppData(enabled = true, currentUser = null) {
         await accountingAuditTrail('cash_bank_movements', movement.id, 'void', movement, updatedMovement);
         await applyAccountBalance(account, nextBalance, 'balance_void');
       }
-      const event = (data.accounting_events || []).find((item) => item.id === original.accounting_event_id);
+      const event = (appData.accounting_events || []).find((item) => item.id === original.accounting_event_id);
       if (event) {
-        const updatedEvent = await dataStore.update('accounting_events', event.id, {
+        const updatedEvent = await repositoryUpdate('accounting_events', event.id, {
           status: 'voided',
           voided_at: new Date().toISOString(),
           void_reason: cleanReason,
@@ -2065,194 +2243,143 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     createTreasuryIncome: async (payload) => {
       assertPermission('accounting', 'create');
-      await dataStore.create('treasury_incomes', payload);
+      await repositoryCreate('treasury_incomes', payload);
       await audit(`Contabilidad: registro historico de ingreso ${payload.concept || ''}`.trim());
       await reload();
     },
     updateTreasuryIncome: async (id, payload) => {
       assertPermission('accounting', 'edit');
-      await dataStore.update('treasury_incomes', id, payload);
+      await repositoryUpdate('treasury_incomes', id, payload);
       await audit(`Contabilidad: actualizo ingreso historico ${payload.concept || ''}`.trim());
       await reload();
     },
     deleteTreasuryIncome: async (id) => {
       assertPermission('accounting', 'delete');
-      await dataStore.remove('treasury_incomes', id);
+      await repositoryRemove('treasury_incomes', id);
       await audit('Contabilidad: elimino ingreso historico');
       await reload();
     },
     createTreasuryExpense: async (payload) => {
       assertPermission('accounting', 'create');
-      await dataStore.create('treasury_expenses', payload);
+      await repositoryCreate('treasury_expenses', payload);
       await audit(`Contabilidad: registro historico de gasto ${payload.concept || ''}`.trim());
       await reload();
     },
     updateTreasuryExpense: async (id, payload) => {
       assertPermission('accounting', 'edit');
-      await dataStore.update('treasury_expenses', id, payload);
+      await repositoryUpdate('treasury_expenses', id, payload);
       await audit(`Contabilidad: actualizo gasto historico ${payload.concept || ''}`.trim());
       await reload();
     },
     deleteTreasuryExpense: async (id) => {
       assertPermission('accounting', 'delete');
-      await dataStore.remove('treasury_expenses', id);
+      await repositoryRemove('treasury_expenses', id);
       await audit('Contabilidad: elimino gasto historico');
       await reload();
     },
     createTreasuryLoan: async (payload) => {
       assertPermission('accounting', 'create');
-      await dataStore.create('treasury_loans', payload);
-      await audit(`Contabilidad: registro histórico de préstamo ${payload.concept || payload.person || ''}`.trim());
+      await repositoryCreate('treasury_loans', payload);
+      await audit(`Contabilidad: registro histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico de prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     updateTreasuryLoan: async (id, payload) => {
       assertPermission('accounting', 'edit');
-      await dataStore.update('treasury_loans', id, payload);
-      await audit(`Contabilidad: actualizó préstamo histórico ${payload.concept || payload.person || ''}`.trim());
+      await repositoryUpdate('treasury_loans', id, payload);
+      await audit(`Contabilidad: actualizÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico ${payload.concept || payload.person || ''}`.trim());
       await reload();
     },
     deleteTreasuryLoan: async (id) => {
       assertPermission('accounting', 'delete');
-      await dataStore.remove('treasury_loans', id);
-      await audit('Contabilidad: eliminó préstamo histórico');
+      await repositoryRemove('treasury_loans', id);
+      await audit('Contabilidad: eliminÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ prÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©stamo histÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rico');
       await reload();
     },
     createTreasuryAccount: async (payload) => {
       assertPermission('accounting', 'create');
-      await dataStore.create('treasury_accounts', payload);
+      await repositoryCreate('treasury_accounts', payload);
       await audit(`Contabilidad: registro cuenta historica ${payload.name || ''}`.trim());
       await reload();
     },
     updateTreasuryAccount: async (id, payload) => {
       assertPermission('accounting', 'edit');
-      await dataStore.update('treasury_accounts', id, payload);
+      await repositoryUpdate('treasury_accounts', id, payload);
       await audit(`Contabilidad: actualizo cuenta historica ${payload.name || ''}`.trim());
       await reload();
     },
     deleteTreasuryAccount: async (id) => {
       assertPermission('accounting', 'delete');
-      await dataStore.remove('treasury_accounts', id);
+      await repositoryRemove('treasury_accounts', id);
       await audit('Contabilidad: elimino cuenta historica');
       await reload();
     },
     createVolunteer: async (payload) => {
-      await dataStore.create('volunteers', payload);
-      await audit(`Creo voluntario ${payload.full_name || ''}`.trim());
+      await voluntarioService.create(payload);
       await reload();
     },
     updateVolunteer: async (id, payload) => {
-      await dataStore.update('volunteers', id, payload);
-      await audit(`Actualizo voluntario ${payload.full_name || id}`.trim());
+      await voluntarioService.update(id, payload);
       await reload();
     },
     deleteVolunteer: async (id) => {
-      if (currentUser?.role !== 'Superadministrador') throw new Error('Solo el Superadministrador puede eliminar voluntarios definitivamente.');
-      await dataStore.remove('volunteers', id);
-      await audit('Elimino definitivamente un voluntario');
+      await voluntarioService.remove(id);
       await reload();
     },
     createVolunteerHistory: async (payload) => {
-      await dataStore.create('volunteer_history', payload);
-      await audit(`Registro historial de voluntariado ${payload.activity || ''}`.trim());
+      await voluntarioService.createHistory(payload);
       await reload();
     },
     updateOrganizationSettings: async (payload) => {
-      const current = data.organization_settings?.[0];
-      if (current) await dataStore.update('organization_settings', current.id, payload);
-      else await dataStore.create('organization_settings', { id: 'main', ...payload });
+      await configuracionService.saveSettings(payload);
       await reload();
     },
     createUser: async (payload) => {
-      const cleanPayload = sanitizeUserPayload(payload);
-      if (hasSupabaseConfig) {
-        const response = await fetch('/api/create-user', {
-          method: 'POST',
-          headers: await getApiHeaders(),
-          body: JSON.stringify({ user: cleanPayload })
-        });
-        const result = await readApiJson(response);
-        if (!response.ok) {
-          if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
-            throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.'));
-          }
-          throw new Error(formatApiError(result, 'No se pudo crear el usuario.'));
-        }
-      } else {
-        await dataStore.create('app_users', cleanPayload);
-      }
-      await audit(`Creo usuario ${payload.email || ''}`.trim());
+      await usuarioService.create(payload);
       await reload();
     },
+    sendUserWelcomeEmail: async (user, organization, logoUrl) => {
+      await usuarioService.sendWelcomeEmail(user, organization, logoUrl);
+    },
     updateUser: async (id, payload) => {
-      const cleanPayload = sanitizeUserPayload(payload);
-      if (cleanPayload.is_active === false && isLastActiveSuperadmin(id)) {
-        throw new Error('No se puede desactivar al ultimo Superadministrador.');
-      }
-      if (hasSupabaseConfig) await adminUserRequest('update', { id, user: cleanPayload });
-      else await dataStore.update('app_users', id, cleanPayload);
-      await audit(`Edito usuario ${cleanPayload.email || ''}`.trim());
+      await usuarioService.update(id, payload);
       await reload();
     },
     deactivateUser: async (id) => {
-      const existing = data.app_users.find((user) => user.id === id);
-      if (isLastActiveSuperadmin(id)) {
-        throw new Error('No se puede desactivar al ultimo Superadministrador.');
-      }
-      if (hasSupabaseConfig) await adminUserRequest('deactivate', { id });
-      else await dataStore.update('app_users', id, { is_active: false, status: 'Inactivo' });
-      await audit(`Usuario desactivado: ${existing?.email || ''}`.trim());
+      await usuarioService.deactivate(id);
       await reload();
     },
     reactivateUser: async (id) => {
-      const existing = data.app_users.find((user) => user.id === id);
-      if (hasSupabaseConfig) await adminUserRequest('reactivate', { id });
-      else await dataStore.update('app_users', id, { is_active: true, status: 'Activo' });
-      await audit(`Usuario reactivado: ${existing?.email || ''}`.trim());
+      await usuarioService.reactivate(id);
       await reload();
     },
     blockUser: async (id) => {
-      const existing = data.app_users.find((user) => user.id === id);
-      if (isLastActiveSuperadmin(id)) {
-        throw new Error('No se puede bloquear al ultimo Superadministrador.');
-      }
-      if (hasSupabaseConfig) await adminUserRequest('block', { id });
-      else await dataStore.update('app_users', id, { is_active: false, status: 'Bloqueado' });
-      await audit(`Usuario bloqueado: ${existing?.email || ''}`.trim());
+      await usuarioService.block(id);
       await reload();
     },
     deleteUser: async (id) => {
       assertPermission('users', 'delete');
-      const existing = data.app_users.find((user) => user.id === id);
-      if (isLastActiveSuperadmin(id)) {
-        throw new Error('No se puede eliminar al ultimo Superadministrador activo.');
-      }
-      if (hasSupabaseConfig) await adminUserRequest('delete', { id });
-      else await dataStore.remove('app_users', id);
-      await audit(`Usuario eliminado: ${existing?.email || ''}`.trim());
+      await usuarioService.remove(id);
       await reload();
     },
     resetUserPassword: async (id, password) => {
-      if (hasSupabaseConfig) await adminUserRequest('reset-password', { id, password });
-      else await dataStore.update('app_users', id, { password });
-      await audit('Restableció contraseña de usuario');
+      await usuarioService.resetPassword(id, password);
       await reload();
     },
     updateUserLastAccess: async (id) => {
-      await dataStore.update('app_users', id, { last_access_at: new Date().toISOString() });
-      await audit('Inició sesión');
+      await usuarioService.updateLastAccess(id);
       await reload();
     },
     createAuditLog: async (payload) => {
-      await dataStore.create('audit_logs', payload);
+      await usuarioService.createAuditLog(payload);
       await reload();
     },
     replaceAllData: async (payload) => {
-      dataStore.replaceLocalData(payload);
+      await repositoryReplaceLocalData(payload);
       await reload();
     },
     prepareProductionEnvironment: async (scopes = []) => {
       if (currentUser?.role !== 'Superadministrador') {
-        throw new Error('Solo el Superadministrador puede preparar el entorno de producción.');
+        throw new Error('Solo el Superadministrador puede preparar el entorno de producciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n.');
       }
       const allowedScopes = new Set(['donations', 'inventory', 'inventory_entries', 'inventory_exits', 'accounting_movements', 'agenda', 'communications']);
       const selected = new Set(scopes.filter((scope) => allowedScopes.has(scope)));
@@ -2265,41 +2392,41 @@ export function useAppData(enabled = true, currentUser = null) {
       const emailLogMeta = (log) => (Array.isArray(log.attachments) ? (log.attachments.find((item) => item?.kind) || {}) : {});
 
       if (selected.has('donations')) {
-        (data.donations || []).forEach((item) => donationIds.add(item.id));
-        (data.accounting_events || [])
+        (appData.donations || []).forEach((item) => donationIds.add(item.id));
+        (appData.accounting_events || [])
           .filter((event) => ['donation_money', 'donation_in_kind'].includes(event.event_type) || event.source_module === 'donations')
           .forEach((event) => eventIds.add(event.id));
       }
       if (selected.has('accounting_movements')) {
-        (data.accounting_events || []).forEach((event) => eventIds.add(event.id));
+        (appData.accounting_events || []).forEach((event) => eventIds.add(event.id));
       }
       if (selected.has('inventory')) {
-        (data.inventory_items || []).forEach((item) => inventoryItemIds.add(item.id));
+        (appData.inventory_items || []).forEach((item) => inventoryItemIds.add(item.id));
       }
       if (selected.has('inventory_entries')) {
-        (data.inventory_movements || []).filter((item) => item.movement_type === 'Entrada').forEach((item) => inventoryMovementIds.add(item.id));
+        (appData.inventory_movements || []).filter((item) => item.movement_type === 'Entrada').forEach((item) => inventoryMovementIds.add(item.id));
       }
       if (selected.has('inventory_exits')) {
-        (data.inventory_movements || []).filter((item) => item.movement_type === 'Salida').forEach((item) => inventoryMovementIds.add(item.id));
+        (appData.inventory_movements || []).filter((item) => item.movement_type === 'Salida').forEach((item) => inventoryMovementIds.add(item.id));
       }
       if (selected.has('agenda')) {
-        (data.email_logs || []).filter((log) => appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
+        (appData.email_logs || []).filter((log) => appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
       }
       if (selected.has('communications')) {
-        (data.email_logs || []).filter((log) => !appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
+        (appData.email_logs || []).filter((log) => !appointmentLogKinds.has(emailLogMeta(log).kind)).forEach((log) => emailLogIds.add(log.id));
       }
 
       const removeRows = async (table, rows) => {
-        for (const row of rows) await dataStore.remove(table, row.id);
+        for (const row of rows) await repositoryRemove(table, row.id);
         return rows.length;
       };
 
       const eventRelated = (row) => row.accounting_event_id && eventIds.has(row.accounting_event_id);
       const counts = {};
-      const accountingDocumentsToRemove = (data.accounting_documents || []).filter(eventRelated);
-      const cashBankMovementsToRemove = (data.cash_bank_movements || []).filter(eventRelated);
-      const loanMovementsToRemove = (data.loan_movements || []).filter(eventRelated);
-      const debtMovementsToRemove = (data.debt_movements || []).filter(eventRelated);
+      const accountingDocumentsToRemove = (appData.accounting_documents || []).filter(eventRelated);
+      const cashBankMovementsToRemove = (appData.cash_bank_movements || []).filter(eventRelated);
+      const loanMovementsToRemove = (appData.loan_movements || []).filter(eventRelated);
+      const debtMovementsToRemove = (appData.debt_movements || []).filter(eventRelated);
       const auditRecordIds = new Set([
         ...eventIds,
         ...accountingDocumentsToRemove.map((row) => row.id),
@@ -2307,7 +2434,7 @@ export function useAppData(enabled = true, currentUser = null) {
         ...loanMovementsToRemove.map((row) => row.id),
         ...debtMovementsToRemove.map((row) => row.id)
       ]);
-      counts.accounting_audit_trail = await removeRows('accounting_audit_trail', (data.accounting_audit_trail || []).filter((row) => (
+      counts.accounting_audit_trail = await removeRows('accounting_audit_trail', (appData.accounting_audit_trail || []).filter((row) => (
         selected.has('accounting_movements')
         || auditRecordIds.has(row.record_id)
       )));
@@ -2315,14 +2442,14 @@ export function useAppData(enabled = true, currentUser = null) {
       counts.cash_bank_movements = await removeRows('cash_bank_movements', cashBankMovementsToRemove);
       counts.loan_movements = await removeRows('loan_movements', loanMovementsToRemove);
       counts.debt_movements = await removeRows('debt_movements', debtMovementsToRemove);
-      counts.social_value_events = await removeRows('social_value_events', (data.social_value_events || []).filter((row) => (
+      counts.social_value_events = await removeRows('social_value_events', (appData.social_value_events || []).filter((row) => (
         eventRelated(row)
         || donationIds.has(row.source_record_id)
         || inventoryItemIds.has(row.inventory_item_id)
       )));
-      counts.donations = await removeRows('donations', (data.donations || []).filter((row) => donationIds.has(row.id)));
-      const inventoryMovementsToRemove = (data.inventory_movements || []).filter((row) => inventoryItemIds.has(row.item_id) || inventoryMovementIds.has(row.id));
-      const stockByItem = new Map((data.inventory_items || []).map((item) => [item.id, Number(item.stock || 0)]));
+      counts.donations = await removeRows('donations', (appData.donations || []).filter((row) => donationIds.has(row.id)));
+      const inventoryMovementsToRemove = (appData.inventory_movements || []).filter((row) => inventoryItemIds.has(row.item_id) || inventoryMovementIds.has(row.id));
+      const stockByItem = new Map((appData.inventory_items || []).map((item) => [item.id, Number(item.stock || 0)]));
       for (const movement of inventoryMovementsToRemove.filter((row) => !inventoryItemIds.has(row.item_id))) {
         const currentStock = stockByItem.get(movement.item_id);
         if (currentStock === undefined) continue;
@@ -2330,22 +2457,23 @@ export function useAppData(enabled = true, currentUser = null) {
           ? Math.max(0, currentStock - Number(movement.quantity || 0))
           : currentStock + Number(movement.quantity || 0);
         stockByItem.set(movement.item_id, nextStock);
-        await dataStore.update('inventory_items', movement.item_id, { stock: nextStock });
+        await createInventarioService().setStockForMaintenance(movement.item_id, nextStock);
       }
       counts.inventory_movements = await removeRows('inventory_movements', inventoryMovementsToRemove);
-      counts.inventory_items = await removeRows('inventory_items', (data.inventory_items || []).filter((row) => inventoryItemIds.has(row.id)));
-      counts.accounting_events = await removeRows('accounting_events', (data.accounting_events || []).filter((row) => eventIds.has(row.id)));
-      counts.email_logs = await removeRows('email_logs', (data.email_logs || []).filter((row) => emailLogIds.has(row.id)));
+      counts.inventory_items = await removeRows('inventory_items', (appData.inventory_items || []).filter((row) => inventoryItemIds.has(row.id)));
+      counts.accounting_events = await removeRows('accounting_events', (appData.accounting_events || []).filter((row) => eventIds.has(row.id)));
+      counts.email_logs = await removeRows('email_logs', (appData.email_logs || []).filter((row) => emailLogIds.has(row.id)));
 
-      await audit(`Preparó entorno de producción. Limpieza: ${Object.entries(counts).map(([key, value]) => `${key}:${value}`).join(', ')}`);
+      await audit(`PreparÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ entorno de producciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n. Limpieza: ${Object.entries(counts).map(([key, value]) => `${key}:${value}`).join(', ')}`);
       await reload();
       return counts;
     },
-    resetDemo: () => {
-      dataStore.resetLocalDemo();
-      reload();
+    resetDemo: async () => {
+      await repositoryResetLocalDemo();
+      await reload();
     }
-  }), [data, reload, currentUser]);
+    });
+  }, [data, reload, currentUser]);
 
   return { data, loading, error, actions };
 }

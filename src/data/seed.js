@@ -3,6 +3,10 @@ import { ROLE_PERMISSION_MATRIX } from '../lib/constants';
 
 const demoFamilyId = crypto.randomUUID();
 const demoBeneficiaryMariaId = crypto.randomUUID();
+const demoCampaignId = crypto.randomUUID();
+const demoAgendaEventId = crypto.randomUUID();
+const demoCollaboratorId = crypto.randomUUID();
+const demoDonorId = crypto.randomUUID();
 
 export const seedData = {
   organization_settings: [
@@ -99,6 +103,101 @@ export const seedData = {
       notes: 'Documento pendiente de digitalizacion.'
     }
   ],
+  beneficiary_portal_accounts: [],
+  beneficiary_portal_otps: [],
+  beneficiary_portal_notices: [],
+  beneficiary_portal_renewals: [],
+  beneficiary_portal_profile_updates: [],
+  collaborators: [
+    {
+      id: demoCollaboratorId,
+      type: 'Empresa',
+      name: 'Empresa Solidaria SL',
+      contact_name: 'Ana Ruiz',
+      email: 'colaborador@example.org',
+      phone: '699 111 222',
+      address: 'Calle de la Ayuda 21, Madrid',
+      logo_path: '',
+      is_active: true,
+      impact: {
+        familiesServed: 186,
+        minorsServed: 73,
+        foodKg: 4280,
+        deliveriesCompleted: 1250,
+        campaignsSupported: 12
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  collaborator_portal_otps: [],
+  collaborator_portal_profile_updates: [],
+  collaborator_portal_requests: [],
+  collaborator_certificates: [
+    {
+      id: crypto.randomUUID(),
+      collaborator_id: demoCollaboratorId,
+      title: 'Certificado anual de donaciones 2026',
+      certificate_type: 'annual',
+      status: 'Disponible',
+      issued_at: todayISO(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: crypto.randomUUID(),
+      collaborator_id: demoCollaboratorId,
+      title: 'Certificado individual - Alimentos',
+      certificate_type: 'individual',
+      status: 'Disponible',
+      issued_at: todayISO(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  donors: [
+    {
+      id: demoDonorId,
+      name: 'Laura Martin',
+      email: 'donante@example.org',
+      phone: '600 222 111',
+      is_active: true,
+      impact: {
+        familiesServed: 186,
+        minorsServed: 73,
+        foodKg: 4280,
+        deliveriesCompleted: 1250,
+        campaignsSupported: 12
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  donor_portal_otps: [],
+  donor_portal_profile_updates: [],
+  donor_certificates: [
+    {
+      id: crypto.randomUUID(),
+      donor_id: demoDonorId,
+      title: 'Certificado anual 2026',
+      certificate_type: 'annual',
+      status: 'Disponible',
+      issued_at: todayISO(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: crypto.randomUUID(),
+      donor_id: demoDonorId,
+      title: 'Certificado individual - Donacion economica',
+      certificate_type: 'individual',
+      status: 'Disponible',
+      issued_at: todayISO(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  portal_sessions: [],
   deliveries: [],
   email_logs: [],
   inventory_items: [
@@ -108,7 +207,8 @@ export const seedData = {
   ],
   inventory_movements: [],
   donations: [
-    { id: crypto.randomUUID(), donor: 'Empresa Solidaria SL', donor_kind: 'Empresa', donation_type: 'Alimentos', donated_at: todayISO(), estimated_value: 450, notes: 'Entrega mensual de productos no perecederos.' }
+    { id: crypto.randomUUID(), collaborator_id: demoCollaboratorId, donor: 'Empresa Solidaria SL', donor_email: 'colaborador@example.org', donor_kind: 'Empresa', donation_type: 'Productos', status: 'Recibida', donated_at: todayISO(), estimated_value: 450, quantity: '120 kg', notes: 'Entrega mensual de productos no perecederos.' },
+    { id: crypto.randomUUID(), donor_id: demoDonorId, donor: 'Laura Martin', donor_email: 'donante@example.org', donor_kind: 'Particular', donation_type: 'Economica', status: 'Recibida', donated_at: todayISO(), estimated_value: 25, amount: 25, payment_method: 'Bizum', notes: 'Donacion economica puntual.' }
   ],
   accounting_events: [],
   financial_accounts: [],
@@ -139,13 +239,125 @@ export const seedData = {
     { id: crypto.randomUUID(), full_name: 'Lucia Martin', document_id: '87654321Z', phone: '622 333 444', email: 'lucia@example.com', training: 'Manipulacion de alimentos', availability: 'Martes y jueves por la tarde', documentation: 'Seguro voluntariado', notes: 'Apoyo en almacen.' }
   ],
   volunteer_history: [],
+  campanas: [
+    {
+      id: demoCampaignId,
+      name: 'Reparto semanal de alimentos',
+      description: 'Planificacion flexible de entregas segun necesidades familiares, stock y voluntariado disponible.',
+      start_date: todayISO(),
+      end_date: '',
+      status: 'Activa',
+      responsible: 'Elizabeth',
+      observations: 'Priorizar familias con menores y productos proximos a caducar.',
+      economic_goal: 1500,
+      collected_amount: 620,
+      beneficiary_ids: [demoBeneficiaryMariaId],
+      product_ids: [],
+      volunteer_ids: [],
+      delivery_ids: [],
+      agenda_event_ids: [demoAgendaEventId],
+      notification_ids: [],
+      origin_type: 'Campana periodica',
+      source_module: 'agenda',
+      source_record_id: '',
+      metadata: { origin: 'Campana periodica' },
+      created_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  agenda_operativa: [
+    {
+      id: demoAgendaEventId,
+      title: 'Preparar entregas prioritarias',
+      description: 'Organizar productos disponibles para familias con prioridad social.',
+      event_type: 'Entrega',
+      status: 'Programado',
+      event_at: `${todayISO()}T10:00`,
+      end_at: '',
+      campaign_id: demoCampaignId,
+      responsible: 'Elizabeth',
+      beneficiary_id: demoBeneficiaryMariaId,
+      product_id: '',
+      volunteer_id: '',
+      origin_module: 'agenda',
+      source_record_id: '',
+      priority: 'Alta',
+      notes: 'Revisar stock antes de confirmar entregas.',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
+  campana_beneficiarios: [
+    { id: crypto.randomUUID(), campaign_id: demoCampaignId, beneficiary_id: demoBeneficiaryMariaId, created_at: new Date().toISOString() }
+  ],
+  campana_productos: [],
+  campana_voluntarios: [],
+  campana_entregas: [],
+  campana_agenda_eventos: [],
+  categorias_recursos: [
+    { slug: 'formacion', nombre: 'Formacion', icono: 'book-open', descripcion: '', orden: 10, sort_order: 10, activa: true, estado: 'active' },
+    { slug: 'empleo', nombre: 'Empleo', icono: 'briefcase', descripcion: '', orden: 20, sort_order: 20, activa: true, estado: 'active' },
+    { slug: 'ayudas', nombre: 'Ayudas', icono: 'landmark', descripcion: '', orden: 30, sort_order: 30, activa: true, estado: 'active' },
+    { slug: 'familias', nombre: 'Familias', icono: 'users', descripcion: '', orden: 40, sort_order: 40, activa: true, estado: 'active' },
+    { slug: 'salud', nombre: 'Salud', icono: 'heart-pulse', descripcion: '', orden: 50, sort_order: 50, activa: true, estado: 'active' },
+    { slug: 'vivienda', nombre: 'Vivienda', icono: 'home', descripcion: '', orden: 60, sort_order: 60, activa: true, estado: 'active' },
+    { slug: 'tramites', nombre: 'Tramites', icono: 'file-text', descripcion: '', orden: 70, sort_order: 70, activa: true, estado: 'active' },
+    { slug: 'alimentacion', nombre: 'Alimentacion', icono: 'utensils', descripcion: '', orden: 80, sort_order: 80, activa: true, estado: 'active' }
+  ],
+  recursos: [],
+  notificaciones: [
+    {
+      id: crypto.randomUUID(),
+      tipo: 'warning',
+      prioridad: 'warning',
+      modulo: 'inventory',
+      origen: 'Inventario',
+      titulo: 'Stock minimo',
+      mensaje: 'Hay productos que deben revisarse antes de preparar nuevas entregas.',
+      estado: 'Pendiente',
+      leida: false,
+      read_at: null,
+      read_by: null,
+      entity_type: 'inventory',
+      entity_id: '',
+      action_url: '/inventory',
+      dedupe_key: 'demo-inventory-low-stock',
+      metadata: {},
+      created_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: crypto.randomUUID(),
+      tipo: 'reminder',
+      prioridad: 'reminder',
+      modulo: 'beneficiaries',
+      origen: 'Beneficiarios',
+      titulo: 'Documentacion pendiente',
+      mensaje: 'Revisa los expedientes con documentacion pendiente de actualizacion.',
+      estado: 'Pendiente',
+      leida: false,
+      read_at: null,
+      read_by: null,
+      entity_type: 'beneficiary',
+      entity_id: demoBeneficiaryMariaId,
+      action_url: '/beneficiaries',
+      dedupe_key: 'demo-beneficiary-document-pending',
+      metadata: {},
+      created_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
   roles: [
     { id: 'superadmin', name: 'Superadministrador', modules: ['*'] },
     { id: 'president', name: 'Presidenta', modules: ['*'] },
-    { id: 'treasurer', name: 'Tesorera', modules: ['donations', 'accounting', 'reports', 'receipts'] },
-    { id: 'secretary', name: 'Secretaria', modules: ['beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
-    { id: 'volunteer', name: 'Voluntario', modules: ['beneficiaries', 'deliveries', 'inventory', 'accounting'] },
-    { id: 'viewer', name: 'Consulta', modules: ['dashboard', 'reports'] }
+    { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'accounting', 'reports', 'receipts'] },
+    { id: 'secretary', name: 'Secretaria', modules: ['agenda', 'beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
+    { id: 'volunteer', name: 'Voluntario', modules: ['agenda', 'beneficiaries', 'deliveries', 'inventory', 'accounting'] },
+    { id: 'viewer', name: 'Consulta', modules: ['agenda', 'dashboard', 'reports'] }
   ],
   audit_logs: [],
   app_users: [
@@ -154,7 +366,7 @@ export const seedData = {
       first_name: 'Elizabeth',
       last_name: '',
       email: 'elizabeth@panyesperanza.org',
-      password: 'Elizabeth2026!',
+      password: '',
       phone: '',
       role: 'Superadministrador',
       position: 'Superadministrador',

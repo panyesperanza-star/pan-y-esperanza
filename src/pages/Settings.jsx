@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -6,9 +6,14 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
-import { canAccess, canDo, getUserStatus, isSystemSuperadmin } from '../lib/auth';
-import { getSystemConfigStatus, checkSupabaseStorage } from '../lib/supabase';
-import { getApiHeaders } from '../lib/apiAuth';
+import { canAccess, canDo, getUserStatus } from '../lib/auth';
+import {
+  buildUsersViewModel,
+  createEmptyUser,
+  filterUsersByStatus,
+  normalizeUserError,
+  viewPermissionsFromMatrix
+} from '../services/users/UsuarioService';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
 export function Settings({ data, actions, currentUser, initialTab = 'entity' }) {
@@ -16,10 +21,22 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
   const [form, setForm] = useState(current);
   const canViewSettings = canAccess(currentUser, 'settings');
   const canViewUsers = canAccess(currentUser, 'users');
+  const settingsService = actions.configuracion;
   const fallbackTab = canViewSettings ? 'entity' : 'users';
   const requestedTabAllowed = initialTab === 'users' ? canViewUsers : canViewSettings;
   const [tab, setTab] = useState(requestedTabAllowed ? initialTab : fallbackTab);
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
+  const deliveryPreferences = form.erp_preferences?.deliveries || {};
+  const updateDeliveryPreference = (field, value) => setForm((state) => ({
+    ...state,
+    erp_preferences: {
+      ...(state.erp_preferences || {}),
+      deliveries: {
+        ...(state.erp_preferences?.deliveries || {}),
+        [field]: value
+      }
+    }
+  }));
 
   useEffect(() => {
     setTab(initialTab === 'users' && canViewUsers ? 'users' : fallbackTab);
@@ -37,7 +54,7 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
       {tab === 'entity' && (
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
         <BrandLogo className="h-20 w-auto" />
-        <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); actions.updateOrganizationSettings(form); }}>
+        <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); settingsService.saveSettings(form).then(() => actions.reloadData?.()); }}>
           <FormField label="Nombre entidad"><input className={inputClass} value={form.name || ''} onChange={(event) => update('name', event.target.value)} /></FormField>
           <FormField label="CIF"><input className={inputClass} value={form.cif || ''} onChange={(event) => update('cif', event.target.value)} /></FormField>
           <FormField label="Dirección"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField>
@@ -45,24 +62,38 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
           <FormField label="Correo"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
           <FormField label="Web"><input className={inputClass} value={form.website || ''} onChange={(event) => update('website', event.target.value)} /></FormField>
           <div className="sm:col-span-2"><FormField label="Logo"><input className={inputClass} value={form.logo_path || 'src/assets/logo-pan-y-esperanza.png'} onChange={(event) => update('logo_path', event.target.value)} /></FormField></div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+            <label className="flex items-start gap-3 text-sm font-semibold text-ink">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                checked={deliveryPreferences.require_digital_signature === true}
+                onChange={(event) => updateDeliveryPreference('require_digital_signature', event.target.checked)}
+              />
+              <span>
+                Solicitar firma digital en las entregas
+                <span className="mt-1 block text-sm font-normal text-slate-500">Si esta activa, no se podra finalizar una entrega sin la firma digital del receptor.</span>
+              </span>
+            </label>
+          </div>
           <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar configuracion</Button></div>
         </form>
       </section>
       )}
-      {tab === 'mail' && <MailSettings settings={form} setSettings={setForm} onSave={actions.updateOrganizationSettings} />}
+      {tab === 'mail' && <MailSettings settings={form} setSettings={setForm} configService={settingsService} onSave={(payload) => settingsService.saveMailSettings(payload).then(() => actions.reloadData?.())} />}
       {tab === 'users' && <UsersSettings users={data.app_users || []} auditLogs={data.audit_logs || []} actions={actions} currentUser={currentUser} organization={current} />}
-      {tab === 'system' && <SystemStatus />}
+      {tab === 'system' && <SystemStatus configService={settingsService} />}
     </>
   );
 }
 
-function SystemStatus() {
+function SystemStatus({ configService }) {
   const [storageConnected, setStorageConnected] = useState(null);
-  const status = getSystemConfigStatus();
-  const lastBackup = localStorage.getItem('pye-last-backup-at') || '';
+  const status = configService.getSystemStatus();
+  const lastBackup = configService.getLastBackupAt();
 
   async function checkStorage() {
-    setStorageConnected(await checkSupabaseStorage());
+    setStorageConnected(await configService.checkStorage());
   }
 
   return (
@@ -90,7 +121,7 @@ function StatusItem({ label, ok, value, action }) {
   );
 }
 
-function MailSettings({ settings, setSettings, onSave }) {
+function MailSettings({ settings, setSettings, configService, onSave }) {
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [configured, setConfigured] = useState(false);
@@ -100,20 +131,7 @@ function MailSettings({ settings, setSettings, onSave }) {
     setStatus('Probando envio...');
     setError('');
     try {
-      const response = await fetch('/api/send-justificantes', {
-        method: 'POST',
-        headers: await getApiHeaders(),
-        body: JSON.stringify({
-          testMode: true,
-          to: settings.mail_sender_email || settings.email,
-          subject: 'Prueba de correo - Pan y Esperanza',
-          message: 'Este es un correo de prueba de la configuracion corporativa.',
-          organization: settings
-        })
-      });
-      const text = await response.text();
-      const payload = safeJson(text);
-      if (!response.ok) throw new Error(payload.error || 'Error al enviar el correo.');
+      const payload = await configService.testEmail(settings);
       setConfigured(true);
       setStatus(payload.message || 'Correo enviado correctamente.');
     } catch (err) {
@@ -147,23 +165,11 @@ function MailSettings({ settings, setSettings, onSave }) {
   );
 }
 
-function safeJson(text) {
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { error: 'Respuesta no valida del servidor.' };
-  }
-}
-
 function UsersSettings({ users, auditLogs, actions, currentUser, organization }) {
   const [editing, setEditing] = useState(null);
   const [section, setSection] = useState('users');
   const [message, setMessage] = useState('');
-  const associationUsers = users.filter((user) => !isSystemSuperadmin(user));
-  const activeUsers = associationUsers.filter((user) => getUserStatus(user) === 'Activo');
-  const inactiveUsers = associationUsers.filter((user) => getUserStatus(user) === 'Inactivo');
-  const blockedUsers = associationUsers.filter((user) => getUserStatus(user) === 'Bloqueado');
+  const { associationUsers, activeUsers, inactiveUsers, blockedUsers } = buildUsersViewModel(users);
   const canCreate = canDo(currentUser, 'users', 'create');
   const canEdit = canDo(currentUser, 'users', 'edit');
   const canDelete = canDo(currentUser, 'users', 'delete');
@@ -174,7 +180,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
           <h3 className="font-bold text-ink">Usuarios</h3>
           <p className="text-sm text-slate-500">Gestión de usuarios, permisos por acción, accesos y auditoría.</p>
         </div>
-        {canCreate && <Button onClick={() => setEditing(emptyUser(currentUser))}>Crear usuario</Button>}
+        {canCreate && <Button onClick={() => setEditing(createEmptyUser(currentUser))}>Crear usuario</Button>}
       </div>
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <MiniStat label="Usuarios activos" value={activeUsers.length} />
@@ -191,20 +197,14 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       {section === 'users' && <UsersTable users={associationUsers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
       {section === 'permissions' && canEdit && <PermissionsMatrix users={associationUsers} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
-      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await sendWelcomeEmail(payload, organization); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
+      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
 
 function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEdit, canDelete }) {
   const [filter, setFilter] = useState('active');
-  const filtered = users.filter((user) => {
-    const status = getUserStatus(user);
-    if (filter === 'active') return status === 'Activo';
-    if (filter === 'inactive') return status === 'Inactivo';
-    if (filter === 'blocked') return status === 'Bloqueado';
-    return true;
-  });
+  const filtered = filterUsersByStatus(users, filter);
 
   async function deleteUser(user) {
     const confirmed = window.confirm('Esta acción eliminará definitivamente el usuario y no podrá recuperarse.\n\nSe recomienda desactivar en lugar de eliminar.\n\n¿Desea eliminarlo definitivamente?');
@@ -324,10 +324,6 @@ function MiniStat({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-ink">{value}</p></div>;
 }
 
-function emptyUser(currentUser) {
-  return { first_name: '', last_name: '', email: '', password: 'Temporal2026!', phone: '', role: 'Voluntario', position: 'Voluntario', status: 'Activo', is_active: true, permissions: ROLE_PERMISSIONS.Voluntario, permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario, profile_photo: '', last_access_at: '', created_by: currentUser?.email || 'Sistema', created_at: new Date().toISOString() };
-}
-
 function UserForm({ initial, organization, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
@@ -382,41 +378,10 @@ function PermissionsMatrix({ users, actions, setMessage }) {
   return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} role={user.role} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
 }
 
-function viewPermissionsFromMatrix(matrix = {}, role = '') {
-  if (role === 'Superadministrador') return ['*'];
-  return Object.entries(matrix).filter(([, actions]) => actions?.view).map(([moduleId]) => moduleId);
-}
-
 function AuditTable({ logs }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Usuario</th><th>Fecha</th><th>Accion realizada</th></tr></thead><tbody className="divide-y divide-slate-100">{logs.map((log) => <tr key={log.id}><td className="px-4 py-3">{log.user_name || log.user_email || '-'}</td><td>{formatDateTime(log.happened_at)}</td><td>{log.action}</td></tr>)}{!logs.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="3">Sin auditoria registrada.</td></tr>}</tbody></table></div>;
 }
 
-async function sendWelcomeEmail(user, organization) {
-  try {
-    const logoUrl = typeof window !== 'undefined' ? new URL(officialLogoUrl, window.location.origin).toString() : undefined;
-    await fetch('/api/send-justificantes', {
-      method: 'POST',
-      headers: await getApiHeaders(),
-      body: JSON.stringify({
-        testMode: true,
-        to: user.email,
-        subject: 'Bienvenida a Pan y Esperanza',
-        message: `Hola ${user.first_name}, tu usuario se ha creado correctamente. Contrasena temporal: ${user.password}`,
-        logoUrl,
-        organization
-      })
-    });
-  } catch (error) {
-    console.warn('[usuarios] No se pudo enviar bienvenida', error);
-  }
-}
-
-function normalizeUserError(error) {
-  const message = error?.message || '';
-  if (message.includes('duplicate key') || message.includes('app_users_email_key')) return 'Ya existe un usuario registrado con ese email.';
-  if (message.includes('status')) return 'No se pudo guardar el estado del usuario. Ejecute la migracion 20260622_user_status_management.sql en Supabase.';
-  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel y redepliegue.';
-  if (message.includes('Sesion de administrador requerida') || message.includes('Sesion no valida') || message.includes('Sesión de administrador requerida') || message.includes('Sesión no válida')) return 'Sesión de administrador no válida. Cierre sesión y vuelva a entrar.';
-  if (message.includes('No tiene permisos')) return 'No tiene permisos para administrar usuarios.';
-  return message || 'No se pudo registrar el usuario. Revise los datos e intentelo de nuevo.';
+function getOfficialLogoUrl() {
+  return typeof window !== 'undefined' ? new URL(officialLogoUrl, window.location.origin).toString() : undefined;
 }

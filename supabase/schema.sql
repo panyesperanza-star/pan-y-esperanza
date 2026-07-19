@@ -1,4 +1,4 @@
-create extension if not exists "pgcrypto";
+﻿create extension if not exists "pgcrypto";
 
 insert into storage.buckets (id, name, public)
 values ('documentos', 'documentos', false)
@@ -11,6 +11,9 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('delivery-signatures', 'delivery-signatures', false, 1048576, array['image/png'])
+on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 create table public.beneficiary_sequence (
   id smallint primary key default 1,
   last_value integer not null default 0,
@@ -86,7 +89,15 @@ create table public.organization_settings (
   smtp_user text,
   smtp_password text,
   smtp_secure boolean not null default false,
-  created_at timestamptz not null default now()
+  paypal_settings jsonb not null default '{}'::jsonb,
+  bizum_settings jsonb not null default '{}'::jsonb,
+  stripe_settings jsonb not null default '{}'::jsonb,
+  resend_settings jsonb not null default '{}'::jsonb,
+  supabase_settings jsonb not null default '{}'::jsonb,
+  public_variables jsonb not null default '{}'::jsonb,
+  erp_preferences jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table public.families (
@@ -127,6 +138,101 @@ create table public.beneficiary_documents (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.beneficiary_portal_accounts (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  auth_user_id uuid references auth.users(id) on delete set null,
+  email text,
+  phone text,
+  status text not null default 'draft' check (status in ('draft', 'invited', 'active', 'suspended', 'archived')),
+  access_level text not null default 'beneficiary' check (access_level in ('beneficiary', 'family', 'guardian')),
+  invited_at timestamptz,
+  activated_at timestamptz,
+  last_login_at timestamptz,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint beneficiary_portal_accounts_beneficiary_unique unique (beneficiary_id)
+);
+
+create table if not exists public.beneficiary_portal_otps (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  email text,
+  phone text,
+  code text not null,
+  action text not null default 'access',
+  channel text not null default 'email',
+  status text not null default 'pending' check (status in ('pending', 'used', 'expired', 'revoked')),
+  expires_at timestamptz not null,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.beneficiary_portal_notices (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  title text not null,
+  message text not null,
+  notice_type text not null default 'general',
+  status text not null default 'unread' check (status in ('unread', 'read', 'archived')),
+  read_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.beneficiary_portal_renewals (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  renewal_type text not null default 'general',
+  renewal_due_at date,
+  status text not null default 'pending' check (status in ('pending', 'submitted', 'approved', 'rejected', 'resolved', 'expired')),
+  notes text,
+  requested_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.beneficiary_portal_profile_updates (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  requested_changes jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'applied', 'cancelled')),
+  requested_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  reviewed_by uuid,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.portal_sessions (
+  id uuid primary key default gen_random_uuid(),
+  token text not null unique,
+  portal text not null check (portal in ('beneficiary', 'collaborator', 'donor')),
+  subject_type text not null,
+  subject_id uuid not null,
+  email text,
+  channel text not null default 'email',
+  status text not null default 'active' check (status in ('active', 'revoked', 'expired')),
+  started_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  last_seen_at timestamptz,
+  logged_out_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists beneficiary_portal_accounts_beneficiary_idx on public.beneficiary_portal_accounts (beneficiary_id);
+create index if not exists beneficiary_portal_accounts_auth_user_idx on public.beneficiary_portal_accounts (auth_user_id);
+create index if not exists beneficiary_portal_otps_beneficiary_idx on public.beneficiary_portal_otps (beneficiary_id, created_at desc);
+create index if not exists beneficiary_portal_notices_beneficiary_idx on public.beneficiary_portal_notices (beneficiary_id, status);
+create index if not exists beneficiary_portal_renewals_beneficiary_idx on public.beneficiary_portal_renewals (beneficiary_id, status, renewal_due_at);
+create index if not exists beneficiary_portal_profile_updates_beneficiary_idx on public.beneficiary_portal_profile_updates (beneficiary_id, status);
+create index if not exists portal_sessions_subject_idx on public.portal_sessions (portal, subject_id, status, expires_at);
+
 create table public.inventory_items (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(btrim(name)) > 0),
@@ -161,7 +267,13 @@ create table public.deliveries (
   receiver_document_id text,
   reception_at timestamptz,
   signature_data_url text,
+  signature_storage_bucket text,
+  signature_storage_path text,
+  signature_signed_at timestamptz,
   responsible_signature_data_url text,
+  responsible_signature_storage_bucket text,
+  responsible_signature_storage_path text,
+  responsible_signature_signed_at timestamptz,
   notes text,
   status text not null default 'Activa' check (status in ('Activa', 'Anulada')),
   cancelled_at timestamptz,
@@ -317,6 +429,164 @@ create table public.app_users (
   created_at timestamptz not null default now()
 );
 
+create table public.campanas (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text not null default '',
+  start_date date,
+  end_date date,
+  status text not null default 'Planificada' check (status in ('Planificada', 'Activa', 'Finalizada', 'Cancelada')),
+  responsible text not null default '',
+  observations text not null default '',
+  beneficiary_ids uuid[] not null default '{}',
+  product_ids uuid[] not null default '{}',
+  volunteer_ids uuid[] not null default '{}',
+  delivery_ids uuid[] not null default '{}',
+  agenda_event_ids uuid[] not null default '{}',
+  notification_ids uuid[] not null default '{}',
+  origin_type text not null default 'Necesidad social',
+  source_module text not null default '',
+  source_record_id text not null default '',
+  metadata jsonb not null default '{}'::jsonb,
+  created_by uuid references public.app_users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.agenda_operativa (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text not null default '',
+  event_type text not null check (event_type in ('Entrega', 'Campana', 'Recogida', 'Reunion', 'Evento', 'Voluntariado', 'Aviso', 'Caducidad')),
+  status text not null default 'Pendiente' check (status in ('Pendiente', 'Programado', 'En curso', 'Completado', 'Cancelado')),
+  event_at timestamptz,
+  end_at timestamptz,
+  campaign_id uuid references public.campanas(id) on delete set null,
+  responsible text not null default '',
+  beneficiary_id uuid references public.beneficiaries(id) on delete set null,
+  product_id uuid references public.inventory_items(id) on delete set null,
+  volunteer_id uuid references public.volunteers(id) on delete set null,
+  origin_module text not null default '',
+  source_record_id text not null default '',
+  priority text not null default 'Normal',
+  notes text not null default '',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.campana_beneficiarios (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campanas(id) on delete cascade,
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, beneficiary_id)
+);
+
+create table public.campana_productos (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campanas(id) on delete cascade,
+  product_id uuid not null references public.inventory_items(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, product_id)
+);
+
+create table public.campana_voluntarios (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campanas(id) on delete cascade,
+  volunteer_id uuid not null references public.volunteers(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, volunteer_id)
+);
+
+create table public.campana_entregas (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campanas(id) on delete cascade,
+  delivery_id uuid not null references public.deliveries(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, delivery_id)
+);
+
+create table public.campana_agenda_eventos (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campanas(id) on delete cascade,
+  agenda_event_id uuid not null references public.agenda_operativa(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, agenda_event_id)
+);
+
+create table public.notificaciones (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null default 'info' check (tipo in ('info', 'warning', 'reminder', 'urgent', 'error')),
+  prioridad text not null default 'info' check (prioridad in ('info', 'warning', 'reminder', 'urgent', 'error')),
+  modulo text not null check (modulo in ('beneficiaries', 'inventory', 'deliveries', 'donations', 'volunteers', 'resources', 'settings', 'agenda', 'dashboard')),
+  origen text,
+  titulo text not null,
+  mensaje text not null,
+  estado text not null default 'Pendiente' check (estado in ('Pendiente', 'Leida', 'Archivada')),
+  leida boolean not null default false,
+  read_at timestamptz,
+  read_by uuid references public.app_users(id) on delete set null,
+  entity_type text,
+  entity_id text,
+  action_url text,
+  dedupe_key text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_by uuid references public.app_users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.categorias_recursos (
+  id uuid not null default gen_random_uuid(),
+  slug text primary key,
+  nombre text not null unique,
+  icono text not null default '',
+  descripcion text not null default '',
+  orden integer not null default 0,
+  sort_order integer not null default 0,
+  activa boolean not null default true,
+  estado text not null default 'active' check (estado in ('active', 'inactive')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint categorias_recursos_id_unico unique (id)
+);
+
+create table if not exists public.recursos (
+  id text primary key,
+  titulo text not null,
+  slug text unique,
+  descripcion text not null,
+  categoria_slug text not null references public.categorias_recursos(slug) on update cascade,
+  categoria_nombre text not null,
+  provincia_slug text not null default 'madrid',
+  provincia_nombre text not null default 'Madrid',
+  provincia text not null default 'madrid',
+  tipo text not null default 'Recurso',
+  url text not null default '/#contacto',
+  telefono text not null default '',
+  email text not null default '',
+  direccion text not null default '',
+  etiquetas text[] not null default '{}',
+  es_gratuito boolean not null default true,
+  es_online boolean not null default false,
+  publicado boolean not null default false,
+  destacado boolean not null default false,
+  es_destacado boolean not null default false,
+  status text not null default 'draft' check (status in ('draft', 'published', 'unpublished', 'archived')),
+  published_at timestamptz,
+  published_by uuid references public.app_users(id) on delete set null,
+  unpublished_at timestamptz,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references public.app_users(id) on delete set null,
+  updated_by uuid references public.app_users(id) on delete set null,
+  constraint recursos_titulo_minimo check (char_length(titulo) >= 3),
+  constraint recursos_descripcion_minima check (char_length(descripcion) >= 10),
+  constraint recursos_url_valida check (url = '' or url like '/%' or url like '#%' or url ~* '^(https?|mailto|tel):')
+);
+
 create table public.deletion_requests (
   id uuid primary key default gen_random_uuid(),
   association_id text not null,
@@ -391,8 +661,20 @@ end;
 $$;
 
 create trigger beneficiaries_updated_at before update on public.beneficiaries for each row execute function public.set_updated_at();
+create trigger organization_settings_updated_at before update on public.organization_settings for each row execute function public.set_updated_at();
 create trigger families_updated_at before update on public.families for each row execute function public.set_updated_at();
 create trigger inventory_items_updated_at before update on public.inventory_items for each row execute function public.set_updated_at();
+create trigger beneficiary_portal_accounts_updated_at before update on public.beneficiary_portal_accounts for each row execute function public.set_updated_at();
+create trigger beneficiary_portal_otps_updated_at before update on public.beneficiary_portal_otps for each row execute function public.set_updated_at();
+create trigger beneficiary_portal_notices_updated_at before update on public.beneficiary_portal_notices for each row execute function public.set_updated_at();
+create trigger beneficiary_portal_renewals_updated_at before update on public.beneficiary_portal_renewals for each row execute function public.set_updated_at();
+create trigger beneficiary_portal_profile_updates_updated_at before update on public.beneficiary_portal_profile_updates for each row execute function public.set_updated_at();
+create trigger portal_sessions_updated_at before update on public.portal_sessions for each row execute function public.set_updated_at();
+create trigger categorias_recursos_updated_at before update on public.categorias_recursos for each row execute function public.set_updated_at();
+create trigger recursos_updated_at before update on public.recursos for each row execute function public.set_updated_at();
+create trigger campanas_updated_at before update on public.campanas for each row execute function public.set_updated_at();
+create trigger agenda_operativa_updated_at before update on public.agenda_operativa for each row execute function public.set_updated_at();
+create trigger notificaciones_updated_at before update on public.notificaciones for each row execute function public.set_updated_at();
 
 create or replace function public.apply_delivery_effects()
 returns trigger
@@ -425,6 +707,12 @@ alter table public.organization_settings enable row level security;
 alter table public.families enable row level security;
 alter table public.social_history enable row level security;
 alter table public.beneficiary_documents enable row level security;
+alter table public.beneficiary_portal_accounts enable row level security;
+alter table public.beneficiary_portal_otps enable row level security;
+alter table public.beneficiary_portal_notices enable row level security;
+alter table public.beneficiary_portal_renewals enable row level security;
+alter table public.beneficiary_portal_profile_updates enable row level security;
+alter table public.portal_sessions enable row level security;
 alter table public.deliveries enable row level security;
 alter table public.email_logs enable row level security;
 alter table public.inventory_items enable row level security;
@@ -436,6 +724,16 @@ alter table public.treasury_loans enable row level security;
 alter table public.treasury_accounts enable row level security;
 alter table public.volunteers enable row level security;
 alter table public.volunteer_history enable row level security;
+alter table public.categorias_recursos enable row level security;
+alter table public.recursos enable row level security;
+alter table public.campanas enable row level security;
+alter table public.agenda_operativa enable row level security;
+alter table public.campana_beneficiarios enable row level security;
+alter table public.campana_productos enable row level security;
+alter table public.campana_voluntarios enable row level security;
+alter table public.campana_entregas enable row level security;
+alter table public.campana_agenda_eventos enable row level security;
+alter table public.notificaciones enable row level security;
 alter table public.roles enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.app_users enable row level security;
@@ -482,6 +780,84 @@ create policy "authenticated_read_volunteers" on public.volunteers for select to
 create policy "authenticated_write_volunteers" on public.volunteers for all to authenticated using (true) with check (true);
 create policy "authenticated_read_volunteer_history" on public.volunteer_history for select to authenticated using (true);
 create policy "authenticated_write_volunteer_history" on public.volunteer_history for all to authenticated using (true) with check (true);
+create policy "public_read_active_resource_categories" on public.categorias_recursos for select using (activa = true or auth.role() = 'authenticated');
+create policy "authenticated_write_resource_categories" on public.categorias_recursos for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('settings', 'edit') or public.can_app_permission('resources', 'edit')
+) with check (
+  public.is_app_admin() or public.can_app_permission('settings', 'edit') or public.can_app_permission('resources', 'edit')
+);
+create policy "public_read_published_resources" on public.recursos for select using (
+  (publicado = true and status = 'published') or auth.role() = 'authenticated'
+);
+create policy "authenticated_write_resources" on public.recursos for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('settings', 'edit') or public.can_app_permission('resources', 'edit')
+) with check (
+  public.is_app_admin() or public.can_app_permission('settings', 'edit') or public.can_app_permission('resources', 'edit')
+);
+create policy "authenticated_read_campanas" on public.campanas for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campanas" on public.campanas for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_agenda_operativa" on public.agenda_operativa for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_agenda_operativa" on public.agenda_operativa for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create') or public.can_app_permission('agenda', 'delete')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_campana_beneficiarios" on public.campana_beneficiarios for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campana_beneficiarios" on public.campana_beneficiarios for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_campana_productos" on public.campana_productos for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campana_productos" on public.campana_productos for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_campana_voluntarios" on public.campana_voluntarios for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campana_voluntarios" on public.campana_voluntarios for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_campana_entregas" on public.campana_entregas for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campana_entregas" on public.campana_entregas for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_campana_agenda_eventos" on public.campana_agenda_eventos for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'view')
+);
+create policy "authenticated_write_campana_agenda_eventos" on public.campana_agenda_eventos for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+) with check (
+  public.is_app_admin() or public.can_app_permission('agenda', 'edit') or public.can_app_permission('agenda', 'create')
+);
+create policy "authenticated_read_notificaciones" on public.notificaciones for select to authenticated using (
+  public.is_app_admin() or public.can_app_permission('notifications', 'view')
+);
+create policy "authenticated_write_notificaciones" on public.notificaciones for all to authenticated using (
+  public.is_app_admin() or public.can_app_permission('notifications', 'view')
+) with check (
+  public.is_app_admin() or public.can_app_permission('notifications', 'view')
+);
 create policy "authenticated_read_roles" on public.roles for select to authenticated using (true);
 create policy "authenticated_write_roles" on public.roles for all to authenticated using (true) with check (true);
 create policy "authenticated_read_audit_logs" on public.audit_logs for select to authenticated using (true);
@@ -616,12 +992,42 @@ create policy "beneficiary_photos_delete_by_permission" on storage.objects for d
   and (storage.foldername(name))[1] = 'beneficiaries'
 );
 
+create policy "delivery_signatures_select_by_permission" on storage.objects for select to authenticated using (
+  bucket_id = 'delivery-signatures'
+);
+create policy "delivery_signatures_insert_by_permission" on storage.objects for insert to authenticated with check (
+  bucket_id = 'delivery-signatures'
+  and (storage.foldername(name))[1] = 'deliveries'
+);
+create policy "delivery_signatures_update_by_permission" on storage.objects for update to authenticated using (
+  bucket_id = 'delivery-signatures'
+  and (storage.foldername(name))[1] = 'deliveries'
+) with check (
+  bucket_id = 'delivery-signatures'
+  and (storage.foldername(name))[1] = 'deliveries'
+);
+create policy "delivery_signatures_delete_by_permission" on storage.objects for delete to authenticated using (
+  bucket_id = 'delivery-signatures'
+  and (storage.foldername(name))[1] = 'deliveries'
+);
 create index beneficiaries_search_idx on public.beneficiaries (full_name, document_id, code);
 create index beneficiaries_family_idx on public.beneficiaries (family_id);
 create index beneficiary_documents_family_idx on public.beneficiary_documents (family_id, uploaded_at desc);
 create index social_history_family_idx on public.social_history (family_id, date desc);
 create index deliveries_beneficiary_idx on public.deliveries (beneficiary_id, delivered_at desc);
 create index inventory_low_stock_idx on public.inventory_items (stock, low_stock_threshold);
+create index agenda_operativa_event_at_idx on public.agenda_operativa (event_at, status);
+create index agenda_operativa_campaign_idx on public.agenda_operativa (campaign_id, event_at);
+create index campanas_status_date_idx on public.campanas (status, start_date, end_date);
+create index campanas_origin_idx on public.campanas (origin_type, status);
+create index campana_beneficiarios_campaign_idx on public.campana_beneficiarios (campaign_id);
+create index campana_productos_campaign_idx on public.campana_productos (campaign_id);
+create index campana_voluntarios_campaign_idx on public.campana_voluntarios (campaign_id);
+create index campana_entregas_campaign_idx on public.campana_entregas (campaign_id);
+create index campana_agenda_eventos_campaign_idx on public.campana_agenda_eventos (campaign_id);
+create index notificaciones_created_idx on public.notificaciones (created_at desc);
+create index notificaciones_pending_idx on public.notificaciones (leida, created_at desc) where leida = false;
+create index notificaciones_module_priority_idx on public.notificaciones (modulo, prioridad, created_at desc);
 create index treasury_incomes_date_idx on public.treasury_incomes (income_at desc);
 create index treasury_expenses_date_idx on public.treasury_expenses (expense_at desc);
 create index treasury_loans_status_idx on public.treasury_loans (status, loan_at desc);
@@ -669,6 +1075,96 @@ as $$
       end
   )
 $$;
+
+create or replace function public.can_beneficiary_portal_action(action_id text default 'view')
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_app_admin()
+    or public.can_app_permission('beneficiaries', action_id)
+    or public.can_app_permission('settings', 'edit')
+    or (
+      action_id = 'view'
+      and public.can_app_permission('deliveries', 'view')
+    )
+$$;
+
+create policy "beneficiary_portal_accounts_select_by_permission"
+on public.beneficiary_portal_accounts for select to authenticated
+using (public.can_beneficiary_portal_action('view'));
+
+create policy "beneficiary_portal_accounts_insert_by_permission"
+on public.beneficiary_portal_accounts for insert to authenticated
+with check (public.can_beneficiary_portal_action('create') or public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_accounts_update_by_permission"
+on public.beneficiary_portal_accounts for update to authenticated
+using (public.can_beneficiary_portal_action('edit'))
+with check (public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_otps_access"
+on public.beneficiary_portal_otps for all to authenticated
+using (public.can_beneficiary_portal_action('view'))
+with check (public.can_beneficiary_portal_action('create') or public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_notices_select_by_permission"
+on public.beneficiary_portal_notices for select to authenticated
+using (public.can_beneficiary_portal_action('view'));
+
+create policy "beneficiary_portal_notices_insert_by_permission"
+on public.beneficiary_portal_notices for insert to authenticated
+with check (public.can_beneficiary_portal_action('create') or public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_notices_update_by_permission"
+on public.beneficiary_portal_notices for update to authenticated
+using (public.can_beneficiary_portal_action('edit'))
+with check (public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_renewals_select_by_permission"
+on public.beneficiary_portal_renewals for select to authenticated
+using (public.can_beneficiary_portal_action('view'));
+
+create policy "beneficiary_portal_renewals_insert_by_permission"
+on public.beneficiary_portal_renewals for insert to authenticated
+with check (public.can_beneficiary_portal_action('create') or public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_renewals_update_by_permission"
+on public.beneficiary_portal_renewals for update to authenticated
+using (public.can_beneficiary_portal_action('edit'))
+with check (public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_profile_updates_select_by_permission"
+on public.beneficiary_portal_profile_updates for select to authenticated
+using (public.can_beneficiary_portal_action('view'));
+
+create policy "beneficiary_portal_profile_updates_insert_by_permission"
+on public.beneficiary_portal_profile_updates for insert to authenticated
+with check (public.can_beneficiary_portal_action('create') or public.can_beneficiary_portal_action('edit'));
+
+create policy "beneficiary_portal_profile_updates_update_by_permission"
+on public.beneficiary_portal_profile_updates for update to authenticated
+using (public.can_beneficiary_portal_action('edit'))
+with check (public.can_beneficiary_portal_action('edit'));
+
+create policy "portal_sessions_access_by_authenticated"
+on public.portal_sessions for all to authenticated
+using (
+  public.is_app_admin()
+  or public.can_app_permission('beneficiaries', 'view')
+  or public.can_app_permission('donations', 'view')
+  or public.can_app_permission('resources', 'view')
+  or public.can_app_permission('settings', 'edit')
+)
+with check (
+  public.is_app_admin()
+  or public.can_app_permission('beneficiaries', 'create')
+  or public.can_app_permission('donations', 'create')
+  or public.can_app_permission('resources', 'create')
+  or public.can_app_permission('settings', 'edit')
+);
 
 create policy "deletion_requests_select_scoped" on public.deletion_requests for select to authenticated using (public.is_system_superadmin() or requester_id = (public.current_app_user()).id or public.can_app_permission('settings', 'view') or public.can_app_permission('users', 'view'));
 create policy "deletion_requests_insert_requester" on public.deletion_requests for insert to authenticated with check (not public.is_system_superadmin() and status = 'Pendiente' and requester_id = (public.current_app_user()).id);
@@ -907,8 +1403,22 @@ create index inventory_movements_item_date_idx
 revoke all on function public.can_inventory_action(text) from public;
 revoke all on function public.register_inventory_movement(uuid, text, numeric, date, text, text) from public;
 grant execute on function public.can_app_permission(text, text) to authenticated;
+grant execute on function public.can_beneficiary_portal_action(text) to authenticated;
 grant execute on function public.can_inventory_action(text) to authenticated;
 grant execute on function public.register_inventory_movement(uuid, text, numeric, date, text, text) to authenticated;
+
+grant select, insert, update on public.beneficiary_portal_accounts to authenticated;
+grant select, insert, update on public.beneficiary_portal_otps to authenticated;
+grant select, insert, update on public.beneficiary_portal_notices to authenticated;
+grant select, insert, update on public.beneficiary_portal_renewals to authenticated;
+grant select, insert, update on public.beneficiary_portal_profile_updates to authenticated;
+grant select, insert, update on public.portal_sessions to authenticated;
+revoke delete on public.beneficiary_portal_accounts from authenticated;
+revoke delete on public.beneficiary_portal_otps from authenticated;
+revoke delete on public.beneficiary_portal_notices from authenticated;
+revoke delete on public.beneficiary_portal_renewals from authenticated;
+revoke delete on public.beneficiary_portal_profile_updates from authenticated;
+revoke delete on public.portal_sessions from authenticated;
 
 create or replace function public.is_app_superadmin()
 returns boolean
@@ -1103,3 +1613,283 @@ revoke all on function public.cancel_delivery(uuid, text) from public;
 revoke all on function public.is_app_superadmin() from public;
 grant execute on function public.cancel_delivery(uuid, text) to authenticated;
 grant execute on function public.is_app_superadmin() to authenticated;
+
+alter table public.donations add column if not exists donor_id uuid;
+alter table public.donations add column if not exists collaborator_id uuid;
+alter table public.donations add column if not exists donor_email text;
+alter table public.donations add column if not exists status text default 'Registrada';
+alter table public.donations add column if not exists state text default 'Registrada';
+alter table public.donations add column if not exists payment_method text;
+alter table public.donations add column if not exists amount numeric(12,2) default 0;
+alter table public.donations add column if not exists quantity text;
+alter table public.donations add column if not exists campaign_id uuid;
+alter table public.donations add column if not exists frequency text;
+alter table public.donations add column if not exists pickup_requested boolean default false;
+alter table public.donations add column if not exists proposed_pickup_at date;
+alter table public.donations add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.collaborators (
+  id uuid primary key default gen_random_uuid(),
+  type text not null default 'Empresa',
+  name text not null,
+  contact_name text,
+  email text not null unique,
+  phone text,
+  address text,
+  logo_path text,
+  is_active boolean not null default true,
+  impact jsonb not null default '{}'::jsonb,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.collaborator_portal_otps (
+  id uuid primary key default gen_random_uuid(),
+  collaborator_id uuid not null references public.collaborators(id) on delete cascade,
+  email text not null,
+  code text not null,
+  action text not null default 'access',
+  status text not null default 'pending' check (status in ('pending', 'used', 'expired', 'revoked')),
+  expires_at timestamptz not null,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.collaborator_portal_profile_updates (
+  id uuid primary key default gen_random_uuid(),
+  collaborator_id uuid not null references public.collaborators(id) on delete cascade,
+  requested_changes jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'applied', 'cancelled')),
+  notes text,
+  requested_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.collaborator_portal_requests (
+  id uuid primary key default gen_random_uuid(),
+  collaborator_id uuid not null references public.collaborators(id) on delete cascade,
+  request_type text not null default 'general',
+  campaign_id uuid references public.campanas(id) on delete set null,
+  title text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'cancelled', 'resolved')),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.collaborator_certificates (
+  id uuid primary key default gen_random_uuid(),
+  collaborator_id uuid not null references public.collaborators(id) on delete cascade,
+  title text not null,
+  certificate_type text not null default 'individual',
+  status text not null default 'Disponible',
+  issued_at date,
+  file_path text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.recursos add column if not exists collaborator_id uuid references public.collaborators(id) on delete set null;
+alter table public.recursos add column if not exists colaborador_id uuid references public.collaborators(id) on delete set null;
+alter table public.recursos add column if not exists created_by_email text;
+alter table public.recursos add column if not exists review_status text not null default 'pending';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'donations_collaborator_id_fkey'
+  ) then
+    alter table public.donations
+      add constraint donations_collaborator_id_fkey
+      foreign key (collaborator_id) references public.collaborators(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists idx_collaborators_email on public.collaborators(lower(email));
+create index if not exists idx_collaborator_portal_otps_collaborator on public.collaborator_portal_otps(collaborator_id, created_at desc);
+create index if not exists idx_collaborator_profile_updates_collaborator on public.collaborator_portal_profile_updates(collaborator_id, created_at desc);
+create index if not exists idx_collaborator_requests_collaborator on public.collaborator_portal_requests(collaborator_id, created_at desc);
+create index if not exists idx_collaborator_certificates_collaborator on public.collaborator_certificates(collaborator_id, issued_at desc);
+create index if not exists idx_donations_collaborator_id on public.donations(collaborator_id);
+create index if not exists idx_recursos_collaborator_id on public.recursos(collaborator_id);
+
+create trigger collaborators_updated_at before update on public.collaborators for each row execute function public.set_updated_at();
+create trigger collaborator_portal_otps_updated_at before update on public.collaborator_portal_otps for each row execute function public.set_updated_at();
+create trigger collaborator_portal_profile_updates_updated_at before update on public.collaborator_portal_profile_updates for each row execute function public.set_updated_at();
+create trigger collaborator_portal_requests_updated_at before update on public.collaborator_portal_requests for each row execute function public.set_updated_at();
+create trigger collaborator_certificates_updated_at before update on public.collaborator_certificates for each row execute function public.set_updated_at();
+
+create or replace function public.can_collaborator_portal_action(action_id text default 'view')
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_app_admin()
+    or public.can_app_permission('donations', action_id)
+    or public.can_app_permission('resources', action_id)
+    or public.can_app_permission('settings', 'edit')
+$$;
+
+alter table public.collaborators enable row level security;
+alter table public.collaborator_portal_otps enable row level security;
+alter table public.collaborator_portal_profile_updates enable row level security;
+alter table public.collaborator_portal_requests enable row level security;
+alter table public.collaborator_certificates enable row level security;
+
+drop policy if exists "collaborators_select_by_permission" on public.collaborators;
+drop policy if exists "collaborators_insert_by_permission" on public.collaborators;
+drop policy if exists "collaborators_update_by_permission" on public.collaborators;
+drop policy if exists "collaborator_portal_otps_select_by_permission" on public.collaborator_portal_otps;
+drop policy if exists "collaborator_portal_otps_insert_by_permission" on public.collaborator_portal_otps;
+drop policy if exists "collaborator_portal_otps_update_by_permission" on public.collaborator_portal_otps;
+drop policy if exists "collaborator_profile_updates_select_by_permission" on public.collaborator_portal_profile_updates;
+drop policy if exists "collaborator_profile_updates_insert_by_permission" on public.collaborator_portal_profile_updates;
+drop policy if exists "collaborator_profile_updates_update_by_permission" on public.collaborator_portal_profile_updates;
+drop policy if exists "collaborator_requests_select_by_permission" on public.collaborator_portal_requests;
+drop policy if exists "collaborator_requests_insert_by_permission" on public.collaborator_portal_requests;
+drop policy if exists "collaborator_requests_update_by_permission" on public.collaborator_portal_requests;
+drop policy if exists "collaborator_certificates_select_by_permission" on public.collaborator_certificates;
+drop policy if exists "collaborator_certificates_insert_by_permission" on public.collaborator_certificates;
+drop policy if exists "collaborator_certificates_update_by_permission" on public.collaborator_certificates;
+
+create policy "collaborators_select_by_permission" on public.collaborators
+for select to authenticated using (public.can_collaborator_portal_action('view'));
+create policy "collaborators_insert_by_permission" on public.collaborators
+for insert to authenticated with check (public.can_collaborator_portal_action('create'));
+create policy "collaborators_update_by_permission" on public.collaborators
+for update to authenticated using (public.can_collaborator_portal_action('edit')) with check (public.can_collaborator_portal_action('edit'));
+
+create policy "collaborator_portal_otps_select_by_permission" on public.collaborator_portal_otps
+for select to authenticated using (public.can_collaborator_portal_action('view'));
+create policy "collaborator_portal_otps_insert_by_permission" on public.collaborator_portal_otps
+for insert to authenticated with check (public.can_collaborator_portal_action('create'));
+create policy "collaborator_portal_otps_update_by_permission" on public.collaborator_portal_otps
+for update to authenticated using (public.can_collaborator_portal_action('edit')) with check (public.can_collaborator_portal_action('edit'));
+
+create policy "collaborator_profile_updates_select_by_permission" on public.collaborator_portal_profile_updates
+for select to authenticated using (public.can_collaborator_portal_action('view'));
+create policy "collaborator_profile_updates_insert_by_permission" on public.collaborator_portal_profile_updates
+for insert to authenticated with check (public.can_collaborator_portal_action('create'));
+create policy "collaborator_profile_updates_update_by_permission" on public.collaborator_portal_profile_updates
+for update to authenticated using (public.can_collaborator_portal_action('edit')) with check (public.can_collaborator_portal_action('edit'));
+
+create policy "collaborator_requests_select_by_permission" on public.collaborator_portal_requests
+for select to authenticated using (public.can_collaborator_portal_action('view'));
+create policy "collaborator_requests_insert_by_permission" on public.collaborator_portal_requests
+for insert to authenticated with check (public.can_collaborator_portal_action('create'));
+create policy "collaborator_requests_update_by_permission" on public.collaborator_portal_requests
+for update to authenticated using (public.can_collaborator_portal_action('edit')) with check (public.can_collaborator_portal_action('edit'));
+
+create policy "collaborator_certificates_select_by_permission" on public.collaborator_certificates
+for select to authenticated using (public.can_collaborator_portal_action('view'));
+create policy "collaborator_certificates_insert_by_permission" on public.collaborator_certificates
+for insert to authenticated with check (public.can_collaborator_portal_action('create'));
+create policy "collaborator_certificates_update_by_permission" on public.collaborator_certificates
+for update to authenticated using (public.can_collaborator_portal_action('edit')) with check (public.can_collaborator_portal_action('edit'));
+
+grant execute on function public.can_collaborator_portal_action(text) to authenticated;
+grant select, insert, update on public.collaborators to authenticated;
+grant select, insert, update on public.collaborator_portal_otps to authenticated;
+grant select, insert, update on public.collaborator_portal_profile_updates to authenticated;
+grant select, insert, update on public.collaborator_portal_requests to authenticated;
+grant select, insert, update on public.collaborator_certificates to authenticated;
+revoke delete on public.collaborators from authenticated;
+revoke delete on public.collaborator_portal_otps from authenticated;
+revoke delete on public.collaborator_portal_profile_updates from authenticated;
+revoke delete on public.collaborator_portal_requests from authenticated;
+revoke delete on public.collaborator_certificates from authenticated;
+
+create table if not exists public.donors (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null unique,
+  phone text,
+  is_active boolean not null default true,
+  impact jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.donor_portal_otps (
+  id uuid primary key default gen_random_uuid(),
+  donor_id uuid references public.donors(id) on delete cascade,
+  email text not null,
+  code text not null,
+  action text not null default 'access',
+  status text not null default 'pending',
+  expires_at timestamptz not null,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.donor_portal_profile_updates (
+  id uuid primary key default gen_random_uuid(),
+  donor_id uuid references public.donors(id) on delete cascade,
+  requested_changes jsonb not null default '{}'::jsonb,
+  status text not null default 'pending',
+  notes text,
+  requested_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.donor_certificates (
+  id uuid primary key default gen_random_uuid(),
+  donor_id uuid references public.donors(id) on delete cascade,
+  title text not null,
+  certificate_type text not null default 'individual',
+  status text not null default 'Disponible',
+  issued_at date,
+  file_path text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_donors_email on public.donors(email);
+create index if not exists idx_donor_portal_otps_donor on public.donor_portal_otps(donor_id, created_at desc);
+create index if not exists idx_donor_profile_updates_donor on public.donor_portal_profile_updates(donor_id, created_at desc);
+create index if not exists idx_donor_certificates_donor on public.donor_certificates(donor_id, issued_at desc);
+create index if not exists idx_donations_donor_id on public.donations(donor_id);
+create index if not exists idx_donations_donor_email on public.donations(donor_email);
+
+alter table public.donors enable row level security;
+alter table public.donor_portal_otps enable row level security;
+alter table public.donor_portal_profile_updates enable row level security;
+alter table public.donor_certificates enable row level security;
+
+create or replace function public.can_donor_portal_action(action_id text default 'view')
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_app_admin()
+    or public.can_app_permission('donations', action_id)
+    or public.can_app_permission('settings', 'edit')
+$$;
+
+drop policy if exists "authenticated_read_donors" on public.donors;
+drop policy if exists "authenticated_write_donors" on public.donors;
+drop policy if exists "authenticated_read_donor_portal_otps" on public.donor_portal_otps;
+drop policy if exists "authenticated_write_donor_portal_otps" on public.donor_portal_otps;
+drop policy if exists "authenticated_read_donor_profile_updates" on public.donor_portal_profile_updates;
+drop policy if exists "authenticated_write_donor_profile_updates" on public.donor_portal_profile_updates;
+drop policy if exists "authenticated_read_donor_certificates" on public.donor_certificates;
+drop policy if exists "authenticated_write_donor_certificates" on public.donor_certificates;
+
+create policy "authenticated_read_donors" on public.donors for select to authenticated using (public.can_donor_portal_action('view'));
+create policy "authenticated_write_donors" on public.donors for all to authenticated using (public.can_donor_portal_action('edit')) with check (public.can_donor_portal_action('create') or public.can_donor_portal_action('edit'));
+create policy "authenticated_read_donor_portal_otps" on public.donor_portal_otps for select to authenticated using (public.can_donor_portal_action('view'));
+create policy "authenticated_write_donor_portal_otps" on public.donor_portal_otps for all to authenticated using (public.can_donor_portal_action('edit')) with check (public.can_donor_portal_action('create') or public.can_donor_portal_action('edit'));
+create policy "authenticated_read_donor_profile_updates" on public.donor_portal_profile_updates for select to authenticated using (public.can_donor_portal_action('view'));
+create policy "authenticated_write_donor_profile_updates" on public.donor_portal_profile_updates for all to authenticated using (public.can_donor_portal_action('edit')) with check (public.can_donor_portal_action('create') or public.can_donor_portal_action('edit'));
+create policy "authenticated_read_donor_certificates" on public.donor_certificates for select to authenticated using (public.can_donor_portal_action('view'));
+create policy "authenticated_write_donor_certificates" on public.donor_certificates for all to authenticated using (public.can_donor_portal_action('edit')) with check (public.can_donor_portal_action('create') or public.can_donor_portal_action('edit'));
+grant execute on function public.can_donor_portal_action(text) to authenticated;

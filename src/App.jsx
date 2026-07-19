@@ -6,31 +6,42 @@ import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, is
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Accounting } from './pages/Accounting';
+import { AgendaOperativa } from './pages/AgendaOperativa';
 import { Beneficiaries } from './pages/Beneficiaries';
+import { BeneficiaryPortal } from './pages/BeneficiaryPortal';
 import { Backup } from './pages/Backup';
+import { CollaboratorPortal } from './pages/CollaboratorPortal';
 import { Communications } from './pages/Communications';
 import { Dashboard } from './pages/Dashboard';
 import { DebugAdmin } from './pages/DebugAdmin';
 import { Deliveries } from './pages/Deliveries';
 import { Donations } from './pages/Donations';
+import { DonorPortal } from './pages/DonorPortal';
 import { Families } from './pages/Families';
 import { Inventory } from './pages/Inventory';
 import { Login } from './pages/Login';
+import { Notifications } from './pages/Notifications';
 import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Volunteers } from './pages/Volunteers';
+import { createPortalApiActions } from './services/portalAuth/PortalApiService';
 
 export default function App() {
   const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
   const [pathname, setPathname] = useState(window.location.pathname);
   const isDebugAdminRoute = pathname === '/debug/admin';
+  const isBeneficiaryPortalRoute = normalizePath(pathname) === '/portal-beneficiario';
+  const isCollaboratorPortalRoute = normalizePath(pathname) === '/portal-colaboradores';
+  const isDonorPortalRoute = normalizePath(pathname) === '/portal-donaciones';
+  const isPortalRoute = isBeneficiaryPortalRoute || isCollaboratorPortalRoute || isDonorPortalRoute;
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [navigationTarget, setNavigationTarget] = useState(() => readNavigationTargetFromLocation());
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig || hasResetToken || !getStoredUser());
-  const { data, loading, error, actions } = useAppData(Boolean(currentUser) || !hasSupabaseConfig, currentUser);
+  const portalActions = useMemo(() => createPortalApiActions(), []);
+  const { data, loading, error, actions } = useAppData(!isPortalRoute && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -69,6 +80,9 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
+    if (isBeneficiaryPortalRoute) return;
+    if (isCollaboratorPortalRoute) return;
+    if (isDonorPortalRoute) return;
     const normalizedPathname = pathname !== '/' ? pathname.replace(/\/$/, '') : pathname;
     if (normalizedPathname === '/treasury' && canAccess(currentUser, 'accounting')) {
       const nextPath = `/accounting${window.location.search || ''}`;
@@ -92,7 +106,7 @@ export default function App() {
     setPathname(nextPath);
     setNavigationTarget({ moduleId: firstAccessibleModule, key: Date.now() });
     setActive(firstAccessibleModule);
-  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, pathname]);
+  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, pathname]);
 
   function navigateTo(destination) {
     const target = normalizeNavigationTarget(destination);
@@ -127,6 +141,9 @@ export default function App() {
       debt_records: [...(data.debt_records || [])].sort((a, b) => String(b.debt_at || b.created_at).localeCompare(String(a.debt_at || a.created_at))),
       social_value_events: [...(data.social_value_events || [])].sort((a, b) => String(b.social_value_at || b.created_at).localeCompare(String(a.social_value_at || a.created_at))),
       deletion_requests: [...(data.deletion_requests || [])].sort((a, b) => String(b.requested_at || b.created_at).localeCompare(String(a.requested_at || a.created_at))),
+      notificaciones: [...(data.notificaciones || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      agenda_operativa: [...(data.agenda_operativa || [])].sort((a, b) => String(a.event_at || a.created_at).localeCompare(String(b.event_at || b.created_at))),
+      campanas: [...(data.campanas || [])].sort((a, b) => String(a.start_date || a.created_at).localeCompare(String(b.start_date || b.created_at))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -138,6 +155,18 @@ export default function App() {
   }
 
   if (!authReady) return <div className="flex min-h-screen items-center justify-center">Comprobando permisos...</div>;
+
+  if (isBeneficiaryPortalRoute) {
+    return <BeneficiaryPortal data={null} actions={portalActions} />;
+  }
+
+  if (isCollaboratorPortalRoute) {
+    return <CollaboratorPortal data={null} actions={portalActions} />;
+  }
+
+  if (isDonorPortalRoute) {
+    return <DonorPortal data={null} actions={portalActions} />;
+  }
 
   if (!currentUser && hasSupabaseConfig) {
     return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
@@ -166,7 +195,9 @@ export default function App() {
   }
 
   const pages = {
-    dashboard: <Dashboard data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
+    dashboard: <Dashboard data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
+    notifications: <Notifications data={sorted} actions={actions} currentUser={currentUser} />,
+    agenda: <AgendaOperativa data={sorted} actions={actions} currentUser={currentUser} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
@@ -177,7 +208,7 @@ export default function App() {
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} currentUser={currentUser} />,
-    reports: <Reports data={sorted} />,
+    reports: <Reports data={sorted} actions={actions} />,
     backup: <Backup data={sorted} actions={actions} currentUser={currentUser} />,
     provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
     users: <Settings key="users" data={sorted} actions={actions} currentUser={currentUser} initialTab="users" />
@@ -187,14 +218,20 @@ export default function App() {
   const pageContent = isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
   const showDemoControls = import.meta.env.DEV && !isSystemSuperadmin(currentUser);
+  const notificationCount = (sorted.notificaciones || []).filter(isUnreadNotification).length;
 
   return (
-    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={showDemoControls}>
+    <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={showDemoControls} notificationCount={notificationCount}>
       {!hasSupabaseConfig && <div className="mb-5 flex gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><Database size={18} /> Modo demo local activo. Configura Supabase para usar PostgreSQL.</div>}
       {error && <div className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={18} /> {error}</div>}
       {pageContent}
     </Layout>
   );
+}
+
+function normalizePath(value) {
+  const path = value || '/';
+  return path !== '/' ? path.replace(/\/$/, '') : path;
 }
 
 function normalizeNavigationTarget(destination) {
@@ -238,4 +275,9 @@ function compareBeneficiaryByCode(a, b) {
 function beneficiaryCodeNumber(value) {
   const match = String(value || '').match(/PYE-(\d+)/i);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function isUnreadNotification(notification) {
+  const state = String(notification?.estado || '').toLowerCase();
+  return notification?.leida !== true && state !== 'leida' && !notification?.read_at;
 }

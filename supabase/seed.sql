@@ -13,8 +13,50 @@ values
   ('Leche', 'Alimentos', 'litros', 18, 25, 'Reponer esta semana.'),
   ('Gel de ducha', 'Higiene', 'unidades', 40, 15, '');
 
+insert into public.categorias_recursos (slug, nombre, icono, descripcion, orden, sort_order, activa, estado)
+values
+  ('formacion', 'Formacion', 'book-open', '', 10, 10, true, 'active'),
+  ('empleo', 'Empleo', 'briefcase', '', 20, 20, true, 'active'),
+  ('ayudas', 'Ayudas', 'landmark', '', 30, 30, true, 'active'),
+  ('familias', 'Familias', 'users', '', 40, 40, true, 'active'),
+  ('salud', 'Salud', 'heart-pulse', '', 50, 50, true, 'active'),
+  ('vivienda', 'Vivienda', 'home', '', 60, 60, true, 'active'),
+  ('tramites', 'Tramites', 'file-text', '', 70, 70, true, 'active'),
+  ('alimentacion', 'Alimentacion', 'utensils', '', 80, 80, true, 'active')
+on conflict (slug) do update
+set nombre = excluded.nombre,
+    icono = excluded.icono,
+    descripcion = excluded.descripcion,
+    orden = excluded.orden,
+    sort_order = excluded.sort_order,
+    activa = excluded.activa,
+    estado = excluded.estado;
+
 insert into public.volunteers (full_name, phone, email, availability, notes)
 values ('Lucia Martin', '622 333 444', 'lucia@example.com', 'Martes y jueves por la tarde', 'Apoyo en almacen.');
+
+with campaign as (
+  insert into public.campanas (name, description, start_date, status, responsible, observations)
+  values ('Reparto semanal de alimentos', 'Planificacion flexible de entregas segun necesidades familiares, stock y voluntariado disponible.', current_date, 'Activa', 'Elizabeth', 'Priorizar familias con menores y productos proximos a caducar.')
+  returning id
+),
+beneficiary as (
+  select id from public.beneficiaries where code = 'PYE-00001' limit 1
+),
+relation as (
+  insert into public.campana_beneficiarios (campaign_id, beneficiary_id)
+  select campaign.id, beneficiary.id from campaign, beneficiary
+  on conflict do nothing
+  returning id
+)
+insert into public.agenda_operativa (title, description, event_type, status, event_at, campaign_id, responsible, beneficiary_id, origin_module, priority, notes)
+select 'Preparar entregas prioritarias', 'Organizar productos disponibles para familias con prioridad social.', 'Entrega', 'Programado', current_date + time '10:00', campaign.id, 'Elizabeth', beneficiary.id, 'agenda', 'Alta', 'Revisar stock antes de confirmar entregas.'
+from campaign, beneficiary;
+
+insert into public.notificaciones (tipo, prioridad, modulo, origen, titulo, mensaje, estado, leida, entity_type, action_url, dedupe_key, metadata)
+values
+  ('warning', 'warning', 'inventory', 'Inventario', 'Stock minimo', 'Hay productos que deben revisarse antes de preparar nuevas entregas.', 'Pendiente', false, 'inventory', '/inventory', 'demo-inventory-low-stock', '{}'::jsonb),
+  ('reminder', 'reminder', 'beneficiaries', 'Beneficiarios', 'Documentacion pendiente', 'Revisa los expedientes con documentacion pendiente de actualizacion.', 'Pendiente', false, 'beneficiary', '/beneficiaries', 'demo-beneficiary-document-pending', '{}'::jsonb);
 
 insert into public.treasury_incomes (income_at, category, concept, amount, donor, payment_method, notes)
 values (current_date, 'Donaciones', 'Donacion economica inicial', 600, 'Empresa Solidaria SL', 'Transferencia', 'Ingreso de ejemplo para tesoreria.');
@@ -33,12 +75,12 @@ values
 insert into public.roles (id, name, modules)
 values
   ('superadmin', 'Superadministrador', '["*"]'::jsonb),
-  ('presidenta', 'Presidenta', '["beneficiaries", "families", "deliveries", "receipts", "inventory", "donations", "treasury", "reports", "users", "settings"]'::jsonb),
-  ('tesorera', 'Tesorera', '["donations", "treasury", "reports", "receipts"]'::jsonb),
-  ('secretaria', 'Secretaria', '["beneficiaries", "families", "receipts", "reports", "users", "settings"]'::jsonb),
-  ('coordinator', 'Coordinador', '["beneficiaries", "families", "deliveries", "inventory", "treasury", "receipts", "reports"]'::jsonb),
-  ('volunteer', 'Voluntario', '["beneficiaries", "deliveries", "inventory", "treasury"]'::jsonb),
-  ('viewer', 'Consulta', '["dashboard", "reports"]'::jsonb)
+  ('presidenta', 'Presidenta', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "receipts", "inventory", "donations", "treasury", "reports", "users", "settings"]'::jsonb),
+  ('tesorera', 'Tesorera', '["notifications", "agenda", "donations", "treasury", "reports", "receipts"]'::jsonb),
+  ('secretaria', 'Secretaria', '["notifications", "agenda", "beneficiaries", "families", "receipts", "reports", "users", "settings"]'::jsonb),
+  ('coordinator', 'Coordinador', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "inventory", "treasury", "receipts", "reports"]'::jsonb),
+  ('volunteer', 'Voluntario', '["notifications", "agenda", "beneficiaries", "deliveries", "inventory", "treasury"]'::jsonb),
+  ('viewer', 'Consulta', '["notifications", "agenda", "dashboard", "reports"]'::jsonb)
 on conflict (id) do update
 set name = excluded.name,
     modules = excluded.modules;

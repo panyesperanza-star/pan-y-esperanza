@@ -1,16 +1,21 @@
-import { Boxes, Building2, Calculator, DatabaseBackup, FileText, Gift, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
+import { Bell, Boxes, Building2, Calculator, CalendarDays, DatabaseBackup, FileText, Gift, HandHeart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { MODULES } from '../lib/constants';
 import { canAccess } from '../lib/auth';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 
-const icons = { dashboard: Home, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
+const icons = { dashboard: Home, notifications: Bell, agenda: CalendarDays, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, accounting: Calculator, volunteers: UserRoundCheck, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
 
-export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, children }) {
+export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, notificationCount = 0, children }) {
   const [open, setOpen] = useState(false);
   const modules = MODULES.filter((module) => canAccess(currentUser, module.id));
   const canShowDemoReset = import.meta.env.DEV && showReset;
+  const canShowNotifications = canAccess(currentUser, 'notifications');
+  const openNotifications = () => {
+    setActive('notifications');
+    setOpen(false);
+  };
   const nav = (
     <nav className="space-y-1">
       {modules.map((module) => {
@@ -29,6 +34,7 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
         <div className="flex h-16 items-center justify-between px-4">
           <button className="focus-ring rounded-md p-2" onClick={() => setOpen(true)} aria-label="Menu"><Menu size={22} /></button>
           <BrandLogo className="h-10 w-auto" showText={false} />
+          {canShowNotifications && <NotificationBell count={notificationCount} onClick={openNotifications} />}
           {canShowDemoReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /></Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /></Button>
         </div>
@@ -48,10 +54,32 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
       </aside>
       <main className="lg:pl-72">
         <div className="hidden border-b border-slate-200 bg-white px-8 py-4 lg:block">
-          <BrandLogo className="h-12 w-auto" />
+          <div className="flex items-center justify-between gap-4">
+            <BrandLogo className="h-12 w-auto" />
+            {canShowNotifications && <NotificationBell count={notificationCount} onClick={openNotifications} />}
+          </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">{children}</div>
       </main>
     </div>
+  );
+}
+
+function NotificationBell({ count, onClick }) {
+  const safeCount = Number(count || 0);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="focus-ring relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+      aria-label={`Centro de Notificaciones${safeCount ? `, ${safeCount} pendientes` : ''}`}
+    >
+      <Bell size={18} />
+      {safeCount > 0 && (
+        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[11px] font-bold leading-none text-white">
+          {safeCount > 99 ? '99+' : safeCount}
+        </span>
+      )}
+    </button>
   );
 }

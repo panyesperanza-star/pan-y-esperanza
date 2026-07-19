@@ -1,7 +1,11 @@
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
+  Bell,
   Boxes,
+  Brain,
+  BookOpen,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -11,6 +15,7 @@ import {
   HandCoins,
   KeyRound,
   Mail,
+  Megaphone,
   PackageCheck,
   Play,
   Receipt,
@@ -24,16 +29,19 @@ import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { canAccess, getUserStatus } from '../lib/auth';
 import { getApiHeaders } from '../lib/apiAuth';
-import { formatDate, normalize, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 import { hasSupabaseConfig } from '../lib/supabase';
+import { DashboardService } from '../services/dashboard/DashboardService';
 
 const STALE_HELP_DAYS = 30;
 const EXPIRY_WINDOW_DAYS = 30;
 const FAMILY_LIMIT = 6;
 const LIST_LIMIT = 4;
+const fallbackDashboardService = new DashboardService();
 
-export function Dashboard({ data, currentUser, onNavigate }) {
+export function Dashboard({ data, actions, currentUser, onNavigate }) {
   const today = todayISO();
+  const dashboardService = actions?.dashboard || fallbackDashboardService;
   const [secureSummary, setSecureSummary] = useState({
     pendingPasswordResets: null,
     loading: false,
@@ -75,8 +83,8 @@ export function Dashboard({ data, currentUser, onNavigate }) {
   }, [currentUser?.id, currentUser?.email]);
 
   const operations = useMemo(
-    () => buildOperations(data, today, secureSummary.pendingPasswordResets),
-    [data, today, secureSummary.pendingPasswordResets]
+    () => dashboardService.buildOperationsCenter({ data, today, pendingPasswordResets: secureSummary.pendingPasswordResets }),
+    [dashboardService, data, today, secureSummary.pendingPasswordResets]
   );
 
   function openModule(destination) {
@@ -102,131 +110,635 @@ export function Dashboard({ data, currentUser, onNavigate }) {
   return (
     <>
       <PageHeader title="CENTRO DE OPERACIONES" description="Pagina principal para decidir que necesita Pan y Esperanza hoy." />
-
-      <AssistantCard
-        message={assistant.message}
-        recommendation={assistant.recommendation}
-        summaryItems={assistant.summaryItems}
-        onStart={() => openModule(assistant.primaryDestination)}
-        disabled={!assistant.primaryDestination}
+      <IntelligentOperationsCenter
+        operations={operations}
+        assistant={assistant}
+        quickItems={quickItems}
+        tasks={tasks}
+        priorityCards={priorityCards}
+        communicationCards={communicationCards}
+        currentUser={currentUser}
+        today={today}
+        familyModule={familyModule}
+        canSeeFamilies={canSeeFamilies}
+        canSeeInventory={canSeeInventory}
+        onOpen={openModule}
       />
-
-      {quickItems.length > 0 && (
-        <section className="mt-5">
-          <SectionTitle title="BARRA RAPIDA DE HOY" subtitle={formatDate(today)} />
-          <QuickTodayBar items={quickItems} onOpen={openModule} />
-        </section>
-      )}
-
-      <section className="mt-6">
-        <SectionTitle title="PRIORIDADES" subtitle="Ordenadas para abrir directamente el modulo que corresponde." />
-        <PriorityDeck cards={priorityCards} onOpen={openModule} />
-      </section>
-
-      <section className="mt-6">
-        <SectionTitle title="MIS TAREAS" subtitle="Tareas automaticas generadas con datos reales." />
-        {tasks.length ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {tasks.map((task) => (
-              <TaskCard key={task.title} task={task} onOpen={openModule} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No hay tareas pendientes." text="Todo correcto por ahora." />
-        )}
-      </section>
-
-      {canSeeFamilies && (
-        <section className="mt-6">
-          <SectionTitle title="FAMILIAS PRIORITARIAS" subtitle="Solo las unidades con mayor urgencia operativa." />
-          {operations.priorityFamilies.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {operations.priorityFamilies.slice(0, FAMILY_LIMIT).map((family) => (
-                <FamilyPriorityCard key={family.id} family={family} destination={buildFamilyDetailDestination(family, familyModule)} onOpen={openModule} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No hay asuntos urgentes." text="No hay familias prioritarias con los datos actuales." />
-          )}
-        </section>
-      )}
-
-      {(canSeeInventory || communicationCards.length > 0) && (
-        <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          {canSeeInventory && (
-            <div>
-              <SectionTitle title="INVENTARIO" subtitle="Solo alertas utiles: bajo minimo, agotados y caducidades." />
-              <div className="grid gap-4 lg:grid-cols-3 xl:grid-cols-1">
-                <AlertList
-                  title="Stock bajo"
-                  icon={Boxes}
-                  items={operations.lowStock}
-                  empty="Todo correcto por ahora."
-                  renderItem={(item) => (
-                    <>
-                      <strong>{item.name}</strong>
-                      <p>Stock: {formatNumber(item.stock)} {item.unit || ''}. Minimo: {formatNumber(item.low_stock_threshold)}.</p>
-                    </>
-                  )}
-                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'stock-critical' })}
-                />
-                <AlertList
-                  title="Productos agotados"
-                  icon={AlertTriangle}
-                  items={operations.outOfStock}
-                  empty="No hay productos agotados."
-                  renderItem={(item) => (
-                    <>
-                      <strong>{item.name}</strong>
-                      <p>{item.category || 'Sin categoria'} - {item.location || 'Sin ubicacion'}</p>
-                    </>
-                  )}
-                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'stock-critical' })}
-                />
-                <AlertList
-                  title="Proximas caducidades"
-                  icon={CalendarClock}
-                  items={operations.expiringSoon}
-                  empty="No hay caducidades proximas."
-                  renderItem={(item) => (
-                    <>
-                      <strong>{item.name}</strong>
-                      <p>{formatExpiry(item.expires_at, today)} - Lote {item.lot || '-'}</p>
-                    </>
-                  )}
-                  onOpen={() => openModule({ moduleId: 'inventory', filter: 'expiring-soon' })}
-                />
-              </div>
-            </div>
-          )}
-
-          {communicationCards.length > 0 && (
-            <div>
-              <SectionTitle title="COMUNICACIONES" subtitle="Correos, justificantes y recuperaciones pendientes." />
-              <div className="grid gap-4">
-                {communicationCards.map((card) => (
-                  <CommunicationCard key={card.title} {...card} onOpen={openModule} />
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      <section className="mt-6">
-        <SectionTitle title="RESUMEN GENERAL" subtitle="Indicadores generales al final de la pantalla." />
-        {summaryCards.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {summaryCards.map((card) => (
-              <StatCard key={card.label} label={card.label} value={card.value} icon={card.icon} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="Sin resumen disponible." text="No hay indicadores visibles con tus permisos." />
-        )}
-      </section>
     </>
   );
+}
+
+function IntelligentOperationsCenter({
+  operations,
+  assistant,
+  quickItems,
+  tasks,
+  priorityCards,
+  communicationCards,
+  currentUser,
+  today,
+  familyModule,
+  canSeeFamilies,
+  canSeeInventory,
+  onOpen
+}) {
+  const summaryIcons = [CalendarClock, PackageCheck, Bell, Megaphone, Boxes, HandHeart, Users];
+  const summaryItems = (operations.daySummary || []).map((item, index) => ({
+    ...item,
+    icon: summaryIcons[index] || Activity
+  }));
+  const mainPriority = priorityCards.find((card) => Number(card.value) > 0) || priorityCards[0];
+  const mainTask = tasks[0];
+  const notifications = operations.unreadNotifications || [];
+  const campaigns = operations.activeCampaigns || [];
+
+  const statusCards = [
+    {
+      title: 'Entregas de hoy',
+      value: operations.todayDeliveries.length,
+      detail: 'Pendientes de coordinar o revisar',
+      icon: PackageCheck,
+      tone: 'blue',
+      destination: canAccess(currentUser, 'deliveries') ? { moduleId: 'deliveries' } : null
+    },
+    {
+      title: 'Agenda Operativa',
+      value: operations.todayAgenda.length,
+      detail: 'Eventos y tareas del dia',
+      icon: CalendarClock,
+      tone: 'green',
+      destination: canAccess(currentUser, 'agenda') ? { moduleId: 'agenda' } : null
+    },
+    {
+      title: 'Notificaciones',
+      value: notifications.length,
+      detail: 'Avisos sin leer',
+      icon: Bell,
+      tone: notifications.length ? 'orange' : 'green',
+      destination: canAccess(currentUser, 'notifications') ? { moduleId: 'notifications' } : null
+    },
+    {
+      title: 'Campanas activas',
+      value: campaigns.length,
+      detail: 'Planificacion en marcha',
+      icon: Megaphone,
+      tone: campaigns.length ? 'blue' : 'slate',
+      destination: canAccess(currentUser, 'agenda') ? { moduleId: 'agenda', filter: 'campaigns' } : null
+    }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Centro de operaciones inteligente</p>
+            <h2 className="mt-2 max-w-5xl text-2xl font-bold leading-tight sm:text-3xl">
+              Buenos dias, {displayUserName(currentUser)}. Esta es la situacion operativa de hoy.
+            </h2>
+            <div className="mt-4 rounded-md bg-white/10 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Resumen del dia</p>
+              <p className="mt-1 text-sm font-semibold text-white">{assistant.recommendation}</p>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {summaryItems.map((item) => (
+                <HeroSummaryCard key={item.label} item={item} />
+              ))}
+            </div>
+          </div>
+
+          <aside className="rounded-md border border-white/15 bg-white/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Prioridad inmediata</p>
+                <h3 className="mt-1 text-lg font-bold">{mainPriority?.title || 'Jornada estable'}</h3>
+              </div>
+              <Brain size={24} className="text-brand-100" />
+            </div>
+            <p className="mt-3 text-sm text-brand-50">
+              {mainTask?.detail || assistant.message || 'No hay asuntos urgentes con los datos actuales.'}
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => onOpen(assistant.primaryDestination || mainPriority?.destination)}
+              disabled={!assistant.primaryDestination && !mainPriority?.destination}
+              className="mt-4 h-11 w-full border-white bg-white px-4 text-brand-700 hover:bg-brand-50"
+            >
+              <Play size={18} /> Comenzar jornada
+            </Button>
+            <div className="mt-4 grid gap-2">
+              {statusCards.map((card) => (
+                <StatusCommandCard key={card.title} card={card} onOpen={onOpen} />
+              ))}
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <CommandPanel
+        title="Prioridades del sistema"
+        subtitle="Motor de reglas preparado para evolucionar a IA."
+        icon={ShieldAlert}
+        action="Abrir agenda"
+        onAction={canAccess(currentUser, 'agenda') ? () => onOpen({ moduleId: 'agenda' }) : null}
+      >
+        <SystemPrioritiesPanel priorities={operations.systemPriorities} onOpen={onOpen} />
+      </CommandPanel>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        <CommandPanel
+          title="Agenda Operativa"
+          subtitle="Planificacion de hoy, entregas y eventos relevantes."
+          icon={CalendarClock}
+          action="Abrir agenda"
+          onAction={canAccess(currentUser, 'agenda') ? () => onOpen({ moduleId: 'agenda' }) : null}
+        >
+          <OperationalTimeline items={operations.todayAgenda || []} empty="No hay eventos planificados para hoy." />
+        </CommandPanel>
+
+        <CommandPanel
+          title="Beneficiarios prioritarios"
+          subtitle="Casos que requieren decision o seguimiento."
+          icon={HandHeart}
+          action="Abrir expedientes"
+          onAction={canSeeFamilies ? () => onOpen({ moduleId: familyModule }) : null}
+        >
+          <FamilyFocusList families={operations.priorityFamilies || []} familyModule={familyModule} onOpen={onOpen} />
+        </CommandPanel>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+        <CommandPanel title="Acciones rapidas" subtitle="Atajos operativos del dia." icon={ArrowRight}>
+          <QuickActionGrid items={quickItems} onOpen={onOpen} />
+        </CommandPanel>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <CommandPanel
+            title="Notificaciones"
+            subtitle="Avisos vivos y comunicaciones pendientes."
+            icon={Bell}
+            action="Abrir centro"
+            onAction={canAccess(currentUser, 'notifications') ? () => onOpen({ moduleId: 'notifications' }) : null}
+          >
+            <NotificationFocusList notifications={notifications} communicationCards={communicationCards} onOpen={onOpen} />
+          </CommandPanel>
+
+          <CommandPanel title="Bloque IA preparado" subtitle="Resumen inteligente listo para activarse." icon={Brain}>
+            <AICommandBlock panel={operations.aiPanel} />
+          </CommandPanel>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-3">
+        <CommandPanel
+          title="Productos criticos"
+          subtitle="Stock bajo, agotados y caducidades."
+          icon={Boxes}
+          action="Ir a inventario"
+          onAction={canSeeInventory ? () => onOpen({ moduleId: 'inventory', filter: 'stock-critical' }) : null}
+        >
+          <ProductCriticalList items={operations.criticalProducts || []} today={today} />
+        </CommandPanel>
+
+        <CommandPanel
+          title="Donaciones recientes"
+          subtitle="Ultimos movimientos registrados."
+          icon={Gift}
+          action="Ver donaciones"
+          onAction={canAccess(currentUser, 'donations') ? () => onOpen({ moduleId: 'donations' }) : null}
+        >
+          <DonationFocusList items={operations.recentDonations || []} />
+        </CommandPanel>
+
+        <CommandPanel
+          title="Voluntarios disponibles"
+          subtitle="Personas con disponibilidad registrada."
+          icon={Users}
+          action="Ver voluntarios"
+          onAction={canAccess(currentUser, 'volunteers') ? () => onOpen({ moduleId: 'volunteers' }) : null}
+        >
+          <VolunteerFocusList items={operations.availableVolunteers || []} />
+        </CommandPanel>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <CommandPanel
+          title="Recursos pendientes"
+          subtitle="Contenido listo para revisar o publicar."
+          icon={BookOpen}
+          action="Abrir recursos"
+          onAction={getResourcesDestination(currentUser) ? () => onOpen(getResourcesDestination(currentUser)) : null}
+        >
+          <ResourceFocusList items={operations.pendingResources || []} />
+        </CommandPanel>
+
+        <CommandPanel title="Actividad reciente" subtitle="Ultimos cambios consolidados por el sistema." icon={Activity}>
+          <ActivityFocusList items={operations.recentActivity || []} />
+        </CommandPanel>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <CommandPanel title="Campanas activas" subtitle="Iniciativas operativas en marcha." icon={Megaphone}>
+          <CampaignFocusList items={campaigns} />
+        </CommandPanel>
+
+        <CommandPanel title="Tareas recomendadas" subtitle="Siguiente trabajo sugerido por prioridad." icon={CheckCircle2}>
+          <TaskFocusList tasks={tasks} onOpen={onOpen} />
+        </CommandPanel>
+      </section>
+    </div>
+  );
+}
+
+function HeroSummaryCard({ item }) {
+  const Icon = item.icon || Activity;
+  return (
+    <article className="rounded-md border border-white/10 bg-white/10 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-md bg-white/15 p-2 text-brand-50">
+          <Icon size={18} />
+        </span>
+        <p className="text-2xl font-bold">{formatNumber(item.value)}</p>
+      </div>
+      <p className="mt-3 text-xs font-bold uppercase tracking-wide text-brand-100">{item.label}</p>
+    </article>
+  );
+}
+
+function StatusCommandCard({ card, onOpen }) {
+  const Icon = card.icon || Activity;
+  const clickable = Boolean(card.destination);
+  const content = (
+    <>
+      <span className={`rounded-md p-2 ${toneSoftClasses(card.tone)}`}>
+        <Icon size={17} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-white">{card.title}</span>
+        <span className="block truncate text-xs text-brand-100">{card.detail}</span>
+      </span>
+      <span className="text-xl font-bold text-white">{formatNumber(card.value)}</span>
+    </>
+  );
+  if (!clickable) {
+    return <div className="flex items-center gap-3 rounded-md bg-white/10 p-3">{content}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(card.destination)}
+      className="focus-ring flex w-full items-center gap-3 rounded-md bg-white/10 p-3 text-left transition hover:bg-white/15"
+    >
+      {content}
+    </button>
+  );
+}
+
+function CommandPanel({ title, subtitle, icon: Icon, action, onAction, children }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="rounded-md bg-brand-50 p-2 text-brand-700">
+            <Icon size={20} />
+          </span>
+          <div>
+            <h3 className="font-bold text-ink">{title}</h3>
+            {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+          </div>
+        </div>
+        {onAction && (
+          <Button variant="secondary" onClick={onAction} className="shrink-0">
+            {action || 'Abrir'}
+          </Button>
+        )}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function OperationalTimeline({ items, empty }) {
+  if (!items.length) return <EmptyState title={empty} text="La agenda queda preparada para nuevas necesidades." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, 6).map((item, index) => (
+        <article key={item.id || `agenda-${index}`} className="flex gap-3 rounded-md border border-slate-100 bg-slate-50 p-3">
+          <div className="flex w-16 shrink-0 flex-col items-center justify-center rounded-md bg-white text-center shadow-sm">
+            <span className="text-xs font-bold uppercase text-slate-400">{item.date ? formatDate(item.date).slice(0, 5) : 'Hoy'}</span>
+            <span className="text-xs font-semibold text-brand-700">{item.date ? formatDateTime(item.date).slice(-5) : '--:--'}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-ink">{item.title}</h4>
+            <p className="mt-1 text-sm text-slate-600">{item.detail || 'Sin detalle'}</p>
+            <span className="mt-2 inline-flex rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-600">{item.status || 'Pendiente'}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function FamilyFocusList({ families, familyModule, onOpen }) {
+  if (!families.length) return <EmptyState title="No hay beneficiarios prioritarios." text="No hay asuntos urgentes con los datos actuales." />;
+  return (
+    <div className="space-y-3">
+      {families.slice(0, 5).map((family) => (
+        <button
+          key={family.id}
+          type="button"
+          onClick={() => onOpen(buildFamilyDetailDestination(family, familyModule))}
+          className="focus-ring w-full rounded-md border border-slate-100 bg-slate-50 p-3 text-left transition hover:-translate-y-0.5 hover:shadow-panel"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-ink">{family.name}</h4>
+              <p className="mt-1 text-sm text-slate-600">{family.reason}</p>
+            </div>
+            <span className={`rounded-md px-2 py-1 text-xs font-bold ${priorityBadgeClasses(family.priorityLevel)}`}>{family.priorityLevel}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function QuickActionGrid({ items, onOpen }) {
+  if (!items.length) return <EmptyState title="Sin acciones rapidas." text="No hay accesos disponibles con tus permisos." />;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {items.slice(0, 6).map((item) => (
+        <button
+          key={item.title}
+          type="button"
+          onClick={() => onOpen(item.destination || item.moduleId)}
+          className={`focus-ring rounded-md border p-3 text-left shadow-panel transition hover:-translate-y-0.5 ${quickToneClasses(item.tone)}`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="rounded-md bg-white/70 p-2"><item.icon size={18} /></span>
+            <span className="text-xl font-bold">{formatNumber(item.value)}</span>
+          </div>
+          <p className="mt-3 text-sm font-bold">{item.title}</p>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function NotificationFocusList({ notifications, communicationCards, onOpen }) {
+  const communicationItems = communicationCards.map((card) => ({
+    id: `communication-${card.title}`,
+    title: card.title,
+    detail: card.detail,
+    value: card.value,
+    destination: card.destination || card.moduleId
+  }));
+  const items = [
+    ...notifications.map((item) => ({
+      id: item.id,
+      title: item.titulo || item.title || item.origen || 'Notificacion',
+      detail: item.mensaje || item.detail || 'Aviso pendiente',
+      value: item.prioridad || item.tipo || 'Pendiente',
+      destination: item.moduleId ? { moduleId: item.moduleId } : { moduleId: 'notifications' }
+    })),
+    ...communicationItems
+  ];
+  if (!items.length) return <EmptyState title="Sin notificaciones pendientes." text="El centro no tiene avisos activos." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, 5).map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onOpen(item.destination)}
+          className="focus-ring w-full rounded-md border border-slate-100 bg-slate-50 p-3 text-left transition hover:bg-white hover:shadow-panel"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="truncate font-bold text-ink">{item.title}</h4>
+              <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.detail}</p>
+            </div>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">{item.value}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AICommandBlock({ panel }) {
+  return (
+    <div className="rounded-md border border-brand-100 bg-brand-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-md bg-white px-2 py-1 text-xs font-bold text-brand-700">{panel?.status || 'Preparado'}</span>
+        <Brain size={20} className="text-brand-700" />
+      </div>
+      <p className="mt-3 text-sm font-semibold text-brand-900">{panel?.summary || 'Preparado para generar resumen inteligente cuando se active IA.'}</p>
+      <div className="mt-3 space-y-2">
+        {(panel?.recommendations || []).slice(0, 3).map((item) => (
+          <div key={item} className="rounded-md bg-white p-2 text-sm text-slate-700">{item}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SystemPrioritiesPanel({ priorities, onOpen }) {
+  const items = priorities?.items || [];
+  if (!items.length) {
+    return <EmptyState title="Sin prioridades automaticas." text="El motor no detecta asuntos operativos relevantes con los datos actuales." />;
+  }
+
+  const counters = [
+    { label: 'Criticas', value: priorities.criticalCount, tone: 'bg-red-50 text-red-700' },
+    { label: 'Altas', value: priorities.highCount, tone: 'bg-orange-50 text-orange-700' },
+    { label: 'Medias', value: priorities.mediumCount, tone: 'bg-blue-50 text-blue-700' }
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        {counters.map((counter) => (
+          <article key={counter.label} className={`rounded-md px-3 py-2 ${counter.tone}`}>
+            <p className="text-2xl font-bold">{formatNumber(counter.value)}</p>
+            <p className="text-xs font-bold uppercase tracking-wide">{counter.label}</p>
+          </article>
+        ))}
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {items.slice(0, 6).map((item) => {
+          const destination = item.destination || item.moduleId;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpen(destination)}
+              disabled={!destination}
+              className="focus-ring rounded-md border border-slate-100 bg-slate-50 p-3 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-panel disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.rule}</p>
+                  <h4 className="mt-1 font-bold text-ink">{item.title}</h4>
+                  <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.detail}</p>
+                </div>
+                <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-bold ${priorityBadgeClasses(item.priority)}`}>{item.priority}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-md bg-white px-2 py-1">{item.dueLabel}</span>
+                <span className="rounded-md bg-white px-2 py-1">{item.recommendedAction}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function ProductCriticalList({ items, today }) {
+  if (!items.length) return <EmptyState title="No hay productos criticos." text="Inventario estable por ahora." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, LIST_LIMIT).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-ink">{item.name}</h4>
+              <p className="mt-1 text-sm text-slate-600">Stock: {formatNumber(item.stock)} {item.unit || ''}. Minimo: {formatNumber(item.low_stock_threshold)}.</p>
+            </div>
+            <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-bold text-red-700">Critico</span>
+          </div>
+          {item.expires_at && <p className="mt-2 text-xs font-semibold text-slate-500">{formatExpiry(item.expires_at, today)}</p>}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function DonationFocusList({ items }) {
+  if (!items.length) return <EmptyState title="No hay donaciones recientes." text="Todavia no hay movimientos para mostrar." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, LIST_LIMIT).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <h4 className="font-bold text-ink">{item.donor || 'Donante sin nombre'}</h4>
+          <p className="mt-1 text-sm text-slate-600">{item.donation_type || item.category || 'Donacion registrada'}</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(item.donated_at || item.created_at)}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function VolunteerFocusList({ items }) {
+  if (!items.length) return <EmptyState title="No hay voluntarios disponibles." text="No hay disponibilidad registrada." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, LIST_LIMIT).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <h4 className="font-bold text-ink">{item.full_name}</h4>
+          <p className="mt-1 text-sm text-slate-600">{item.availability || 'Disponibilidad sin detallar'}</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">{item.training || item.documentation || 'Expediente de voluntariado'}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ResourceFocusList({ items }) {
+  if (!items.length) return <EmptyState title="No hay recursos pendientes." text="El centro de recursos no tiene revisiones abiertas." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, LIST_LIMIT).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <h4 className="font-bold text-ink">{item.titulo || item.title || 'Recurso sin titulo'}</h4>
+          <p className="mt-1 text-sm text-slate-600">{item.categoria_nombre || item.categoria_slug || item.tipo || 'Recurso'}</p>
+          <span className="mt-2 inline-flex rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">{item.status || item.estado || 'pendiente'}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ActivityFocusList({ items }) {
+  if (!items.length) return <EmptyState title="Sin actividad reciente." text="Todavia no hay movimientos consolidados." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, 6).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-ink">{item.title}</h4>
+              <p className="mt-1 text-sm text-slate-600">{item.detail || 'Registro actualizado'}</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-500">{item.date ? formatDateTime(item.date) : 'Sin fecha'}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CampaignFocusList({ items }) {
+  if (!items.length) return <EmptyState title="No hay campanas activas." text="No hay iniciativas operativas abiertas." />;
+  return (
+    <div className="space-y-3">
+      {items.slice(0, LIST_LIMIT).map((item) => (
+        <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-ink">{item.name || item.nombre || item.title || 'Campana operativa'}</h4>
+              <p className="mt-1 text-sm text-slate-600">{item.description || item.descripcion || item.responsible || 'Planificacion activa'}</p>
+            </div>
+            <span className="rounded-md bg-brand-50 px-2 py-1 text-xs font-bold text-brand-700">{item.status || 'Activa'}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function TaskFocusList({ tasks, onOpen }) {
+  if (!tasks.length) return <EmptyState title="Sin tareas recomendadas." text="Todo correcto por ahora." />;
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {tasks.slice(0, 4).map((task) => (
+        <button
+          key={task.title}
+          type="button"
+          onClick={() => onOpen(task.destination || task.moduleId)}
+          className="focus-ring rounded-md border border-slate-100 bg-slate-50 p-3 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-panel"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-ink">{task.title}</h4>
+              <p className="mt-1 text-sm text-slate-600">{task.detail}</p>
+            </div>
+            <span className={`rounded-md px-2 py-1 text-xs font-bold ${priorityBadgeClasses(task.priority)}`}>{task.priority}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function toneSoftClasses(tone) {
+  const classes = {
+    red: 'bg-red-50 text-red-700',
+    orange: 'bg-amber-50 text-amber-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    blue: 'bg-sky-50 text-sky-700',
+    slate: 'bg-slate-50 text-slate-700'
+  };
+  return classes[tone] || classes.slate;
+}
+
+function priorityBadgeClasses(priority) {
+  const normalized = normalize(priority);
+  if (normalized.includes('critica')) return 'bg-red-50 text-red-700';
+  if (normalized.includes('alta')) return 'bg-amber-50 text-amber-700';
+  if (normalized.includes('media')) return 'bg-sky-50 text-sky-700';
+  return 'bg-slate-100 text-slate-600';
 }
 
 function AssistantCard({ message, recommendation, summaryItems, onStart, disabled }) {
@@ -290,6 +802,61 @@ function QuickTodayBar({ items, onOpen }) {
         </button>
       ))}
     </div>
+  );
+}
+
+function DaySummaryStrip({ items }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+      {items.map((item) => (
+        <article key={item.label} className="rounded-md border border-slate-200 bg-white p-3 text-center shadow-panel">
+          <p className="text-2xl font-bold text-ink">{item.value}</p>
+          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function OperationsPanel({ title, icon: Icon, items, empty, renderItem, onOpen }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="flex items-center gap-2 font-bold text-ink"><Icon size={19} /> {title}</h4>
+        {onOpen && (
+          <Button variant="secondary" onClick={onOpen}>
+            Abrir
+          </Button>
+        )}
+      </div>
+      <div className="mt-4 space-y-3">
+        {items.slice(0, LIST_LIMIT).map((item, index) => (
+          <div key={item.id || `${title}-${index}`} className="rounded-md border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+            {renderItem(item)}
+          </div>
+        ))}
+        {!items.length && <p className="text-sm text-slate-500">{empty}</p>}
+      </div>
+    </section>
+  );
+}
+
+function AIPanel({ panel }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="flex items-center gap-2 font-bold text-ink"><Brain size={19} /> Panel preparado para IA</h4>
+        <span className="rounded-md bg-brand-50 px-2 py-1 text-xs font-bold text-brand-700">{panel?.status || 'Preparado'}</span>
+      </div>
+      <p className="mt-4 text-sm text-slate-600">{panel?.summary || 'Preparado para resumen inteligente cuando se active IA.'}</p>
+      <div className="mt-4 space-y-2">
+        {(panel?.recommendations || []).slice(0, 3).map((item) => (
+          <div key={item} className="rounded-md border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+            {item}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -382,7 +949,7 @@ function FamilyPriorityCard({ family, destination, onOpen }) {
         <Metric label="Miembros" value={family.membersCount} />
         <Metric label="Menores" value={family.minorsCount} />
         <Metric label="Dias sin ayuda" value={family.daysWithoutHelpText} />
-        <Metric label="Última ayuda" value={family.lastHelpText} />
+        <Metric label="Ãšltima ayuda" value={family.lastHelpText} />
       </dl>
       <div className="mt-4 rounded-md bg-white/70 p-3 text-sm text-slate-700">
         <strong>Motivo:</strong> {family.priorityReason}
@@ -459,12 +1026,18 @@ function getDestinationModule(destination) {
   return destination?.moduleId || null;
 }
 
+function getResourcesDestination(currentUser) {
+  if (canAccess(currentUser, 'provider')) return { moduleId: 'provider' };
+  if (canAccess(currentUser, 'settings')) return { moduleId: 'settings' };
+  return null;
+}
+
 function buildFamilyListDestination(families, moduleId, filter) {
   return {
     moduleId,
     filter,
     beneficiaryIds: families.flatMap((family) => family.beneficiaryIds || []),
-    label: 'Familias críticas'
+    label: 'Familias crÃ­ticas'
   };
 }
 
@@ -485,7 +1058,7 @@ function buildFamilyDetailDestination(family, moduleId) {
 function buildPriorityCards(operations, currentUser, familyModule) {
   return [
     familyModule && {
-      title: 'Familias críticas',
+      title: 'Familias crÃ­ticas',
       value: operations.criticalFamilies.length,
       detail: `${operations.urgentFamilies.length} urgentes, ${operations.priorityFamilies.length} priorizadas`,
       icon: ShieldAlert,
@@ -571,7 +1144,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
 function buildQuickItems(operations, currentUser, familyModule) {
   return [
     familyModule && {
-      title: 'Familias críticas',
+      title: 'Familias crÃ­ticas',
       value: operations.criticalFamilies.length,
       icon: ShieldAlert,
       moduleId: familyModule,
@@ -639,8 +1212,8 @@ function buildQuickItems(operations, currentUser, familyModule) {
 function buildTasks(operations, currentUser, familyModule) {
   return [
     familyModule && operations.criticalFamilies.length > 0 && {
-      title: 'Revisar familias críticas',
-      detail: pluralSummary(operations.criticalFamilies.length, 'familia crítica requiere atención', 'familias críticas requieren atención'),
+      title: 'Revisar familias crÃ­ticas',
+      detail: pluralSummary(operations.criticalFamilies.length, 'familia crÃ­tica requiere atenciÃ³n', 'familias crÃ­ticas requieren atenciÃ³n'),
       priority: 'Critica',
       action: 'Ver familias',
       moduleId: familyModule,
@@ -671,7 +1244,7 @@ function buildTasks(operations, currentUser, familyModule) {
     },
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && {
       title: 'Enviar justificantes pendientes',
-      detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revisión', 'justificantes necesitan revisión'),
+      detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revisiÃ³n', 'justificantes necesitan revisiÃ³n'),
       priority: 'Alta',
       action: 'Ver justificantes',
       moduleId: 'receipts',
@@ -683,7 +1256,7 @@ function buildTasks(operations, currentUser, familyModule) {
     },
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && {
       title: 'Revisar deudas vencidas',
-      detail: `${pluralSummary(operations.overdueDebts.length, 'deuda vencida requiere pago o revisión', 'deudas vencidas requieren pago o revisión')} Total: ${formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0))}.`,
+      detail: `${pluralSummary(operations.overdueDebts.length, 'deuda vencida requiere pago o revisiÃ³n', 'deudas vencidas requieren pago o revisiÃ³n')} Total: ${formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0))}.`,
       priority: 'Critica',
       action: 'Abrir contabilidad',
       moduleId: 'accounting',
@@ -718,15 +1291,15 @@ function buildTasks(operations, currentUser, familyModule) {
 function buildAssistantState(operations, currentUser, familyModule) {
   const primary = getPrimaryAction(operations, currentUser, familyModule);
   const parts = [
-    familyModule && operations.criticalFamilies.length > 0 && pluralLabel(operations.criticalFamilies.length, 'familia crítica', 'familias críticas'),
+    familyModule && operations.criticalFamilies.length > 0 && pluralLabel(operations.criticalFamilies.length, 'familia crÃ­tica', 'familias crÃ­ticas'),
     canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0 && pluralLabel(operations.todayDeliveries.length, 'entrega de hoy', 'entregas de hoy'),
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && pluralLabel(operations.criticalStock.length, 'producto critico', 'productos criticos'),
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
     canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
-    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'préstamo pendiente', 'préstamos pendientes'),
-    canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donación pendiente', 'donaciones pendientes')
+    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'prÃ©stamo pendiente', 'prÃ©stamos pendientes'),
+    canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donaciÃ³n pendiente', 'donaciones pendientes')
   ].filter(Boolean);
   const userName = displayUserName(currentUser);
   const message = parts.length
@@ -745,7 +1318,7 @@ function getPrimaryAction(operations, currentUser, familyModule) {
   if (familyModule && operations.criticalFamilies.length > 0) {
     return {
       destination: buildFamilyDetailDestination(operations.criticalFamilies[0], familyModule),
-      recommendation: 'Empieza revisando la familia crítica con más riesgo.'
+      recommendation: 'Empieza revisando la familia crÃ­tica con mÃ¡s riesgo.'
     };
   }
   if (canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0) {
@@ -811,7 +1384,7 @@ function buildCommunicationCards(operations, currentUser, secureSummary) {
       }
     },
     canAccess(currentUser, 'users') && {
-      title: 'Recuperaciones de contraseña',
+      title: 'Recuperaciones de contraseÃ±a',
       value: secureSummary.loading ? '...' : secureSummary.pendingPasswordResets ?? 0,
       detail: secureSummary.loading ? 'Cargando solicitudes vigentes' : 'Solicitudes vigentes',
       icon: KeyRound,

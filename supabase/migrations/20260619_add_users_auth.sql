@@ -21,5 +21,5 @@ create policy "authenticated_read_app_users" on public.app_users for select to a
 create policy "authenticated_write_app_users" on public.app_users for all to authenticated using (true) with check (true);
 
 insert into public.app_users (first_name, last_name, email, password, phone, role, is_active, permissions)
-values ('Elizabeth', '', 'elizabeth@panyesperanza.org', 'Elizabeth2026!', '', 'Superadministrador', true, '["*"]'::jsonb)
+values ('Elizabeth', '', 'elizabeth@panyesperanza.org', null, '', 'Superadministrador', true, '["*"]'::jsonb)
 on conflict (email) do nothing;

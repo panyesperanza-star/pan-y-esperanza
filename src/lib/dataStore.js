@@ -1,4 +1,4 @@
-import { seedData } from '../data/seed';
+﻿import { seedData } from '../data/seed';
 import { normalizeDocument } from './formatters';
 import { hasSupabaseConfig, supabase } from './supabase';
 
@@ -8,6 +8,21 @@ const TABLES = [
   'beneficiaries',
   'social_history',
   'beneficiary_documents',
+  'beneficiary_portal_accounts',
+  'beneficiary_portal_otps',
+  'beneficiary_portal_notices',
+  'beneficiary_portal_renewals',
+  'beneficiary_portal_profile_updates',
+  'collaborators',
+  'collaborator_portal_otps',
+  'collaborator_portal_profile_updates',
+  'collaborator_portal_requests',
+  'collaborator_certificates',
+  'donors',
+  'donor_portal_otps',
+  'donor_portal_profile_updates',
+  'donor_certificates',
+  'portal_sessions',
   'deliveries',
   'email_logs',
   'inventory_items',
@@ -31,6 +46,16 @@ const TABLES = [
   'treasury_accounts',
   'volunteers',
   'volunteer_history',
+  'notificaciones',
+  'agenda_operativa',
+  'campanas',
+  'campana_beneficiarios',
+  'campana_productos',
+  'campana_voluntarios',
+  'campana_entregas',
+  'campana_agenda_eventos',
+  'categorias_recursos',
+  'recursos',
   'roles',
   'audit_logs',
   'app_users'
@@ -47,10 +72,36 @@ const OPTIONAL_TABLES = new Set([
   'debt_movements',
   'social_value_events',
   'deletion_requests',
-  'accounting_audit_trail'
+  'accounting_audit_trail',
+  'beneficiary_portal_accounts',
+  'beneficiary_portal_otps',
+  'beneficiary_portal_notices',
+  'beneficiary_portal_renewals',
+  'beneficiary_portal_profile_updates',
+  'collaborators',
+  'collaborator_portal_otps',
+  'collaborator_portal_profile_updates',
+  'collaborator_portal_requests',
+  'collaborator_certificates',
+  'donors',
+  'donor_portal_otps',
+  'donor_portal_profile_updates',
+  'donor_certificates',
+  'portal_sessions',
+  'notificaciones',
+  'agenda_operativa',
+  'campanas',
+  'campana_beneficiarios',
+  'campana_productos',
+  'campana_voluntarios',
+  'campana_entregas',
+  'campana_agenda_eventos',
+  'categorias_recursos',
+  'recursos'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
+const IS_PRODUCTION = import.meta.env.PROD;
 const DATE_FIELDS = new Set([
   'birth_date',
   'first_attention_at',
@@ -82,8 +133,29 @@ const DATE_FIELDS = new Set([
   'happened_at',
   'requested_at',
   'resolved_at',
+  'issued_at',
+  'proposed_pickup_at',
+  'invited_at',
+  'activated_at',
+  'last_login_at',
+  'read_at',
+  'event_at',
+  'end_at',
+  'start_date',
+  'end_date',
+  'renewal_due_at',
+  'reviewed_at',
   'archived_at',
+  'published_at',
+  'unpublished_at',
   'last_access_at',
+  'expires_at',
+  'verified_at',
+  'started_at',
+  'last_seen_at',
+  'logged_out_at',
+  'signature_signed_at',
+  'responsible_signature_signed_at',
   'created_at',
   'updated_at'
 ]);
@@ -127,11 +199,13 @@ async function list(table) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: false });
     if (error) {
-      if (OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [];
+      if (!IS_PRODUCTION && OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [];
+      registerSupabaseError('list', table, error);
       throw error;
     }
     return data || [];
   }
+  assertLocalStorageAllowed();
   return readLocal()[table] || [];
 }
 
@@ -157,9 +231,13 @@ async function create(table, payload) {
       if (retry.error) throw retry.error;
       return retry.data;
     }
-    if (error) throw error;
+    if (error) {
+      registerSupabaseError('create', table, error);
+      throw error;
+    }
     return data;
   }
+  assertLocalStorageAllowed();
   const db = readLocal();
   const row = { id: cleanPayload.id || crypto.randomUUID(), ...cleanPayload };
   db[table] = [row, ...(db[table] || [])];
@@ -189,9 +267,13 @@ async function update(table, id, payload) {
       if (retry.error) throw retry.error;
       return retry.data;
     }
-    if (error) throw error;
+    if (error) {
+      registerSupabaseError('update', table, error);
+      throw error;
+    }
     return data;
   }
+  assertLocalStorageAllowed();
   const db = readLocal();
   db[table] = (db[table] || []).map((item) => (item.id === id ? { ...item, ...cleanPayload } : item));
   writeLocal(db);
@@ -201,9 +283,13 @@ async function update(table, id, payload) {
 async function remove(table, id) {
   if (hasSupabaseConfig) {
     const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) throw error;
+    if (error) {
+      registerSupabaseError('remove', table, error);
+      throw error;
+    }
     return true;
   }
+  assertLocalStorageAllowed();
   const db = readLocal();
   db[table] = (db[table] || []).filter((item) => item.id !== id);
   writeLocal(db);
@@ -223,11 +309,29 @@ function assertUniqueDocument(beneficiaries, payload, currentId) {
 }
 
 function resetLocalDemo() {
+  assertLocalStorageAllowed();
   writeLocal(seedData);
 }
 
 function replaceLocalData(nextData) {
+  assertLocalStorageAllowed();
   writeLocal(nextData);
+}
+
+function assertLocalStorageAllowed() {
+  if (IS_PRODUCTION) {
+    throw new Error('Supabase no esta configurado para produccion.');
+  }
+}
+
+function registerSupabaseError(operation, table, error) {
+  if (!IS_PRODUCTION) return;
+  console.error('[Pan y Esperanza] Error de Supabase en produccion', {
+    operation,
+    table,
+    code: error?.code,
+    message: error?.message
+  });
 }
 
 function shouldRetryWithoutUserStatus(table, error, payload) {

@@ -18,12 +18,14 @@ const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 export function Deliveries({ data, actions, currentUser }) {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(null);
+  const [signatureTarget, setSignatureTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const canCreate = canDo(currentUser, 'deliveries', 'create');
   const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
   const organization = data.organization_settings?.[0] || {};
+  const signatureRequired = actions.configuracion?.isDeliverySignatureRequired?.(organization) === true;
   const canDeleteDirectly = canDeleteDefinitively(currentUser, 'deliveries', organization);
   const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries', organization);
 
@@ -114,6 +116,21 @@ export function Deliveries({ data, actions, currentUser }) {
     }
   }
 
+  async function saveDeliverySignature(payload) {
+    if (!signatureTarget?.delivery) return;
+    setNotice('');
+    setBusyAction(`signature-${signatureTarget.delivery.id}`);
+    try {
+      await actions.saveDeliverySignature(signatureTarget.delivery.id, payload);
+      setSignatureTarget(null);
+      setNotice('Firma digital guardada correctamente.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo guardar la firma digital.');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -175,6 +192,9 @@ export function Deliveries({ data, actions, currentUser }) {
                           <Button variant="secondary" onClick={() => sendDeliveryWhatsApp(item, beneficiary)} title="Enviar WhatsApp">
                             <MessageCircle size={16} /> WhatsApp
                           </Button>
+                          <Button variant="secondary" disabled={busyAction === `signature-${item.id}`} onClick={() => setSignatureTarget({ delivery: item, beneficiary })} title="Firma digital">
+                            <PenLine size={16} /> {item.signature_data_url ? 'Firma' : 'Firmar'}
+                          </Button>
                         </>
                       )}
                       {!isCancelled && canCancel && <Button variant="secondary" onClick={() => setCancelling(item)}><Ban size={16} /> Anular entrega</Button>}
@@ -199,7 +219,18 @@ export function Deliveries({ data, actions, currentUser }) {
 
       {open && (
         <Modal title="Registrar entrega" onClose={() => setOpen(false)} wide>
-          <DeliveryForm data={data} onSubmit={async (payload) => { await actions.createDelivery(payload); setOpen(false); }} />
+          <DeliveryForm data={data} signatureRequired={signatureRequired} onSubmit={async (payload) => { await actions.createDelivery(payload); setOpen(false); setNotice(signatureRequired ? 'Entrega registrada con firma digital.' : 'Entrega registrada correctamente.'); }} />
+        </Modal>
+      )}
+      {signatureTarget && (
+        <Modal title="Firma digital de entrega" onClose={() => setSignatureTarget(null)}>
+          <DeliverySignatureForm
+            delivery={signatureTarget.delivery}
+            beneficiary={signatureTarget.beneficiary}
+            signatureRequired={signatureRequired}
+            busy={busyAction === `signature-${signatureTarget.delivery.id}`}
+            onSubmit={saveDeliverySignature}
+          />
         </Modal>
       )}
       {cancelling && (
@@ -243,11 +274,12 @@ function CancellationForm({ delivery, onSubmit }) {
   );
 }
 
-export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
+export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signatureRequired = false }) {
   const eligibleBeneficiaries = data.beneficiaries.filter((item) => item.is_active && !isBeneficiaryFamilyArchived(item, data.families));
   const initialEligibleBeneficiaryId = eligibleBeneficiaries.some((item) => item.id === initialBeneficiaryId)
     ? initialBeneficiaryId
     : eligibleBeneficiaries[0]?.id || '';
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     beneficiary_id: initialEligibleBeneficiaryId,
     delivered_at: todayISO(),
@@ -306,15 +338,20 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
         <input className={inputClass} type="datetime-local" value={toDateTimeLocal(form.reception_at)} onChange={(event) => update('reception_at', new Date(event.target.value).toISOString())} />
       </FormField>
       <div className="sm:col-span-2">
-        <FormField label="Firma digital del receptor">
-          <SignaturePad value={form.signature_data_url} onChange={(value) => update('signature_data_url', value)} />
-        </FormField>
-        <p className="mt-1 text-xs text-slate-500">La firma queda asociada a la entrega y aparecera en el justificante PDF.</p>
+        <SignatureCaptureField
+          label="Firma digital del receptor"
+          value={form.signature_data_url}
+          required={signatureRequired}
+          onChange={(value) => update('signature_data_url', value)}
+          description="La firma queda asociada a la entrega y aparecera en el justificante PDF."
+        />
       </div>
       <div className="sm:col-span-2">
-        <FormField label="Firma digital del responsable">
-          <SignaturePad value={form.responsible_signature_data_url} onChange={(value) => update('responsible_signature_data_url', value)} />
-        </FormField>
+        <SignatureCaptureField
+          label="Firma digital del responsable"
+          value={form.responsible_signature_data_url}
+          onChange={(value) => update('responsible_signature_data_url', value)}
+        />
       </div>
       <div className="sm:col-span-2">
         <FormField label="Observaciones">
@@ -328,10 +365,113 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '' }) {
   );
 }
 
-function SignaturePad({ value, onChange }) {
+function DeliverySignatureForm({ delivery, beneficiary, signatureRequired, busy, onSubmit }) {
+  const [signature, setSignature] = useState(delivery.signature_data_url || '');
+  const [responsibleSignature, setResponsibleSignature] = useState(delivery.responsible_signature_data_url || '');
+  const [error, setError] = useState('');
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    if (signatureRequired && !signature) {
+      setError('La firma digital del receptor es obligatoria.');
+      return;
+    }
+    await onSubmit({
+      signature_data_url: signature,
+      responsible_signature_data_url: responsibleSignature,
+      receiver_name: delivery.receiver_name,
+      receiver_document_id: delivery.receiver_document_id,
+      reception_at: delivery.reception_at || new Date().toISOString()
+    });
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <p><strong>Entrega:</strong> {delivery.receipt_number || delivery.id}</p>
+        <p><strong>Beneficiario:</strong> {beneficiary?.full_name || delivery.beneficiary_name || '-'}</p>
+      </div>
+      <SignatureCaptureField
+        label="Firma digital del receptor"
+        value={signature}
+        required={signatureRequired}
+        onChange={setSignature}
+        description="Se guardara como PNG y quedara asociada a la entrega, al beneficiario y al justificante."
+      />
+      <SignatureCaptureField
+        label="Firma digital del responsable"
+        value={responsibleSignature}
+        onChange={setResponsibleSignature}
+      />
+      {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+      <div className="flex justify-end">
+        <Button type="submit" disabled={busy}>{busy ? 'Guardando firma...' : 'Guardar firma digital'}</Button>
+      </div>
+    </form>
+  );
+}
+
+function SignatureCaptureField({ label, value, onChange, required = false, description = '' }) {
+  const [open, setOpen] = useState(false);
+  const hasSignature = Boolean(value);
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-ink">{label}{required ? ' *' : ''}</p>
+          <p className={`mt-1 text-sm font-medium ${hasSignature ? 'text-brand-700' : 'text-slate-500'}`}>{hasSignature ? 'Firma confirmada' : 'Pendiente de firma'}</p>
+          {description && <p className="mt-1 text-xs text-slate-500">{description}</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {hasSignature && <Button type="button" variant="secondary" onClick={() => onChange('')}><Eraser size={16} /> Limpiar firma</Button>}
+          <Button type="button" variant={hasSignature ? 'secondary' : 'primary'} onClick={() => setOpen(true)}><PenLine size={16} /> {hasSignature ? 'Editar firma' : 'Firmar'}</Button>
+        </div>
+      </div>
+      {open && (
+        <SignatureModal
+          title={label}
+          initialValue={value}
+          required={required}
+          onClose={() => setOpen(false)}
+          onConfirm={(dataUrl) => { onChange(dataUrl); setOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SignatureModal({ title, initialValue, required, onClose, onConfirm }) {
+  const [draft, setDraft] = useState(initialValue || '');
+  const [error, setError] = useState('');
+
+  function confirm() {
+    setError('');
+    if (required && !draft) {
+      setError('La firma digital es obligatoria.');
+      return;
+    }
+    onConfirm(draft);
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="space-y-4">
+        <SignatureCanvas value={draft} onChange={setDraft} />
+        {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+        <div className="flex flex-wrap justify-between gap-2">
+          <Button type="button" variant="secondary" onClick={() => setDraft('')}><Eraser size={16} /> Limpiar firma</Button>
+          <Button type="button" onClick={confirm}><PenLine size={16} /> Confirmar firma</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SignatureCanvas({ value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
-  const hasSignature = Boolean(value);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -352,15 +492,15 @@ function SignaturePad({ value, onChange }) {
   function point(event) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const source = event.touches?.[0] || event;
     return {
-      x: ((source.clientX - rect.left) / rect.width) * canvas.width,
-      y: ((source.clientY - rect.top) / rect.height) * canvas.height
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height
     };
   }
 
   function start(event) {
     event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     drawingRef.current = true;
     const context = canvasRef.current.getContext('2d');
     const current = point(event);
@@ -377,18 +517,11 @@ function SignaturePad({ value, onChange }) {
     context.stroke();
   }
 
-  function stop() {
+  function stop(event) {
     if (!drawingRef.current) return;
     drawingRef.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
     onChange(canvasRef.current.toDataURL('image/png'));
-  }
-
-  function clear() {
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    onChange('');
   }
 
   return (
@@ -398,21 +531,13 @@ function SignaturePad({ value, onChange }) {
         width="720"
         height="220"
         className="h-44 w-full touch-none rounded-md border border-dashed border-slate-300 bg-white"
-        onMouseDown={start}
-        onMouseMove={draw}
-        onMouseUp={stop}
-        onMouseLeave={stop}
-        onTouchStart={start}
-        onTouchMove={draw}
-        onTouchEnd={stop}
+        onPointerDown={start}
+        onPointerMove={draw}
+        onPointerUp={stop}
+        onPointerCancel={stop}
+        onPointerLeave={stop}
       />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <span className={`text-sm font-medium ${hasSignature ? 'text-brand-700' : 'text-slate-500'}`}>{hasSignature ? 'Firma guardada en la entrega' : 'Pendiente de firma'}</span>
-        <div className="flex gap-2">
-          <Button type="button" variant="secondary" onClick={clear}><Eraser size={16} /> Borrar firma</Button>
-          <Button type="button" variant="subtle" onClick={() => onChange(canvasRef.current.toDataURL('image/png'))}><PenLine size={16} /> Guardar firma</Button>
-        </div>
-      </div>
+      <p className="mt-2 text-xs text-slate-500">Firma con raton o pantalla tactil dentro del recuadro.</p>
     </div>
   );
 }
