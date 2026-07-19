@@ -5,5 +5,35 @@
   "functions": {
     "api/send-justificantes.js": { "maxDuration": 60 }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/acceder", "destination": "/acceder/" },
+    { "source": "/recursos", "destination": "/recursos/" },
+    { "source": "/privacidad", "destination": "/privacidad/" },
+    { "source": "/aviso-legal", "destination": "/aviso-legal/" },
+    { "source": "/cookies", "destination": "/cookies/" },
+    { "source": "/acceso", "destination": "/erp/index.html" },
+    { "source": "/dashboard", "destination": "/erp/index.html" },
+    { "source": "/notifications", "destination": "/erp/index.html" },
+    { "source": "/agenda", "destination": "/erp/index.html" },
+    { "source": "/beneficiaries", "destination": "/erp/index.html" },
+    { "source": "/communications", "destination": "/erp/index.html" },
+    { "source": "/families", "destination": "/erp/index.html" },
+    { "source": "/deliveries", "destination": "/erp/index.html" },
+    { "source": "/receipts", "destination": "/erp/index.html" },
+    { "source": "/inventory", "destination": "/erp/index.html" },
+    { "source": "/donations", "destination": "/erp/index.html" },
+    { "source": "/accounting", "destination": "/erp/index.html" },
+    { "source": "/treasury", "destination": "/erp/index.html" },
+    { "source": "/volunteers", "destination": "/erp/index.html" },
+    { "source": "/reports", "destination": "/erp/index.html" },
+    { "source": "/users", "destination": "/erp/index.html" },
+    { "source": "/settings", "destination": "/erp/index.html" },
+    { "source": "/backup", "destination": "/erp/index.html" },
+    { "source": "/provider", "destination": "/erp/index.html" },
+    { "source": "/debug/admin", "destination": "/erp/index.html" },
+    { "source": "/portal-beneficiario", "destination": "/erp/index.html" },
+    { "source": "/portal-colaboradores", "destination": "/erp/index.html" },
+    { "source": "/portal-donaciones", "destination": "/erp/index.html" },
+    { "source": "/(.*)", "destination": "/erp/index.html" }
+  ]
 }

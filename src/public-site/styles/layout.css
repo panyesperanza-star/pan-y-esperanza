@@ -1,0 +1,118 @@
+.site-header {
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-height: var(--header-height);
+  color: var(--color-white-warm);
+  background: transparent;
+}
+
+.site-header[data-scrolled] {
+  color: var(--color-charcoal-warm);
+  background: var(--color-white-warm);
+  box-shadow: 0 0.75rem 2rem rgb(37 33 29 / 8%);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100%, var(--container-wide));
+  min-height: var(--header-height);
+  margin-inline: auto;
+  padding-block: 0.75rem;
+  padding-inline: var(--page-gutter);
+  gap: var(--space-xl);
+}
+
+.section {
+  min-height: 32rem;
+  scroll-margin-top: calc(var(--header-offset, var(--header-height)) + var(--space-md));
+  background: var(--color-cream);
+}
+
+.section--hero {
+  position: relative;
+  display: grid;
+  min-height: 95svh;
+  overflow: hidden;
+  color: var(--color-white-warm);
+  background: var(--color-olive-deep);
+}
+
+.section--identity {
+  background: var(--color-cream);
+}
+
+.section--stories {
+  background: var(--color-cream);
+}
+
+.section--white {
+  background: var(--color-white-warm);
+}
+
+.section--collaborate {
+  color: var(--color-white-warm);
+  background: var(--color-olive-deep);
+}
+
+.section--gallery {
+  background: var(--color-white-warm);
+}
+
+.section--faq {
+  background: var(--color-cream);
+}
+
+.section__inner {
+  width: min(100%, var(--container-wide));
+  min-height: inherit;
+  margin-inline: auto;
+  padding: var(--space-6xl) var(--page-gutter);
+}
+
+.section:not(.section--hero) > .section__inner {
+  padding-block: clamp(var(--space-5xl), 7vw, var(--space-6xl));
+}
+
+.section__inner--hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-block: calc(var(--header-height) + var(--space-xl));
+}
+
+@media (max-width: 720px) {
+  .site-header__inner {
+    align-items: stretch;
+    min-height: auto;
+    padding-block: calc(var(--space-md) + 0.75rem);
+  }
+
+  .section {
+    min-height: 28rem;
+  }
+
+  .section--hero {
+    min-height: 92svh;
+  }
+
+  .section__inner {
+    padding-block: var(--space-5xl);
+  }
+
+  .section:not(.section--hero) > .section__inner {
+    padding-block: clamp(var(--space-4xl), 16vw, var(--space-5xl));
+  }
+
+  .section__inner--hero {
+    justify-content: center;
+    padding-block: calc(var(--header-height) + var(--space-lg));
+  }
+}

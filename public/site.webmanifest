@@ -1,0 +1,25 @@
+{
+  "name": "Pan y Esperanza",
+  "short_name": "Pan y Esperanza",
+  "description": "Web oficial de Pan y Esperanza.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F6EFE4",
+  "theme_color": "#2F4A3A",
+  "icons": [
+    {
+      "src": "/assets/brand/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brand/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

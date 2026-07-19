@@ -1,4 +1,4 @@
-import { AlertTriangle, Database } from 'lucide-react';
+﻿import { AlertTriangle, Database } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
@@ -121,8 +121,8 @@ export default function App() {
 
   async function logout() {
     await signOut();
-    window.history.replaceState({}, '', '/');
-    setPathname('/');
+    window.history.replaceState({}, '', '/acceso');
+    setPathname('/acceso');
     setActive(null);
     setCurrentUser(null);
   }
@@ -188,7 +188,7 @@ export default function App() {
         <section className="max-w-lg rounded-md border border-slate-200 bg-white p-8 text-center shadow-panel">
           <h1 className="text-2xl font-bold text-ink">Sin modulos asignados</h1>
           <p className="mt-3 text-slate-600">Tu cuenta esta activa, pero no tiene permisos de visualizacion. Solicita acceso a un administrador.</p>
-          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesión</button>
+          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesiÃ³n</button>
         </section>
       </main>
     );
@@ -281,3 +281,4 @@ function isUnreadNotification(notification) {
   const state = String(notification?.estado || '').toLowerCase();
   return notification?.leida !== true && state !== 'leida' && !notification?.read_at;
 }
+

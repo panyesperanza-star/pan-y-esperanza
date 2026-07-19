@@ -1,0 +1,55 @@
+:root {
+  --color-white-warm: #fff9f1;
+  --color-olive-deep: #2f4a3a;
+  --color-terracotta: #c96f3d;
+  --color-cream: #f6efe4;
+  --color-charcoal-warm: #25211d;
+
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 2.5rem;
+  --space-3xl: 3rem;
+  --space-4xl: 4rem;
+  --space-5xl: 5rem;
+  --space-6xl: 7.5rem;
+
+  --container-max: 72rem;
+  --container-wide: 88rem;
+  --page-gutter: clamp(1.5rem, 5vw, 7.5rem);
+  --header-height: 5rem;
+  --hero-image: url("/assets/photographs/hero.jpg");
+  --photo-quienes-somos: url("/assets/photographs/quienes-somos.jpg");
+  --photo-recogida: url("/assets/photographs/recogida.jpg");
+  --photo-clasificacion: url("/assets/photographs/clasificacion.jpg");
+  --photo-preparacion: url("/assets/photographs/preparacion.jpg");
+  --photo-entrega: url("/assets/photographs/entrega.jpg");
+  --photo-historia-1: url("/assets/photographs/historia-1.jpg");
+  --photo-historia-2: url("/assets/photographs/historia-2.jpg");
+  --photo-historia-3: url("/assets/photographs/historia-3.jpg");
+  --photo-galeria-01: url("/assets/photographs/galeria-01.jpg");
+  --photo-galeria-02: url("/assets/photographs/galeria-02.jpg");
+  --photo-galeria-03: url("/assets/photographs/galeria-03.jpg");
+  --photo-galeria-04: url("/assets/photographs/galeria-04.jpg");
+  --photo-galeria-05: url("/assets/photographs/galeria-05.jpg");
+  --photo-galeria-06: url("/assets/photographs/galeria-06.jpg");
+  --photo-galeria-07: url("/assets/photographs/galeria-07.jpg");
+  --photo-galeria-08: url("/assets/photographs/galeria-08.jpg");
+  --photo-galeria-09: url("/assets/photographs/galeria-09.jpg");
+  --photo-galeria-10: url("/assets/photographs/galeria-10.jpg");
+  --photo-galeria-11: url("/assets/photographs/galeria-11.jpg");
+  --photo-galeria-12: url("/assets/photographs/galeria-12.jpg");
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+
+  --shadow-soft: 0 1rem 2.5rem rgb(37 33 29 / 8%);
+}

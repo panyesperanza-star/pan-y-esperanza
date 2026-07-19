@@ -3,10 +3,1104 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Web oficial de Pan y Esperanza."
+    />
+    <meta property="og:title" content="Pan y Esperanza" />
+    <meta
+      property="og:description"
+      content="Web oficial de Pan y Esperanza."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://panyesperanza.org/" />
+    <meta property="og:image" content="/assets/photographs/hero.jpg" />
+    <meta name="google-site-verification" content="" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/assets/photographs/hero.jpg" />
+    <meta name="theme-color" content="#2F4A3A" />
     <title>Pan y Esperanza</title>
+    <link rel="canonical" href="https://panyesperanza.org/" />
+    <link rel="icon" href="/assets/brand/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/assets/brand/logo.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="preload" href="/assets/photographs/hero.jpg" as="image" fetchpriority="high" />
+    <link rel="stylesheet" href="/src/public-site/styles/main.css" data-public-site-style />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "NGO",
+        "name": "Pan y Esperanza",
+        "url": "https://panyesperanza.org/",
+        "logo": "https://panyesperanza.org/assets/brand/logo.png",
+        "image": "https://panyesperanza.org/assets/photographs/hero.jpg",
+        "description": "Web oficial de Pan y Esperanza.",
+        "nonprofitStatus": "NonprofitType",
+        "sameAs": []
+      }
+    </script>
+    <script>
+      window.PAN_ESPERANZA_CONFIG = {
+        siteUrl: "https://panyesperanza.org",
+        gaMeasurementId: "",
+        metaPixelId: ""
+      };
+    </script>
+    <script type="module" src="/src/publicEntry.js" defer></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    <div class="sr-only" role="status" aria-live="polite" data-global-status></div>
+
+    <header class="site-header" data-component="site-header" data-site-header>
+      <div class="site-header__inner">
+        <a class="brand" href="#inicio" aria-label="Pan y Esperanza">
+          <img
+            class="brand__logo"
+            src="/assets/brand/logo.png"
+            alt=""
+            width="160"
+            height="48"
+            aria-hidden="true"
+            data-brand-logo
+          />
+          <span class="brand__name">Pan y Esperanza</span>
+        </a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-label="Abrir navegacion"
+          aria-controls="site-navigation"
+          aria-expanded="false"
+          data-nav-toggle
+        >
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+        </button>
+
+        <nav
+          class="site-nav"
+          id="site-navigation"
+          aria-label="Navegacion principal"
+          data-site-nav
+        >
+          <a class="site-nav__link" href="#inicio">Inicio</a>
+          <a class="site-nav__link" href="#que-hacemos">Qu&eacute; hacemos</a>
+          <a class="site-nav__link" href="#historias">Historias</a>
+          <a class="site-nav__link" href="/recursos">Recursos</a>
+          <a class="site-nav__link" href="#colabora">Colabora</a>
+          <a class="site-nav__link" href="#contacto">Contacto</a>
+          <a class="button button--team-access site-nav__team" href="/acceder">&#128101; Acceder</a>
+          <a class="button button--donate site-nav__donate" href="#colabora" data-donation-trigger data-donation-frequency="one_time">Donar</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="contenido">
+      <section
+        class="section section--hero"
+        id="inicio"
+        aria-label="Inicio"
+        data-section="inicio"
+      >
+        <div
+          class="photo-slot photo-slot--hero"
+          aria-hidden="true"
+          data-photo-slot="hero-home"
+        ></div>
+        <div class="section__inner section__inner--hero">
+          <div class="hero-content">
+            <h1 class="hero-content__title">
+              Nadie deber&iacute;a afrontar solo un momento dif&iacute;cil.
+            </h1>
+            <p class="hero-content__lead">
+              Acompa&ntilde;amos a personas y familias en situaci&oacute;n de vulnerabilidad con alimentos, apoyo y cercan&iacute;a.
+            </p>
+            <p class="hero-content__support">
+              Cada gesto suma. Una donaci&oacute;n, unas horas de voluntariado o una ayuda concreta pueden cambiar el d&iacute;a de alguien.
+            </p>
+            <div class="hero-actions" aria-label="Acciones principales">
+              <a class="button button--primary" href="#colabora" data-donation-trigger data-donation-frequency="one_time">Donar ahora</a>
+              <a class="button button--secondary" href="#colabora">Quiero colaborar</a>
+              <a class="hero-actions__link" href="#que-hacemos">Conoce nuestra labor</a>
+            </div>
+            <ul class="trust-list" aria-label="Indicadores de confianza">
+              <li>Asociaci&oacute;n sin &aacute;nimo de lucro</li>
+              <li>Ayuda directa a personas y familias</li>
+              <li>Donaciones gestionadas con transparencia</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--identity"
+        id="quienes-somos"
+        aria-labelledby="quienes-somos-title"
+        data-section="quienes-somos"
+      >
+        <div class="section__inner identity-section">
+          <div
+            class="content-photo-slot content-photo-slot--portrait"
+            aria-label="Fotografia de voluntaria de Pan y Esperanza"
+            data-photo-file="quienes-somos.jpg"
+          >
+            <img
+              class="content-photo-slot__image"
+              src="/assets/photographs/quienes-somos.jpg"
+              alt=""
+              width="1448"
+              height="1086"
+              loading="lazy"
+              decoding="async"
+              aria-hidden="true"
+            />
+            <span class="content-photo-slot__label">quienes-somos.jpg</span>
+          </div>
+          <div class="identity-section__content">
+            <h2 class="section-title" id="quienes-somos-title">Qui&eacute;nes somos</h2>
+            <div class="section-copy">
+              <p>
+                Pan y Esperanza es una asociaci&oacute;n sin &aacute;nimo de lucro que trabaja para que ninguna persona tenga que afrontar sola un momento de necesidad.
+              </p>
+              <p>
+                Recogemos alimentos, coordinamos donaciones, movilizamos voluntarios y acompa&ntilde;amos a personas y familias desde el respeto, la cercan&iacute;a y la dignidad.
+              </p>
+              <p>
+                Creemos que ayudar no consiste &uacute;nicamente en entregar alimentos, sino en construir una red de apoyo donde cada persona se sienta escuchada y acompa&ntilde;ada.
+              </p>
+            </div>
+            <ul class="values-list" aria-label="Valores">
+              <li>Dignidad</li>
+              <li>Cercan&iacute;a</li>
+              <li>Esperanza</li>
+              <li>Compromiso</li>
+            </ul>
+            <a class="button button--olive" href="#historias">Conoce nuestra historia</a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--white"
+        id="que-hacemos"
+        aria-labelledby="asi-ayudamos-title"
+        data-section="que-hacemos"
+      >
+        <div class="section__inner help-section">
+          <div class="section-heading">
+            <h2 class="section-title" id="asi-ayudamos-title">As&iacute; ayudamos</h2>
+            <p class="section-intro">
+              Cada donaci&oacute;n inicia un recorrido que termina donde realmente importa: en las manos de una persona o una familia que la necesita.
+            </p>
+          </div>
+
+          <div class="help-grid">
+            <article class="help-card">
+              <div
+                class="content-photo-slot content-photo-slot--card"
+                aria-label="Fotografia de recogida de alimentos"
+                data-photo-file="recogida.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/recogida.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">recogida.jpg</span>
+              </div>
+              <div class="help-card__body">
+                <h3 class="help-card__title">Recogemos</h3>
+                <p>
+                  Colaboramos con empresas, comercios y particulares para recoger alimentos y productos de primera necesidad.
+                </p>
+              </div>
+            </article>
+
+            <article class="help-card">
+              <div
+                class="content-photo-slot content-photo-slot--card"
+                aria-label="Fotografia de clasificacion de donaciones"
+                data-photo-file="clasificacion.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/clasificacion.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">clasificacion.jpg</span>
+              </div>
+              <div class="help-card__body">
+                <h3 class="help-card__title">Clasificamos</h3>
+                <p>
+                  Organizamos cada donaci&oacute;n para garantizar un reparto eficiente y responsable.
+                </p>
+              </div>
+            </article>
+
+            <article class="help-card">
+              <div
+                class="content-photo-slot content-photo-slot--card"
+                aria-label="Fotografia de preparacion de entregas"
+                data-photo-file="preparacion.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/preparacion.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">preparacion.jpg</span>
+              </div>
+              <div class="help-card__body">
+                <h3 class="help-card__title">Preparamos</h3>
+                <p>
+                  Nuestro equipo de voluntarios revisa y prepara cada entrega con dedicaci&oacute;n y cuidado.
+                </p>
+              </div>
+            </article>
+
+            <article class="help-card">
+              <div
+                class="content-photo-slot content-photo-slot--card"
+                aria-label="Fotografia de entrega de ayuda"
+                data-photo-file="entrega.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/entrega.jpg"
+                  alt=""
+                  width="1086"
+                  height="1448"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">entrega.jpg</span>
+              </div>
+              <div class="help-card__body">
+                <h3 class="help-card__title">Entregamos</h3>
+                <p>
+                  Llevamos la ayuda a personas y familias, siempre desde el respeto, la cercan&iacute;a y la dignidad.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="help-section__closing">
+            <p>Detr&aacute;s de cada caja entregada hay personas que deciden ayudar a otras personas.</p>
+            <a class="button button--primary" href="#colabora">Quiero formar parte</a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--stories"
+        id="historias"
+        aria-labelledby="historias-title"
+        data-section="historias"
+      >
+        <div class="section__inner stories-section">
+          <div class="section-heading section-heading--center">
+            <h2 class="section-title" id="historias-title">Historias que inspiran</h2>
+            <p class="section-intro">
+              Detr&aacute;s de cada entrega hay una historia de superaci&oacute;n, solidaridad y esperanza. Estas experiencias reflejan el verdadero prop&oacute;sito de Pan y Esperanza.
+            </p>
+          </div>
+
+          <div class="stories-grid">
+            <article class="story-card">
+              <div
+                class="content-photo-slot content-photo-slot--story"
+                aria-label="Fotografia de dos mujeres con alimentos"
+                data-photo-file="historia-1.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/historia-1.jpg"
+                  alt=""
+                  width="1086"
+                  height="1448"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">historia-1.jpg</span>
+              </div>
+              <div class="story-card__body">
+                <h3 class="story-card__title">Una ayuda que llega en el momento adecuado</h3>
+                <p>Cada entrega representa mucho m&aacute;s que alimentos. Es una muestra de apoyo, cercan&iacute;a y esperanza para quienes atraviesan un momento dif&iacute;cil.</p>
+                <button class="button button--olive" type="button">Leer historia</button>
+              </div>
+            </article>
+
+            <article class="story-card">
+              <div
+                class="content-photo-slot content-photo-slot--story"
+                aria-label="Fotografia de voluntarios descargando la furgoneta"
+                data-photo-file="historia-2.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/historia-2.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">historia-2.jpg</span>
+              </div>
+              <div class="story-card__body">
+                <h3 class="story-card__title">Personas que dedican su tiempo a ayudar</h3>
+                <p>Detr&aacute;s de cada donaci&oacute;n hay voluntarios que recogen, organizan y preparan cada producto para que llegue a las familias con respeto y cuidado.</p>
+                <button class="button button--olive" type="button">Leer historia</button>
+              </div>
+            </article>
+
+            <article class="story-card">
+              <div
+                class="content-photo-slot content-photo-slot--story"
+                aria-label="Fotografia de furgoneta cargada de alimentos"
+                data-photo-file="historia-3.jpg"
+              >
+                <img
+                  class="content-photo-slot__image"
+                  src="/assets/photographs/historia-3.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">historia-3.jpg</span>
+              </div>
+              <div class="story-card__body">
+                <h3 class="story-card__title">Juntos conseguimos llegar m&aacute;s lejos</h3>
+                <p>Gracias a la colaboraci&oacute;n de empresas, comercios y personas solidarias, cada semana podemos repartir alimentos a quienes m&aacute;s lo necesitan.</p>
+                <button class="button button--olive" type="button">Leer historia</button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--white"
+        id="transparencia"
+        aria-labelledby="transparencia-title"
+        data-section="transparencia"
+      >
+        <div class="section__inner transparency-section">
+          <div class="section-heading">
+            <h2 class="section-title" id="transparencia-title">Transparencia</h2>
+            <p class="section-intro">
+              Creemos que la confianza se construye con hechos. Cada donaci&oacute;n recibida sigue un proceso organizado y responsable para que llegue a quienes m&aacute;s la necesitan.
+            </p>
+          </div>
+
+          <div class="process-grid" aria-label="Proceso de transparencia">
+            <article class="process-block">
+              <span class="process-icon process-icon--recogida" aria-hidden="true"></span>
+              <h3>Recogida</h3>
+            </article>
+            <article class="process-block">
+              <span class="process-icon process-icon--clasificacion" aria-hidden="true"></span>
+              <h3>Clasificaci&oacute;n</h3>
+            </article>
+            <article class="process-block">
+              <span class="process-icon process-icon--distribucion" aria-hidden="true"></span>
+              <h3>Distribuci&oacute;n</h3>
+            </article>
+            <article class="process-block">
+              <span class="process-icon process-icon--seguimiento" aria-hidden="true"></span>
+              <h3>Seguimiento</h3>
+            </article>
+          </div>
+
+          <div class="transparency-section__statement">
+            <p>&quot;Nuestra prioridad es que cada ayuda llegue con responsabilidad, respeto y transparencia.&quot;</p>
+            <a class="button button--olive" href="#que-hacemos">Conoce c&oacute;mo trabajamos</a>
+          </div>
+
+          <div class="stats-reserve" aria-label="Estadisticas reales de la asociacion">
+            <article class="stat-reserve">
+              <h3>Familias atendidas</h3>
+              <div class="stat-reserve__space">
+                <span class="stat-reserve__value" data-counter-target="117">117</span>
+              </div>
+            </article>
+            <article class="stat-reserve">
+              <h3>Voluntarios activos</h3>
+              <div class="stat-reserve__space">
+                <span class="stat-reserve__value" data-counter-target="9">9</span>
+              </div>
+            </article>
+            <article class="stat-reserve">
+              <h3>Productos donados</h3>
+              <div class="stat-reserve__space">
+                <span class="stat-reserve__value" data-counter-target="500" data-counter-prefix="+">+500</span>
+              </div>
+            </article>
+            <article class="stat-reserve">
+              <h3>Empresas colaboradoras</h3>
+              <div class="stat-reserve__space">
+                <span class="stat-reserve__value" data-counter-target="3">3</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--collaborate"
+        id="colabora"
+        aria-labelledby="colabora-title"
+        data-section="colabora"
+      >
+        <div class="section__inner collaborate-section">
+          <div class="section-heading">
+            <h2 class="section-title section-title--light" id="colabora-title">&iquest;C&oacute;mo puedes colaborar?</h2>
+            <p class="section-intro section-intro--light">
+              Existen muchas formas de formar parte de Pan y Esperanza. Cada colaboraci&oacute;n, por peque&ntilde;a que parezca, ayuda a mejorar la vida de muchas personas.
+            </p>
+          </div>
+
+          <div class="collaborate-grid">
+            <article class="collaborate-card">
+              <span class="collaborate-icon collaborate-icon--food" aria-hidden="true"></span>
+              <h3>Donar alimentos</h3>
+              <p>Ayuda aportando productos de primera necesidad para personas y familias.</p>
+              <a class="button button--primary" href="#contacto">Donar ahora</a>
+            </article>
+
+            <article class="collaborate-card">
+              <span class="collaborate-icon collaborate-icon--donation" aria-hidden="true"></span>
+              <h3>Donaci&oacute;n econ&oacute;mica</h3>
+              <p>Contribuye a sostener la recogida, preparaci&oacute;n y entrega de ayuda.</p>
+              <div class="collaborate-card__actions" aria-label="Opciones de donacion economica">
+                <button class="button button--secondary" type="button" data-donation-modal-open="bizum" aria-haspopup="dialog" aria-controls="donation-economic-dialog">Donar por Bizum</button>
+                <button class="button button--secondary" type="button" data-donation-modal-open="paypal" aria-haspopup="dialog" aria-controls="donation-economic-dialog">Donar con PayPal</button>
+                <button class="button button--secondary" type="button" data-donation-modal-open="transferencia" aria-haspopup="dialog" aria-controls="donation-economic-dialog">Transferencia bancaria</button>
+              </div>
+            </article>
+
+            <article class="collaborate-card">
+              <span class="collaborate-icon collaborate-icon--business" aria-hidden="true"></span>
+              <h3>Empresas colaboradoras</h3>
+              <p>Suma recursos, productos o apoyo log&iacute;stico desde tu empresa.</p>
+              <a class="button button--primary" href="#contacto">Colaborar</a>
+            </article>
+
+            <article class="collaborate-card">
+              <span class="collaborate-icon collaborate-icon--volunteer" aria-hidden="true"></span>
+              <h3>Hazte voluntario</h3>
+              <p>Dedica tiempo y cercan&iacute;a para acompa&ntilde;ar cada entrega.</p>
+              <button class="button button--primary" type="button" data-volunteer-open aria-label="Hazte voluntario">&Uacute;nete</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--gallery"
+        id="galeria"
+        aria-labelledby="galeria-title"
+        data-section="galeria"
+      >
+        <div class="section__inner gallery-section">
+          <div class="section-heading">
+            <h2 class="section-title" id="galeria-title">Galer&iacute;a</h2>
+            <p class="section-intro">
+              Cada fotograf&iacute;a refleja el trabajo diario de voluntarios, colaboradores y personas que hacen posible esta labor.
+            </p>
+          </div>
+
+          <div class="gallery-grid" aria-label="Galeria de fotografias">
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 01" data-photo-file="galeria-01.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-01.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-01.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 02" data-photo-file="galeria-02.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-02.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-02.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 03" data-photo-file="galeria-03.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-03.jpg"
+                  alt=""
+                  width="1086"
+                  height="1448"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-03.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 04" data-photo-file="galeria-04.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-04.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-04.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 05" data-photo-file="galeria-05.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-05.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-05.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 06" data-photo-file="galeria-06.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-06.jpg"
+                  alt=""
+                  width="1448"
+                  height="1086"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-06.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 07" data-photo-file="galeria-07.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-07.jpg"
+                  alt=""
+                  width="1500"
+                  height="2000"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-07.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 08" data-photo-file="galeria-08.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-08.jpg"
+                  alt=""
+                  width="1536"
+                  height="2048"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-08.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 09" data-photo-file="galeria-09.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-09.jpg"
+                  alt=""
+                  width="1530"
+                  height="2040"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-09.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 10" data-photo-file="galeria-10.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-10.jpg"
+                  alt=""
+                  width="1530"
+                  height="2040"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-10.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 11" data-photo-file="galeria-11.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-11.jpg"
+                  alt=""
+                  width="2040"
+                  height="1530"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-11.jpg</span>
+              </div>
+            </figure>
+            <figure class="gallery-item">
+              <div class="gallery-slot gallery-slot--image" aria-label="Fotografia de galeria 12" data-photo-file="galeria-12.jpg">
+                <img
+                  class="gallery-slot__image"
+                  src="/assets/photographs/galeria-12.jpg"
+                  alt=""
+                  width="2040"
+                  height="1530"
+                  loading="lazy"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span class="content-photo-slot__label">galeria-12.jpg</span>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--faq"
+        id="preguntas-frecuentes"
+        aria-labelledby="preguntas-title"
+        data-section="preguntas-frecuentes"
+      >
+        <div class="section__inner faq-section">
+          <div class="section-heading">
+            <h2 class="section-title" id="preguntas-title">Preguntas frecuentes</h2>
+          </div>
+
+          <div class="faq-list" aria-label="Preguntas frecuentes">
+            <article class="faq-item">
+              <h3 class="faq-item__heading">
+                <button class="faq-trigger" type="button" id="faq-trigger-1" aria-expanded="false" aria-controls="faq-panel-1" data-faq-trigger>
+                  <span>&iquest;Qui&eacute;n puede solicitar ayuda?</span>
+                  <span class="faq-trigger__icon" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="faq-panel" id="faq-panel-1" role="region" aria-labelledby="faq-trigger-1" hidden>
+                <p>Pan y Esperanza apoya a personas y familias que atraviesan una situaci&oacute;n de vulnerabilidad o necesidad. Cada caso se estudia de forma individual para ofrecer la ayuda m&aacute;s adecuada seg&uacute;n los recursos disponibles.</p>
+              </div>
+            </article>
+
+            <article class="faq-item">
+              <h3 class="faq-item__heading">
+                <button class="faq-trigger" type="button" id="faq-trigger-2" aria-expanded="false" aria-controls="faq-panel-2" data-faq-trigger>
+                  <span>&iquest;C&oacute;mo puedo colaborar?</span>
+                  <span class="faq-trigger__icon" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="faq-panel" id="faq-panel-2" role="region" aria-labelledby="faq-trigger-2" hidden>
+                <p>Puedes colaborar donando alimentos, realizando una aportaci&oacute;n econ&oacute;mica mediante Bizum, PayPal o transferencia bancaria, haci&eacute;ndote voluntario o ayud&aacute;ndonos a difundir nuestro trabajo. Toda ayuda, por peque&ntilde;a que sea, marca la diferencia.</p>
+              </div>
+            </article>
+
+            <article class="faq-item">
+              <h3 class="faq-item__heading">
+                <button class="faq-trigger" type="button" id="faq-trigger-3" aria-expanded="false" aria-controls="faq-panel-3" data-faq-trigger>
+                  <span>&iquest;D&oacute;nde se realizan las entregas?</span>
+                  <span class="faq-trigger__icon" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="faq-panel" id="faq-panel-3" role="region" aria-labelledby="faq-trigger-3" hidden>
+                <p>Las entregas se realizan en Madrid desde nuestros puntos de reparto y colaboraci&oacute;n. Si necesitas ayuda o quieres colaborar, ponte en contacto con nosotros y te informaremos del lugar y horario correspondiente.</p>
+              </div>
+            </article>
+
+            <article class="faq-item">
+              <h3 class="faq-item__heading">
+                <button class="faq-trigger" type="button" id="faq-trigger-4" aria-expanded="false" aria-controls="faq-panel-4" data-faq-trigger>
+                  <span>&iquest;Acept&aacute;is donaciones de empresas?</span>
+                  <span class="faq-trigger__icon" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="faq-panel" id="faq-panel-4" role="region" aria-labelledby="faq-trigger-4" hidden>
+                <p>S&iacute;. Colaboramos con empresas, supermercados, comercios y cualquier entidad que desee donar alimentos, productos de primera necesidad o realizar una aportaci&oacute;n econ&oacute;mica. Estaremos encantados de estudiar cualquier propuesta de colaboraci&oacute;n.</p>
+              </div>
+            </article>
+
+            <article class="faq-item">
+              <h3 class="faq-item__heading">
+                <button class="faq-trigger" type="button" id="faq-trigger-5" aria-expanded="false" aria-controls="faq-panel-5" data-faq-trigger>
+                  <span>&iquest;C&oacute;mo puedo hacer una donaci&oacute;n econ&oacute;mica?</span>
+                  <span class="faq-trigger__icon" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="faq-panel" id="faq-panel-5" role="region" aria-labelledby="faq-trigger-5" hidden>
+                <p>Puedes realizar una donaci&oacute;n mediante Bizum, PayPal o transferencia bancaria. Adem&aacute;s, pr&oacute;ximamente podr&aacute;s hacerte colaborador mensual para ayudarnos a mantener nuestros proyectos solidarios de forma continuada.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="section section--white"
+        id="contacto"
+        aria-labelledby="contacto-title"
+        data-section="contacto"
+      >
+        <div class="section__inner contact-section">
+          <div class="section-heading">
+            <h2 class="section-title" id="contacto-title">Contacto</h2>
+            <p class="section-intro">
+              Si necesitas ayuda, deseas colaborar o quieres realizar cualquier consulta, estaremos encantados de atenderte.
+            </p>
+          </div>
+
+          <div class="contact-layout">
+            <form class="contact-form" aria-labelledby="contacto-title" data-contact-form novalidate>
+              <div class="form-field">
+                <label for="contact-name">Nombre</label>
+                <input id="contact-name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required />
+              </div>
+              <div class="form-field">
+                <label for="contact-email">Correo electr&oacute;nico</label>
+                <input id="contact-email" name="email" type="email" autocomplete="email" maxlength="160" required />
+              </div>
+              <div class="form-field">
+                <label for="contact-phone">Tel&eacute;fono (opcional)</label>
+                <input id="contact-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" />
+              </div>
+              <div class="form-field">
+                <label for="contact-message">Mensaje</label>
+                <textarea id="contact-message" name="message" rows="8" minlength="10" maxlength="2000" required></textarea>
+              </div>
+              <div class="form-field form-field--honeypot" aria-hidden="true">
+                <label for="contact-company">Empresa</label>
+                <input id="contact-company" name="company" type="text" tabindex="-1" autocomplete="off" />
+              </div>
+              <button class="button button--primary" type="submit">Enviar mensaje</button>
+              <p class="contact-form__note">Te responderemos lo antes posible.</p>
+              <p class="form-status" role="status" aria-live="polite" data-contact-status></p>
+            </form>
+
+            <div class="contact-cards" aria-label="Datos oficiales de contacto">
+              <article class="contact-card">
+                <h3><span class="contact-card__icon" aria-hidden="true">&#128231;</span> Correo electr&oacute;nico</h3>
+                <div class="contact-card__space contact-card__space--content">
+                  <p>info@panyesperanza.org</p>
+                  <a class="button button--olive" href="mailto:info@panyesperanza.org">Enviar correo</a>
+                </div>
+              </article>
+              <article class="contact-card">
+                <h3><span class="contact-card__icon" aria-hidden="true">&#128241;</span> WhatsApp</h3>
+                <div class="contact-card__space contact-card__space--content">
+                  <p>+34 611 88 91 67</p>
+                  <p>Respuesta habitual en menos de 24 horas.</p>
+                  <a class="button button--olive" href="https://wa.me/34611889167" target="_blank" rel="noopener">Abrir WhatsApp</a>
+                </div>
+              </article>
+              <article class="contact-card">
+                <h3><span class="contact-card__icon" aria-hidden="true">&#127760;</span> P&aacute;gina web</h3>
+                <div class="contact-card__space contact-card__space--content">
+                  <a class="button button--olive" href="https://panyesperanza.org" target="_blank" rel="noopener">Abrir p&aacute;gina web</a>
+                </div>
+              </article>
+              <article class="contact-card">
+                <h3>Redes sociales</h3>
+                <div class="contact-card__space contact-card__space--content">
+                  <p><span class="contact-card__icon" aria-hidden="true">&#128247;</span> @panyesperanzamadrid</p>
+                  <p><span class="contact-card__icon" aria-hidden="true">&#127925;</span> @panyesperanzamadrid</p>
+                  <div class="contact-card__actions">
+                    <a class="button button--olive" href="https://instagram.com/panyesperanzamadrid" target="_blank" rel="noopener">Instagram</a>
+                    <a class="button button--olive" href="https://tiktok.com/@panyesperanzamadrid" target="_blank" rel="noopener">TikTok</a>
+                  </div>
+                  <p>S&iacute;guenos y descubre nuestro trabajo diario.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="map-reserve contact-info-block" aria-labelledby="contact-info-title">
+            <div class="contact-info-block__content">
+              <div class="contact-info-block__header">
+                <h3 id="contact-info-title">&iquest;Necesitas ayuda o quieres colaborar?</h3>
+                <p>
+                  Estamos aqu&iacute; para escucharte. Si necesitas apoyo, deseas realizar una donaci&oacute;n, colaborar como empresa o unirte como voluntario, ponte en contacto con nosotros. Estaremos encantados de atenderte.
+                </p>
+              </div>
+              <div class="contact-info-block__cards">
+                <a class="contact-info-block__card" href="mailto:info@panyesperanza.org">
+                  <span class="contact-info-block__card-title"><span aria-hidden="true">&#128231;</span> Correo</span>
+                  <span class="contact-info-block__card-copy">info@panyesperanza.org</span>
+                </a>
+                <a class="contact-info-block__card" href="https://wa.me/34611889167" target="_blank" rel="noopener">
+                  <span class="contact-info-block__card-title"><span aria-hidden="true">&#128241;</span> WhatsApp</span>
+                  <span class="contact-info-block__card-copy">+34 611 88 91 67</span>
+                </a>
+                <button class="contact-info-block__card" type="button" data-donation-modal-open="bizum" aria-haspopup="dialog" aria-controls="donation-economic-dialog">
+                  <span class="contact-info-block__card-title"><span aria-hidden="true">&#10084;</span> Donaciones</span>
+                  <span class="contact-info-block__card-copy">Bizum &middot; PayPal &middot; Transferencia</span>
+                </button>
+                <button class="contact-info-block__card" type="button" data-volunteer-open aria-haspopup="dialog">
+                  <span class="contact-info-block__card-title"><span aria-hidden="true">&#129309;</span> Voluntariado</span>
+                  <span class="contact-info-block__card-copy">&Uacute;nete a nuestro equipo</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="volunteer-dialog" aria-labelledby="volunteer-dialog-title" data-volunteer-dialog>
+      <div class="volunteer-dialog__panel">
+        <div class="volunteer-dialog__header">
+          <h2 id="volunteer-dialog-title">Hazte voluntario</h2>
+          <button class="volunteer-dialog__close" type="button" aria-label="Cerrar" data-volunteer-close>Cerrar</button>
+        </div>
+        <form class="volunteer-form" data-volunteer-form novalidate>
+          <div class="form-field">
+            <label for="volunteer-name">Nombre</label>
+            <input id="volunteer-name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required />
+          </div>
+          <div class="form-field">
+            <label for="volunteer-phone">Tel&eacute;fono</label>
+            <input id="volunteer-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required />
+          </div>
+          <div class="form-field">
+            <label for="volunteer-email">Email</label>
+            <input id="volunteer-email" name="email" type="email" autocomplete="email" maxlength="160" required />
+          </div>
+          <div class="form-field">
+            <label for="volunteer-availability">Disponibilidad</label>
+            <input id="volunteer-availability" name="availability" type="text" maxlength="240" required />
+          </div>
+          <div class="form-field">
+            <label for="volunteer-observations">Observaciones</label>
+            <textarea id="volunteer-observations" name="observations" rows="5" maxlength="2000"></textarea>
+          </div>
+          <div class="form-field form-field--honeypot" aria-hidden="true">
+            <label for="volunteer-company">Empresa</label>
+            <input id="volunteer-company" name="company" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+          <button class="button button--primary" type="submit">Enviar</button>
+          <p class="form-status" role="status" aria-live="polite" data-volunteer-status></p>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog class="volunteer-dialog donation-dialog" id="donation-economic-dialog" aria-labelledby="donation-economic-title" data-donation-modal="economica">
+      <div class="volunteer-dialog__panel">
+        <div class="volunteer-dialog__header">
+          <h2 id="donation-economic-title">Donaci&oacute;n econ&oacute;mica</h2>
+          <button class="volunteer-dialog__close" type="button" aria-label="Cerrar" data-donation-modal-close>Cerrar</button>
+        </div>
+        <div class="donation-dialog__tabs" role="tablist" aria-label="Tipo de donacion economica">
+          <button
+            class="button button--olive"
+            type="button"
+            id="donation-tab-puntual"
+            role="tab"
+            aria-selected="true"
+            aria-controls="donation-panel-puntual"
+            data-donation-tab="puntual"
+          >
+            Donaci&oacute;n puntual
+          </button>
+          <button
+            class="button button--olive"
+            type="button"
+            id="donation-tab-mensual"
+            role="tab"
+            aria-selected="false"
+            aria-controls="donation-panel-mensual"
+            data-donation-tab="mensual"
+          >
+            Donaci&oacute;n mensual
+          </button>
+        </div>
+
+        <div class="donation-dialog__content" id="donation-panel-puntual" role="tabpanel" aria-labelledby="donation-tab-puntual" data-donation-panel="puntual">
+          <div class="donation-dialog__options" role="group" aria-label="Opciones de donacion puntual">
+            <button class="button button--olive" type="button" data-donation-option="bizum" aria-pressed="true">Bizum</button>
+            <button class="button button--olive" type="button" data-donation-option="paypal" aria-pressed="false">PayPal</button>
+            <button class="button button--olive" type="button" data-donation-option="transferencia" aria-pressed="false">Transferencia bancaria</button>
+          </div>
+
+          <div class="donation-dialog__option-panel" data-donation-option-panel="bizum">
+            <p>C&oacute;digo Bizum de ONG disponible pr&oacute;ximamente.</p>
+          </div>
+
+          <div class="donation-dialog__option-panel" data-donation-option-panel="paypal" hidden>
+            <p>Enlace oficial de PayPal disponible pr&oacute;ximamente.</p>
+          </div>
+
+          <div class="donation-dialog__option-panel" data-donation-option-panel="transferencia" hidden>
+            <dl class="donation-dialog__details">
+              <div>
+                <dt>Titular</dt>
+                <dd>Disponible pr&oacute;ximamente</dd>
+              </div>
+              <div>
+                <dt>IBAN</dt>
+                <dd data-iban-value>Disponible pr&oacute;ximamente</dd>
+              </div>
+              <div>
+                <dt>Concepto</dt>
+                <dd>Disponible pr&oacute;ximamente</dd>
+              </div>
+            </dl>
+            <button class="button button--primary" type="button" data-copy-iban>Copiar IBAN</button>
+            <p class="form-status" role="status" aria-live="polite" data-iban-status></p>
+          </div>
+        </div>
+
+        <div class="donation-dialog__content" id="donation-panel-mensual" role="tabpanel" aria-labelledby="donation-tab-mensual" data-donation-panel="mensual" hidden>
+          <div class="donation-dialog__monthly">
+            <h3>Hazte colaborador mensual</h3>
+            <p>Con una peque&ntilde;a aportaci&oacute;n mensual nos ayudas a mantener de forma estable la compra y distribuci&oacute;n de alimentos para familias en situaci&oacute;n de vulnerabilidad.</p>
+            <fieldset class="donation-dialog__amounts">
+              <legend class="sr-only">Cantidad mensual</legend>
+              <label>
+                <input type="radio" name="monthly-donation-amount" value="5" />
+                <span>5 &euro;/mes</span>
+              </label>
+              <label>
+                <input type="radio" name="monthly-donation-amount" value="10" checked />
+                <span>10 &euro;/mes</span>
+              </label>
+              <label>
+                <input type="radio" name="monthly-donation-amount" value="20" />
+                <span>20 &euro;/mes</span>
+              </label>
+              <label>
+                <input type="radio" name="monthly-donation-amount" value="30" />
+                <span>30 &euro;/mes</span>
+              </label>
+              <label>
+                <input type="radio" name="monthly-donation-amount" value="other" />
+                <span>Otra cantidad</span>
+              </label>
+            </fieldset>
+            <button class="button button--primary" type="button" data-donation-trigger data-donation-frequency="monthly">Hazte colaborador</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <div class="site-footer__brand">
+          <a class="site-footer__brand-link" href="#inicio" aria-label="Pan y Esperanza">
+            <img class="site-footer__logo" src="/assets/brand/logo.png" alt="" loading="lazy" />
+            <span>Pan y Esperanza</span>
+          </a>
+          <p>Asociaci&oacute;n sin &aacute;nimo de lucro que acompa&ntilde;a a personas y familias con alimentos, apoyo y cercan&iacute;a.</p>
+          <address class="site-footer__contact">
+            <a href="mailto:info@panyesperanza.org">info@panyesperanza.org</a>
+            <a href="tel:+34611889167">+34 611 88 91 67</a>
+            <a href="https://panyesperanza.org" target="_blank" rel="noopener">panyesperanza.org</a>
+          </address>
+        </div>
+
+        <nav class="footer-nav" aria-label="Enlaces rapidos">
+          <h2>Enlaces r&aacute;pidos</h2>
+          <a href="#inicio">Inicio</a>
+          <a href="#que-hacemos">Qu&eacute; hacemos</a>
+          <a href="#historias">Historias</a>
+          <a href="/recursos">Recursos</a>
+          <a href="#colabora">Colabora</a>
+          <a href="#contacto">Contacto</a>
+          <a href="/acceder">&#128101; Acceder</a>
+        </nav>
+
+        <div class="footer-legal" aria-label="Informacion legal">
+          <h2>Informaci&oacute;n legal</h2>
+          <a href="/privacidad">Pol&iacute;tica de privacidad</a>
+          <a href="/aviso-legal">Aviso legal</a>
+          <a href="/cookies">Pol&iacute;tica de cookies</a>
+        </div>
+
+        <div class="footer-social" aria-label="Redes sociales">
+          <h2>Redes sociales</h2>
+          <div class="footer-social__slots">
+            <a href="https://instagram.com/panyesperanzamadrid" target="_blank" rel="noopener" aria-label="Instagram">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
+                <circle cx="12" cy="12" r="4" />
+                <circle cx="17.4" cy="6.8" r="1" />
+              </svg>
+            </a>
+            <a href="https://tiktok.com/@panyesperanzamadrid" target="_blank" rel="noopener" aria-label="TikTok">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M14 4v10.15a4.35 4.35 0 1 1-3.7-4.3v3.05a1.45 1.45 0 1 0 1.05 1.4V4h2.65a4.9 4.9 0 0 0 4.6 4.4v2.95A7.85 7.85 0 0 1 14 9.8V4Z" />
+              </svg>
+            </a>
+            <a href="https://wa.me/34611889167" target="_blank" rel="noopener" aria-label="WhatsApp">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12.05 3.5a8.3 8.3 0 0 0-7.15 12.52L4 20.5l4.58-1.06A8.3 8.3 0 1 0 12.05 3.5Zm0 1.8a6.5 6.5 0 1 1-2.88 12.33l-.28-.14-2.55.59.5-2.49-.17-.3A6.5 6.5 0 0 1 12.05 5.3Zm-2.3 3.15c-.15 0-.38.05-.58.27-.2.22-.75.73-.75 1.78s.77 2.07.88 2.21c.11.15 1.49 2.39 3.68 3.25 1.82.72 2.19.58 2.58.54.4-.04 1.28-.52 1.46-1.03.18-.5.18-.94.13-1.03-.06-.09-.2-.15-.42-.26-.22-.11-1.28-.63-1.48-.7-.2-.08-.35-.11-.5.11-.15.22-.57.7-.7.85-.13.15-.26.17-.48.06-.22-.11-.92-.34-1.75-1.08-.65-.58-1.08-1.29-1.21-1.51-.13-.22-.01-.34.1-.45.1-.1.22-.26.33-.39.11-.13.15-.22.22-.37.07-.15.04-.28-.02-.39-.06-.11-.5-1.2-.68-1.64-.18-.43-.36-.37-.5-.38h-.43Z" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="site-footer__bottom">
+        <p class="site-footer__copyright">&copy; 2026 Asociaci&oacute;n Pan y Esperanza.<br />Todos los derechos reservados.</p>
+        <p class="site-footer__tagline">Juntos podemos llevar esperanza a quien m&aacute;s lo necesita.</p>
+      </div>
+    </footer>
+      <div id="root"></div>
   </body>
 </html>

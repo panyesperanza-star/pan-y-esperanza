@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Centro de Recursos de Pan y Esperanza con formacion, empleo, ayudas, tramites y recursos utiles para personas y familias."
+    />
+    <meta property="og:title" content="Centro de Recursos | Pan y Esperanza" />
+    <meta
+      property="og:description"
+      content="Recursos de Pan y Esperanza para encontrar formacion, empleo, ayudas y oportunidades utiles."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://panyesperanza.org/recursos" />
+    <meta property="og:image" content="/assets/photographs/hero.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/assets/photographs/hero.jpg" />
+    <meta name="theme-color" content="#2F4A3A" />
+    <title>Centro de Recursos | Pan y Esperanza</title>
+    <link rel="canonical" href="https://panyesperanza.org/recursos" />
+    <link rel="icon" href="/assets/brand/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/assets/brand/logo.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="/src/public-site/styles/main.css" data-public-site-style />
+    <script>
+      window.PAN_ESPERANZA_CONFIG = {
+        siteUrl: "https://panyesperanza.org",
+        gaMeasurementId: "",
+        metaPixelId: ""
+      };
+    </script>
+    <script type="module" src="/src/publicEntry.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    <div class="sr-only" role="status" aria-live="polite" data-global-status></div>
+
+    <header class="site-header" data-component="site-header" data-site-header>
+      <div class="site-header__inner">
+        <a class="brand" href="/#inicio" aria-label="Pan y Esperanza">
+          <img
+            class="brand__logo"
+            src="/assets/brand/logo.png"
+            alt=""
+            width="160"
+            height="48"
+            aria-hidden="true"
+            data-brand-logo
+          />
+          <span class="brand__name">Pan y Esperanza</span>
+        </a>
+
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-label="Abrir navegacion"
+          aria-controls="site-navigation"
+          aria-expanded="false"
+          data-nav-toggle
+        >
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+          <span class="nav-toggle__line" aria-hidden="true"></span>
+        </button>
+
+        <nav class="site-nav" id="site-navigation" aria-label="Navegacion principal" data-site-nav>
+          <a class="site-nav__link" href="/#inicio">Inicio</a>
+          <a class="site-nav__link" href="/#que-hacemos">Qu&eacute; hacemos</a>
+          <a class="site-nav__link" href="/#historias">Historias</a>
+          <a class="site-nav__link" href="/recursos" aria-current="page">Recursos</a>
+          <a class="site-nav__link" href="/#colabora">Colabora</a>
+          <a class="site-nav__link" href="/#contacto">Contacto</a>
+          <a class="button button--team-access site-nav__team" href="/acceder">&#128101; Acceder</a>
+          <a class="button button--donate site-nav__donate" href="/#contacto">Donar</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="resources-main" id="contenido">
+      <section class="section section--resources-hero" aria-labelledby="resources-title">
+        <div class="section__inner resources-hero__inner">
+          <div class="resources-hero__content">
+            <p class="resources-hero__eyebrow">Centro de Recursos</p>
+            <h1 class="resources-hero__title" id="resources-title">
+              Recursos y oportunidades para mejorar tu d&iacute;a a d&iacute;a
+            </h1>
+            <p class="resources-hero__intro">
+              Encuentra formaci&oacute;n, empleo, ayudas p&uacute;blicas, recursos para familias y oportunidades seleccionadas para ayudarte a avanzar.
+            </p>
+            <ul class="resources-hero__meta" aria-label="Caracteristicas del centro de recursos">
+              <li>&#128269; Buscar recursos</li>
+              <li>ðŸ“š Explorar categor&iacute;as</li>
+              <li>&#11088; Recursos destacados</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--white resources-directory" aria-labelledby="resources-directory-title">
+        <div class="section__inner resources-directory__inner">
+          <header class="section-heading resources-directory__heading">
+            <h2 class="section-title" id="resources-directory-title">Explora los recursos</h2>
+            <p class="section-intro">
+              Consulta recursos seleccionados para formarte, encontrar empleo, solicitar ayudas y resolver tr&aacute;mites importantes.
+            </p>
+          </header>
+
+          <form class="resources-search" role="search" action="/recursos" method="get" data-resource-search>
+            <label class="resources-search__label" for="resource-search">Buscar recursos</label>
+            <div class="resources-search__field">
+              <input
+                id="resource-search"
+                name="q"
+                type="search"
+                autocomplete="off"
+                placeholder="Buscar por tema, necesidad o tipo de ayuda"
+              />
+              <button class="button button--primary" type="submit">Buscar</button>
+            </div>
+          </form>
+
+          <div class="resources-categories" aria-labelledby="resources-categories-title" data-resource-filters>
+            <h3 id="resources-categories-title">Categor&iacute;as</h3>
+            <div class="resources-categories__list">
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="formacion">&#127891; Formaci&oacute;n</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="empleo">&#128188; Empleo</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="ayudas">&#127963; Ayudas</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="familias">&#128104;&#8205;&#128105;&#8205;&#128103; Familias</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="salud">&#127973; Salud</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="vivienda">&#127968; Vivienda</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="tramites">&#9878; Tr&aacute;mites</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="alimentacion">&#127869; Alimentaci&oacute;n</button>
+            </div>
+          </div>
+
+          <div class="resources-layout">
+            <aside class="resources-sidebar" aria-labelledby="resources-filter-title">
+              <div class="resources-sidebar__block">
+                <h3 id="resources-filter-title">Filtros</h3>
+                <div class="resources-filter-options" data-filters-ready>
+                  <label><input type="checkbox" name="tipo" value="gratuito" /> Gratuito</label>
+                  <label><input type="checkbox" name="tipo" value="online" /> Online</label>
+                  <label><input type="checkbox" name="tipo" value="madrid" /> Madrid</label>
+                  <label><input type="checkbox" name="tipo" value="presencial" /> Presencial</label>
+                </div>
+              </div>
+
+              <div class="resources-sidebar__block resources-sponsored-reserve" data-sponsored-ready>
+                <h3>Recursos destacados</h3>
+                <p>Selecci&oacute;n de ayudas, cursos y oportunidades &uacute;tiles para consultar en un solo lugar.</p>
+              </div>
+            </aside>
+
+            <section class="resources-list" aria-labelledby="resources-list-title">
+              <h3 id="resources-list-title">Recursos disponibles</h3>
+              <div class="resources-grid" data-resource-list>
+                <article class="resource-card" data-resource-card data-category="formacion" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Curso</span>
+                    <span>Formaci&oacute;n</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128309; Online</span>
+                  </div>
+                  <h4>Curso gratuito de inform&aacute;tica</h4>
+                  <p>Formaci&oacute;n b&aacute;sica para mejorar competencias digitales, buscar empleo, hacer tr&aacute;mites y usar herramientas cotidianas.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="ayudas" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Ayuda</span>
+                    <span>Ayudas</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128309; Online</span>
+                  </div>
+                  <h4>Solicitar el Ingreso M&iacute;nimo Vital</h4>
+                  <p>Orientaci&oacute;n sobre requisitos, documentaci&oacute;n habitual y pasos para iniciar la solicitud del Ingreso M&iacute;nimo Vital.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="empleo" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Empleo</span>
+                    <span>Madrid</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128205; Madrid</span>
+                  </div>
+                  <h4>Portal de empleo Comunidad de Madrid</h4>
+                  <p>Acceso a ofertas, orientaci&oacute;n laboral y servicios p&uacute;blicos de empleo disponibles en la Comunidad de Madrid.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="tramites" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Ayuda</span>
+                    <span>Tr&aacute;mites</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128309; Online</span>
+                  </div>
+                  <h4>Bono Social el&eacute;ctrico</h4>
+                  <p>Informaci&oacute;n para revisar requisitos y solicitar el descuento en la factura el&eacute;ctrica destinado a hogares vulnerables.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="formacion" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Formaci&oacute;n</span>
+                    <span>Empleo</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128205; Madrid</span>
+                  </div>
+                  <h4>Certificados de profesionalidad</h4>
+                  <p>Programas oficiales para acreditar competencias profesionales y mejorar oportunidades laborales en distintos sectores.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="vivienda" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Ayuda</span>
+                    <span>Vivienda</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128309; Online</span>
+                    <span>&#128205; Madrid</span>
+                  </div>
+                  <h4>Ayudas al alquiler</h4>
+                  <p>Informaci&oacute;n sobre convocatorias y documentaci&oacute;n habitual para ayudas al alquiler de vivienda en la Comunidad de Madrid.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="salud" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Salud</span>
+                    <span>Madrid</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128309; Online</span>
+                  </div>
+                  <h4>Tarjeta sanitaria y cita previa</h4>
+                  <p>Orientaci&oacute;n para gestionar la tarjeta sanitaria, pedir cita y localizar servicios de atenci&oacute;n primaria en Madrid.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+
+                <article class="resource-card" data-resource-card data-category="alimentacion" data-sponsored="false">
+                  <div class="resource-card__meta">
+                    <span>Alimentaci&oacute;n</span>
+                    <span>Familias</span>
+                    <span>&#128994; Gratuito</span>
+                    <span>&#128205; Madrid</span>
+                  </div>
+                  <h4>Apoyo alimentario y productos b&aacute;sicos</h4>
+                  <p>Informaci&oacute;n para familias que necesitan orientaci&oacute;n sobre alimentos, productos de primera necesidad y acompa&ntilde;amiento.</p>
+                  <a class="button button--olive" href="/#contacto">Consultar</a>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <div class="site-footer__brand">
+          <a class="site-footer__brand-link" href="/#inicio" aria-label="Pan y Esperanza">
+            <img class="site-footer__logo" src="/assets/brand/logo.png" alt="" loading="lazy" />
+            <span>Pan y Esperanza</span>
+          </a>
+          <p>Asociaci&oacute;n sin &aacute;nimo de lucro que acompa&ntilde;a a personas y familias con alimentos, apoyo y cercan&iacute;a.</p>
+          <address class="site-footer__contact">
+            <a href="mailto:info@panyesperanza.org">info@panyesperanza.org</a>
+            <a href="tel:+34611889167">+34 611 88 91 67</a>
+            <a href="https://panyesperanza.org" target="_blank" rel="noopener">panyesperanza.org</a>
+          </address>
+        </div>
+
+        <nav class="footer-nav" aria-label="Enlaces rapidos">
+          <h2>Enlaces r&aacute;pidos</h2>
+          <a href="/#inicio">Inicio</a>
+          <a href="/#que-hacemos">Qu&eacute; hacemos</a>
+          <a href="/#historias">Historias</a>
+          <a href="/recursos" aria-current="page">Recursos</a>
+          <a href="/#colabora">Colabora</a>
+          <a href="/#contacto">Contacto</a>
+          <a href="/acceder">&#128101; Acceder</a>
+        </nav>
+
+        <div class="footer-legal" aria-label="Informacion legal">
+          <h2>Informaci&oacute;n legal</h2>
+          <a href="/privacidad">Pol&iacute;tica de privacidad</a>
+          <a href="/aviso-legal">Aviso legal</a>
+          <a href="/cookies">Pol&iacute;tica de cookies</a>
+        </div>
+
+        <div class="footer-social" aria-label="Redes sociales">
+          <h2>Redes sociales</h2>
+          <div class="footer-social__slots">
+            <a href="https://instagram.com/panyesperanzamadrid" target="_blank" rel="noopener" aria-label="Instagram">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
+                <circle cx="12" cy="12" r="4" />
+                <circle cx="17.4" cy="6.8" r="1" />
+              </svg>
+            </a>
+            <a href="https://tiktok.com/@panyesperanzamadrid" target="_blank" rel="noopener" aria-label="TikTok">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M14 4v10.15a4.35 4.35 0 1 1-3.7-4.3v3.05a1.45 1.45 0 1 0 1.05 1.4V4h2.65a4.9 4.9 0 0 0 4.6 4.4v2.95A7.85 7.85 0 0 1 14 9.8V4Z" />
+              </svg>
+            </a>
+            <a href="https://wa.me/34611889167" target="_blank" rel="noopener" aria-label="WhatsApp">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12.05 3.5a8.3 8.3 0 0 0-7.15 12.52L4 20.5l4.58-1.06A8.3 8.3 0 1 0 12.05 3.5Zm0 1.8a6.5 6.5 0 1 1-2.88 12.33l-.28-.14-2.55.59.5-2.49-.17-.3A6.5 6.5 0 0 1 12.05 5.3Zm-2.3 3.15c-.15 0-.38.05-.58.27-.2.22-.75.73-.75 1.78s.77 2.07.88 2.21c.11.15 1.49 2.39 3.68 3.25 1.82.72 2.19.58 2.58.54.4-.04 1.28-.52 1.46-1.03.18-.5.18-.94.13-1.03-.06-.09-.2-.15-.42-.26-.22-.11-1.28-.63-1.48-.7-.2-.08-.35-.11-.5.11-.15.22-.57.7-.7.85-.13.15-.26.17-.48.06-.22-.11-.92-.34-1.75-1.08-.65-.58-1.08-1.29-1.21-1.51-.13-.22-.01-.34.1-.45.1-.1.22-.26.33-.39.11-.13.15-.22.22-.37.07-.15.04-.28-.02-.39-.06-.11-.5-1.2-.68-1.64-.18-.43-.36-.37-.5-.38h-.43Z" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="site-footer__bottom">
+        <p class="site-footer__copyright">&copy; 2026 Asociaci&oacute;n Pan y Esperanza.<br />Todos los derechos reservados.</p>
+        <p class="site-footer__tagline">Juntos podemos llevar esperanza a quien m&aacute;s lo necesita.</p>
+      </div>
+    </footer>
+      <div id="root"></div>
+  </body>
+</html>
+
