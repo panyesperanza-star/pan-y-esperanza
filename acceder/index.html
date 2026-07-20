@@ -31,59 +31,52 @@
     <a class="skip-link" href="#contenido">Saltar al contenido</a>
     <div class="sr-only" role="status" aria-live="polite" data-global-status></div>
 
-    <header class="site-header" data-component="site-header" data-site-header data-scrolled>
+    <header class="site-header access-header" data-component="site-header" data-site-header data-scrolled>
       <div class="site-header__inner">
         <a class="brand" href="/#inicio" aria-label="Pan y Esperanza">
           <img class="brand__logo" src="/assets/brand/logo.png" alt="" width="160" height="48" aria-hidden="true" data-brand-logo />
           <span class="brand__name">Pan y Esperanza</span>
         </a>
 
-        <button class="nav-toggle" type="button" aria-label="Abrir navegaci&oacute;n" aria-controls="site-navigation" aria-expanded="false" data-nav-toggle>
-          <span class="nav-toggle__line" aria-hidden="true"></span>
-          <span class="nav-toggle__line" aria-hidden="true"></span>
-          <span class="nav-toggle__line" aria-hidden="true"></span>
-        </button>
-
-        <nav class="site-nav" id="site-navigation" aria-label="Navegaci&oacute;n principal" data-site-nav>
-          <a class="site-nav__link" href="/#inicio">Inicio</a>
-          <a class="site-nav__link" href="/#que-hacemos">Qu&eacute; hacemos</a>
-          <a class="site-nav__link" href="/recursos">Recursos</a>
-          <a class="site-nav__link" href="/#contacto">Contacto</a>
-          <a class="button button--team-access site-nav__team" href="/acceder" aria-current="page">&#128101; Acceder</a>
-        </nav>
+        <a class="access-header__back" href="/">&larr; Volver a la web</a>
       </div>
     </header>
 
     <main class="access-main" id="contenido">
       <section class="access-hero" aria-labelledby="access-title">
         <div class="access-hero__inner">
-          <h1 class="access-hero__title" id="access-title">&iquest;C&oacute;mo quieres acceder?</h1>
+          <p class="access-hero__welcome">Bienvenido</p>
+          <h1 class="access-hero__title" id="access-title">Selecciona la opci&oacute;n que mejor te describa para acceder.</h1>
         </div>
       </section>
 
       <section class="access-options" aria-label="Opciones de acceso">
         <div class="access-options__grid">
           <a class="access-card" href="/portal-beneficiario">
-            <span class="access-card__icon" aria-hidden="true">&#128100;</span>
+            <span class="access-card__eyebrow">ACCESO PERSONAL</span>
             <span class="access-card__title">Recibo ayuda</span>
+            <span class="access-card__text">Consultar ayudas, entregas y avisos.</span>
             <span class="access-card__button">Entrar</span>
           </a>
 
           <a class="access-card" href="/portal-colaboradores">
-            <span class="access-card__icon" aria-hidden="true">&#129309;</span>
+            <span class="access-card__eyebrow">COLABORACI&Oacute;N</span>
             <span class="access-card__title">Quiero colaborar</span>
+            <span class="access-card__text">Voluntarios, empresas y colaboradores.</span>
             <span class="access-card__button">Entrar</span>
           </a>
 
           <a class="access-card" href="/portal-donaciones">
-            <span class="access-card__icon" aria-hidden="true">&#10084;&#65039;</span>
+            <span class="access-card__eyebrow">DONACIONES</span>
             <span class="access-card__title">He realizado una donaci&oacute;n</span>
+            <span class="access-card__text">Consultar donaciones y certificados.</span>
             <span class="access-card__button">Entrar</span>
           </a>
 
           <a class="access-card access-card--management" href="/acceso">
-            <span class="access-card__icon" aria-hidden="true">&#127970;</span>
+            <span class="access-card__eyebrow">EQUIPO</span>
             <span class="access-card__title">Trabajo en Pan y Esperanza</span>
+            <span class="access-card__text">Administraci&oacute;n y gesti&oacute;n.</span>
             <span class="access-card__button">Entrar</span>
           </a>
         </div>
@@ -93,8 +86,8 @@
         <div class="access-help__inner">
           <h2 id="access-help-title">&iquest;Necesitas ayuda para acceder?</h2>
           <div class="access-help__actions">
-            <a class="access-help__link" href="tel:+34611889167">&#128222; Ll&aacute;manos</a>
-            <a class="access-help__link" href="https://wa.me/34611889167" rel="noopener">&#128172; WhatsApp</a>
+            <a class="access-help__link" href="tel:+34611889167">Ll&aacute;manos</a>
+            <a class="access-help__link" href="https://wa.me/34611889167" rel="noopener">WhatsApp</a>
           </div>
         </div>
       </section>
@@ -102,18 +95,14 @@
 
     <footer class="site-footer">
       <div class="site-footer__inner site-footer__inner--simple">
-        <div class="site-footer__brand">
-          <a class="site-footer__brand-link" href="/#inicio" aria-label="Pan y Esperanza">
-            <img src="/assets/brand/logo.png" alt="" width="140" height="42" aria-hidden="true" />
-            <strong>Pan y Esperanza</strong>
-          </a>
-          <p>Juntos podemos llevar esperanza a quien m&aacute;s lo necesita.</p>
-        </div>
-        <nav class="footer-nav" aria-label="Enlaces r&aacute;pidos">
-          <h2>Enlaces r&aacute;pidos</h2>
-          <a href="/#inicio">Inicio</a>
-          <a href="/recursos">Recursos</a>
-          <a href="/#contacto">Contacto</a>
+        <a class="access-footer__brand" href="/#inicio" aria-label="Pan y Esperanza">
+          <img src="/assets/brand/logo.png" alt="" width="96" height="32" aria-hidden="true" />
+        </a>
+        <p class="access-footer__copy">&copy; Pan y Esperanza</p>
+        <nav class="access-footer__links" aria-label="Informaci&oacute;n legal">
+          <a href="/privacidad">Pol&iacute;tica de privacidad</a>
+          <a href="/cookies">Cookies</a>
+          <a href="/aviso-legal">Aviso legal</a>
         </nav>
       </div>
     </footer>
