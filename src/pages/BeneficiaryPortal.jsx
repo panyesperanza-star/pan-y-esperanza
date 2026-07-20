@@ -123,29 +123,18 @@ export function BeneficiaryPortal({ data, actions }) {
   if (!session?.token) {
     return (
       <PortalShell>
-        <section className="grid min-h-screen bg-[#fff9f1] lg:grid-cols-2">
-          <div className="relative min-h-[18rem] overflow-hidden lg:min-h-screen">
-            <img
-              src="/assets/photographs/entrega.jpg"
-              alt="Personas recibiendo alimentos de Pan y Esperanza"
-              className="absolute inset-0 h-full w-full object-cover object-center"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-[#25211d]/22 via-[#25211d]/4 to-[#25211d]/34" />
-            <div className="relative z-10 flex min-h-[18rem] flex-col justify-between px-6 py-6 lg:min-h-screen lg:px-10 lg:py-10">
-              <BrandLogo className="h-14 w-auto lg:h-16" showText={false} />
-              <p className="text-xs font-semibold tracking-wide text-[#fff9f1]/90 lg:text-sm">
-                Pan y Esperanza. Siempre cerca de ti.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex min-h-[calc(100vh-18rem)] items-center justify-center bg-[#f6efe4] px-5 py-10 sm:px-8 lg:min-h-screen lg:px-12">
-            <div className="w-full max-w-[30rem]">
-              <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
-                <form onSubmit={handleAccess} className="p-8 sm:p-10">
-                  <div className="flex justify-center">
-                    <BrandLogo className="h-16 w-auto" showText={false} />
-                  </div>
+        <section className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
+          <div className="w-full max-w-[30rem]">
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
+              <form onSubmit={handleAccess} className="p-8 sm:p-10">
+                <div className="flex flex-col items-center">
+                  <img
+                    src="/assets/photographs/entrega.jpg"
+                    alt="Personas recibiendo alimentos de Pan y Esperanza"
+                    className="h-36 w-36 rounded-[1.5rem] object-cover object-center shadow-[0_1rem_2.4rem_rgba(37,33,29,0.16)]"
+                  />
+                  <BrandLogo className="mt-6 h-14 w-auto" showText={false} />
+                </div>
                   <div className="mt-7 text-center">
                     <h1 className="text-3xl font-bold leading-tight text-ink">Portal del Beneficiario</h1>
                     <p className="mt-3 text-base leading-relaxed text-slate-600">
@@ -195,7 +184,6 @@ export function BeneficiaryPortal({ data, actions }) {
                     </Button>
                   </form>
                 )}
-              </div>
             </div>
           </div>
         </section>
