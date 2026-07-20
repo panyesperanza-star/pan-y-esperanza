@@ -116,56 +116,54 @@ export function DonorPortal({ actions }) {
   if (!session?.token) {
     return (
       <PortalShell>
-        <section className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 px-4 py-10 lg:grid-cols-[1fr_430px]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Portal de Donaciones</p>
-            <h1 className="mt-3 text-3xl font-bold leading-tight text-ink sm:text-5xl">Un espacio privado para seguir ayudando.</h1>
-            <p className="mt-4 max-w-2xl text-lg text-slate-600">
-              Consulta tu impacto, donaciones, certificados y campanas solidarias de Pan y Esperanza.
-            </p>
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              <AccessFeature icon={Gift} title="Donaciones" text="Historial y nuevas aportaciones." />
-              <AccessFeature icon={TrendingUp} title="Impacto" text="Estadisticas agregadas y seguras." />
-              <AccessFeature icon={ShieldCheck} title="OTP" text="Acceso sin contrasena permanente." />
-            </div>
-          </div>
+        <section className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
+          <div className="w-full max-w-[30rem]">
+            <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
+              <img
+                src="/assets/photographs/portal-donantes-stock.jpg"
+                alt="Donacion de alimentos preparada para ayudar"
+                className="aspect-[16/9] w-full object-cover object-center"
+              />
+              <form onSubmit={requestAccess} className="p-8 pt-7 sm:p-10 sm:pt-8">
+                <div className="text-center">
+                  <h1 className="text-3xl font-bold leading-tight text-ink">Portal del Donante</h1>
+                  <p className="mt-3 text-base leading-relaxed text-slate-600">
+                    Accede para consultar tus donaciones, certificados e impacto.
+                  </p>
+                </div>
 
-          <div className="rounded-md border border-slate-200 bg-white p-6 shadow-panel">
-            <BrandLogo className="h-14 w-auto" />
-            <h2 className="mt-6 text-xl font-bold text-ink">Acceso privado</h2>
-            <p className="mt-2 text-sm text-slate-600">Introduce tu correo y confirma el codigo OTP.</p>
-
-            <form onSubmit={requestAccess} className="mt-6 space-y-4">
-              <FormField label="Correo electronico" required>
-                <input
-                  className={inputClass}
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="donante@example.org"
-                  autoComplete="email"
-                />
-              </FormField>
-              <Button type="submit" className="w-full"><KeyRound size={17} /> Solicitar codigo OTP</Button>
-            </form>
-
-            {challenge && (
-              <form onSubmit={verifyAccess} className="mt-5 space-y-4 rounded-md border border-brand-100 bg-brand-50 p-4">
-                <FormField label="Codigo OTP" required>
-                  <input
-                    className={inputClass}
-                    value={accessOtp}
-                    onChange={(event) => setAccessOtp(event.target.value)}
-                    placeholder="Introduce el codigo"
-                    inputMode="numeric"
-                  />
-                </FormField>
-                <Button type="submit" className="w-full"><Lock size={17} /> Entrar al portal</Button>
+                <div className="mt-8 space-y-5">
+                  <FormField label="Correo electronico" required>
+                    <input
+                      className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="donante@example.org"
+                      autoComplete="email"
+                    />
+                  </FormField>
+                </div>
+                {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-5" />}
+                {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-5" />}
+                <Button type="submit" className="mt-7 min-h-[3.9rem] w-full rounded-xl px-6 text-base"><KeyRound size={18} /> Solicitar codigo OTP</Button>
               </form>
-            )}
 
-            {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-4" />}
-            {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-4" />}
+              {challenge && (
+                <form onSubmit={verifyAccess} className="border-t border-brand-100 bg-[#fff9f1] p-8 sm:p-10">
+                  <FormField label="Codigo OTP" required>
+                    <input
+                      className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                      value={accessOtp}
+                      onChange={(event) => setAccessOtp(event.target.value)}
+                      placeholder="Introduce el codigo"
+                      inputMode="numeric"
+                    />
+                  </FormField>
+                  <Button type="submit" className="mt-5 min-h-[3.9rem] w-full rounded-xl px-6 text-base"><Lock size={18} /> Entrar al portal</Button>
+                </form>
+              )}
+            </div>
           </div>
         </section>
       </PortalShell>
