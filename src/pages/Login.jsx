@@ -3,6 +3,7 @@ import logo from '../assets/logo-pan-y-esperanza.png';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
+import { callEdgeJson } from '../lib/edgeFunctions';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 
 export function Login({ onAccess }) {
@@ -20,13 +21,7 @@ export function Login({ onAccess }) {
     setMessage('');
     try {
       const logoUrl = new URL(officialLogoUrl, window.location.origin).toString();
-      const response = await fetch('/api/request-password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, logoUrl, origin: window.location.origin })
-      });
-      const payload = await safeJson(response);
-      if (!response.ok) throw new Error(payload.error || 'No se pudo solicitar la recuperación.');
+      const payload = await callEdgeJson('request-password-reset', { email, logoUrl, origin: window.location.origin });
       setMessage(payload.message || 'Revise su correo para continuar.');
     } catch (err) {
       setError(err.message || 'No se pudo solicitar la recuperación.');
@@ -38,13 +33,7 @@ export function Login({ onAccess }) {
     setError('');
     setMessage('');
     try {
-      const response = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, password: newPassword })
-      });
-      const payload = await safeJson(response);
-      if (!response.ok) throw new Error(payload.error || 'No se pudo actualizar la contraseña.');
+      const payload = await callEdgeJson('reset-password', { token: resetToken, password: newPassword });
       setMessage(payload.message || 'Contraseña actualizada correctamente.');
       window.history.replaceState({}, '', window.location.pathname);
       setPassword('');
@@ -121,13 +110,4 @@ export function Login({ onAccess }) {
       </section>
     </main>
   );
-}
-
-async function safeJson(response) {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { error: 'Respuesta no válida del servidor.' };
-  }
 }

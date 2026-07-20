@@ -21,7 +21,7 @@ const readJsonBody = async (request) => {
 };
 
 const getOrigin = (request) => {
-  const configuredUrl = process.env.PUBLIC_SITE_URL || process.env.VITE_PUBLIC_SITE_URL;
+  const configuredUrl = process.env.PUBLIC_SITE_URL;
 
   if (configuredUrl) {
     return configuredUrl.replace(/\/$/, "");

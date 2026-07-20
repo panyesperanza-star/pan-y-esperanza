@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { cleanJwtCredential, getServerConfig } from './_adminAuth.js';
 
 export const ELIZABETH_EMAIL = 'elizabeth@panyesperanza.org';
@@ -56,7 +56,7 @@ export function requireRepairSecret(request, requestId, logPrefix) {
       payload: {
         ok: false,
         code: 'REPAIR_SECRET_NOT_CONFIGURED',
-        error: 'Modo reparación no configurado. Añada EMERGENCY_REPAIR_SECRET en Vercel.',
+        error: 'Modo reparación no configurado. Añada EMERGENCY_REPAIR_SECRET en Supabase Edge Functions.',
         details: diagnostics
       }
     };

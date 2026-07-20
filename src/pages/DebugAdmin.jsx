@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { getApiHeaders } from '../lib/apiAuth';
+import { fetchEdgeFunction } from '../lib/edgeFunctions';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
 
 const ADMIN_ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Administrador'];
@@ -35,7 +36,7 @@ export function DebugAdmin({ currentUser }) {
   async function repairCurrentUser() {
     setRepairResult({ running: true });
     try {
-      const response = await fetch(`/api/emergency-admin-repair?secret=${encodeURIComponent(repairSecret)}`);
+      const response = await fetchEdgeFunction(`emergency-admin-repair?secret=${encodeURIComponent(repairSecret)}`, { method: 'GET', contentType: '' });
       const result = await readApiJson(response);
       setRepairResult({ status: response.status, ok: response.ok, result });
       await refresh();
@@ -66,7 +67,7 @@ export function DebugAdmin({ currentUser }) {
     };
 
     try {
-      const response = await fetch('/api/create-user', {
+      const response = await fetchEdgeFunction('create-user', {
         method: 'POST',
         headers: await getApiHeaders(),
         body: JSON.stringify({ user })
@@ -84,7 +85,7 @@ export function DebugAdmin({ currentUser }) {
     setDeleteResult({ running: true });
     const id = createdTestUser?.id || EMPTY_UUID;
     try {
-      const response = await fetch('/api/admin-user', {
+      const response = await fetchEdgeFunction('admin-user', {
         method: 'POST',
         headers: await getApiHeaders(),
         body: JSON.stringify({ action: 'delete', id })
@@ -98,7 +99,7 @@ export function DebugAdmin({ currentUser }) {
   }
 
   async function testRequireAdmin() {
-    const response = await fetch('/api/admin-user', {
+    const response = await fetchEdgeFunction('admin-user', {
       method: 'POST',
       headers: await getApiHeaders(),
       body: JSON.stringify({ action: '__debug_require_admin__', id: EMPTY_UUID })

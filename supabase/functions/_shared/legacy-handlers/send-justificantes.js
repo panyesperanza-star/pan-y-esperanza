@@ -1,7 +1,7 @@
-import { Resend } from 'resend';
-import { createClient } from '@supabase/supabase-js';
-import { jsPDF } from 'jspdf';
-import autoTableModule from 'jspdf-autotable';
+import { Resend } from 'npm:resend@4.0.1';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { jsPDF } from 'npm:jspdf@2.5.2';
+import autoTableModule from 'npm:jspdf-autotable@3.8.3';
 
 const MAIL_ROLES = ['Superadministrador', 'Superadministrador del sistema', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Administrador'];
 const autoTable = typeof autoTableModule === 'function' ? autoTableModule : autoTableModule.default;
@@ -1076,7 +1076,7 @@ function isMissingEmailLogColumn(error) {
 async function requireMailPermission(request, { supabaseUrl, serviceRoleKey, requestId }) {
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('[send-justificantes] Supabase admin no configurado', { requestId, hasSupabaseUrl: Boolean(supabaseUrl), hasServiceRoleKey: Boolean(serviceRoleKey) });
-    return { ok: false, status: 503, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.' };
+    return { ok: false, status: 503, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.' };
   }
 
   const token = getBearerToken(request);

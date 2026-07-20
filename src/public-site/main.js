@@ -69,6 +69,22 @@ const getConfigValue = (runtimeKey, envKey) => {
   return "";
 };
 
+const getEdgeFunctionUrl = (functionName) => {
+  const supabaseUrl = getConfigValue("supabaseUrl", "VITE_SUPABASE_URL").replace(/\/$/, "");
+  if (!supabaseUrl) {
+    throw new Error("Supabase no esta configurado para enviar esta solicitud.");
+  }
+  return `${supabaseUrl}/functions/v1/${functionName}`;
+};
+
+const getEdgeFunctionHeaders = () => {
+  const anonKey = getConfigValue("supabaseAnonKey", "VITE_SUPABASE_ANON_KEY");
+  return {
+    "Content-Type": "application/json",
+    ...(anonKey ? { apikey: anonKey, Authorization: `Bearer ${anonKey}` } : {}),
+  };
+};
+
 const updateHeaderOffset = () => {
   if (!siteHeader) {
     return;
@@ -108,25 +124,8 @@ const setupErpLinks = () => {
     return;
   }
 
-  const erpUrl = hasConfigValue(viteEnv.VITE_ERP_URL) ? viteEnv.VITE_ERP_URL.trim() : "/acceso";
-
   erpLinks.forEach((link) => {
-    if (erpUrl) {
-      link.href = erpUrl;
-      return;
-    }
-
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-
-      if (!viteEnv.DEV) {
-        return;
-      }
-
-      const message = "Configura VITE_ERP_URL para activar el acceso al ERP oficial.";
-      setGlobalStatus(message);
-      window.alert(message);
-    });
+    link.href = "/acceso";
   });
 };
 
@@ -444,12 +443,10 @@ const validateVolunteerForm = (form) => {
 
 const formDataToObject = (form) => Object.fromEntries(new FormData(form).entries());
 
-const postJson = async (url, payload) => {
-  const response = await fetch(url, {
+const postEdgeJson = async (functionName, payload) => {
+  const response = await fetch(getEdgeFunctionUrl(functionName), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getEdgeFunctionHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -488,7 +485,7 @@ const setupContactForm = () => {
     setStatus(contactStatus, "Enviando mensaje...", "success");
 
     try {
-      await postJson("/api/contact", payload);
+      await postEdgeJson("contact", payload);
       contactForm.reset();
       setStatus(contactStatus, "Mensaje enviado correctamente.", "success");
     } catch (error) {
@@ -575,7 +572,7 @@ const setupVolunteerForm = () => {
     setStatus(volunteerStatus, "Enviando solicitud...", "success");
 
     try {
-      await postJson("/api/volunteer", payload);
+      await postEdgeJson("volunteer", payload);
       volunteerForm.reset();
       setStatus(volunteerStatus, "Solicitud enviada correctamente.", "success");
     } catch (error) {
@@ -871,11 +868,9 @@ const setupDonationCheckout = () => {
       setGlobalStatus("Preparando donacion.");
 
       try {
-        const response = await fetch("/api/create-checkout-session", {
+        const response = await fetch(getEdgeFunctionUrl("create-checkout-session"), {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getEdgeFunctionHeaders(),
           body: JSON.stringify({
             frequency: trigger.dataset.donationFrequency || "one_time",
           }),

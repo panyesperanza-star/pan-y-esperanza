@@ -21,7 +21,7 @@ Aplicacion web responsive para gestionar una asociacion sin animo de lucro. Esta
 - Beneficiarios con campo email para enviar el PDF individual al correo registrado.
 - Boton `Enviar email` dentro de la ficha del beneficiario con plantillas de justificante, aviso de recogida, solicitud de documentacion y agradecimiento.
 - Configuracion editable de identidad corporativa: entidad, CIF, direccion, telefono, correo, web y logo.
-- Configuracion `Entidad > Correo` con remitente y prueba de envio mediante API serverless segura con Resend.
+- Configuracion `Entidad > Correo` con remitente y prueba de envio mediante Supabase Edge Function segura con Resend.
 - Beneficiarios ampliados con nacimiento, sexo, nacionalidad, estado civil, primera/ultima atencion, documentos e historial social.
 - Modulo `Familias` con codigo familiar, responsable, contacto, miembros, menores, dependientes e historial derivado de entregas.
 - Inventario ampliado con categorias, lotes, caducidad, donante, ubicacion y alertas por stock/caducidad/producto agotado.
@@ -72,7 +72,7 @@ Si no configuras Supabase, la aplicacion puede usar almacenamiento local unicame
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu_clave_anon_publica
 VITE_SUPABASE_STORAGE_BUCKET=documentos
-SUPABASE_SERVICE_ROLE_KEY=solo_en_backend_vercel
+SUPABASE_SERVICE_ROLE_KEY=solo_en_supabase_edge_functions
 RESEND_API_KEY=re_xxxxxxxxx
 FROM_EMAIL=info@panyesperanza.org
 PUBLIC_LOGO_URL=https://tu-dominio.org/logo-pan-y-esperanza.png
@@ -97,7 +97,7 @@ Checklist recomendado antes de usar la aplicacion con datos reales:
 3. Crear usuarios en Supabase Auth y vincularlos por email con `public.app_users`.
 4. Revisar permisos por modulo en `Entidad > Usuarios > Usuarios > Permisos`.
 5. Configurar Resend con `RESEND_API_KEY` y `FROM_EMAIL`.
-6. Configurar `SUPABASE_SERVICE_ROLE_KEY` en Vercel para que `api/create-user.js` cree primero el usuario en `auth.users` y despues el perfil en `app_users`.
+6. Configurar `SUPABASE_SERVICE_ROLE_KEY` como secreto de Supabase Edge Functions para que `create-user` cree primero el usuario en `auth.users` y despues el perfil en `app_users`.
 7. Crear/verificar el bucket `documentos` en Supabase Storage.
 7. Abrir `Configuracion > Estado del sistema` y comprobar base de datos, correo, almacenamiento y ultima copia.
 8. Crear una copia manual desde `Copias > Crear copia manual`.
@@ -105,12 +105,12 @@ Checklist recomendado antes de usar la aplicacion con datos reales:
 
 ## Configurar envio real de correos
 
-La aplicacion incluye la funcion serverless `api/send-justificantes.js`, preparada para Vercel y Resend. No usa `mailto`, no abre Outlook y no intenta enviar SMTP desde React.
+La aplicacion incluye la Edge Function `send-justificantes`, preparada para Supabase Edge Functions y Resend. No usa `mailto`, no abre Outlook y no intenta enviar SMTP desde React.
 
 1. Crea una cuenta en Resend.
 2. Verifica un dominio o direccion remitente.
 3. Crea una API key.
-4. En local o Vercel configura:
+4. En local o en secretos de Supabase Edge Functions configura:
   - `RESEND_API_KEY`
   - `FROM_EMAIL`
   - `PUBLIC_LOGO_URL` para mostrar el logo en el HTML del correo.
@@ -123,19 +123,19 @@ RESEND_API_KEY=
 FROM_EMAIL=info@panyesperanza.org
 ```
 
-En Vercel, crea esas mismas variables en Project Settings > Environment Variables. `RESEND_API_KEY` solo se lee en la funcion serverless `api/send-justificantes.js`; nunca se importa en React ni se expone al navegador.
+En Supabase, crea esos secretos para las Edge Functions. En el hosting frontend configura solo las variables publicas `VITE_*`. `RESEND_API_KEY` solo se lee en la Edge Function `send-justificantes`; nunca se importa en React ni se expone al navegador.
 
-La app genera automaticamente los PDFs individuales de los justificantes seleccionados, los convierte en adjuntos y los envia mediante `/api/send-justificantes`. No se envia ZIP por correo. El resumen PDF puede adjuntarse marcando `Enviar tambien resumen PDF`.
+La app genera automaticamente los PDFs individuales de los justificantes seleccionados, los convierte en adjuntos y los envia mediante la Edge Function `send-justificantes`. No se envia ZIP por correo. El resumen PDF puede adjuntarse marcando `Enviar tambien resumen PDF`.
 
-`Entidad > Correo` permite guardar datos visibles de remitente y probar el envio. Las credenciales reales se leen solo en la funcion serverless desde variables de entorno:
+`Entidad > Correo` permite guardar datos visibles de remitente y probar el envio. Las credenciales reales se leen solo en la Edge Function desde secretos de Supabase:
 
 - Nombre remitente.
 - Correo remitente.
 - Proveedor recomendado: Resend API.
 
-El boton `Enviar correo de prueba` envia un correo HTML corporativo de prueba llamando a `/api/send-justificantes`. La API key nunca debe usarse directamente desde componentes React.
+El boton `Enviar correo de prueba` envia un correo HTML corporativo de prueba llamando a la Edge Function `send-justificantes`. La API key nunca debe usarse directamente desde componentes React.
 
-Para probar el envio localmente usa Vercel CLI con `vercel dev`, ya que `npm run dev` solo ejecuta Vite y no levanta la funcion serverless `api/send-justificantes.js`.
+Para probar el envio localmente usa Supabase CLI con `supabase functions serve`; `npm run dev` solo ejecuta Vite y no levanta las Edge Functions.
 
 Mensajes del flujo de envio:
 
@@ -178,16 +178,16 @@ Permisos especiales de tesoreria:
 - Voluntario puede acceder en modo lectura si tiene el permiso `treasury`.
 - Los modulos sin permiso se ocultan automaticamente en el menu lateral.
 
-En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. En produccion todas las operaciones administrativas de usuarios se ejecutan desde funciones serverless con `SUPABASE_SERVICE_ROLE_KEY`; la service role nunca se importa ni se expone en React.
+En modo demo, los usuarios se guardan en `localStorage` dentro de `app_users`. En produccion todas las operaciones administrativas de usuarios se ejecutan desde Supabase Edge Functions con `SUPABASE_SERVICE_ROLE_KEY`; la service role nunca se importa ni se expone en React.
 
-1. Configura `SUPABASE_SERVICE_ROLE_KEY` solo en Vercel, nunca en variables `VITE_*`.
+1. Configura `SUPABASE_SERVICE_ROLE_KEY` solo como secreto de Supabase Edge Functions, nunca en variables `VITE_*`.
 2. Ejecuta `supabase/migrations/20260622_users_production_fix.sql`.
 3. Ejecuta `supabase/migrations/20260623_stabilization_security.sql` para retirar `app_users.password` y activar politicas RLS por permisos.
 4. Ejecuta, en orden, `supabase/migrations/20260702_enforce_authoritative_permissions.sql`, `supabase/migrations/20260702_delivery_cancellation_security.sql` y `supabase/migrations/20260702_inventory_production_close.sql`.
-5. Al crear usuario desde `Entidad > Usuarios`, la app llama a `api/create-user.js`.
+5. Al crear usuario desde `Entidad > Usuarios`, la app llama a la Edge Function `create-user`.
 6. El backend crea primero el usuario en `auth.users`.
 7. Despues inserta el perfil en `public.app_users` con `auth_user_id`, rol, estado y permisos.
-8. Al editar, bloquear, desactivar, reactivar, eliminar o restablecer contrasena, la app llama a `api/admin-user.js`.
+8. Al editar, bloquear, desactivar, reactivar, eliminar o restablecer contrasena, la app llama a la Edge Function `admin-user`.
 9. El backend verifica el token Supabase del usuario actual y comprueba que tenga permisos de administracion de usuarios.
 10. Si la base ya existia antes de esta version, la migracion acumulada tambien anade `status`, `Coordinadora`, tokens de recuperacion y politicas RLS corregidas.
 
@@ -197,15 +197,15 @@ La pantalla `Entidad > Usuarios` permite crear usuarios reales, editar permisos 
 
 Se incluyen dos endpoints temporales para reparar el acceso inicial si `elizabeth@panyesperanza.org` no queda reconocida como `Superadministrador`:
 
-- `POST /api/emergency-admin-repair`: busca Elizabeth en Supabase Auth y crea/actualiza `public.app_users` con rol `Superadministrador`, estado `Activo`, `auth_user_id` real y permisos completos.
-- `POST /api/emergency-create-user`: crea usuarios con `SUPABASE_SERVICE_ROLE_KEY` sin depender de la validacion administrativa normal.
+- `Edge Function `emergency-admin-repair``: busca Elizabeth en Supabase Auth y crea/actualiza `public.app_users` con rol `Superadministrador`, estado `Activo`, `auth_user_id` real y permisos completos.
+- `Edge Function `emergency-create-user``: crea usuarios con `SUPABASE_SERVICE_ROLE_KEY` sin depender de la validacion administrativa normal.
 
 Ambos endpoints exigen la cabecera `x-repair-secret` con el valor de `EMERGENCY_REPAIR_SECRET`. Esta variable debe existir solo mientras dure la reparacion.
 
 Ejemplo de reparacion:
 
 ```bash
-curl -X POST https://TU_DOMINIO/api/emergency-admin-repair \
+curl -X POST https://TU_SUPABASE_PROJECT.functions.supabase.co/emergency-admin-repair \
   -H "Content-Type: application/json" \
   -H "x-repair-secret: TU_SECRETO"
 ```
@@ -213,7 +213,7 @@ curl -X POST https://TU_DOMINIO/api/emergency-admin-repair \
 Ejemplo de creacion temporal:
 
 ```bash
-curl -X POST https://TU_DOMINIO/api/emergency-create-user \
+curl -X POST https://TU_SUPABASE_PROJECT.functions.supabase.co/emergency-create-user \
   -H "Content-Type: application/json" \
   -H "x-repair-secret: TU_SECRETO" \
   -d "{\"email\":\"usuario@dominio.org\",\"password\":\"<contrasena-temporal-segura>\",\"first_name\":\"Nombre\",\"last_name\":\"Apellidos\",\"role\":\"Voluntario\",\"position\":\"Voluntario\"}"
@@ -226,11 +226,11 @@ Importante: elimina los archivos `api/emergency-admin-repair.js`, `api/emergency
 La pantalla de acceso incluye `Olvide mi contrasena`.
 
 1. El usuario introduce su email.
-2. El frontend llama a `api/request-password-reset.js`.
+2. El frontend llama a Edge Function `request-password-reset`.
 3. El servidor comprueba `app_users`, crea un token temporal en `password_reset_tokens` y envia el correo con Resend.
 4. El correo contiene un enlace `/?reset_token=...`.
 5. La pantalla de acceso permite establecer una nueva contrasena.
-6. `api/reset-password.js` actualiza la contrasena en Supabase Auth usando `SUPABASE_SERVICE_ROLE_KEY`.
+6. Edge Function `reset-password` actualiza la contrasena en Supabase Auth usando `SUPABASE_SERVICE_ROLE_KEY`.
 
 Variables necesarias para usuarios y recuperacion:
 
@@ -345,7 +345,7 @@ La seccion `Justificantes` muestra todos los justificantes derivados de entregas
 
 El boton `Generar ZIP mensual` descarga automaticamente todos los justificantes del mes actual que cumplen los filtros activos. El informe estadistico se mantiene separado en `Generar informe de entregas`.
 
-El boton `Enviar justificantes` permite introducir uno o varios destinatarios, asunto y mensaje. La aplicacion genera un PDF individual por cada justificante seleccionado y los envia como adjuntos mediante la funcion serverless `api/send-justificantes.js`. No adjunta ZIP.
+El boton `Enviar justificantes` permite introducir uno o varios destinatarios, asunto y mensaje. La aplicacion genera un PDF individual por cada justificante seleccionado y los envia como adjuntos mediante la Edge Function `send-justificantes`. No adjunta ZIP.
 
 La casilla `Enviar tambien resumen PDF` permite adjuntar opcionalmente `Resumen-entregas.pdf` en el mismo correo.
 
@@ -353,7 +353,7 @@ El boton `Enviar justificante al beneficiario` esta pensado para moviles y para 
 
 La subseccion `Historial de envios` guarda fecha, hora, destinatario, usuario, numero de justificantes, resultado e ID de Resend. Los PDF se almacenan en la ruta privada `justificantes/` del bucket configurado; `Ver PDF` abre una URL firmada temporal y `Reenviar` reutiliza el original. Si un registro antiguo no tiene archivo almacenado, se regenera desde la entrega vinculada.
 
-El historial de justificantes se registra desde `api/send-justificantes.js`, no desde React. La interfaz solo confirma el envio cuando el PDF es valido, Resend devuelve `data.id` y `email_logs` devuelve la fila creada. Los registros antiguos sin ID de Resend se muestran como `Sin confirmar`.
+El historial de justificantes se registra desde Edge Function `send-justificantes`, no desde React. La interfaz solo confirma el envio cuando el PDF es valido, Resend devuelve `data.id` y `email_logs` devuelve la fila creada. Los registros antiguos sin ID de Resend se muestran como `Sin confirmar`.
 
 Todos los correos HTML incluyen logo, nombre de entidad, fecha, texto personalizado y datos corporativos de la entidad.
 
@@ -366,7 +366,7 @@ El boton `Generar informe de entregas` crea solo el PDF resumen, sin ZIP.
 La seccion `Comunicaciones` centraliza emails y WhatsApp. WhatsApp funciona mediante enlace directo `wa.me`, abriendo WhatsApp Web o la aplicacion del movil con el mensaje preparado. Incluye:
 
 - Plantillas reutilizables: justificante de ayuda recibida, aviso de recogida, solicitud de documentacion y agradecimiento.
-- Envio por Resend mediante la funcion serverless `api/send-justificantes.js`.
+- Envio por Resend mediante la Edge Function `send-justificantes`.
 - Adjuntar automaticamente el justificante PDF de la ultima entrega del beneficiario.
 - Descargar ese PDF antes de enviarlo.
 - Historial con fecha, destinatario, asunto, usuario, adjuntos y resultado.

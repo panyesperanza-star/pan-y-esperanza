@@ -1,4 +1,4 @@
-ï»¿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -44,7 +44,7 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
 
   return (
     <>
-      <PageHeader title={initialTab === 'users' ? 'Usuarios' : 'ConfiguraciÃ³n'} description={initialTab === 'users' ? 'GestiÃ³n de usuarios, roles y permisos.' : 'Identidad corporativa y configuraciÃ³n del sistema.'} />
+      <PageHeader title={initialTab === 'users' ? 'Usuarios' : 'Configuración'} description={initialTab === 'users' ? 'Gestión de usuarios, roles y permisos.' : 'Identidad corporativa y configuración del sistema.'} />
       <div className="mb-5 flex flex-wrap gap-2">
         {canViewSettings && <Button variant={tab === 'entity' ? 'primary' : 'secondary'} onClick={() => setTab('entity')}>Entidad</Button>}
         {canViewSettings && <Button variant={tab === 'mail' ? 'primary' : 'secondary'} onClick={() => setTab('mail')}>Correo</Button>}
@@ -57,8 +57,8 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
         <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); settingsService.saveSettings(form).then(() => actions.reloadData?.()); }}>
           <FormField label="Nombre entidad"><input className={inputClass} value={form.name || ''} onChange={(event) => update('name', event.target.value)} /></FormField>
           <FormField label="CIF"><input className={inputClass} value={form.cif || ''} onChange={(event) => update('cif', event.target.value)} /></FormField>
-          <FormField label="DirecciÃ³n"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField>
-          <FormField label="TelÃ©fono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
+          <FormField label="Dirección"><input className={inputClass} value={form.address || ''} onChange={(event) => update('address', event.target.value)} /></FormField>
+          <FormField label="Teléfono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
           <FormField label="Correo"><input className={inputClass} type="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
           <FormField label="Web"><input className={inputClass} value={form.website || ''} onChange={(event) => update('website', event.target.value)} /></FormField>
           <div className="sm:col-span-2"><FormField label="Logo"><input className={inputClass} value={form.logo_path || 'src/assets/logo-pan-y-esperanza.png'} onChange={(event) => update('logo_path', event.target.value)} /></FormField></div>
@@ -103,9 +103,9 @@ function SystemStatus({ configService }) {
         <StatusItem label="Base de datos conectada" ok={status.databaseConfigured} />
         <StatusItem label="Correo conectado" ok={status.emailConfigured} />
         <StatusItem label="Almacenamiento conectado" ok={storageConnected ?? status.storageConfigured} action={<Button variant="secondary" type="button" onClick={checkStorage}>Comprobar</Button>} />
-        <StatusItem label="Ãšltima copia de seguridad" value={lastBackup ? formatDateTime(lastBackup) : 'Sin copias registradas'} />
+        <StatusItem label="Última copia de seguridad" value={lastBackup ? formatDateTime(lastBackup) : 'Sin copias registradas'} />
       </div>
-      <p className="mt-4 text-sm text-slate-500">Para produccion real configura Supabase, Resend y el bucket de almacenamiento en Vercel antes de activar usuarios reales.</p>
+      <p className="mt-4 text-sm text-slate-500">Para produccion real configura Supabase, Resend y el bucket de almacenamiento en Supabase Edge Functions antes de activar usuarios reales.</p>
     </section>
   );
 }
@@ -144,7 +144,7 @@ function MailSettings({ settings, setSettings, configService, onSave }) {
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <h3 className="font-bold text-ink">Correo</h3>
-      <p className="mt-1 text-sm text-slate-500">El envio real se realiza desde la API serverless con Resend. No se envian credenciales SMTP desde el navegador.</p>
+      <p className="mt-1 text-sm text-slate-500">El envio real se realiza desde la Supabase Edge Function con Resend. No se envian credenciales SMTP desde el navegador.</p>
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSave(settings); }}>
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm sm:col-span-2">
           <span className="font-semibold text-slate-700">Estado: </span>
@@ -153,7 +153,7 @@ function MailSettings({ settings, setSettings, configService, onSave }) {
         <FormField label="Nombre remitente"><input className={inputClass} value={settings.mail_sender_name || ''} onChange={(event) => update('mail_sender_name', event.target.value)} /></FormField>
         <FormField label="Correo remitente"><input className={inputClass} type="email" value={settings.mail_sender_email || ''} onChange={(event) => update('mail_sender_email', event.target.value)} /></FormField>
         <FormField label="Proveedor recomendado"><input className={inputClass} value="Resend API" disabled /></FormField>
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Configura `RESEND_API_KEY` y `FROM_EMAIL` en `.env` local o en variables de entorno de Vercel. El frontend nunca recibe la API key.</div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Configura `RESEND_API_KEY` y `FROM_EMAIL` en `.env` local o como secreto de Supabase Edge Functions. El frontend nunca recibe la API key.</div>
         {status && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700 sm:col-span-2">{status}</p>}
         {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700 sm:col-span-2">{error}</p>}
         <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
@@ -178,7 +178,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-ink">Usuarios</h3>
-          <p className="text-sm text-slate-500">GestiÃ³n de usuarios, permisos por acciÃ³n, accesos y auditorÃ­a.</p>
+          <p className="text-sm text-slate-500">Gestión de usuarios, permisos por acción, accesos y auditoría.</p>
         </div>
         {canCreate && <Button onClick={() => setEditing(createEmptyUser(currentUser))}>Crear usuario</Button>}
       </div>
@@ -186,7 +186,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
         <MiniStat label="Usuarios activos" value={activeUsers.length} />
         <MiniStat label="Usuarios inactivos" value={inactiveUsers.length} />
         <MiniStat label="Usuarios bloqueados" value={blockedUsers.length} />
-        <MiniStat label="Ãšltimos accesos" value={users.filter((user) => user.last_access_at).length} />
+        <MiniStat label="Últimos accesos" value={users.filter((user) => user.last_access_at).length} />
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant={section === 'users' ? 'primary' : 'secondary'} onClick={() => setSection('users')}>Usuarios</Button>
@@ -207,7 +207,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
   const filtered = filterUsersByStatus(users, filter);
 
   async function deleteUser(user) {
-    const confirmed = window.confirm('Esta acciÃ³n eliminarÃ¡ definitivamente el usuario y no podrÃ¡ recuperarse.\n\nSe recomienda desactivar en lugar de eliminar.\n\nÂ¿Desea eliminarlo definitivamente?');
+    const confirmed = window.confirm('Esta acción eliminará definitivamente el usuario y no podrá recuperarse.\n\nSe recomienda desactivar en lugar de eliminar.\n\n¿Desea eliminarlo definitivamente?');
     if (!confirmed) return;
     try {
       await actions.deleteUser(user.id);
@@ -238,17 +238,17 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
   async function blockUser(user) {
     try {
       await actions.blockUser(user.id);
-      setMessage('Usuario bloqueado. No podrÃ¡ iniciar sesiÃ³n hasta ser reactivado.');
+      setMessage('Usuario bloqueado. No podrá iniciar sesión hasta ser reactivado.');
     } catch (error) {
       setMessage(error.message);
     }
   }
 
   async function resetPassword(user) {
-    const password = window.prompt('Nueva contraseÃ±a temporal');
+    const password = window.prompt('Nueva contraseña temporal');
     if (password) {
       await actions.resetUserPassword(user.id, password);
-      setMessage('ContraseÃ±a temporal actualizada.');
+      setMessage('Contraseña temporal actualizada.');
     }
   }
 
@@ -269,7 +269,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1360px] table-fixed text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[160px] px-4 py-3">Usuario</th><th className="w-[190px]">Email</th><th className="w-[110px]">TelÃ©fono</th><th className="w-[130px]">Cargo</th><th className="w-[105px]">Estado</th><th className="w-[135px]">Ãšltimo acceso</th><th className="w-[135px]">Creado</th><th className="w-[120px]">Creado por</th><th className="w-[280px] pr-4 text-right">Acciones</th></tr></thead>
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[160px] px-4 py-3">Usuario</th><th className="w-[190px]">Email</th><th className="w-[110px]">Teléfono</th><th className="w-[130px]">Cargo</th><th className="w-[105px]">Estado</th><th className="w-[135px]">Último acceso</th><th className="w-[135px]">Creado</th><th className="w-[120px]">Creado por</th><th className="w-[280px] pr-4 text-right">Acciones</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((user) => {
               const status = getUserStatus(user);
@@ -294,15 +294,15 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
                         <select
                           className={`${inputClass} h-10 w-40 shrink-0`}
                           defaultValue=""
-                          aria-label={`MÃ¡s acciones para ${user.first_name} ${user.last_name}`}
+                          aria-label={`Más acciones para ${user.first_name} ${user.last_name}`}
                           onChange={(event) => {
                             const action = event.target.value;
                             event.target.value = '';
                             if (action) void runSecondaryUserAction(user, action);
                           }}
                         >
-                          <option value="">MÃ¡s acciones</option>
-                          {canEdit && <option value="reset-password">Restablecer contraseÃ±a</option>}
+                          <option value="">Más acciones</option>
+                          {canEdit && <option value="reset-password">Restablecer contraseña</option>}
                           {canEdit && status !== 'Bloqueado' && !isCurrentUser && <option value="block">Bloquear</option>}
                           {canDelete && !isCurrentUser && <option value="delete">Eliminar</option>}
                         </select>
@@ -351,7 +351,7 @@ function UserForm({ initial, organization, onSubmit }) {
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>
       <FormField label="Apellidos"><input className={inputClass} value={form.last_name || ''} onChange={(event) => update('last_name', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" required value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <FormField label="TelÃ©fono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <FormField label="Teléfono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Cargo"><input className={inputClass} value={form.position || ''} onChange={(event) => update('position', event.target.value)} /></FormField>
       <FormField label="Contrasena temporal"><input className={inputClass} type="password" value={form.password || ''} onChange={(event) => update('password', event.target.value)} /></FormField>
       <FormField label="Rol"><select className={inputClass} value={form.role || 'Voluntario'} onChange={(event) => updateRole(event.target.value)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField>
@@ -375,7 +375,7 @@ function PermissionEditor({ value, role, onChange }) {
 
 function PermissionsMatrix({ users, actions, setMessage }) {
   const [drafts, setDrafts] = useState(() => Object.fromEntries(users.map((user) => [user.id, user.permission_matrix || ROLE_PERMISSION_MATRIX[user.role] || {}])));
-  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} Â· {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} role={user.role} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
+  return <div className="space-y-4">{users.map((user) => <div key={user.id} className="rounded-md border border-slate-200 p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">{user.first_name} {user.last_name}</p><p className="text-sm text-slate-500">{user.email} · {user.role}</p></div><Button variant="secondary" onClick={async () => { const matrix = drafts[user.id] || {}; await actions.updateUser(user.id, { ...user, permissions: viewPermissionsFromMatrix(matrix, user.role), permission_matrix: matrix }); setMessage('Permisos actualizados.'); }}>Guardar permisos</Button></div><PermissionEditor value={drafts[user.id] || {}} role={user.role} onChange={(matrix) => setDrafts((state) => ({ ...state, [user.id]: matrix }))} /></div>)}</div>;
 }
 
 function AuditTable({ logs }) {

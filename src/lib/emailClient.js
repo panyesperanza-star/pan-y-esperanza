@@ -1,4 +1,5 @@
 import { getApiHeaders } from './apiAuth';
+import { fetchEdgeFunction } from './edgeFunctions';
 import { hasSupabaseConfig, supabase, supabaseStorageBucket } from './supabase';
 
 const SAFE_VERCEL_PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
@@ -65,8 +66,8 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     logEmail,
     useMultipart
   });
-  console.info('[correo] Inicio flujo POST /api/send-justificantes');
-  console.info('[correo] Diagnostico payload /api/send-justificantes', {
+  console.info('[correo] Inicio flujo Edge Function send-justificantes');
+  console.info('[correo] Diagnostico payload send-justificantes', {
     contentType: useMultipart ? 'multipart/form-data; boundary=generado-por-navegador' : headers['Content-Type'] || 'application/json',
     contentLengthEstimado: payloadSize.estimatedTotalBytes,
     numeroJustificantes: payloadSize.receiptEntriesCount,
@@ -86,13 +87,14 @@ export async function sendEmailViaApi({ to, subject, message, attachments = [], 
     throw new Error(`Los justificantes ocupan ${formatBytes(payloadSize.estimatedTotalBytes)} y superan el limite seguro de envio (${formatBytes(SAFE_VERCEL_PAYLOAD_LIMIT_BYTES)}). Selecciona menos justificantes o envia sin resumen PDF.`);
   }
 
-  const response = await fetch('/api/send-justificantes', {
+  const response = await fetchEdgeFunction('send-justificantes', {
     method: 'POST',
     headers,
+    contentType: useMultipart ? '' : 'application/json',
     body: requestBody
   });
   const responsePayload = await parseJsonResponse(response);
-  console.info('[correo] Respuesta recibida de /api/send-justificantes', {
+  console.info('[correo] Respuesta recibida de send-justificantes', {
     status: response.status,
     ok: response.ok,
     payload: responsePayload

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
-import { Resend } from 'resend';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { Resend } from 'npm:resend@4.0.1';
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -21,10 +21,10 @@ export default async function handler(request, response) {
     const email = String(body.email || '').trim().toLowerCase();
 
     if (!url || !serviceRoleKey) {
-      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.' });
     }
     if (!resendKey || !from) {
-      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Añada RESEND_API_KEY y FROM_EMAIL en Vercel.' });
+      return sendJson(response, 503, { ok: false, code: 'MAIL_NOT_CONFIGURED', error: 'Servicio de correo no configurado. Añada RESEND_API_KEY y FROM_EMAIL en Supabase Edge Functions.' });
     }
     if (!email) {
       return sendJson(response, 400, { ok: false, code: 'EMAIL_REQUIRED', error: 'Indique el email del usuario.' });

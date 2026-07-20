@@ -20,10 +20,7 @@ const getEnvValue = (key) => {
 export const getSupabaseConfig = () => ({
   url: getEnvValue("VITE_SUPABASE_URL").replace(/\/$/, ""),
   anonKey: getEnvValue("VITE_SUPABASE_ANON_KEY"),
-  schema: getEnvValue("VITE_SUPABASE_SCHEMA") || "public",
-  publicBucket: getEnvValue("VITE_SUPABASE_PUBLIC_BUCKET") || "public-assets",
-  privateBucket: getEnvValue("VITE_SUPABASE_PRIVATE_BUCKET") || "private-documents",
-  reportsBucket: getEnvValue("VITE_SUPABASE_REPORTS_BUCKET") || "reports",
+  schema: "public",
 });
 
 const canUseStorage = () => {
@@ -89,7 +86,7 @@ export const getRepositoryDriver = () => {
 
 export const isProductionEnvironment = () => {
   const env = getImportMetaEnv();
-  return Boolean(env.PROD || getEnvValue("VITE_APP_ENV").toLowerCase() === "production");
+  return Boolean(env.PROD);
 };
 
 export const shouldUseSupabaseRepository = () => {

@@ -7,6 +7,8 @@ const beneficiaryPhotosBucket = import.meta.env.VITE_SUPABASE_BENEFICIARY_PHOTOS
 const deliverySignaturesBucket = import.meta.env.VITE_SUPABASE_DELIVERY_SIGNATURES_BUCKET || 'delivery-signatures';
 
 export const hasSupabaseConfig = Boolean(url && anonKey);
+export const supabaseUrl = url || '';
+export const supabaseAnonKey = anonKey || '';
 export const supabase = hasSupabaseConfig ? createClient(url, anonKey) : null;
 export const supabaseStorageBucket = storageBucket;
 export const supabaseBeneficiaryPhotosBucket = beneficiaryPhotosBucket;

@@ -20,7 +20,7 @@ export default async function handler(request, response) {
   }
 
   // Soporte GET temporal para ejecutar la reparación desde navegador:
-  // /api/emergency-admin-repair?secret=VALOR
+  // /functions/v1/emergency-admin-repair?secret=VALOR
   // Eliminar este soporte cuando Elizabeth quede reparada.
   const secretRequest = request.method === 'GET' ? withQuerySecretHeader(request) : request;
   const secret = requireRepairSecret(secretRequest, requestId, logPrefix);

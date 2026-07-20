@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
-import { Resend } from 'resend';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { Resend } from 'npm:resend@4.0.1';
 
 const OTP_TTL_MINUTES = 10;
 const SESSION_TTL_HOURS = 8;
@@ -155,7 +155,7 @@ async function findSubjectForAccess(supabase, portal, credentials = {}) {
 
 async function createAndSendOtp({ supabase, portal, config, subject, action }) {
   const resendKey = cleanText(process.env.RESEND_API_KEY);
-  const from = cleanText(process.env.FROM_EMAIL || process.env.RESEND_FROM_EMAIL);
+  const from = cleanText(process.env.FROM_EMAIL);
   if (!resendKey || !from) throw httpError(503, 'MAIL_NOT_CONFIGURED', 'Servicio de correo no configurado.');
 
   await revokePendingOtps(supabase, config, subject.id, action);

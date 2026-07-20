@@ -1,4 +1,4 @@
-ï»¿# ERP_EVOLUTION_PLAN.md
+# ERP_EVOLUTION_PLAN.md
 
 Fecha: 2026-07-13
 
@@ -24,7 +24,7 @@ Reglas de trabajo:
 - No romper rutas actuales.
 - No eliminar compatibilidad local/Supabase mientras haya usuarios o datos que dependan de ella.
 - Usar `useAppData` como fachada temporal mientras se extrae logica hacia Services.
-- Migrar por dominios pequeÃ±os, con build y pruebas manuales tras cada sprint.
+- Migrar por dominios pequeños, con build y pruebas manuales tras cada sprint.
 
 Objetivo final:
 
@@ -135,7 +135,7 @@ Evolucion:
 Archivos:
 
 - `src/lib/exporters.js`
-- `api/send-justificantes.js`
+- Edge Function `send-justificantes`
 
 Evolucion:
 
@@ -294,7 +294,7 @@ Uso actual:
 - `dataStore` usa Supabase si existen `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 - Auth usa Supabase Auth en produccion.
 - Storage usa bucket `documentos` y bucket `beneficiary-photos`.
-- Funciones serverless usan `SUPABASE_SERVICE_ROLE_KEY` solo en backend.
+- Supabase Edge Functions usan `SUPABASE_SERVICE_ROLE_KEY` solo en backend.
 
 Riesgo:
 
@@ -302,14 +302,14 @@ Riesgo:
 - Las operaciones criticas aun dependen de orquestacion frontend/hook en varios casos.
 - RLS depende de que todas las migraciones esten aplicadas en orden.
 
-### 5.3 Serverless/Vercel
+### 5.3 Supabase Edge Functions
 
 Uso actual:
 
-- Usuarios reales via `api/create-user.js` y `api/admin-user.js`.
-- Recuperacion de contrasenia via `api/request-password-reset.js` y `api/reset-password.js`.
-- Justificantes por Resend via `api/send-justificantes.js`.
-- Resumen operacional via `api/operations-summary.js`.
+- Usuarios reales via Edge Functions `create-user` y `admin-user`.
+- Recuperacion de contrasenia via Edge Functions `request-password-reset` y `reset-password`.
+- Justificantes por Resend via Edge Function `send-justificantes`.
+- Resumen operacional via Edge Function `operations-summary`.
 - Reparacion de emergencia via endpoints temporales.
 
 ## 6. Autenticacion y permisos reales
@@ -550,7 +550,7 @@ Acciones:
 - Crear `ComunicacionService`.
 - Crear `EmailService`.
 - Crear `ReceiptService`.
-- Mantener `api/send-justificantes.js` funcionando.
+- Mantener Edge Function `send-justificantes` funcionando.
 - Extraer generacion y registro sin cambiar PDFs.
 
 Riesgo: medio-alto.
@@ -627,7 +627,7 @@ No sustituir Supabase JS. El ERP ya esta conectado con:
 - Supabase Database.
 - Supabase Storage.
 - RLS.
-- Vercel Functions con service role.
+- Supabase Edge Functions con service role.
 
 ### 10.2 Crear repositories por dominio
 
@@ -745,7 +745,7 @@ Antes de empezar:
 
 Durante:
 
-- Cambios pequeÃ±os.
+- Cambios pequeños.
 - Mantener `actions` compatibles.
 - No cambiar UI.
 - No cambiar nombres de rutas.

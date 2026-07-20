@@ -19,9 +19,9 @@ La RC-02 corrige los bloqueantes de seguridad y arquitectura detectados en RC-01
 | Bloqueante | Estado RC-02 | Evidencia |
 |---|---|---|
 | B-02. Portales cargaban datos antes de autenticar | Resuelto | `src/App.jsx` usa `useAppData(!isPortalRoute && ...)`; `/portal-beneficiario`, `/portal-colaboradores` y `/portal-donaciones` renderizan con `createPortalApiActions()` y no reciben `sorted` ni acciones globales. |
-| B-03. OTP generado en cliente | Resuelto | `src/` no contiene `generateOtpCode`, `hashOtpCode`, `sendPortalOtpViaApi`, `signInWithOtp` ni generacion `900000`. El OTP se genera en `api/send-portal-otp.js` con `crypto.randomInt(100000, 1000000)`. |
-| B-03. OTP almacenado/validado en cliente | Resuelto | Los servicios de portales delegan `request-access`, `verify-access`, `request-sensitive` y `verify-sensitive` en `/api/send-portal-otp`; los metodos legacy `verifyStoredOtp` ya no validan en cliente. |
-| B-03. OTP sin uso unico/caducidad garantizada en servidor | Resuelto | `api/send-portal-otp.js` guarda hash SHA-256 `codigo:id`, marca usados, caducados o revocados y valida siempre desde servidor con `SUPABASE_SERVICE_ROLE_KEY`. |
+| B-03. OTP generado en cliente | Resuelto | `src/` no contiene `generateOtpCode`, `hashOtpCode`, `sendPortalOtpViaApi`, `signInWithOtp` ni generacion `900000`. El OTP se genera en la Edge Function `send-portal-otp` con `crypto.randomInt(100000, 1000000)`. |
+| B-03. OTP almacenado/validado en cliente | Resuelto | Los servicios de portales delegan `request-access`, `verify-access`, `request-sensitive` y `verify-sensitive` en la Edge Function `send-portal-otp`; los metodos legacy `verifyStoredOtp` ya no validan en cliente. |
+| B-03. OTP sin uso unico/caducidad garantizada en servidor | Resuelto | la Edge Function `send-portal-otp` guarda hash SHA-256 `codigo:id`, marca usados, caducados o revocados y valida siempre desde servidor con `SUPABASE_SERVICE_ROLE_KEY`. |
 | B-04. RLS demasiado amplia | Resuelto | Nueva migracion `supabase/migrations/20260719_rc02_minimum_privilege_rls.sql` elimina `using (true)`, `with check (true)` y `auth.role() = 'authenticated'` en las tablas principales revisadas. |
 | M-01. Accesos directos a `dataStore` desde vistas/hook | Resuelto | `src/hooks/useAppData.js` ya no contiene `dataStore.*`; los accesos locales quedan encapsulados en `LocalStorageRepository`. |
 
@@ -72,7 +72,7 @@ rg -n "generateOtpCode|900000|sendPortalOtpViaApi|signInWithOtp\\(|code:\\s*awai
 Resultado:
 
 - Sin coincidencias en `src/`.
-- La unica generacion OTP esta en `api/send-portal-otp.js`.
+- La unica generacion OTP esta en la Edge Function `send-portal-otp`.
 
 ```bash
 rg -n "dataStore\\." src
@@ -141,8 +141,8 @@ Supabase
 - Configurar `VITE_SUPABASE_ANON_KEY`.
 - Configurar `SUPABASE_SERVICE_ROLE_KEY` solo en entorno servidor.
 - Configurar `RESEND_API_KEY`.
-- Configurar `FROM_EMAIL` o `RESEND_FROM_EMAIL`.
-- Verificar envio real de email OTP en Vercel/produccion.
+- Configurar `FROM_EMAIL`.
+- Verificar envio real de email OTP en Supabase Edge Functions/produccion.
 - Verificar que los portales crean y revocan sesiones reales en `portal_sessions`.
 
 ### Resultado RC-02
@@ -396,7 +396,7 @@ El sistema lanza mensajes controlados cuando Supabase no esta configurado, pero 
 
 Estado: **No verificable en esta RC**.
 
-`RESEND_API_KEY` esta vacio en `.env` local. El endpoint `api/send-portal-otp.js` existe, pero no se pudo validar envio real.
+`RESEND_API_KEY` esta vacio en `.env` local. El endpoint la Edge Function `send-portal-otp` existe, pero no se pudo validar envio real.
 
 ### Supabase
 
@@ -413,7 +413,7 @@ Archivos:
 - `.env`
 - `.env.example`
 - `src/lib/supabase.js`
-- `api/send-portal-otp.js`
+- la Edge Function `send-portal-otp`
 
 Estado:
 
@@ -468,7 +468,7 @@ Archivos:
 - `src/services/collaborators/ColaboradorService.js`
 - `src/services/donors/DonanteService.js`
 - `src/lib/portalOtpClient.js`
-- `api/send-portal-otp.js`
+- la Edge Function `send-portal-otp`
 
 Impacto:
 
@@ -620,7 +620,7 @@ Bajo. No afecta build ni funcionamiento.
 
 Archivos:
 
-- Varios `api/*`, `src/lib/*`, `src/pages/*`, `src/services/*`.
+- Varios `supabase/functions/*`, `src/lib/*`, `src/pages/*`, `src/services/*`.
 
 Detalle:
 
@@ -641,8 +641,8 @@ Hay `console.warn` y `console.error` usados para errores operativos. No se detec
 
 ### Obligatorio antes de desplegar
 
-- [ ] Configurar `VITE_SUPABASE_URL` en Vercel.
-- [ ] Configurar `VITE_SUPABASE_ANON_KEY` en Vercel.
+- [ ] Configurar `VITE_SUPABASE_URL` en Supabase Edge Functions.
+- [ ] Configurar `VITE_SUPABASE_ANON_KEY` en Supabase Edge Functions.
 - [ ] Configurar `SUPABASE_SERVICE_ROLE_KEY` solo en funciones servidor.
 - [ ] Configurar `RESEND_API_KEY`.
 - [ ] Configurar `FROM_EMAIL` / dominio verificado.

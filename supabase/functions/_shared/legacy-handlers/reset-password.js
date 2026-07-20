@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 export default async function handler(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -19,7 +19,7 @@ export default async function handler(request, response) {
     const password = String(body.password || '').trim();
 
     if (!url || !serviceRoleKey) {
-      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+      return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.' });
     }
     if (!token || password.length < 8) {
       return sendJson(response, 400, { ok: false, code: 'INVALID_RESET', error: 'El enlace no es válido o la contraseña tiene menos de 8 caracteres.' });

@@ -29,6 +29,7 @@ import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { canAccess, getUserStatus } from '../lib/auth';
 import { getApiHeaders } from '../lib/apiAuth';
+import { fetchEdgeFunction, readEdgeJson } from '../lib/edgeFunctions';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 import { hasSupabaseConfig } from '../lib/supabase';
 import { DashboardService } from '../services/dashboard/DashboardService';
@@ -59,11 +60,11 @@ export function Dashboard({ data, actions, currentUser, onNavigate }) {
     async function loadSecureSummary() {
       setSecureSummary((current) => ({ ...current, loading: true, error: '' }));
       try {
-        const response = await fetch('/api/operations-summary', {
+        const response = await fetchEdgeFunction('operations-summary', {
           method: 'GET',
           headers: await getApiHeaders()
         });
-        const payload = await readJson(response);
+        const payload = await readEdgeJson(response);
         if (!response.ok) throw new Error(payload.error || 'No se pudo cargar el resumen protegido.');
         if (!cancelled) {
           setSecureSummary({
@@ -1791,13 +1792,4 @@ function formatMoney(value) {
 function sentenceCase(value) {
   if (!value) return '';
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-async function readJson(response) {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return {};
-  }
 }

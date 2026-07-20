@@ -1,4 +1,5 @@
 import { getApiHeaders } from '../../lib/apiAuth';
+import { fetchEdgeFunction } from '../../lib/edgeFunctions';
 import { hasSupabaseConfig } from '../../lib/supabase';
 import { createRepositoryAdapter } from '../repositories/RepositoryProvider';
 
@@ -26,7 +27,7 @@ export class UsuarioRepository {
 
   async create(user) {
     if (hasSupabaseConfig) {
-      const response = await this.fetchClient('/api/create-user', {
+      const response = await fetchEdgeFunction('create-user', {
         method: 'POST',
         headers: await getApiHeaders(),
         body: JSON.stringify({ user })
@@ -34,7 +35,7 @@ export class UsuarioRepository {
       const result = await readApiJson(response);
       if (!response.ok) {
         if (result.code === 'SUPABASE_ADMIN_NOT_CONFIGURED') {
-          throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel.'));
+          throw new Error(formatApiError(result, 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.'));
         }
         throw new Error(formatApiError(result, 'No se pudo crear el usuario.'));
       }
@@ -83,7 +84,7 @@ export class UsuarioRepository {
   }
 
   async sendWelcomeEmail({ user, organization, logoUrl }) {
-    return this.fetchClient('/api/send-justificantes', {
+    return fetchEdgeFunction('send-justificantes', {
       method: 'POST',
       headers: await getApiHeaders(),
       body: JSON.stringify({
@@ -98,7 +99,7 @@ export class UsuarioRepository {
   }
 
   async adminRequest(action, payload = {}) {
-    const response = await this.fetchClient('/api/admin-user', {
+    const response = await fetchEdgeFunction('admin-user', {
       method: 'POST',
       headers: await getApiHeaders(),
       body: JSON.stringify({ action, ...payload })

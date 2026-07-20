@@ -1,0 +1,38 @@
+[functions.contact]
+verify_jwt = false
+
+[functions.volunteer]
+verify_jwt = false
+
+[functions.create-checkout-session]
+verify_jwt = false
+
+[functions.send-portal-otp]
+verify_jwt = false
+
+[functions.request-password-reset]
+verify_jwt = false
+
+[functions.reset-password]
+verify_jwt = false
+
+[functions.emergency-admin-repair]
+verify_jwt = false
+
+[functions.emergency-create-user]
+verify_jwt = false
+
+[functions.ping-test]
+verify_jwt = false
+
+[functions.admin-user]
+verify_jwt = false
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.operations-summary]
+verify_jwt = false
+
+[functions.send-justificantes]
+verify_jwt = false

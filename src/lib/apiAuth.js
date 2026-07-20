@@ -1,7 +1,10 @@
-import { hasSupabaseConfig, supabase } from './supabase';
+import { hasSupabaseConfig, supabase, supabaseAnonKey } from './supabase';
 
 export async function getApiHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(supabaseAnonKey ? { apikey: supabaseAnonKey } : {})
+  };
   if (!hasSupabaseConfig || !supabase) return headers;
 
   const { data, error } = await supabase.auth.getSession();

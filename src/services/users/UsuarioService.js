@@ -70,7 +70,7 @@ export function normalizeUserError(error) {
   const message = error?.message || '';
   if (message.includes('duplicate key') || message.includes('app_users_email_key')) return 'Ya existe un usuario registrado con ese email.';
   if (message.includes('status')) return 'No se pudo guardar el estado del usuario. Ejecute la migracion 20260622_user_status_management.sql en Supabase.';
-  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Vercel y redepliegue.';
+  if (message.includes('SUPABASE_SERVICE_ROLE_KEY') || message.includes('Servicio de usuarios no configurado')) return 'Servicio de usuarios no configurado. Anada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions y redepliegue.';
   if (message.includes('Sesion de administrador requerida') || message.includes('Sesion no valida')) return 'Sesion de administrador no valida. Cierre sesion y vuelva a entrar.';
   if (message.includes('No tiene permisos')) return 'No tiene permisos para administrar usuarios.';
   return message || 'No se pudo registrar el usuario. Revise los datos e intentelo de nuevo.';

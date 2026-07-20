@@ -24,7 +24,7 @@ Antes de desplegar:
 - Usuario administrador definido.
 - Proyecto Supabase creado.
 - Dominio o URL de produccion definidos.
-- Acceso al panel de Vercel o hosting equivalente.
+- Acceso al panel del hosting frontend y Supabase.
 
 ## Orden de despliegue
 
@@ -102,7 +102,7 @@ Configurar:
 - Remitente autorizado.
 - `RESEND_API_KEY`.
 - `FROM_EMAIL`.
-- `RESEND_FROM_EMAIL` si se usa remitente alternativo.
+- `FROM_EMAIL` como remitente verificado en Resend.
 
 Pruebas:
 
@@ -131,7 +131,7 @@ Configurar en produccion segun `.env.example`:
 
 - `RESEND_API_KEY`
 - `FROM_EMAIL`
-- `RESEND_FROM_EMAIL`
+- `FROM_EMAIL`
 
 ### Aplicacion
 
@@ -164,7 +164,7 @@ Resultado esperado:
 - Sin errores.
 - Aviso de chunk grande aceptado como no bloqueante para v3.0.0.
 
-## Despliegue en Vercel
+## Despliegue en Supabase Edge Functions
 
 Pasos:
 
@@ -223,7 +223,7 @@ Si falla el despliegue:
 
 1. No ejecutar nuevas migraciones.
 2. Revisar logs.
-3. Volver al deploy anterior en Vercel.
+3. Volver al deploy anterior en Supabase Edge Functions.
 4. Si una migracion rompio datos, restaurar backup en entorno controlado.
 5. Documentar incidencia.
 

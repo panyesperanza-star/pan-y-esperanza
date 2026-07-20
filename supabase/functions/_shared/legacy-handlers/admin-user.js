@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { getServerConfig, hasAppPermission, requireAdmin } from './_adminAuth.js';
 
 export default async function handler(request, response) {
@@ -20,7 +20,7 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_ADMIN_NOT_CONFIGURED',
         step: 'server_config_missing',
-        error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Vercel.',
+        error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.',
         details: serverDiagnostics
       });
     }
@@ -31,7 +31,7 @@ export default async function handler(request, response) {
         ok: false,
         code: 'SUPABASE_SERVICE_ROLE_INVALID',
         step: 'server_config_service_role_format',
-        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido. Revise la variable en Vercel y elimine comillas, espacios o caracteres ocultos.',
+        error: 'SUPABASE_SERVICE_ROLE_KEY no tiene formato válido. Revise la variable en Supabase Edge Functions y elimine comillas, espacios o caracteres ocultos.',
         details: serverDiagnostics
       });
     }

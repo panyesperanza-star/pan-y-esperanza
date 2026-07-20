@@ -1,4 +1,5 @@
 import { getApiHeaders } from '../../lib/apiAuth';
+import { fetchEdgeFunction } from '../../lib/edgeFunctions';
 import { checkSupabaseStorage, getSystemConfigStatus } from '../../lib/supabase';
 import { createRepositoryAdapter } from '../repositories/RepositoryProvider';
 
@@ -49,7 +50,7 @@ export class ConfiguracionRepository {
   }
 
   async sendTestEmail(settings) {
-    const response = await this.fetchClient('/api/send-justificantes', {
+    const response = await fetchEdgeFunction('send-justificantes', {
       method: 'POST',
       headers: await getApiHeaders(),
       body: JSON.stringify({

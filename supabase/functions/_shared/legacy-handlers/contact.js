@@ -51,30 +51,25 @@ export default async function handler(request, response) {
   }
 
   const name = getText(body.name);
-  const phone = getText(body.phone);
   const email = getText(body.email);
-  const availability = getText(body.availability);
-  const observations = getText(body.observations);
+  const phone = getText(body.phone);
+  const message = getText(body.message);
   const errors = {};
 
   if (name.length < 2 || name.length > 120) {
     errors.name = "Nombre no valido.";
   }
 
-  if (!phonePattern.test(phone)) {
+  if (!emailPattern.test(email) || email.length > 160) {
+    errors.email = "Correo no valido.";
+  }
+
+  if (phone && !phonePattern.test(phone)) {
     errors.phone = "Telefono no valido.";
   }
 
-  if (!emailPattern.test(email) || email.length > 160) {
-    errors.email = "Email no valido.";
-  }
-
-  if (availability.length < 3 || availability.length > 240) {
-    errors.availability = "Disponibilidad no valida.";
-  }
-
-  if (observations.length > 2000) {
-    errors.observations = "Observaciones demasiado largas.";
+  if (message.length < 10 || message.length > 2000) {
+    errors.message = "Mensaje no valido.";
   }
 
   if (Object.keys(errors).length > 0) {
@@ -85,12 +80,12 @@ export default async function handler(request, response) {
   }
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM || process.env.RESEND_FROM_EMAIL || process.env.FROM_EMAIL;
-  const to = process.env.VOLUNTEER_TO_EMAIL || process.env.CONTACT_TO_EMAIL;
+  const from = process.env.FROM_EMAIL;
+  const to = process.env.CONTACT_TO_EMAIL;
 
   if (!apiKey || !from || !to) {
     return sendJson(response, 503, {
-      message: "El servicio de voluntariado no esta configurado todavia.",
+      message: "El servicio de contacto no esta configurado todavia.",
     });
   }
 
@@ -104,21 +99,20 @@ export default async function handler(request, response) {
       from,
       to,
       reply_to: email,
-      subject: "Nueva solicitud de voluntariado desde la web",
+      subject: "Nuevo mensaje desde la web de Pan y Esperanza",
       text: [
         `Nombre: ${name}`,
-        `Telefono: ${phone}`,
-        `Email: ${email}`,
-        `Disponibilidad: ${availability}`,
+        `Correo: ${email}`,
+        `Telefono: ${phone || "No indicado"}`,
         "",
-        `Observaciones: ${observations || "No indicadas"}`,
+        message,
       ].join("\n"),
     }),
   });
 
   if (!resendResponse.ok) {
     return sendJson(response, 502, {
-      message: "No se ha podido enviar la solicitud.",
+      message: "No se ha podido enviar el mensaje.",
     });
   }
 

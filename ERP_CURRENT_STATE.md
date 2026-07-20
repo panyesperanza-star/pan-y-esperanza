@@ -10,7 +10,7 @@ Rama Git: `main`
 
 ## 1. Resumen ejecutivo
 
-El ERP oficial de Pan y Esperanza existe en este proyecto como una aplicacion React/Vite de administracion interna. Es una SPA desplegable en Vercel, con menu lateral, autenticacion, permisos por modulo, almacenamiento hibrido local/Supabase y funciones serverless para operaciones sensibles.
+El ERP oficial de Pan y Esperanza existe en este proyecto como una aplicacion React/Vite de administracion interna. Es una SPA desplegable en Vercel, con menu lateral, autenticacion, permisos por modulo, almacenamiento hibrido local/Supabase y Supabase Edge Functions para operaciones sensibles.
 
 El sistema esta suficientemente avanzado para uso operativo inicial: beneficiarios, familias, entregas, justificantes, inventario, donaciones, contabilidad, comunicaciones, voluntarios, informes, usuarios, configuracion, copias y panel de proveedor.
 
@@ -39,7 +39,7 @@ Tecnologias actuales:
 - Vite 5.
 - Tailwind CSS 3.
 - Supabase JS v2.
-- Vercel Functions.
+- Supabase Edge Functions.
 - Resend para correo.
 - jsPDF y jsPDF AutoTable para PDF.
 - XLSX para Excel.
@@ -104,7 +104,7 @@ Responsabilidades actuales:
 - Ejecutar permisos.
 - Registrar auditoria.
 - Gestionar entregas, inventario, familias, beneficiarios, comunicaciones, contabilidad, donaciones, usuarios y copias.
-- Coordinar llamadas a APIs serverless.
+- Coordinar llamadas a Supabase Edge Functions.
 - Ejecutar logica economica y de inventario.
 
 Valoracion:
@@ -264,7 +264,7 @@ Servicios/datos usados:
 - `actions.createSocialHistory`
 - `actions.reloadData`
 - `src/lib/emailClient.js`
-- `api/send-justificantes.js`
+- Edge Function `send-justificantes`
 
 Logica acoplada:
 
@@ -364,7 +364,7 @@ Servicios/datos usados:
 - `actions.reloadData`
 - `src/lib/exporters.js`
 - `src/lib/emailClient.js`
-- `api/send-justificantes.js`
+- Edge Function `send-justificantes`
 
 Logica acoplada:
 
@@ -842,7 +842,7 @@ Riesgos:
 Archivos:
 
 - `src/lib/emailClient.js`
-- `api/send-justificantes.js`
+- Edge Function `send-justificantes`
 
 Funcionalidades:
 
@@ -857,7 +857,7 @@ Funcionalidades:
 
 Riesgo:
 
-- `api/send-justificantes.js` es grande y muy critico.
+- Edge Function `send-justificantes` es grande y muy critico.
 - Debe conservarse, pero conviene aislar generacion PDF, almacenamiento y envio.
 
 ### 6.6 Exportadores
@@ -881,7 +881,7 @@ Riesgo:
 - Muy util, pero monolitico.
 - Debe migrarse a servicios de documento por tipo.
 
-## 7. API serverless
+## 7. Supabase Edge Functions
 
 Carpeta:
 
@@ -895,11 +895,11 @@ Endpoints:
 | Crear usuario | `api/create-user.js` | Crear usuario en Supabase Auth y perfil en `app_users`. |
 | Reparacion admin | `api/emergency-admin-repair.js` | Reparacion temporal de superadmin. |
 | Crear usuario emergencia | `api/emergency-create-user.js` | Creacion temporal por secreto. |
-| Resumen operaciones | `api/operations-summary.js` | Endpoint protegido para resumen operativo. |
+| Resumen operaciones | Edge Function `operations-summary` | Endpoint protegido para resumen operativo. |
 | Ping | `api/ping-test.js` | Prueba simple. |
 | Solicitar reset | `api/request-password-reset.js` | Genera token y envia email por Resend. |
 | Reset password | `api/reset-password.js` | Valida token y actualiza contraseña en Supabase Auth. |
-| Enviar justificantes | `api/send-justificantes.js` | Envio de PDFs por Resend, Storage e historial. |
+| Enviar justificantes | Edge Function `send-justificantes` | Envio de PDFs por Resend, Storage e historial. |
 | Auth admin helper | `api/_adminAuth.js` | Validacion de token y permisos admin. |
 | Emergency helper | `api/_emergencyRepair.js` | Utilidades de reparacion. |
 

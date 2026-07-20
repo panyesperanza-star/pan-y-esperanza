@@ -178,7 +178,7 @@ Conclusión: antes de cualquier revisión visual detallada, debe corregirse el c
   - `src/lib/exporters.js`
 - Evidencia: PDF/Excel se generan en cliente con librerías pesadas.
 - Impacto: con datos reales grandes puede haber bloqueos de UI o exportaciones lentas.
-- Recomendación: mantener exportaciones ligeras en cliente y mover informes grandes a API/serverless.
+- Recomendación: mantener exportaciones ligeras en cliente y mover informes grandes a Supabase Edge Functions.
 
 #### M-07. Voluntarios usa historial flexible para turnos, asistencia, formación y documentos
 
@@ -238,7 +238,7 @@ Fortalezas observadas por código:
 Riesgos:
 
 - `DashboardService` no produce efectos reales.
-- Si falla `/api/operations-summary`, se emite `console.warn`.
+- Si falla la Edge Function `operations-summary`, se emite `console.warn`.
 - Puede volverse pesado porque depende de muchos datos precargados.
 
 Automatizaciones posibles:
