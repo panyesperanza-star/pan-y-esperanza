@@ -101,6 +101,7 @@ const SECURITY_TABLES = new Set([
   'donor_portal_otps',
   'portal_sessions'
 ]);
+const SUPABASE_QUERY_TIMEOUT_MS = 12000;
 
 function sanitizePayload(payload) {
   return Object.fromEntries(
@@ -129,10 +130,14 @@ export class SupabaseRepository {
   }
 
   async list(table) {
-    const { data, error } = await this.supabase
-      .from(table)
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data, error } = await withSupabaseQueryTimeout(
+      this.supabase
+        .from(table)
+        .select('*')
+        .order('created_at', { ascending: false }),
+      table,
+      'list'
+    );
     if (!error) return data || [];
     if (SECURITY_TABLES.has(table)) {
       registerSupabaseRepositoryError('list', table, error);
@@ -150,6 +155,7 @@ export class SupabaseRepository {
         return [table, await this.list(table)];
       } catch (error) {
         if (this.allowMissingOptionalTables && OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [table, []];
+        error.table = table;
         throw error;
       }
     }));
@@ -223,5 +229,21 @@ function registerSupabaseRepositoryError(operation, table, error) {
     table,
     code: error?.code,
     message: error?.message
+  });
+}
+
+function withSupabaseQueryTimeout(query, table, operation) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      const error = new Error(`La consulta Supabase ${operation} de ${table} ha superado el tiempo de espera.`);
+      error.code = 'SUPABASE_QUERY_TIMEOUT';
+      error.table = table;
+      reject(error);
+    }, SUPABASE_QUERY_TIMEOUT_MS);
+  });
+
+  return Promise.race([query, timeout]).finally(() => {
+    globalThis.clearTimeout(timeoutId);
   });
 }

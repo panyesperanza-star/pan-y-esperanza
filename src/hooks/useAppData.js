@@ -42,6 +42,7 @@ import { VoluntarioRepository } from '../services/volunteers/VoluntarioRepositor
 import { VoluntarioService } from '../services/volunteers/VoluntarioService';
 
 const EMPTY_TABLE = Object.freeze([]);
+const APP_DATA_LOAD_TIMEOUT_MS = 15000;
 const EMPTY_APP_DATA = Object.freeze({
   organization_settings: EMPTY_TABLE,
   families: EMPTY_TABLE,
@@ -112,11 +113,16 @@ export function useAppData(enabled = true, currentUser = null) {
     setError('');
     try {
       const repository = createRepository();
+      const loadedData = await withAppDataTimeout(
+        repository.loadAll(Object.keys(EMPTY_APP_DATA)),
+        APP_DATA_LOAD_TIMEOUT_MS
+      );
       setData({
         ...EMPTY_APP_DATA,
-        ...(await repository.loadAll(Object.keys(EMPTY_APP_DATA)))
+        ...loadedData
       });
     } catch (err) {
+      setData((current) => current || EMPTY_APP_DATA);
       setError(err.message || 'No se pudieron cargar los datos.');
     } finally {
       setLoading(false);
@@ -2476,4 +2482,19 @@ export function useAppData(enabled = true, currentUser = null) {
   }, [data, reload, currentUser]);
 
   return { data, loading, error, actions };
+}
+
+function withAppDataTimeout(promise, timeoutMs) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      const error = new Error('La carga inicial del ERP ha superado el tiempo de espera. Intenta recargar la pagina.');
+      error.code = 'APP_DATA_LOAD_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    globalThis.clearTimeout(timeoutId);
+  });
 }
