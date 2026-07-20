@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, clearStoredUser, getFirstAccessibleModule, getStoredUser, isSystemSuperadmin, refreshCurrentUser, signIn, signOut } from './lib/auth';
+import { canAccess, clearStoredUser, consumeJustSignedIn, getFirstAccessibleModule, getStoredUser, isSystemSuperadmin, refreshCurrentUser, signIn, signOut } from './lib/auth';
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Accounting } from './pages/Accounting';
@@ -28,6 +28,9 @@ import { Settings } from './pages/Settings';
 import { Volunteers } from './pages/Volunteers';
 import { createPortalApiActions } from './services/portalAuth/PortalApiService';
 
+const SESSION_VALIDATION_TIMEOUT_MS = 12000;
+const SIGN_OUT_TIMEOUT_MS = 5000;
+
 export default function App() {
   const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
   const [pathname, setPathname] = useState(window.location.pathname);
@@ -40,7 +43,8 @@ export default function App() {
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [navigationTarget, setNavigationTarget] = useState(() => readNavigationTargetFromLocation());
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
-  const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig || hasResetToken || !getStoredUser());
+  const [skipInitialSessionValidation] = useState(() => consumeJustSignedIn());
+  const [authReady, setAuthReady] = useState(true);
   const portalActions = useMemo(() => createPortalApiActions(), []);
   const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
@@ -64,13 +68,20 @@ export default function App() {
         if (!cancelled) setAuthReady(true);
         return;
       }
-      setAuthReady(false);
+      if (skipInitialSessionValidation) {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
       try {
-        const freshUser = await refreshCurrentUser();
+        const freshUser = await withSessionTimeout(refreshCurrentUser(), SESSION_VALIDATION_TIMEOUT_MS, 'No se pudo validar la sesion a tiempo.');
         if (!cancelled) setCurrentUser(freshUser);
       } catch (sessionError) {
         console.warn('[auth] No se pudo refrescar el perfil desde Supabase', { error: sessionError?.message });
-        await signOut();
+        try {
+          await withSessionTimeout(signOut(), SIGN_OUT_TIMEOUT_MS, 'No se pudo cerrar la sesion a tiempo.');
+        } catch {
+          clearStoredUser();
+        }
         clearStoredUser();
         if (!cancelled) setCurrentUser(null);
       } finally {
@@ -79,7 +90,7 @@ export default function App() {
     }
     validateStoredSession();
     return () => { cancelled = true; };
-  }, [currentUser?.id, currentUser?.email, hasResetToken, isLoginRoute]);
+  }, [currentUser?.id, currentUser?.email, hasResetToken, isLoginRoute, skipInitialSessionValidation]);
 
   const firstAccessibleModule = getFirstAccessibleModule(currentUser);
 
@@ -272,6 +283,19 @@ function buildNavigationPath(target) {
   if (target.operationType) params.set('operation', target.operationType);
   const query = params.toString();
   return `${getModulePath(target.moduleId)}${query ? `?${query}` : ''}`;
+}
+
+function withSessionTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    globalThis.clearTimeout(timeoutId);
+  });
 }
 
 function readNavigationTargetFromLocation() {

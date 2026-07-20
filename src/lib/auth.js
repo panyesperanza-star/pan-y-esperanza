@@ -2,6 +2,7 @@ import { isRoleActionAllowed, MODULES } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
+const JUST_SIGNED_IN_KEY = 'pye-just-signed-in';
 export const SYSTEM_SUPERADMIN_ROLE = 'Superadministrador del sistema';
 
 export function getStoredUser() {
@@ -23,6 +24,24 @@ export function clearStoredUser() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+export function consumeJustSignedIn() {
+  try {
+    const value = sessionStorage.getItem(JUST_SIGNED_IN_KEY) === '1';
+    sessionStorage.removeItem(JUST_SIGNED_IN_KEY);
+    return value;
+  } catch {
+    return false;
+  }
+}
+
+function markJustSignedIn() {
+  try {
+    sessionStorage.setItem(JUST_SIGNED_IN_KEY, '1');
+  } catch {
+    // Session storage can be unavailable in strict browser modes.
+  }
+}
+
 export async function signIn({ email, password }, users = []) {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -30,6 +49,7 @@ export async function signIn({ email, password }, users = []) {
     const current = await loadDatabaseProfile(data.user);
     await supabase.from('app_users').update({ last_access_at: new Date().toISOString() }).eq('id', current.id);
     storeUser(current);
+    markJustSignedIn();
     return current;
   }
 
@@ -39,6 +59,7 @@ export async function signIn({ email, password }, users = []) {
   }
   const current = withPermissions(user);
   storeUser(current);
+  markJustSignedIn();
   return current;
 }
 
