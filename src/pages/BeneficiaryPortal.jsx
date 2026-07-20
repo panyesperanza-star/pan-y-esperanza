@@ -128,12 +128,16 @@ export function BeneficiaryPortal({ data, actions }) {
             <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
               <form onSubmit={handleAccess} className="p-8 sm:p-10">
                 <div className="flex flex-col items-center">
-                  <img
-                    src="/assets/photographs/entrega.jpg"
-                    alt="Personas recibiendo alimentos de Pan y Esperanza"
-                    className="h-36 w-36 rounded-[1.5rem] object-cover object-center shadow-[0_1rem_2.4rem_rgba(37,33,29,0.16)]"
+                  <div
+                    role="img"
+                    aria-label="Beneficiaria recibiendo alimentos de Pan y Esperanza"
+                    className="h-36 w-36 rounded-[1.5rem] bg-cover bg-no-repeat shadow-[0_1rem_2.4rem_rgba(37,33,29,0.16)]"
+                    style={{
+                      backgroundImage: "url('/assets/photographs/entrega.jpg')",
+                      backgroundPosition: '92% 25%',
+                      backgroundSize: '235%'
+                    }}
                   />
-                  <BrandLogo className="mt-6 h-14 w-auto" showText={false} />
                 </div>
                   <div className="mt-7 text-center">
                     <h1 className="text-3xl font-bold leading-tight text-ink">Portal del Beneficiario</h1>
