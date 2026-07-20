@@ -9,7 +9,7 @@
     { "source": "/privacidad", "destination": "/privacidad/" },
     { "source": "/aviso-legal", "destination": "/aviso-legal/" },
     { "source": "/cookies", "destination": "/cookies/" },
-    { "source": "/acceso", "destination": "/erp/index.html" },
+    { "source": "/acceso", "destination": "/acceso/" },
     { "source": "/dashboard", "destination": "/erp/index.html" },
     { "source": "/notifications", "destination": "/erp/index.html" },
     { "source": "/agenda", "destination": "/erp/index.html" },

@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const cleanRoutes = new Set([
+  '/acceso',
   '/acceder',
   '/recursos',
   '/privacidad',
@@ -11,7 +12,6 @@ const cleanRoutes = new Set([
 ]);
 
 const erpRoutes = new Set([
-  '/acceso',
   '/dashboard',
   '/notifications',
   '/agenda',
@@ -80,6 +80,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        acceso: resolve(__dirname, 'acceso/index.html'),
         acceder: resolve(__dirname, 'acceder/index.html'),
         recursos: resolve(__dirname, 'recursos/index.html'),
         privacidad: resolve(__dirname, 'privacidad/index.html'),
