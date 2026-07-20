@@ -21,6 +21,9 @@ function cleanText(value) {
   return String(value || '').trim();
 }
 
+const ACCESS_LOCK_MAX_ATTEMPTS = 5;
+const ACCESS_LOCK_MINUTES = 15;
+
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -132,8 +135,24 @@ function sanitizeRequestPayload(beneficiaryId, payload = {}) {
   );
 }
 
-function normalizeDate(value) {
-  return String(value || '').slice(0, 10);
+function normalizeAccessIdentifier(value) {
+  return cleanText(value).toUpperCase().replace(/\s+/g, '');
+}
+
+async function hashAccessPin(pin, salt) {
+  const material = `${cleanText(pin)}:${cleanText(salt)}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function isLocked(account) {
+  return account?.locked_until && new Date(account.locked_until).getTime() > Date.now();
+}
+
+function nextLockUntil(attempts) {
+  return attempts >= ACCESS_LOCK_MAX_ATTEMPTS
+    ? new Date(Date.now() + ACCESS_LOCK_MINUTES * 60 * 1000).toISOString()
+    : null;
 }
 
 export class BeneficiarioPortalService {
@@ -166,45 +185,62 @@ export class BeneficiarioPortalService {
     this.notificacionService = notificacionService;
   }
 
-  async authenticate({ code, birthDate } = {}) {
-    return this.requestAccessOtp({ code, birthDate });
+  async authenticate({ accessIdentifier, pin } = {}) {
+    return this.requestAccessOtp({ accessIdentifier, pin });
   }
 
-  async requestAccessOtp({ code, birthDate } = {}) {
+  async requestAccessOtp({ accessIdentifier, pin } = {}) {
     return callPortalApi('request-access', {
       portal: 'beneficiary',
-      credentials: { code, birthDate }
+      credentials: { accessIdentifier, pin }
     });
   }
 
-  async verifyAccessOtp({ code, birthDate, otpCode, challengeId } = {}) {
+  async verifyAccessOtp({ accessIdentifier, pin, otpCode, challengeId } = {}) {
     const response = await callPortalApi('verify-access', {
       portal: 'beneficiary',
-      credentials: { code, birthDate },
+      credentials: { accessIdentifier, pin },
       code: otpCode,
       challengeId
     });
     return { session: response.session, auth: response.auth };
   }
 
-  async validateAccessCredentials({ code, birthDate } = {}) {
-    const cleanCode = cleanText(code).toUpperCase();
-    const cleanBirthDate = normalizeDate(birthDate);
-    if (!cleanCode) throw new Error('Introduce tu codigo de beneficiario.');
-    if (!cleanBirthDate) throw new Error('Introduce tu fecha de nacimiento.');
+  async validateAccessCredentials({ accessIdentifier, pin } = {}) {
+    const cleanIdentifier = normalizeAccessIdentifier(accessIdentifier);
+    const cleanPin = cleanText(pin);
+    if (!cleanIdentifier) throw new Error('Introduce tu identificador privado.');
+    if (!cleanPin) throw new Error('Introduce tu PIN de acceso.');
 
-    const beneficiaries = await this.readBeneficiaries();
-    const beneficiary = beneficiaries.find((item) => cleanText(item.code).toUpperCase() === cleanCode);
-    if (!beneficiary || normalizeDate(beneficiary.birth_date) !== cleanBirthDate) {
+    const accounts = await this.repository.listAccounts();
+    const account = accounts.find((item) => normalizeAccessIdentifier(item.access_identifier) === cleanIdentifier) || null;
+    if (!account) {
+      await this.audit('Portal beneficiario: acceso denegado por identificador no reconocido');
       throw new Error('No hemos podido validar los datos de acceso.');
     }
+    if (isLocked(account)) {
+      await this.audit('Portal beneficiario: acceso bloqueado por intentos fallidos');
+      throw new Error('Acceso bloqueado temporalmente por seguridad. Intentalo mas tarde.');
+    }
+    if (!account.pin_hash || !account.pin_salt) {
+      await this.audit('Portal beneficiario: acceso denegado por PIN no configurado');
+      throw new Error('El acceso seguro no esta activado. Contacta con Pan y Esperanza.');
+    }
+    const expectedHash = await hashAccessPin(cleanPin, account.pin_salt);
+    if (cleanText(account.pin_hash) !== expectedHash) {
+      await this.registerFailedAccessAttempt(account);
+      throw new Error('No hemos podido validar los datos de acceso.');
+    }
+
+    const beneficiaries = await this.readBeneficiaries();
+    const beneficiary = beneficiaries.find((item) => item.id === account.beneficiary_id);
+    if (!beneficiary) throw new Error('No hemos podido validar los datos de acceso.');
     if (beneficiary.is_active === false) {
       throw new Error('El expediente no esta activo. Contacta con Pan y Esperanza.');
     }
 
-    const accounts = await this.repository.listAccounts();
-    const account = accounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
-    await this.audit(`Portal beneficiario: primer factor validado para ${beneficiary.code || beneficiary.id}`.trim());
+    await this.resetAccessAttempts(account);
+    await this.audit(`Portal beneficiario: primer factor seguro validado para ${beneficiary.code || beneficiary.id}`.trim());
     return {
       beneficiary,
       account
@@ -473,6 +509,27 @@ export class BeneficiarioPortalService {
         updated_at: nowISO()
       });
     }
+  }
+
+  async registerFailedAccessAttempt(account) {
+    const attempts = Number(account.failed_access_attempts || 0) + 1;
+    await this.repository.updateAccount(account.id, {
+      failed_access_attempts: attempts,
+      last_failed_access_at: nowISO(),
+      locked_until: nextLockUntil(attempts),
+      updated_at: nowISO()
+    });
+    await this.audit(`Portal beneficiario: intento fallido ${attempts}/${ACCESS_LOCK_MAX_ATTEMPTS}`);
+  }
+
+  async resetAccessAttempts(account) {
+    await this.repository.updateAccount(account.id, {
+      failed_access_attempts: 0,
+      locked_until: null,
+      last_successful_access_at: nowISO(),
+      last_login_at: nowISO(),
+      updated_at: nowISO()
+    });
   }
 
   async readBeneficiaries() {

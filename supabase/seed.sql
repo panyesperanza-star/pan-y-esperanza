@@ -7,6 +7,20 @@ on conflict (code) do nothing;
 
 update public.beneficiary_sequence set last_value = greatest(last_value, 2) where id = 1;
 
+insert into public.beneficiary_portal_accounts
+  (beneficiary_id, access_identifier, pin_hash, pin_salt, pin_set_at, failed_access_attempts, email, phone, status, access_level, activated_at)
+select id, 'PYE-MARIA7K3D', 'c7d80dec4eee973cfbafb8599528ea834326d33fa1e1d211bdc8a83f03fa1db3', 'demo-beneficiary-maria-2026', now(), 0, email, phone, 'active', 'beneficiary', now()
+from public.beneficiaries
+where code = 'PYE-00001'
+on conflict (beneficiary_id) do nothing;
+
+insert into public.beneficiary_portal_accounts
+  (beneficiary_id, access_identifier, pin_hash, pin_salt, pin_set_at, failed_access_attempts, email, phone, status, access_level, activated_at)
+select id, 'PYE-AHMED9Q2L', '61f9fff5693438730b8a61ce6c64a12e67c09cc2cb127150612ab7ae0bd5c453', 'demo-beneficiary-ahmed-2026', now(), 0, email, phone, 'active', 'beneficiary', now()
+from public.beneficiaries
+where code = 'PYE-00002'
+on conflict (beneficiary_id) do nothing;
+
 insert into public.inventory_items (name, category, unit, stock, low_stock_threshold, notes)
 values
   ('Arroz', 'Alimentos', 'kg', 50, 20, ''),

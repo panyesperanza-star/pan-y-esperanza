@@ -35,7 +35,7 @@ const TABS = [
 
 export function BeneficiaryPortal({ data, actions }) {
   const portalService = actions?.beneficiarioPortal;
-  const [credentials, setCredentials] = useState({ code: '', birthDate: '' });
+  const [credentials, setCredentials] = useState({ accessIdentifier: '', pin: '' });
   const [accessOtp, setAccessOtp] = useState('');
   const [challenge, setChallenge] = useState(null);
   const [session, setSession] = useState(() => readStoredSession());
@@ -108,7 +108,7 @@ export function BeneficiaryPortal({ data, actions }) {
     setOverview(null);
     setChallenge(null);
     setAccessOtp('');
-    setCredentials({ code: '', birthDate: '' });
+    setCredentials({ accessIdentifier: '', pin: '' });
     setActiveTab('inicio');
   }
 
@@ -140,23 +140,24 @@ export function BeneficiaryPortal({ data, actions }) {
                   </div>
 
                   <div className="mt-8 space-y-5">
-                    <FormField label="Codigo de beneficiario" required>
+                    <FormField label="Identificador privado" required>
                       <input
                         className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
-                        value={credentials.code}
-                        onChange={(event) => setCredentials((current) => ({ ...current, code: event.target.value }))}
-                        placeholder="PYE-00001"
+                        value={credentials.accessIdentifier}
+                        onChange={(event) => setCredentials((current) => ({ ...current, accessIdentifier: event.target.value }))}
+                        placeholder="PYE-A1B2C3D4"
                         autoComplete="username"
                       />
                     </FormField>
-                    <FormField label="Fecha de nacimiento" required>
+                    <FormField label="PIN de acceso" required>
                       <input
                         className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
-                        value={credentials.birthDate}
-                        onChange={(event) => setCredentials((current) => ({ ...current, birthDate: event.target.value }))}
-                        placeholder="1988-04-14"
+                        type="password"
+                        value={credentials.pin}
+                        onChange={(event) => setCredentials((current) => ({ ...current, pin: event.target.value }))}
+                        placeholder="Introduce tu PIN"
                         inputMode="numeric"
-                        autoComplete="bday"
+                        autoComplete="current-password"
                       />
                     </FormField>
                   </div>
@@ -315,7 +316,7 @@ function PortalHome({ overview, nextDelivery, pendingDocs, unreadNotices, setAct
       </Panel>
       <Panel title="Seguridad" icon={ShieldCheck}>
         <div className="space-y-3 text-sm text-slate-600">
-          <p>El acceso se valida con codigo de beneficiario y fecha de nacimiento.</p>
+          <p>El acceso se valida con identificador privado, PIN seguro y codigo OTP.</p>
           <p>Las solicitudes y cambios de perfil requieren codigo OTP.</p>
           <span className="inline-flex rounded-md bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700">
             {auth?.supabaseAuthReady ? 'Supabase Auth preparado' : 'Modo seguro local'}

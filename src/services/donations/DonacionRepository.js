@@ -21,6 +21,18 @@ export class DonacionRepository {
     return this.repository.list('accounting_contacts');
   }
 
+  async listDonors() {
+    return this.repository.list('donors');
+  }
+
+  async createDonor(payload) {
+    return this.repository.create('donors', payload);
+  }
+
+  async updateDonor(id, payload) {
+    return this.repository.update('donors', id, payload);
+  }
+
   async createDonorContact(payload) {
     return this.repository.create('accounting_contacts', payload);
   }
@@ -31,5 +43,17 @@ export class DonacionRepository {
 
   async removeDonorContact(id) {
     return this.repository.remove('accounting_contacts', id);
+  }
+
+  async listCollaborators() {
+    return this.repository.list('collaborators');
+  }
+
+  async createCollaborator(payload) {
+    return this.repository.create('collaborators', payload);
+  }
+
+  async updateCollaborator(id, payload) {
+    return this.repository.update('collaborators', id, payload);
   }
 }

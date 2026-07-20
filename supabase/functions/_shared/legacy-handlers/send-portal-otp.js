@@ -4,6 +4,8 @@ import { Resend } from 'npm:resend@4.0.1';
 
 const OTP_TTL_MINUTES = 10;
 const SESSION_TTL_HOURS = 8;
+const BENEFICIARY_ACCESS_LOCK_MAX_ATTEMPTS = 5;
+const BENEFICIARY_ACCESS_LOCK_MINUTES = 15;
 
 const PORTALS = Object.freeze({
   beneficiary: {
@@ -123,20 +125,7 @@ function createServerClient() {
 
 async function findSubjectForAccess(supabase, portal, credentials = {}) {
   if (portal === 'beneficiary') {
-    const code = cleanText(credentials.code).toUpperCase();
-    const birthDate = cleanText(credentials.birthDate || credentials.birth_date).slice(0, 10);
-    if (!code || !birthDate) throw httpError(400, 'INVALID_CREDENTIALS', 'Introduce tus datos de acceso.');
-    const { data, error } = await supabase
-      .from('beneficiaries')
-      .select('*')
-      .eq('code', code)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data || cleanText(data.birth_date).slice(0, 10) !== birthDate) {
-      throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar los datos de acceso.');
-    }
-    if (data.is_active === false) throw httpError(403, 'SUBJECT_INACTIVE', 'El expediente no esta activo.');
-    return data;
+    return findBeneficiaryForSecureAccess(supabase, credentials);
   }
 
   const email = cleanEmail(credentials.email || credentials);
@@ -151,6 +140,100 @@ async function findSubjectForAccess(supabase, portal, credentials = {}) {
   if (!data) throw httpError(403, 'ACCESS_DENIED', `No hemos encontrado ${portal === 'collaborator' ? 'un colaborador' : 'un donante'} con ese correo.`);
   if (data.is_active === false) throw httpError(403, 'SUBJECT_INACTIVE', 'El acceso no esta activo.');
   return data;
+}
+
+async function findBeneficiaryForSecureAccess(supabase, credentials = {}) {
+  const accessIdentifier = normalizeAccessIdentifier(credentials.accessIdentifier || credentials.access_identifier || credentials.identifier || credentials.portalIdentifier);
+  const pin = cleanText(credentials.pin || credentials.accessPin || credentials.access_pin);
+  if (!accessIdentifier || !pin) throw httpError(400, 'INVALID_CREDENTIALS', 'Introduce tu identificador y PIN de acceso.');
+
+  const { data: account, error: accountError } = await supabase
+    .from('beneficiary_portal_accounts')
+    .select('*')
+    .eq('access_identifier', accessIdentifier)
+    .maybeSingle();
+  if (accountError) throw accountError;
+  if (!account) {
+    await audit(supabase, `Portal del Beneficiario: acceso fallido con identificador desconocido ${maskIdentifier(accessIdentifier)}`);
+    throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar los datos de acceso.');
+  }
+  if (isAccessLocked(account)) {
+    await audit(supabase, `Portal del Beneficiario: acceso bloqueado por intentos fallidos ${maskIdentifier(accessIdentifier)}`);
+    throw httpError(429, 'ACCESS_LOCKED', 'Acceso bloqueado temporalmente por seguridad. Intentalo mas tarde.');
+  }
+  if (cleanText(account.status).toLowerCase() !== 'active') {
+    await audit(supabase, `Portal del Beneficiario: acceso denegado por cuenta no activa ${maskIdentifier(accessIdentifier)}`);
+    throw httpError(403, 'ACCESS_NOT_ACTIVE', 'El acceso al portal no esta activo. Contacta con Pan y Esperanza.');
+  }
+  if (!account.pin_hash || !account.pin_salt) {
+    await audit(supabase, `Portal del Beneficiario: acceso denegado por PIN no configurado ${maskIdentifier(accessIdentifier)}`);
+    throw httpError(403, 'ACCESS_NOT_CONFIGURED', 'El acceso seguro no esta activado. Contacta con Pan y Esperanza.');
+  }
+  if (cleanText(account.pin_hash) !== hashAccessPin(pin, account.pin_salt)) {
+    await registerFailedBeneficiaryAccess(supabase, account, accessIdentifier);
+    throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar los datos de acceso.');
+  }
+
+  const { data: beneficiary, error: beneficiaryError } = await supabase
+    .from('beneficiaries')
+    .select('*')
+    .eq('id', account.beneficiary_id)
+    .maybeSingle();
+  if (beneficiaryError) throw beneficiaryError;
+  if (!beneficiary) {
+    await audit(supabase, `Portal del Beneficiario: acceso denegado por expediente no encontrado ${maskIdentifier(accessIdentifier)}`);
+    throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar los datos de acceso.');
+  }
+  if (beneficiary.is_active === false) {
+    await audit(supabase, `Portal del Beneficiario: acceso denegado por expediente inactivo ${beneficiary.code || beneficiary.id}`);
+    throw httpError(403, 'SUBJECT_INACTIVE', 'El expediente no esta activo.');
+  }
+
+  await resetBeneficiaryAccessAttempts(supabase, account);
+  await audit(supabase, `Portal del Beneficiario: primer factor seguro validado para ${beneficiary.code || beneficiary.id}`);
+  return beneficiary;
+}
+
+async function registerFailedBeneficiaryAccess(supabase, account, accessIdentifier) {
+  const attempts = Number(account.failed_access_attempts || 0) + 1;
+  const lockedUntil = attempts >= BENEFICIARY_ACCESS_LOCK_MAX_ATTEMPTS
+    ? new Date(Date.now() + BENEFICIARY_ACCESS_LOCK_MINUTES * 60 * 1000).toISOString()
+    : null;
+  await supabase.from('beneficiary_portal_accounts').update({
+    failed_access_attempts: attempts,
+    last_failed_access_at: new Date().toISOString(),
+    locked_until: lockedUntil,
+    updated_at: new Date().toISOString()
+  }).eq('id', account.id);
+  await audit(supabase, `Portal del Beneficiario: intento fallido ${attempts}/${BENEFICIARY_ACCESS_LOCK_MAX_ATTEMPTS} ${maskIdentifier(accessIdentifier)}`);
+}
+
+async function resetBeneficiaryAccessAttempts(supabase, account) {
+  await supabase.from('beneficiary_portal_accounts').update({
+    failed_access_attempts: 0,
+    locked_until: null,
+    last_successful_access_at: new Date().toISOString(),
+    last_login_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', account.id);
+}
+
+function isAccessLocked(account) {
+  return account?.locked_until && new Date(account.locked_until).getTime() > Date.now();
+}
+
+function normalizeAccessIdentifier(value) {
+  return cleanText(value).toUpperCase().replace(/\s+/g, '');
+}
+
+function maskIdentifier(value) {
+  const text = normalizeAccessIdentifier(value);
+  if (text.length <= 4) return '****';
+  return `${text.slice(0, 4)}****${text.slice(-2)}`;
+}
+
+function hashAccessPin(pin, salt) {
+  return crypto.createHash('sha256').update(`${cleanText(pin)}:${cleanText(salt)}`).digest('hex');
 }
 
 async function createAndSendOtp({ supabase, portal, config, subject, action }) {

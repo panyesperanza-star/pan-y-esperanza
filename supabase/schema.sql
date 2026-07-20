@@ -1,4 +1,4 @@
-﻿create extension if not exists "pgcrypto";
+create extension if not exists "pgcrypto";
 
 insert into storage.buckets (id, name, public)
 values ('documentos', 'documentos', false)
@@ -142,6 +142,14 @@ create table if not exists public.beneficiary_portal_accounts (
   id uuid primary key default gen_random_uuid(),
   beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
   auth_user_id uuid references auth.users(id) on delete set null,
+  access_identifier text not null default ('PYE-' || upper(substr(encode(gen_random_bytes(8), 'hex'), 1, 12))),
+  pin_hash text,
+  pin_salt text,
+  pin_set_at timestamptz,
+  failed_access_attempts integer not null default 0 check (failed_access_attempts >= 0),
+  last_failed_access_at timestamptz,
+  last_successful_access_at timestamptz,
+  locked_until timestamptz,
   email text,
   phone text,
   status text not null default 'draft' check (status in ('draft', 'invited', 'active', 'suspended', 'archived')),
@@ -227,6 +235,7 @@ create table if not exists public.portal_sessions (
 
 create index if not exists beneficiary_portal_accounts_beneficiary_idx on public.beneficiary_portal_accounts (beneficiary_id);
 create index if not exists beneficiary_portal_accounts_auth_user_idx on public.beneficiary_portal_accounts (auth_user_id);
+create unique index if not exists beneficiary_portal_accounts_access_identifier_uidx on public.beneficiary_portal_accounts (access_identifier);
 create index if not exists beneficiary_portal_otps_beneficiary_idx on public.beneficiary_portal_otps (beneficiary_id, created_at desc);
 create index if not exists beneficiary_portal_notices_beneficiary_idx on public.beneficiary_portal_notices (beneficiary_id, status);
 create index if not exists beneficiary_portal_renewals_beneficiary_idx on public.beneficiary_portal_renewals (beneficiary_id, status, renewal_due_at);
@@ -1624,6 +1633,9 @@ alter table public.donations add column if not exists amount numeric(12,2) defau
 alter table public.donations add column if not exists quantity text;
 alter table public.donations add column if not exists campaign_id uuid;
 alter table public.donations add column if not exists frequency text;
+alter table public.donations add column if not exists stripe_session_id text;
+alter table public.donations add column if not exists stripe_payment_intent_id text;
+alter table public.donations add column if not exists stripe_customer_id text;
 alter table public.donations add column if not exists pickup_requested boolean default false;
 alter table public.donations add column if not exists proposed_pickup_at date;
 alter table public.donations add column if not exists updated_at timestamptz not null default now();
@@ -1857,6 +1869,9 @@ create index if not exists idx_donor_profile_updates_donor on public.donor_porta
 create index if not exists idx_donor_certificates_donor on public.donor_certificates(donor_id, issued_at desc);
 create index if not exists idx_donations_donor_id on public.donations(donor_id);
 create index if not exists idx_donations_donor_email on public.donations(donor_email);
+create unique index if not exists idx_donations_stripe_session_id_unique on public.donations(stripe_session_id) where stripe_session_id is not null;
+create index if not exists idx_donations_stripe_payment_intent on public.donations(stripe_payment_intent_id) where stripe_payment_intent_id is not null;
+create index if not exists idx_donations_stripe_customer on public.donations(stripe_customer_id) where stripe_customer_id is not null;
 
 alter table public.donors enable row level security;
 alter table public.donor_portal_otps enable row level security;

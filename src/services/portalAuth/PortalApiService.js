@@ -50,10 +50,10 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return callPortalApi('request-access', { portal: this.portal, credentials });
   }
 
-  async verifyAccessOtp({ code, birthDate, otpCode, challengeId } = {}) {
+  async verifyAccessOtp({ accessIdentifier, pin, otpCode, challengeId } = {}) {
     const response = await callPortalApi('verify-access', {
       portal: this.portal,
-      credentials: { code, birthDate },
+      credentials: { accessIdentifier, pin },
       code: otpCode,
       challengeId
     });

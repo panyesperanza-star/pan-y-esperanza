@@ -3,6 +3,7 @@ import { ROLE_PERMISSION_MATRIX } from '../lib/constants';
 
 const demoFamilyId = crypto.randomUUID();
 const demoBeneficiaryMariaId = crypto.randomUUID();
+const demoBeneficiaryAhmedId = crypto.randomUUID();
 const demoCampaignId = crypto.randomUUID();
 const demoAgendaEventId = crypto.randomUUID();
 const demoCollaboratorId = crypto.randomUUID();
@@ -64,7 +65,7 @@ export const seedData = {
       last_help_at: null
     },
     {
-      id: crypto.randomUUID(),
+      id: demoBeneficiaryAhmedId,
       family_id: '',
       family_relationship: '',
       code: 'PYE-00002',
@@ -103,7 +104,44 @@ export const seedData = {
       notes: 'Documento pendiente de digitalizacion.'
     }
   ],
-  beneficiary_portal_accounts: [],
+  beneficiary_portal_accounts: [
+    {
+      id: crypto.randomUUID(),
+      beneficiary_id: demoBeneficiaryMariaId,
+      access_identifier: 'PYE-MARIA7K3D',
+      pin_hash: 'c7d80dec4eee973cfbafb8599528ea834326d33fa1e1d211bdc8a83f03fa1db3',
+      pin_salt: 'demo-beneficiary-maria-2026',
+      pin_set_at: new Date().toISOString(),
+      failed_access_attempts: 0,
+      locked_until: null,
+      email: 'maria.lopez@example.org',
+      phone: '600 111 222',
+      status: 'active',
+      access_level: 'beneficiary',
+      activated_at: new Date().toISOString(),
+      last_login_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: crypto.randomUUID(),
+      beneficiary_id: demoBeneficiaryAhmedId,
+      access_identifier: 'PYE-AHMED9Q2L',
+      pin_hash: '61f9fff5693438730b8a61ce6c64a12e67c09cc2cb127150612ab7ae0bd5c453',
+      pin_salt: 'demo-beneficiary-ahmed-2026',
+      pin_set_at: new Date().toISOString(),
+      failed_access_attempts: 0,
+      locked_until: null,
+      email: 'ahmed.benali@example.org',
+      phone: '611 222 333',
+      status: 'active',
+      access_level: 'beneficiary',
+      activated_at: new Date().toISOString(),
+      last_login_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ],
   beneficiary_portal_otps: [],
   beneficiary_portal_notices: [],
   beneficiary_portal_renewals: [],

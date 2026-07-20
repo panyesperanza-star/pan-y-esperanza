@@ -1,9 +1,78 @@
 import { normalize } from '../../lib/formatters';
 
+const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
+const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
+const COLLABORATOR_KINDS = new Set(['empresa', 'iglesia', 'asociacion', 'fundacion', 'administracion', 'entidad', 'colaborador']);
+
 function cleanText(value) {
   return String(value || '').trim();
 }
 
+function lower(value) {
+  return cleanText(value).toLowerCase();
+}
+
+function markerValue(notes, marker) {
+  const line = String(notes || '').split(/\r?\n/).find((item) => item.startsWith(marker));
+  return line ? cleanText(line.slice(marker.length)) : '';
+}
+
+function resolveDonorKind(payload = {}, current = {}) {
+  return cleanText(
+    payload.kind
+    || payload.donor_kind
+    || markerValue(payload.notes, DONOR_KIND_MARKER)
+    || markerValue(current.notes, DONOR_KIND_MARKER)
+    || current.kind
+  ) || inferCollaboratorKind(payload.name || current.name);
+}
+
+function resolveContactPerson(payload = {}, current = {}) {
+  return cleanText(
+    payload.contact_person
+    || payload.contactPerson
+    || payload.contact_name
+    || markerValue(payload.notes, DONOR_CONTACT_MARKER)
+    || markerValue(current.notes, DONOR_CONTACT_MARKER)
+  );
+}
+
+function inferCollaboratorKind(name = '') {
+  const value = normalize(name);
+  if (value.includes('iglesia') || value.includes('parroquia')) return 'Iglesia';
+  if (value.includes('fundacion')) return 'Fundacion';
+  if (value.includes('asociacion')) return 'Asociacion';
+  if (value.includes('ayuntamiento') || value.includes('administracion')) return 'Administracion';
+  if (/\b(sl|s l|sa|s a)\b/.test(value) || value.includes('empresa')) return 'Empresa';
+  if (value.includes('entidad')) return 'Entidad';
+  return '';
+}
+
+function isCollaboratorKind(kind) {
+  return COLLABORATOR_KINDS.has(normalize(kind));
+}
+
+function isAnonymousKind(kind) {
+  const value = normalize(kind);
+  return value.includes('anonimo') || value.includes('anonima');
+}
+
+function safeAmount(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return 0;
+}
+
+function safeDate(...values) {
+  const value = values.map(cleanText).find(Boolean) || new Date().toISOString();
+  return value.slice(0, 10);
+}
+
+function compactNotes(...values) {
+  return values.map(cleanText).filter(Boolean).join('\n');
+}
 export function sanitizeDonorContactPayload(payload = {}, current = {}) {
   const name = cleanText(payload.name || payload.contact_name || current.name);
   if (!name) throw new Error('El nombre del donante es obligatorio.');
@@ -69,7 +138,11 @@ export class DonacionService {
         || (cleanContact.email && normalize(item.email) === normalize(cleanContact.email))
       )
     ));
-    if (duplicate) return duplicate;
+    if (duplicate) {
+      await this.syncCollaboratorPortalAccess(duplicate, payload);
+      await this.syncDonorPortalAccess(duplicate, payload);
+      return duplicate;
+    }
 
     const contact = await this.repository.createDonorContact({
       ...cleanContact,
@@ -77,6 +150,8 @@ export class DonacionService {
     });
     await this.accountingAuditTrail('accounting_contacts', contact.id, 'create_donor', null, contact);
     await this.audit(`Donantes: creo ficha de donante ${contact.name}`.trim());
+    await this.syncCollaboratorPortalAccess(contact, payload);
+    await this.syncDonorPortalAccess(contact, payload);
     return contact;
   }
 
@@ -88,6 +163,8 @@ export class DonacionService {
     const updated = await this.repository.updateDonorContact(id, cleanContact);
     await this.accountingAuditTrail('accounting_contacts', id, 'update_donor', current, updated);
     await this.audit(`Donantes: edito ficha de donante ${updated.name || current.name}`.trim());
+    await this.syncCollaboratorPortalAccess(updated, payload, current, { deactivateWhenInactive: true });
+    await this.syncDonorPortalAccess(updated, payload, current, { deactivateWhenInactive: true });
     return updated;
   }
 
@@ -102,6 +179,8 @@ export class DonacionService {
     });
     await this.accountingAuditTrail('accounting_contacts', id, updated.is_active === false ? 'archive_donor' : 'unarchive_donor', current, updated);
     await this.audit(`Donantes: ${updated.is_active === false ? 'archivo' : 'desarchivo'} donante ${updated.name || current.name}`.trim());
+    await this.syncCollaboratorPortalAccess(updated, payload, current, { deactivateWhenInactive: true });
+    await this.syncDonorPortalAccess(updated, payload, current, { deactivateWhenInactive: true });
     return updated;
   }
 
@@ -114,20 +193,71 @@ export class DonacionService {
     }
     await this.repository.removeDonorContact(id);
     await this.accountingAuditTrail('accounting_contacts', id, 'delete_donor_without_donations', contact, null);
-    await this.audit(`Donantes: eliminó donante sin donaciones ${contact.name}`.trim());
+    await this.audit(`Donantes: elimino donante sin donaciones ${contact.name}`.trim());
   }
 
   async recordEconomicDonation(payload = {}) {
     this.assertPermission('accounting', 'create');
-    const donorName = cleanText(payload.donor_name || payload.contact_name);
-    await this.audit(`Contabilidad: donación monetaria ${donorName}`.trim());
-    await this.dashboardService?.notifyDonationChanged?.({ type: 'economic', donorName, payload });
-    await this.notificacionService?.notifyDonationChanged?.({ type: 'economic', donorName, payload });
+    const donorName = cleanText(payload.donor_name || payload.contact_name || payload.donor || payload.name);
+    const donorEmail = cleanText(payload.contact_email || payload.donor_email || payload.email);
+    const contact = {
+      name: donorName,
+      email: donorEmail,
+      phone: cleanText(payload.contact_phone || payload.phone),
+      address: cleanText(payload.contact_address || payload.address),
+      is_active: true
+    };
+    const [collaborator, donor] = await Promise.all([
+      this.syncCollaboratorPortalAccess(contact, payload),
+      this.syncDonorPortalAccess(contact, payload)
+    ]);
+    const amount = safeAmount(payload.amount, payload.estimated_value);
+    const paymentMethod = cleanText(payload.payment_method || payload.method || 'No indicado');
+    const donation = await this.repository.createDonation({
+      donor_id: donor?.id || payload.donor_id || null,
+      collaborator_id: collaborator?.id || payload.collaborator_id || null,
+      donor: donor?.name || donorName || 'Donante',
+      donor_email: donor?.email || donorEmail,
+      donor_kind: payload.donor_kind || payload.kind || 'Particular',
+      donation_type: 'Economica',
+      status: payload.status || 'Recibida',
+      state: payload.state || payload.status || 'Recibida',
+      payment_method: paymentMethod,
+      donated_at: safeDate(payload.donated_at, payload.operation_at, payload.movement_datetime, payload.movement_at, payload.date),
+      estimated_value: amount,
+      amount,
+      campaign_id: cleanText(payload.campaign_id) || null,
+      frequency: cleanText(payload.frequency || 'Puntual'),
+      notes: compactNotes(payload.concept, payload.reference ? `Referencia: ${payload.reference}` : '', payload.notes),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    await this.audit(`Contabilidad: donacion monetaria ${donorName}`.trim());
+    await this.dashboardService?.notifyDonationChanged?.({ type: 'economic', donorName, donation, payload });
+    await this.notificacionService?.notifyDonationChanged?.({ type: 'economic', donorName, donation, payload });
+    return donation;
   }
 
   async recordPortalDonationRequest(payload = {}, context = {}) {
-    const donation = await this.repository.createDonation(payload);
-    const donorName = cleanText(payload.donor || context.donor?.name || '');
+    const contextDonor = context.donor || null;
+    const donorName = cleanText(payload.donor || contextDonor?.name || payload.donor_name || 'Donante');
+    const donorEmail = cleanText(payload.donor_email || contextDonor?.email || payload.email);
+    const donor = contextDonor || await this.syncDonorPortalAccess({
+      name: donorName,
+      email: donorEmail,
+      phone: cleanText(payload.phone || payload.contact_phone),
+      is_active: true
+    }, payload);
+    const donation = await this.repository.createDonation({
+      ...payload,
+      donor_id: payload.donor_id || donor?.id || null,
+      donor: donor?.name || donorName,
+      donor_email: donor?.email || donorEmail,
+      donor_kind: payload.donor_kind || 'Particular',
+      status: payload.status || 'Pendiente',
+      state: payload.state || payload.status || 'Pendiente',
+      updated_at: new Date().toISOString()
+    });
     await this.audit(`Portal donaciones: solicitud de donacion economica ${donorName}`.trim());
     await this.dashboardService?.notifyDonationChanged?.({ type: context.source || 'donor_portal', donation, payload });
     await this.notificacionService?.notifyDonationChanged?.({ type: context.source || 'donor_portal', donation, payload });
@@ -149,13 +279,34 @@ export class DonacionService {
     if (!item?.id) throw new Error('Selecciona un producto de inventario valido.');
 
     const cleanDonorName = cleanText(donorName || payload.donor_name || payload.contact_name);
+    const contact = {
+      name: cleanDonorName,
+      email: cleanText(payload.contact_email || payload.donor_email),
+      phone: cleanText(payload.contact_phone),
+      address: cleanText(payload.contact_address),
+      is_active: true
+    };
+    const [collaborator, donor] = await Promise.all([
+      this.syncCollaboratorPortalAccess(contact, payload),
+      this.syncDonorPortalAccess(contact, payload)
+    ]);
     const donation = await this.repository.createDonation({
-      donor: cleanDonorName || 'Donante',
+      donor_id: donor?.id || payload.donor_id || null,
+      collaborator_id: collaborator?.id || payload.collaborator_id || null,
+      donor: donor?.name || cleanDonorName || 'Donante',
+      donor_email: donor?.email || cleanText(payload.contact_email || payload.donor_email),
       donor_kind: payload.donor_kind || 'Particular',
       donation_type: payload.donation_type || item.category || item.name,
+      status: payload.status || 'Recibida',
+      state: payload.state || payload.status || 'Recibida',
       donated_at: date,
-      estimated_value: amount,
-      notes: [`Referencia: ${reference}`, cleanText(payload.notes || title)].filter(Boolean).join('\n')
+      estimated_value: safeAmount(amount),
+      amount: safeAmount(amount),
+      quantity: quantity ? String(quantity) : '',
+      payment_method: cleanText(payload.payment_method),
+      notes: compactNotes(`Referencia: ${reference}`, payload.notes || title),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     });
 
     const inventoryMovement = await this.inventarioService.createMovement({
@@ -164,10 +315,10 @@ export class DonacionService {
       quantity,
       moved_at: date,
       responsible: cleanText(payload.responsible) || this.currentUserName(),
-      notes: `Donación en especie: ${title}`
+      notes: `Donacion en especie: ${title}`
     }, { requirePermission: false });
 
-    await this.audit(`Contabilidad: donación en especie ${cleanDonorName || item.name}`.trim());
+    await this.audit(`Contabilidad: donacion en especie ${cleanDonorName || item.name}`.trim());
     await this.dashboardService?.notifyDonationChanged?.({
       type: 'in_kind',
       donation,
@@ -190,12 +341,110 @@ export class DonacionService {
 
   async removeDonation(id) {
     await this.repository.removeDonation(id);
-    await this.audit(`Donaciones: eliminó donación ${id}`.trim());
+    await this.audit(`Donaciones: elimino donacion ${id}`.trim());
     await this.dashboardService?.notifyDonationChanged?.({ type: 'deleted', donationId: id });
     await this.notificacionService?.notifyDonationChanged?.({ type: 'deleted', donationId: id });
   }
 
   findDonorContact(id) {
     return (this.data.accounting_contacts || []).find((item) => item.id === id && normalize(item.contact_type) === 'donor');
+  }
+
+  async syncDonorPortalAccess(contact = {}, payload = {}, previous = {}, options = {}) {
+    const email = cleanText(contact.email || payload.email || payload.contact_email || payload.donor_email).toLowerCase();
+    const name = cleanText(contact.name || payload.name || payload.donor_name || payload.contact_name || payload.donor);
+    if (!email || !name) return null;
+
+    const kind = resolveDonorKind(payload, contact) || resolveDonorKind(payload, previous) || 'Particular';
+    if (isAnonymousKind(kind)) return null;
+
+    const donors = await this.repository.listDonors().catch(() => this.data.donors || []);
+    const existing = (donors || []).find((item) => lower(item.email) === lower(email));
+    const shouldBeActive = contact.is_active !== false && payload.is_active !== false;
+
+    if (!shouldBeActive) {
+      if (!options.deactivateWhenInactive) return existing || null;
+      if (existing?.is_active !== false) {
+        const updated = await this.repository.updateDonor(existing.id, {
+          is_active: false,
+          updated_at: new Date().toISOString()
+        });
+        await this.audit(`Portal donante: acceso desactivado para ${existing.name || name}`.trim());
+        return updated;
+      }
+      return existing || null;
+    }
+
+    const donorPayload = {
+      name,
+      email,
+      phone: cleanText(contact.phone || payload.phone || payload.contact_phone || previous.phone),
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (existing) {
+      const updated = await this.repository.updateDonor(existing.id, donorPayload);
+      await this.audit(`Portal donante: acceso actualizado para ${updated.name || name}`.trim());
+      return updated;
+    }
+
+    const created = await this.repository.createDonor({
+      ...donorPayload,
+      impact: {},
+      created_at: new Date().toISOString()
+    });
+    await this.audit(`Portal donante: acceso activado para ${created.name || name}`.trim());
+    return created;
+  }
+
+  async syncCollaboratorPortalAccess(contact = {}, payload = {}, previous = {}, options = {}) {
+    const email = cleanText(contact.email || payload.email || payload.contact_email || payload.donor_email);
+    const name = cleanText(contact.name || payload.name || payload.donor_name || payload.contact_name);
+    if (!email || !name) return null;
+
+    const kind = resolveDonorKind(payload, contact) || resolveDonorKind(payload, previous);
+    const shouldBeActive = contact.is_active !== false && isCollaboratorKind(kind);
+    const collaborators = await this.repository.listCollaborators().catch(() => this.data.collaborators || []);
+    const existing = (collaborators || []).find((item) => lower(item.email) === lower(email));
+
+    if (!shouldBeActive) {
+      if (!options.deactivateWhenInactive) return existing || null;
+      if (existing?.is_active !== false) {
+        const updated = await this.repository.updateCollaborator(existing.id, {
+          is_active: false,
+          updated_at: new Date().toISOString()
+        });
+        await this.audit(`Portal colaboradores: acceso desactivado para ${existing.name || name}`.trim());
+        return updated;
+      }
+      return existing || null;
+    }
+
+    const collaboratorPayload = {
+      type: kind || 'Colaborador',
+      name,
+      contact_name: resolveContactPerson(payload, contact) || resolveContactPerson(payload, previous),
+      email,
+      phone: cleanText(contact.phone || payload.phone || payload.contact_phone),
+      address: cleanText(contact.address || payload.address || payload.contact_address),
+      is_active: true,
+      notes: cleanText(contact.notes || payload.notes || previous.notes),
+      updated_at: new Date().toISOString()
+    };
+
+    if (existing) {
+      const updated = await this.repository.updateCollaborator(existing.id, collaboratorPayload);
+      await this.audit(`Portal colaboradores: acceso actualizado para ${updated.name || name}`.trim());
+      return updated;
+    }
+
+    const created = await this.repository.createCollaborator({
+      ...collaboratorPayload,
+      impact: {},
+      created_at: new Date().toISOString()
+    });
+    await this.audit(`Portal colaboradores: acceso activado para ${created.name || name}`.trim());
+    return created;
   }
 }

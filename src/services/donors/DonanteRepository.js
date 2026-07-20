@@ -17,6 +17,10 @@ export class DonanteRepository {
     return this.repository.list(DONOR_PORTAL_TABLES.donors);
   }
 
+  async createDonor(payload) {
+    return this.repository.create(DONOR_PORTAL_TABLES.donors, payload);
+  }
+
   async updateDonor(id, payload) {
     return this.repository.update(DONOR_PORTAL_TABLES.donors, id, payload);
   }
@@ -51,6 +55,10 @@ export class DonanteRepository {
 
   async createDonation(payload) {
     return this.repository.create('donations', payload);
+  }
+
+  async updateDonation(id, payload) {
+    return this.repository.update('donations', id, payload);
   }
 
   async listCampaigns() {
