@@ -125,21 +125,14 @@ export function BeneficiaryPortal({ data, actions }) {
       <PortalShell>
         <section className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
           <div className="w-full max-w-[30rem]">
-            <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
-              <form onSubmit={handleAccess} className="p-8 sm:p-10">
-                <div className="flex flex-col items-center">
-                  <div
-                    role="img"
-                    aria-label="Beneficiaria recibiendo alimentos de Pan y Esperanza"
-                    className="h-36 w-36 rounded-[1.5rem] bg-cover bg-no-repeat shadow-[0_1rem_2.4rem_rgba(37,33,29,0.16)]"
-                    style={{
-                      backgroundImage: "url('/assets/photographs/entrega.jpg')",
-                      backgroundPosition: '92% 25%',
-                      backgroundSize: '235%'
-                    }}
-                  />
-                </div>
-                  <div className="mt-7 text-center">
+              <div className="overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
+                <img
+                  src="/assets/photographs/portal-beneficiario-stock.jpg"
+                  alt="Atencion social cercana y digna"
+                  className="aspect-[16/9] w-full object-cover object-center"
+                />
+                <form onSubmit={handleAccess} className="p-8 pt-7 sm:p-10 sm:pt-8">
+                  <div className="text-center">
                     <h1 className="text-3xl font-bold leading-tight text-ink">Portal del Beneficiario</h1>
                     <p className="mt-3 text-base leading-relaxed text-slate-600">
                       Accede de forma segura a tus entregas, avisos y documentos.
