@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import logo from '../assets/logo-pan-y-esperanza.png';
-import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { callEdgeJson } from '../lib/edgeFunctions';
@@ -44,17 +42,14 @@ export function Login({ onAccess }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7faf6] px-4 py-10">
-      <section className="grid w-full max-w-5xl overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="flex flex-col justify-between bg-brand-600 p-8 text-white sm:p-10">
-          <div>
-            <img src={logo} alt="Pan y Esperanza" className="h-24 w-auto object-contain" />
-            <h2 className="mt-8 text-3xl font-bold">Pan y Esperanza</h2>
-            <p className="mt-3 max-w-md text-brand-50">Gestión integral de beneficiarios, entregas, inventario y justificantes.</p>
-          </div>
-          <p className="mt-10 text-sm text-brand-50">Logo oficial integrado sin deformar y preparado para impresión.</p>
-        </div>
-        {mode === 'login' && <form className="p-8 sm:p-10" onSubmit={async (event) => {
+    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
+      <section className="w-full max-w-[30rem] overflow-hidden rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)]">
+        <img
+          src="/assets/photographs/login-erp-stock.jpg"
+          alt="Equipo reunido en una mesa de trabajo"
+          className="aspect-[16/9] w-full object-cover object-center"
+        />
+        {mode === 'login' && <form className="p-8 pt-7 sm:p-10 sm:pt-8" onSubmit={async (event) => {
           event.preventDefault();
           setError('');
           setMessage('');
@@ -64,47 +59,52 @@ export function Login({ onAccess }) {
             setError(err.message || 'No se pudo iniciar sesión.');
           }
         }}>
-          <BrandLogo className="h-16 w-auto" />
-          <h3 className="mt-8 text-2xl font-bold text-ink">Acceso</h3>
-          <p className="mt-2 text-sm text-slate-600">Inicia sesión con email y contraseña.</p>
-          <div className="mt-6 space-y-4">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold leading-tight text-ink">Acceso al equipo</h1>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">
+              Accede al sistema de gestión de Pan y Esperanza.
+            </p>
+          </div>
+          <div className="mt-8 space-y-5">
             <FormField label="Email">
-              <input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+              <input className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </FormField>
             <FormField label="Contraseña">
-              <input className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <input className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-            <Button className="w-full" type="submit">Entrar</Button>
+            <Button className="min-h-[3.9rem] w-full rounded-xl px-6 text-base" type="submit">Entrar</Button>
             <button type="button" className="w-full text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setError(''); setMessage(''); setMode('forgot'); }}>Olvidé mi contraseña</button>
           </div>
         </form>}
-        {mode === 'forgot' && <form className="p-8 sm:p-10" onSubmit={requestReset}>
-          <BrandLogo className="h-16 w-auto" />
-          <h3 className="mt-8 text-2xl font-bold text-ink">Recuperar contraseña</h3>
-          <p className="mt-2 text-sm text-slate-600">Indica tu email y enviaremos un enlace seguro para establecer una nueva contraseña.</p>
-          <div className="mt-6 space-y-4">
+        {mode === 'forgot' && <form className="p-8 pt-7 sm:p-10 sm:pt-8" onSubmit={requestReset}>
+          <div className="text-center">
+            <h1 className="text-3xl font-bold leading-tight text-ink">Recuperar contraseña</h1>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">Indica tu email y enviaremos un enlace seguro para establecer una nueva contraseña.</p>
+          </div>
+          <div className="mt-8 space-y-5">
             <FormField label="Email">
-              <input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+              <input className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-            <Button className="w-full" type="submit">Enviar enlace de recuperación</Button>
+            <Button className="min-h-[3.9rem] w-full rounded-xl px-6 text-base" type="submit">Enviar enlace de recuperación</Button>
             <button type="button" className="w-full text-sm font-semibold text-brand-700 hover:underline" onClick={() => { setError(''); setMessage(''); setMode('login'); }}>Volver al acceso</button>
           </div>
         </form>}
-        {mode === 'reset' && <form className="p-8 sm:p-10" onSubmit={resetPassword}>
-          <BrandLogo className="h-16 w-auto" />
-          <h3 className="mt-8 text-2xl font-bold text-ink">Nueva contraseña</h3>
-          <p className="mt-2 text-sm text-slate-600">Introduce una nueva contraseña para recuperar el acceso.</p>
-          <div className="mt-6 space-y-4">
+        {mode === 'reset' && <form className="p-8 pt-7 sm:p-10 sm:pt-8" onSubmit={resetPassword}>
+          <div className="text-center">
+            <h1 className="text-3xl font-bold leading-tight text-ink">Nueva contraseña</h1>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">Introduce una nueva contraseña para recuperar el acceso.</p>
+          </div>
+          <div className="mt-8 space-y-5">
             <FormField label="Nueva contraseña">
-              <input className={inputClass} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" required />
+              <input className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" required />
             </FormField>
             {error && <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
             {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-            <Button className="w-full" type="submit">Guardar nueva contraseña</Button>
+            <Button className="min-h-[3.9rem] w-full rounded-xl px-6 text-base" type="submit">Guardar nueva contraseña</Button>
           </div>
         </form>}
       </section>
