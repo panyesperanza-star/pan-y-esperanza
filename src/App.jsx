@@ -35,13 +35,14 @@ export default function App() {
   const isBeneficiaryPortalRoute = normalizePath(pathname) === '/portal-beneficiario';
   const isCollaboratorPortalRoute = normalizePath(pathname) === '/portal-colaboradores';
   const isDonorPortalRoute = normalizePath(pathname) === '/portal-donaciones';
+  const isLoginRoute = normalizePath(pathname) === '/acceso';
   const isPortalRoute = isBeneficiaryPortalRoute || isCollaboratorPortalRoute || isDonorPortalRoute;
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [navigationTarget, setNavigationTarget] = useState(() => readNavigationTargetFromLocation());
   const [currentUser, setCurrentUser] = useState(() => hasResetToken ? null : getStoredUser());
   const [authReady, setAuthReady] = useState(() => !hasSupabaseConfig || hasResetToken || !getStoredUser());
   const portalActions = useMemo(() => createPortalApiActions(), []);
-  const { data, loading, error, actions } = useAppData(!isPortalRoute && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
+  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -55,6 +56,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function validateStoredSession() {
+      if (isLoginRoute) {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
       if (!hasSupabaseConfig || !supabase || !currentUser || hasResetToken) {
         if (!cancelled) setAuthReady(true);
         return;
@@ -74,12 +79,13 @@ export default function App() {
     }
     validateStoredSession();
     return () => { cancelled = true; };
-  }, [currentUser?.id, currentUser?.email, hasResetToken]);
+  }, [currentUser?.id, currentUser?.email, hasResetToken, isLoginRoute]);
 
   const firstAccessibleModule = getFirstAccessibleModule(currentUser);
 
   useEffect(() => {
     if (!currentUser) return;
+    if (isLoginRoute) return;
     if (isBeneficiaryPortalRoute) return;
     if (isCollaboratorPortalRoute) return;
     if (isDonorPortalRoute) return;
@@ -106,7 +112,7 @@ export default function App() {
     setPathname(nextPath);
     setNavigationTarget({ moduleId: firstAccessibleModule, key: Date.now() });
     setActive(firstAccessibleModule);
-  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, pathname]);
+  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, isLoginRoute, pathname]);
 
   function navigateTo(destination) {
     const target = normalizeNavigationTarget(destination);
@@ -125,6 +131,20 @@ export default function App() {
     setPathname('/acceso');
     setActive(null);
     setCurrentUser(null);
+  }
+
+  async function handleLoginAccess(credentials) {
+    const user = await signIn(credentials, []);
+    setCurrentUser(user);
+    const nextModule = getFirstAccessibleModule(user);
+    if (nextModule) {
+      const nextPath = getModulePath(nextModule);
+      window.history.replaceState({}, '', nextPath);
+      setPathname(nextPath);
+      setNavigationTarget({ moduleId: nextModule, key: Date.now() });
+      setActive(nextModule);
+    }
+    return user;
   }
 
   const sorted = useMemo(() => {
@@ -151,7 +171,11 @@ export default function App() {
   }, [data]);
 
   if (hasResetToken) {
-    return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
+    return <Login onAccess={handleLoginAccess} />;
+  }
+
+  if (isLoginRoute) {
+    return <Login onAccess={handleLoginAccess} />;
   }
 
   if (!authReady) return <div className="flex min-h-screen items-center justify-center">Comprobando permisos...</div>;
@@ -169,7 +193,7 @@ export default function App() {
   }
 
   if (!currentUser && hasSupabaseConfig) {
-    return <Login onAccess={async (credentials) => setCurrentUser(await signIn(credentials, []))} />;
+    return <Login onAccess={handleLoginAccess} />;
   }
 
   if (loading || !sorted) return <div className="flex min-h-screen items-center justify-center">Cargando Pan y Esperanza...</div>;
