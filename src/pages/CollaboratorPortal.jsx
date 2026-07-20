@@ -118,29 +118,50 @@ export function CollaboratorPortal({ actions }) {
   if (!session?.token) {
     return (
       <PortalShell>
-        <section className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 px-4 py-10 lg:grid-cols-[1fr_430px]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Portal de Colaboradores</p>
-            <h1 className="mt-3 text-3xl font-bold leading-tight text-ink sm:text-5xl">Un espacio privado para seguir ayudando.</h1>
-            <p className="mt-4 max-w-2xl text-lg text-slate-600">
+        <section className="grid min-h-screen bg-[#f6efe4] lg:grid-cols-[minmax(0,1.08fr)_minmax(28rem,0.92fr)]">
+          <div className="relative hidden min-h-screen overflow-hidden lg:block">
+            <img
+              src="/assets/photographs/portal-colaborador.png"
+              alt="Personas con alimentos preparados para colaborar con Pan y Esperanza"
+              className="absolute inset-0 h-full w-full object-cover object-center"
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-[#25211d]/72 via-[#2f4a3a]/48 to-[#25211d]/34" />
+            <div className="relative z-10 flex min-h-screen flex-col justify-between px-12 py-10 text-[#fff9f1] xl:px-16">
+              <BrandLogo className="h-24 w-auto" showText={false} />
+              <div className="max-w-2xl pb-10">
+                <p className="inline-flex rounded-full bg-[#2f4a3a]/95 px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-[#fff9f1] shadow-[0_0.8rem_2rem_rgba(37,33,29,0.24)]">Portal Colaborador</p>
+                <h1 className="mt-6 text-5xl font-bold leading-[1.03] tracking-normal xl:text-6xl">Un espacio privado para seguir ayudando.</h1>
+                <p className="mt-6 max-w-xl text-xl font-medium leading-relaxed text-[#fff9f1]/90">
               Consulta tu impacto, donaciones, certificados, campañas y recursos propuestos para Pan y Esperanza.
             </p>
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              <AccessFeature icon={Gift} title="Donaciones" text="Historial y nuevas colaboraciones." />
-              <AccessFeature icon={TrendingUp} title="Impacto" text="Estadisticas agregadas y seguras." />
-              <AccessFeature icon={ShieldCheck} title="OTP" text="Acceso sin contrasena permanente." />
+              </div>
+              <p className="max-w-xl text-base font-semibold leading-relaxed text-[#fff9f1]/82">Acceso seguro para colaboradores, empresas y personas que forman parte de la red de ayuda.</p>
             </div>
           </div>
 
-          <div className="rounded-md border border-slate-200 bg-white p-6 shadow-panel">
-            <BrandLogo className="h-14 w-auto" />
-            <h2 className="mt-6 text-xl font-bold text-ink">Acceso privado</h2>
-            <p className="mt-2 text-sm text-slate-600">Introduce tu correo y confirma el codigo OTP.</p>
+          <div className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8 lg:px-12">
+            <div className="w-full max-w-[31rem]">
+              <div className="mb-8 text-center lg:hidden">
+                <BrandLogo className="mx-auto h-24 w-auto" showText={false} />
+                <p className="mx-auto mt-6 inline-flex rounded-full bg-[#2f4a3a] px-4 py-2 text-sm font-black uppercase tracking-[0.18em] text-[#fff9f1] shadow-[0_0.8rem_2rem_rgba(37,33,29,0.16)]">Portal Colaborador</p>
+                <h1 className="mt-4 text-3xl font-bold leading-tight text-ink">Un espacio privado para seguir ayudando.</h1>
+              </div>
 
-            <form onSubmit={requestAccess} className="mt-6 space-y-4">
+              <div className="overflow-hidden rounded-[1.5rem] border border-[#2f4a3a]/14 bg-[#fff9f1] shadow-[0_1.6rem_4rem_rgba(37,33,29,0.14)]">
+                <div className="p-7 sm:p-9">
+                  <div className="flex justify-center">
+                    <BrandLogo className="h-20 w-auto" showText={false} />
+                  </div>
+                  <div className="mt-8 text-center">
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#c96f3d]">Acceso privado</p>
+                    <h2 className="mt-3 text-3xl font-bold leading-tight text-ink">Entra a tu portal</h2>
+                    <p className="mt-3 text-base leading-relaxed text-slate-600">Introduce tu correo y confirma el codigo OTP.</p>
+                  </div>
+
+                  <form onSubmit={requestAccess} className="mt-8 space-y-5">
               <FormField label="Correo electronico" required>
                 <input
-                  className={inputClass}
+                  className={`${inputClass} min-h-[3.5rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
@@ -148,26 +169,29 @@ export function CollaboratorPortal({ actions }) {
                   autoComplete="email"
                 />
               </FormField>
-              <Button type="submit" className="w-full"><KeyRound size={17} /> Solicitar codigo OTP</Button>
+                    <Button type="submit" className="min-h-[3.75rem] w-full rounded-xl px-6 text-base"><KeyRound size={18} /> Solicitar codigo OTP</Button>
             </form>
 
             {challenge && (
-              <form onSubmit={verifyAccess} className="mt-5 space-y-4 rounded-md border border-brand-100 bg-brand-50 p-4">
+              <form onSubmit={verifyAccess} className="border-t border-brand-100 bg-white/74 p-7 sm:p-9">
                 <FormField label="Codigo OTP" required>
                   <input
-                    className={inputClass}
+                    className={`${inputClass} min-h-[3.5rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
                     value={accessOtp}
                     onChange={(event) => setAccessOtp(event.target.value)}
                     placeholder="Introduce el codigo"
                     inputMode="numeric"
                   />
                 </FormField>
-                <Button type="submit" className="w-full"><Lock size={17} /> Entrar al portal</Button>
+                <Button type="submit" className="mt-5 min-h-[3.75rem] w-full rounded-xl px-6 text-base"><Lock size={18} /> Entrar al portal</Button>
               </form>
             )}
 
-            {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-4" />}
-            {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-4" />}
+                  {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-5" />}
+                  {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-5" />}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </PortalShell>
