@@ -21,6 +21,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 const SESSION_KEY = 'pan-y-esperanza-beneficiary-portal-session';
+const PORTAL_REQUEST_TIMEOUT_MS = 8000;
 
 const TABS = [
   { id: 'inicio', label: 'Inicio', icon: Home },
@@ -38,26 +39,47 @@ export function BeneficiaryPortal({ data, actions }) {
   const [credentials, setCredentials] = useState({ accessIdentifier: '', pin: '' });
   const [accessOtp, setAccessOtp] = useState('');
   const [challenge, setChallenge] = useState(null);
-  const [session, setSession] = useState(() => readStoredSession());
+  const [session, setSession] = useState(null);
   const [overview, setOverview] = useState(null);
   const [activeTab, setActiveTab] = useState('inicio');
-  const [loading, setLoading] = useState(Boolean(session?.token));
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    if (!session?.token || !portalService) {
-      setLoading(false);
-      return;
+    if (!portalService) return;
+    const storedSession = readStoredSession();
+    if (!storedSession?.token) return;
+
+    let cancelled = false;
+
+    async function restoreStoredSession() {
+      try {
+        const nextOverview = await withTimeout(portalService.getPortalOverview(storedSession));
+        if (cancelled) return;
+        setOverview(nextOverview);
+        setSession(storedSession);
+      } catch (restoreError) {
+        if (cancelled) return;
+        sessionStorage.removeItem(SESSION_KEY);
+        setOverview(null);
+        setSession(null);
+        setError(restoreError.message || 'No se pudo recuperar la sesion. Vuelve a acceder.');
+      }
     }
-    loadOverview(session);
-  }, [session?.token, portalService]);
+
+    restoreStoredSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [portalService]);
 
   async function loadOverview(activeSession) {
     setLoading(true);
     setError('');
     try {
-      const nextOverview = await portalService.getPortalOverview(activeSession);
+      const nextOverview = await withTimeout(portalService.getPortalOverview(activeSession));
       setOverview(nextOverview);
     } catch (loadError) {
       setError(loadError.message || 'No se pudo cargar el portal.');
@@ -71,13 +93,16 @@ export function BeneficiaryPortal({ data, actions }) {
     event.preventDefault();
     setError('');
     setSuccess('');
+    setLoading(true);
     try {
-      const nextChallenge = await portalService.requestAccessOtp(credentials);
+      const nextChallenge = await withTimeout(portalService.requestAccessOtp(credentials));
       setChallenge(nextChallenge);
       setAccessOtp('');
       setSuccess('Codigo OTP enviado. Introducelo para acceder.');
     } catch (accessError) {
       setError(accessError.message || 'No se pudo validar el acceso.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -85,19 +110,23 @@ export function BeneficiaryPortal({ data, actions }) {
     event.preventDefault();
     setError('');
     setSuccess('');
+    setLoading(true);
     try {
-      const result = await portalService.verifyAccessOtp({
+      const result = await withTimeout(portalService.verifyAccessOtp({
         ...credentials,
         otpCode: accessOtp,
         challengeId: challenge?.id
-      });
+      }));
       const nextSession = { ...result.session, auth: result.auth };
+      const nextOverview = await withTimeout(portalService.getPortalOverview(nextSession));
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+      setOverview(nextOverview);
       setSession(nextSession);
-      setOverview(await portalService.getPortalOverview(nextSession));
       setSuccess('Acceso validado correctamente.');
     } catch (verifyError) {
       setError(verifyError.message || 'No se pudo validar el codigo OTP.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -687,6 +716,15 @@ function getNextDelivery(deliveries = []) {
 
 function isPendingDocument(document) {
   return !document.file_data_url || normalize(document.notes).includes('pendiente') || normalize(document.status).includes('pendiente');
+}
+
+function withTimeout(promise, timeoutMs = PORTAL_REQUEST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => reject(new Error('La conexion con el portal ha tardado demasiado. Intentalo de nuevo.')), timeoutMs);
+    Promise.resolve(promise)
+      .then(resolve, reject)
+      .finally(() => globalThis.clearTimeout(timeoutId));
+  });
 }
 
 function readStoredSession() {
