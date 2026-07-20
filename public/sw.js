@@ -1,9 +1,5 @@
-const CACHE_NAME = "pan-y-esperanza-v1";
-const CRITICAL_ASSETS = [
-  "/",
-  "/index.html",
-  "/src/main.js",
-  "/src/styles/main.css",
+const CACHE_NAME = "pan-y-esperanza-public-v3";
+const STATIC_ASSETS = [
   "/assets/brand/logo.png",
   "/assets/photographs/hero.jpg",
   "/site.webmanifest"
@@ -12,7 +8,7 @@ const CRITICAL_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      Promise.all(CRITICAL_ASSETS.map((asset) => cache.add(asset).catch(() => undefined))),
+      Promise.all(STATIC_ASSETS.map((asset) => cache.add(asset).catch(() => undefined))),
     ),
   );
   self.skipWaiting();
@@ -23,10 +19,14 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
-      ),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      )
+      .then(() => self.clients.claim()),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -37,15 +37,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
-          return response;
-        })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match("/index.html"))),
-    );
+    event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
 
