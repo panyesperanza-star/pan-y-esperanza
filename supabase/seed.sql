@@ -89,10 +89,10 @@ values
 insert into public.roles (id, name, modules)
 values
   ('superadmin', 'Superadministrador', '["*"]'::jsonb),
-  ('presidenta', 'Presidenta', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "receipts", "inventory", "donations", "treasury", "reports", "users", "settings"]'::jsonb),
-  ('tesorera', 'Tesorera', '["notifications", "agenda", "donations", "treasury", "reports", "receipts"]'::jsonb),
+  ('presidenta', 'Presidenta', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "receipts", "inventory", "donations", "donors", "collaborators", "treasury", "reports", "users", "settings"]'::jsonb),
+  ('tesorera', 'Tesorera', '["notifications", "agenda", "donations", "donors", "collaborators", "treasury", "reports", "receipts"]'::jsonb),
   ('secretaria', 'Secretaria', '["notifications", "agenda", "beneficiaries", "families", "receipts", "reports", "users", "settings"]'::jsonb),
-  ('coordinator', 'Coordinador', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "inventory", "treasury", "receipts", "reports"]'::jsonb),
+  ('coordinator', 'Coordinador', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "inventory", "collaborators", "donors", "treasury", "receipts", "reports"]'::jsonb),
   ('volunteer', 'Voluntario', '["notifications", "agenda", "beneficiaries", "deliveries", "inventory", "treasury"]'::jsonb),
   ('viewer', 'Consulta', '["notifications", "agenda", "dashboard", "reports"]'::jsonb)
 on conflict (id) do update

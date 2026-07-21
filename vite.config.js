@@ -22,6 +22,7 @@ const erpRoutes = new Set([
   '/receipts',
   '/inventory',
   '/donations',
+  '/donors',
   '/accounting',
   '/treasury',
   '/volunteers',

@@ -149,7 +149,7 @@ export const seedData = {
   collaborators: [
     {
       id: demoCollaboratorId,
-      code: 'COL-0001',
+      code: 'COL-000001',
       type: 'Empresa',
       name: 'Empresa Solidaria SL',
       tax_id: '',
@@ -205,10 +205,21 @@ export const seedData = {
   donors: [
     {
       id: demoDonorId,
+      code: 'DON-000001',
       name: 'Laura Martin',
       email: 'donante@example.org',
+      access_email: 'donante@example.org',
       phone: '600 222 111',
+      address: '',
+      type: 'Particular',
+      status: 'Activo',
       is_active: true,
+      portal_status: 'Activo',
+      last_otp_sent_at: null,
+      last_access_at: null,
+      portal_activated_at: new Date().toISOString(),
+      portal_deactivated_at: null,
+      notes: '',
       impact: {
         familiesServed: 186,
         minorsServed: 73,
@@ -401,7 +412,7 @@ export const seedData = {
   roles: [
     { id: 'superadmin', name: 'Superadministrador', modules: ['*'] },
     { id: 'president', name: 'Presidenta', modules: ['*'] },
-    { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'accounting', 'collaborators', 'reports', 'receipts'] },
+    { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'donors', 'accounting', 'collaborators', 'reports', 'receipts'] },
     { id: 'secretary', name: 'Secretaria', modules: ['agenda', 'beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
     { id: 'volunteer', name: 'Voluntario', modules: ['agenda', 'beneficiaries', 'deliveries', 'inventory', 'accounting'] },
     { id: 'viewer', name: 'Consulta', modules: ['agenda', 'dashboard', 'reports'] }

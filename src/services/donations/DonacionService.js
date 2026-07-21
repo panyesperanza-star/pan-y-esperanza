@@ -73,6 +73,23 @@ function safeDate(...values) {
 function compactNotes(...values) {
   return values.map(cleanText).filter(Boolean).join('\n');
 }
+
+function nextDonorCode(donors = []) {
+  const max = donors.reduce((highest, item) => {
+    const match = String(item?.code || '').match(/DON-(\d+)/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `DON-${String(max + 1).padStart(6, '0')}`;
+}
+
+function nextCollaboratorCode(collaborators = []) {
+  const max = collaborators.reduce((highest, item) => {
+    const match = String(item?.code || '').match(/COL-(\d+)/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `COL-${String(max + 1).padStart(6, '0')}`;
+}
+
 export function sanitizeDonorContactPayload(payload = {}, current = {}) {
   const name = cleanText(payload.name || payload.contact_name || current.name);
   if (!name) throw new Error('El nombre del donante es obligatorio.');
@@ -380,11 +397,18 @@ export class DonacionService {
     }
 
     const donorPayload = {
+      code: existing?.code || nextDonorCode(donors),
       name,
       email,
+      access_email: lower(existing?.access_email || email),
       phone: cleanText(contact.phone || payload.phone || payload.contact_phone || previous.phone),
+      address: cleanText(contact.address || payload.address || payload.contact_address || previous.address),
+      type: kind || previous.type || 'Particular',
+      status: 'Activo',
+      portal_status: 'Activo',
       collaborator_id: linkedCollaborator?.id || previous.collaborator_id || null,
       is_active: true,
+      portal_activated_at: existing?.portal_activated_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
@@ -427,6 +451,7 @@ export class DonacionService {
     }
 
     const collaboratorPayload = {
+      code: existing?.code || nextCollaboratorCode(collaborators),
       type: kind || 'Colaborador',
       name,
       contact_name: resolveContactPerson(payload, contact) || resolveContactPerson(payload, previous),

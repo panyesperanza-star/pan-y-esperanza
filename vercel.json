@@ -20,6 +20,7 @@
     { "source": "/receipts", "destination": "/erp/index.html" },
     { "source": "/inventory", "destination": "/erp/index.html" },
     { "source": "/donations", "destination": "/erp/index.html" },
+    { "source": "/donors", "destination": "/erp/index.html" },
     { "source": "/accounting", "destination": "/erp/index.html" },
     { "source": "/treasury", "destination": "/erp/index.html" },
     { "source": "/volunteers", "destination": "/erp/index.html" },

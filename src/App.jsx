@@ -17,6 +17,7 @@ import { Dashboard } from './pages/Dashboard';
 import { DebugAdmin } from './pages/DebugAdmin';
 import { Deliveries } from './pages/Deliveries';
 import { Donations } from './pages/Donations';
+import { Donors } from './pages/Donors';
 import { DonorPortal } from './pages/DonorPortal';
 import { Families } from './pages/Families';
 import { Inventory } from './pages/Inventory';
@@ -176,6 +177,7 @@ export default function App() {
       notificaciones: [...(data.notificaciones || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       agenda_operativa: [...(data.agenda_operativa || [])].sort((a, b) => String(a.event_at || a.created_at).localeCompare(String(b.event_at || b.created_at))),
       campanas: [...(data.campanas || [])].sort((a, b) => String(a.start_date || a.created_at).localeCompare(String(b.start_date || b.created_at))),
+      donors: [...(data.donors || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'es', { numeric: true })),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -242,6 +244,7 @@ export default function App() {
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
+    donors: <Donors data={sorted} actions={actions} currentUser={currentUser} />,
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} currentUser={currentUser} />,
     collaborators: <Collaborators data={sorted} actions={actions} currentUser={currentUser} />,

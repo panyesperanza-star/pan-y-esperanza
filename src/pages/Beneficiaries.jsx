@@ -15,6 +15,7 @@ import {
   HeartHandshake,
   Home,
   ImageOff,
+  KeyRound,
   Loader2,
   Mail,
   MapPin,
@@ -25,6 +26,8 @@ import {
   Paperclip,
   Phone,
   Plus,
+  Power,
+  PowerOff,
   Printer,
   Search,
   Trash2,
@@ -44,7 +47,7 @@ import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../l
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printBeneficiaryPdf, printDeliveryReceiptPdf, printSocialAttentionReportPdf } from '../lib/exporters';
+import { createPortalAccessPdf, printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, todayISO } from '../lib/formatters';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
@@ -94,6 +97,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
   const [targetIds, setTargetIds] = useState([]);
   const [targetLabel, setTargetLabel] = useState('');
   const [deletionTarget, setDeletionTarget] = useState(null);
+  const [listNotice, setListNotice] = useState('');
 
   const canCreate = canDo(currentUser, 'beneficiaries', 'create');
   const canEdit = canDo(currentUser, 'beneficiaries', 'edit');
@@ -199,13 +203,30 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
     setDeletionTarget(null);
   }
 
+  async function activatePendingPortals() {
+    if (!window.confirm('Activar portales pendientes de beneficiarios activos?')) return;
+    const result = await actions.activatePendingBeneficiaryPortals();
+    setListNotice(`Portales activados: ${result.activated}. Omitidos: ${result.omitted}.`);
+  }
+
   return (
     <>
       <PageHeader
         title="Beneficiarios"
         description="Gestión de personas atendidas y acceso a su expediente."
-        actions={canCreate && <Button onClick={() => setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries) })}><Plus size={18} /> Nuevo beneficiario</Button>}
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            {canEdit && <Button variant="secondary" onClick={activatePendingPortals}><KeyRound size={18} /> Activar portales pendientes</Button>}
+            {canCreate && <Button onClick={() => setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries) })}><Plus size={18} /> Nuevo beneficiario</Button>}
+          </div>
+        )}
       />
+
+      {listNotice && (
+        <div className="mb-4 rounded-md border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">
+          {listNotice}
+        </div>
+      )}
 
       <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumen de beneficiarios">
         <SummaryCard icon={Users} label="Total registrados" value={data.beneficiaries.length} tone="slate" />
@@ -722,11 +743,27 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const activeDeliveries = deliveries.filter(isActiveDelivery);
   const valuation = calculateDeliveriesValue(activeDeliveries, data.inventory_items);
   const trackingCount = buildTrackingDiary(history, activeDeliveries).length;
+  const portalAccount = (data.beneficiary_portal_accounts || []).find((item) => item.beneficiary_id === beneficiary.id) || null;
+  const portalSessions = (data.portal_sessions || []).filter((item) => item.portal === 'beneficiary' && item.subject_id === beneficiary.id);
+  const portalOtps = (data.beneficiary_portal_otps || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const lastPortalAccess = [
+    portalAccount?.last_login_at,
+    portalAccount?.last_successful_access_at,
+    ...portalSessions.map((session) => session.last_seen_at || session.started_at)
+  ].filter(Boolean).sort().at(-1);
+  const lastPortalOtp = [
+    ...portalOtps.map((otp) => otp.created_at)
+  ].filter(Boolean).sort().at(-1);
+  const [temporaryPortalPin, setTemporaryPortalPin] = useState('');
   const canCreateDelivery = canDo(currentUser, 'deliveries', 'create') && !familyArchived;
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
   const timeline = buildProfessionalTimeline({ beneficiary, deliveries: activeDeliveries, documents, history });
   const documentPreview = documents.slice(0, 4);
+
+  useEffect(() => {
+    setTemporaryPortalPin('');
+  }, [beneficiary.id]);
 
   const tabs = [
     { id: 'overview', label: 'Resumen', icon: CircleUserRound },
@@ -795,6 +832,83 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     return uploaded;
   }
 
+  function buildPortalAccessPayload(account = portalAccount, pin = temporaryPortalPin) {
+    return {
+      portalLabel: 'Portal del Beneficiario',
+      name: beneficiary.full_name,
+      code: beneficiary.code,
+      identifier: account?.access_identifier || '',
+      accessUrl: `${window.location.origin}/portal-beneficiario`,
+      temporaryPin: pin,
+      organization: data.organization_settings?.[0] || {}
+    };
+  }
+
+  async function activatePortal() {
+    const result = await actions.activateBeneficiaryPortal(beneficiary.id);
+    setTemporaryPortalPin(result.temporaryPin || '');
+    setNotice('Portal activado correctamente. Imprime o envia el acceso antes de entregar el PIN.');
+  }
+
+  async function deactivatePortal() {
+    if (!window.confirm('Desactivar el portal de este beneficiario?')) return;
+    await actions.deactivateBeneficiaryPortal(beneficiary.id);
+    setTemporaryPortalPin('');
+    setNotice('Portal desactivado correctamente.');
+  }
+
+  async function regeneratePortalPin() {
+    const result = await actions.regenerateBeneficiaryPortalPin(beneficiary.id);
+    setTemporaryPortalPin(result.temporaryPin || '');
+    setNotice('PIN regenerado correctamente. Imprime o envia el acceso antes de cerrar el expediente.');
+  }
+
+  async function printPortalAccess() {
+    let account = portalAccount;
+    let pin = temporaryPortalPin;
+    if (!account) {
+      const result = await actions.activateBeneficiaryPortal(beneficiary.id);
+      account = result.account;
+      pin = result.temporaryPin || '';
+      setTemporaryPortalPin(pin);
+    }
+    await printPortalAccessPdf(buildPortalAccessPayload(account, pin));
+    setNotice('Documento de acceso generado correctamente.');
+  }
+
+  async function sendPortalAccess() {
+    if (!beneficiary.email) {
+      setNotice('Este beneficiario no tiene email registrado para enviar el acceso.');
+      return;
+    }
+    let account = portalAccount;
+    let pin = temporaryPortalPin;
+    if (!account) {
+      const result = await actions.activateBeneficiaryPortal(beneficiary.id);
+      account = result.account;
+      pin = result.temporaryPin || '';
+      setTemporaryPortalPin(pin);
+    }
+    const payload = buildPortalAccessPayload(account, pin);
+    const { doc, filename } = await createPortalAccessPdf(payload);
+    await sendEmailViaApi({
+      to: beneficiary.email,
+      subject: 'Acceso al Portal del Beneficiario',
+      message: [
+        `Hola ${beneficiary.full_name},`,
+        '',
+        'Adjuntamos tus datos de acceso al Portal del Beneficiario de Pan y Esperanza.',
+        'Por seguridad, conserva este documento y no compartas tus datos de acceso.',
+        '',
+        'Pan y Esperanza'
+      ].join('\n'),
+      attachments: [{ filename, blob: doc.output('blob'), contentType: 'application/pdf' }],
+      organization: data.organization_settings?.[0] || {}
+    });
+    await actions.sendBeneficiaryPortalAccess(beneficiary.id);
+    setNotice('Acceso enviado correctamente.');
+  }
+
   return (
     <div className="-m-5 bg-slate-50">
       <ProfessionalCrmHeader
@@ -835,6 +949,19 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
           onCreateCampaign={onCreateCampaign}
           onOpenAgenda={onOpenAgenda || onNewAppointment}
           onNotice={() => { setNotice(''); setEmailOpen(true); }}
+        />
+
+        <BeneficiaryPortalAdminBlock
+          account={portalAccount}
+          lastAccess={lastPortalAccess}
+          lastOtp={lastPortalOtp}
+          temporaryPin={temporaryPortalPin}
+          canEdit={canEdit}
+          onActivate={activatePortal}
+          onDeactivate={deactivatePortal}
+          onRegeneratePin={regeneratePortalPin}
+          onPrint={printPortalAccess}
+          onSend={sendPortalAccess}
         />
 
         <SocialCaseSummaryCards
@@ -1032,6 +1159,56 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDo
         </div>
       </div>
     </section>
+  );
+}
+
+function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPin, canEdit, onActivate, onDeactivate, onRegeneratePin, onPrint, onSend }) {
+  const active = account?.status === 'active';
+  const pending = !account || !account.pin_hash;
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Portal del Beneficiario">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">PORTAL DEL BENEFICIARIO</p>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${active ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600'}`}>
+              {active ? 'Activo' : pending ? 'Portal pendiente de activar' : 'Inactivo'}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-slate-500">Gestion de credenciales privadas y acceso seguro al portal.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canEdit && !active && <Button variant="secondary" onClick={onActivate}><Power size={17} /> Activar portal</Button>}
+          {canEdit && active && <Button variant="secondary" onClick={onDeactivate}><PowerOff size={17} /> Desactivar portal</Button>}
+          {canEdit && <Button variant="secondary" onClick={onRegeneratePin}><KeyRound size={17} /> Regenerar PIN</Button>}
+          <Button variant="secondary" onClick={onPrint}><Printer size={17} /> Imprimir acceso</Button>
+          {canEdit && <Button variant="secondary" onClick={onSend}><Mail size={17} /> Enviar acceso</Button>}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <PortalField label="Estado" value={active ? 'Activo' : pending ? 'Pendiente' : account?.status || 'Inactivo'} />
+        <PortalField label="Identificador privado" value={account?.access_identifier || 'Pendiente'} mono />
+        <PortalField label="PIN" value={temporaryPin ? 'Generado para entrega' : 'Oculto'} />
+        <PortalField label="Ultimo acceso" value={lastAccess ? formatDateTime(lastAccess) : '-'} />
+        <PortalField label="Ultimo OTP" value={lastOtp ? formatDateTime(lastOtp) : '-'} />
+      </div>
+
+      {temporaryPin && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+          PIN temporal: <span className="font-mono text-base font-bold">{temporaryPin}</span>. Solo se muestra ahora para imprimir o entregar el acceso.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PortalField({ label, value, mono = false }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 break-words text-sm font-bold text-ink ${mono ? 'font-mono' : ''}`}>{value || '-'}</p>
+    </div>
   );
 }
 

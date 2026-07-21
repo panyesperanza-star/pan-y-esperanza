@@ -139,6 +139,27 @@ function normalizeAccessIdentifier(value) {
   return cleanText(value).toUpperCase().replace(/\s+/g, '');
 }
 
+function randomDigits(length = 6) {
+  const array = new Uint32Array(length);
+  globalThis.crypto.getRandomValues(array);
+  return [...array].map((value) => String(value % 10)).join('');
+}
+
+function randomHex(bytes = 8) {
+  const array = new Uint8Array(bytes);
+  globalThis.crypto.getRandomValues(array);
+  return [...array].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function generateAccessIdentifier(accounts = []) {
+  const existing = new Set(accounts.map((item) => normalizeAccessIdentifier(item.access_identifier)));
+  let candidate = '';
+  do {
+    candidate = `PYE-${randomHex(6).toUpperCase()}`;
+  } while (existing.has(candidate));
+  return candidate;
+}
+
 async function hashAccessPin(pin, salt) {
   const material = `${cleanText(pin)}:${cleanText(salt)}`;
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
@@ -304,6 +325,120 @@ export class BeneficiarioPortalService {
     await this.audit(`Portal beneficiario: preparo acceso para ${beneficiary.full_name || beneficiary.id}`.trim());
     await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'access_draft_created', account });
     return account;
+  }
+
+  async getAccountForBeneficiary(beneficiaryId) {
+    const accounts = await this.repository.listAccounts();
+    return accounts.find((item) => item.beneficiary_id === beneficiaryId) || null;
+  }
+
+  async activateAccess(beneficiaryId) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const accounts = await this.repository.listAccounts();
+    const current = accounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
+    const temporaryPin = randomDigits(6);
+    const salt = randomHex(12);
+    const now = nowISO();
+    const payload = {
+      beneficiary_id: beneficiary.id,
+      auth_user_id: current?.auth_user_id || null,
+      access_identifier: normalizeAccessIdentifier(current?.access_identifier) || generateAccessIdentifier(accounts),
+      pin_hash: await hashAccessPin(temporaryPin, salt),
+      pin_salt: salt,
+      pin_set_at: now,
+      failed_access_attempts: 0,
+      last_failed_access_at: null,
+      locked_until: null,
+      email: cleanText(beneficiary.email || current?.email).toLowerCase(),
+      phone: cleanText(beneficiary.phone || current?.phone),
+      status: 'active',
+      access_level: current?.access_level || 'beneficiary',
+      invited_at: current?.invited_at || now,
+      activated_at: now,
+      notes: cleanText(current?.notes),
+      updated_at: now
+    };
+
+    const account = current
+      ? await this.repository.updateAccount(current.id, payload)
+      : await this.repository.createAccount({ ...payload, created_at: now });
+
+    await this.audit(`Portal beneficiario: acceso activado para ${beneficiary.full_name || beneficiary.id}`.trim());
+    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'access_activated', account });
+    return { account, temporaryPin };
+  }
+
+  async deactivateAccess(beneficiaryId) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const account = await this.getAccountForBeneficiary(beneficiary.id);
+    if (!account) throw new Error('El beneficiario no tiene portal configurado.');
+    const updated = await this.repository.updateAccount(account.id, {
+      status: 'suspended',
+      locked_until: null,
+      updated_at: nowISO()
+    });
+    await this.audit(`Portal beneficiario: acceso desactivado para ${beneficiary.full_name || beneficiary.id}`.trim());
+    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'access_deactivated', account: updated });
+    return updated;
+  }
+
+  async regeneratePin(beneficiaryId) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const account = await this.getAccountForBeneficiary(beneficiary.id);
+    if (!account) return this.activateAccess(beneficiary.id);
+    const temporaryPin = randomDigits(6);
+    const salt = randomHex(12);
+    const updated = await this.repository.updateAccount(account.id, {
+      pin_hash: await hashAccessPin(temporaryPin, salt),
+      pin_salt: salt,
+      pin_set_at: nowISO(),
+      failed_access_attempts: 0,
+      last_failed_access_at: null,
+      locked_until: null,
+      status: 'active',
+      updated_at: nowISO()
+    });
+    await this.audit(`Portal beneficiario: PIN regenerado para ${beneficiary.full_name || beneficiary.id}`.trim());
+    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'pin_regenerated', account: updated });
+    return { account: updated, temporaryPin };
+  }
+
+  async sendAccess(beneficiaryId) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const account = await this.getAccountForBeneficiary(beneficiary.id);
+    if (!account) throw new Error('Activa el portal antes de enviar el acceso.');
+    const updated = await this.repository.updateAccount(account.id, {
+      invited_at: nowISO(),
+      updated_at: nowISO()
+    });
+    await this.audit(`Portal beneficiario: acceso enviado para ${beneficiary.full_name || beneficiary.id}`.trim());
+    return updated;
+  }
+
+  async activatePendingAccesses() {
+    const beneficiaries = await this.readBeneficiaries();
+    const accounts = await this.repository.listAccounts();
+    const activeWithPin = new Set(
+      accounts
+        .filter((account) => account.status === 'active' && account.pin_hash)
+        .map((account) => account.beneficiary_id)
+    );
+    const pending = beneficiaries.filter((beneficiary) => beneficiary.is_active !== false && !activeWithPin.has(beneficiary.id));
+    const results = [];
+
+    for (const beneficiary of pending) {
+      results.push({
+        beneficiaryId: beneficiary.id,
+        ...(await this.activateAccess(beneficiary.id))
+      });
+    }
+
+    await this.audit(`Portal beneficiario: activacion masiva completada. Activados ${results.length}, omitidos ${beneficiaries.length - pending.length}`.trim());
+    return {
+      activated: results.length,
+      omitted: beneficiaries.length - pending.length,
+      results
+    };
   }
 
   async requestProfileUpdate(session, changes, payload = {}) {

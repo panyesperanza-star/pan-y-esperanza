@@ -448,7 +448,8 @@ export function useAppData(enabled = true, currentUser = null) {
       audit,
       donacionService,
       notificacionService,
-      dashboardService
+      dashboardService,
+      assertPermission
     });
   }
 
@@ -2007,6 +2008,31 @@ export function useAppData(enabled = true, currentUser = null) {
       await beneficiarioService.remove(id);
       await reload();
     },
+    activateBeneficiaryPortal: async (id) => {
+      const result = await beneficiarioPortalService.activateAccess(id);
+      await reload();
+      return result;
+    },
+    deactivateBeneficiaryPortal: async (id) => {
+      const result = await beneficiarioPortalService.deactivateAccess(id);
+      await reload();
+      return result;
+    },
+    regenerateBeneficiaryPortalPin: async (id) => {
+      const result = await beneficiarioPortalService.regeneratePin(id);
+      await reload();
+      return result;
+    },
+    sendBeneficiaryPortalAccess: async (id) => {
+      const result = await beneficiarioPortalService.sendAccess(id);
+      await reload();
+      return result;
+    },
+    activatePendingBeneficiaryPortals: async () => {
+      const result = await beneficiarioPortalService.activatePendingAccesses();
+      await reload();
+      return result;
+    },
     createDelivery: async (payload) => {
       await entregaService.create(payload);
       await reload();
@@ -2346,6 +2372,31 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     resendCollaboratorAccess: async (id) => {
       const result = await colaboradorService.resendAccess(id);
+      await reload();
+      return result;
+    },
+    createDonor: async (payload) => {
+      const created = await donanteService.create(payload);
+      await reload();
+      return created;
+    },
+    updateDonor: async (id, payload) => {
+      const updated = await donanteService.update(id, payload);
+      await reload();
+      return updated;
+    },
+    activateDonorPortal: async (id) => {
+      const updated = await donanteService.activatePortal(id);
+      await reload();
+      return updated;
+    },
+    deactivateDonorPortal: async (id) => {
+      const updated = await donanteService.deactivatePortal(id);
+      await reload();
+      return updated;
+    },
+    resendDonorAccess: async (id) => {
+      const result = await donanteService.resendAccess(id);
       await reload();
       return result;
     },

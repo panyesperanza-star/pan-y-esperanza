@@ -650,6 +650,88 @@ export async function printDonorHistoryPdf(profile, organization = {}) {
   doc.save(`Historial-donaciones-${safePdfFilename(profile.name)}.pdf`);
 }
 
+export async function createPortalAccessPdf({
+  portalLabel = 'Portal privado',
+  name = '',
+  code = '',
+  identifier = '',
+  email = '',
+  accessUrl = '',
+  temporaryPin = '',
+  organization = {}
+} = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociacion Pan y Esperanza';
+  const issuedAt = new Date().toISOString();
+  const accessRows = [
+    ['Nombre', name || '-'],
+    ['Codigo', code || '-'],
+    ['Portal', portalLabel],
+    ['URL de acceso', accessUrl || '-']
+  ];
+  if (identifier) accessRows.push(['Identificador privado', identifier]);
+  if (email) accessRows.push(['Email de acceso', email]);
+  accessRows.push(['PIN', temporaryPin || 'No se muestra si ya fue cambiado o no se acaba de generar.']);
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 46, 'F');
+  await addOfficialLogo(doc, 14, 11, 34, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(80, 95, 88);
+  doc.text(orgName, 52, 17);
+  doc.setFontSize(18);
+  doc.setTextColor(28, 45, 38);
+  doc.text('Datos de acceso', 52, 28);
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`Emitido el ${formatDateTime(issuedAt)}`, 52, 35);
+
+  autoTable(doc, {
+    startY: 58,
+    body: accessRows,
+    theme: 'plain',
+    styles: { fontSize: 10, cellPadding: 3, textColor: [23, 33, 27] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48, textColor: [36, 126, 80] }, 1: { cellWidth: 132 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  const instructionsY = doc.lastAutoTable.finalY + 14;
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(28, 45, 38);
+  doc.text('Instrucciones', 14, instructionsY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(72, 84, 78);
+  const instructions = [
+    '1. Accede a la URL indicada.',
+    identifier ? '2. Introduce tu identificador privado y tu PIN.' : '2. Introduce tu email de acceso.',
+    '3. Solicita el codigo OTP y escribe el codigo recibido.',
+    '4. Si pierdes estos datos, contacta con Pan y Esperanza.'
+  ];
+  doc.text(doc.splitTextToSize(instructions.join('\n'), 180), 14, instructionsY + 8);
+
+  doc.setFillColor(247, 250, 246);
+  doc.roundedRect(14, 232, 182, 28, 2, 2, 'F');
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  doc.text(doc.splitTextToSize('Documento privado. No compartas tus datos de acceso. Pan y Esperanza nunca solicitara tu PIN completo por telefono o redes sociales.', 170), 20, 244);
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 272, 196, 272);
+  doc.text('Asociacion Pan y Esperanza - Acceso privado', 14, 280);
+
+  return {
+    doc,
+    filename: `Acceso-${safePdfFilename(portalLabel)}-${safePdfFilename(code || name || identifier || email || 'portal')}.pdf`
+  };
+}
+
+export async function printPortalAccessPdf(payload = {}) {
+  const { doc, filename } = await createPortalAccessPdf(payload);
+  doc.save(filename);
+  return { doc, filename };
+}
+
 export async function exportTreasuryPdf(data, indicators) {
   const doc = new jsPDF();
   await addOfficialLogo(doc, 14, 10, 34, 18);

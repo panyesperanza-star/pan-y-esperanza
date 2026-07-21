@@ -1,10 +1,11 @@
-import { Building2, Edit3, KeyRound, Mail, Plus, Power, PowerOff, Search } from 'lucide-react';
+import { Building2, Edit3, KeyRound, Mail, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
+import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDateTime, normalize } from '../lib/formatters';
 
 const TYPES = ['Empresa', 'Comercio', 'Asociacion', 'Particular', 'Institucion'];
@@ -41,6 +42,18 @@ export function Collaborators({ data, actions, currentUser }) {
   async function resendAccess(collaborator) {
     await actions.resendCollaboratorAccess(collaborator.id);
     setNotice(`Acceso reenviado a ${collaborator.access_email || collaborator.email}.`);
+  }
+
+  async function printAccess(collaborator) {
+    await printPortalAccessPdf({
+      portalLabel: 'Portal del Colaborador',
+      name: collaborator.name,
+      code: collaborator.code,
+      email: collaborator.access_email || collaborator.email,
+      accessUrl: `${window.location.origin}/portal-colaboradores`,
+      organization: data.organization_settings?.[0] || {}
+    });
+    setNotice(`Documento de acceso generado para ${collaborator.name}.`);
   }
 
   return (
@@ -141,6 +154,7 @@ export function Collaborators({ data, actions, currentUser }) {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', collaborator })}><Edit3 size={16} /> Editar</Button>}
+                      <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>
                       {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}
                       {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(collaborator)}><PowerOff size={16} /> Desactivar portal</Button>}
                       {canEdit && !collaborator.portalActive && <Button variant="secondary" onClick={() => activatePortal(collaborator)}><Power size={16} /> Activar portal</Button>}
@@ -186,7 +200,6 @@ function MetricCard({ label, value }) {
 
 function CollaboratorForm({ initial = null, onSubmit }) {
   const [form, setForm] = useState({
-    code: initial?.code || '',
     type: initial?.type || 'Empresa',
     name: initial?.name || '',
     tax_id: initial?.tax_id || '',
@@ -215,10 +228,7 @@ function CollaboratorForm({ initial = null, onSubmit }) {
 
   return (
     <form className="grid gap-4" onSubmit={submit}>
-      <div className="grid gap-4 md:grid-cols-3">
-        <FormField label="Codigo">
-          <input className={inputClass} value={form.code} onChange={(event) => update('code', event.target.value)} placeholder="Automatico si se deja vacio" />
-        </FormField>
+      <div className="grid gap-4 md:grid-cols-2">
         <FormField label="Tipo" required>
           <select className={inputClass} value={form.type} onChange={(event) => update('type', event.target.value)}>
             {TYPES.map((type) => <option key={type} value={type}>{type}</option>)}

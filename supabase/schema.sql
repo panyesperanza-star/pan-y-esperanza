@@ -528,7 +528,7 @@ create table public.notificaciones (
   id uuid primary key default gen_random_uuid(),
   tipo text not null default 'info' check (tipo in ('info', 'warning', 'reminder', 'urgent', 'error')),
   prioridad text not null default 'info' check (prioridad in ('info', 'warning', 'reminder', 'urgent', 'error')),
-  modulo text not null check (modulo in ('beneficiaries', 'inventory', 'deliveries', 'donations', 'volunteers', 'resources', 'settings', 'agenda', 'dashboard')),
+  modulo text not null check (modulo in ('beneficiaries', 'inventory', 'deliveries', 'donations', 'donors', 'collaborators', 'volunteers', 'resources', 'settings', 'agenda', 'dashboard')),
   origen text,
   titulo text not null,
   mensaje text not null,
@@ -1831,12 +1831,23 @@ revoke delete on public.collaborator_certificates from authenticated;
 
 create table if not exists public.donors (
   id uuid primary key default gen_random_uuid(),
+  code text,
   name text not null,
   email text not null unique,
   collaborator_id uuid references public.collaborators(id) on delete set null,
   phone text,
+  access_email text,
+  address text,
+  type text not null default 'Particular',
+  status text not null default 'Activo',
   is_active boolean not null default true,
+  portal_status text not null default 'Activo',
+  last_otp_sent_at timestamptz,
+  last_access_at timestamptz,
+  portal_activated_at timestamptz,
+  portal_deactivated_at timestamptz,
   impact jsonb not null default '{}'::jsonb,
+  notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -1878,7 +1889,10 @@ create table if not exists public.donor_certificates (
 );
 
 create index if not exists idx_donors_email on public.donors(email);
+create unique index if not exists idx_donors_code_unique on public.donors(code) where code is not null and code <> '';
+create index if not exists idx_donors_access_email on public.donors(lower(access_email));
 create index if not exists idx_donors_collaborator_id on public.donors(collaborator_id);
+create index if not exists idx_donors_type_status on public.donors(type, status);
 create index if not exists idx_donor_portal_otps_donor on public.donor_portal_otps(donor_id, created_at desc);
 create index if not exists idx_donor_profile_updates_donor on public.donor_portal_profile_updates(donor_id, created_at desc);
 create index if not exists idx_donor_certificates_donor on public.donor_certificates(donor_id, issued_at desc);
@@ -1887,6 +1901,9 @@ create index if not exists idx_donations_donor_email on public.donations(donor_e
 create unique index if not exists idx_donations_stripe_session_id_unique on public.donations(stripe_session_id) where stripe_session_id is not null;
 create index if not exists idx_donations_stripe_payment_intent on public.donations(stripe_payment_intent_id) where stripe_payment_intent_id is not null;
 create index if not exists idx_donations_stripe_customer on public.donations(stripe_customer_id) where stripe_customer_id is not null;
+
+drop trigger if exists donors_updated_at on public.donors;
+create trigger donors_updated_at before update on public.donors for each row execute function public.set_updated_at();
 
 alter table public.donors enable row level security;
 alter table public.donor_portal_otps enable row level security;
@@ -1901,6 +1918,7 @@ security definer
 set search_path = public
 as $$
   select public.is_app_admin()
+    or public.can_app_permission('donors', action_id)
     or public.can_app_permission('donations', action_id)
     or public.can_app_permission('settings', 'edit')
 $$;

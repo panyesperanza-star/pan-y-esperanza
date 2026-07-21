@@ -14,6 +14,8 @@ const DEFAULT_IMPACT = Object.freeze({
   deliveriesCompleted: 1250,
   campaignsSupported: 12
 });
+const DONOR_TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociacion', 'Institucion'];
+const DONOR_STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
 
 function cleanText(value) {
   return String(value || '').trim();
@@ -31,6 +33,57 @@ function normalizePaymentMethod(value) {
   return 'Bizum';
 }
 
+function safeNow() {
+  return new Date().toISOString();
+}
+
+function normalizeType(value) {
+  const clean = cleanText(value);
+  return DONOR_TYPES.find((item) => normalize(item) === normalize(clean)) || 'Particular';
+}
+
+function normalizeStatus(value) {
+  const clean = cleanText(value);
+  return DONOR_STATUSES.find((item) => normalize(item) === normalize(clean)) || 'Activo';
+}
+
+function nextDonorCode(donors = []) {
+  const max = donors.reduce((highest, item) => {
+    const match = String(item?.code || '').match(/DON-(\d+)/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `DON-${String(max + 1).padStart(6, '0')}`;
+}
+
+function donorPayloadFromForm(payload = {}, current = {}, donors = []) {
+  const name = cleanText(payload.name || current.name);
+  const email = cleanText(payload.email || payload.access_email || current.email || current.access_email).toLowerCase();
+  if (!name) throw new Error('El nombre del donante es obligatorio.');
+  if (!email) throw new Error('El email del donante es obligatorio.');
+  const status = normalizeStatus(payload.status || current.status);
+  const active = payload.is_active !== undefined
+    ? payload.is_active !== false
+    : payload.status !== undefined
+      ? status !== 'Inactivo'
+      : current.is_active !== false;
+  return {
+    code: cleanText(current.code) || nextDonorCode(donors),
+    name,
+    email,
+    access_email: cleanText(payload.access_email || payload.email || current.access_email || current.email).toLowerCase(),
+    phone: cleanText(payload.phone || current.phone),
+    address: cleanText(payload.address || current.address),
+    type: normalizeType(payload.type || current.type),
+    status,
+    is_active: active,
+    portal_status: active ? 'Activo' : 'Inactivo',
+    collaborator_id: payload.collaborator_id || current.collaborator_id || null,
+    impact: payload.impact || current.impact || {},
+    notes: cleanText(payload.notes || current.notes),
+    updated_at: safeNow()
+  };
+}
+
 export class DonanteService {
   constructor({
     repository,
@@ -41,7 +94,8 @@ export class DonanteService {
     audit = async () => {},
     donacionService = null,
     dashboardService = null,
-    notificacionService = null
+    notificacionService = null,
+    assertPermission = () => {}
   } = {}) {
     if (!repository) throw new Error('DonanteService necesita un repository.');
     this.repository = repository;
@@ -53,6 +107,93 @@ export class DonanteService {
     this.donacionService = donacionService;
     this.dashboardService = dashboardService;
     this.notificacionService = notificacionService;
+    this.assertPermission = assertPermission;
+  }
+
+  async create(payload = {}) {
+    this.assertPermission('donors', 'create');
+    const donors = await this.readDonors();
+    const clean = donorPayloadFromForm(payload, { is_active: true }, donors);
+    const duplicate = donors.find((item) => lower(item.email) === lower(clean.email) || lower(item.access_email) === lower(clean.email));
+    if (duplicate) {
+      return this.update(duplicate.id, clean);
+    }
+    const created = await this.repository.createDonor({
+      ...clean,
+      portal_activated_at: clean.is_active ? safeNow() : null,
+      created_at: safeNow()
+    });
+    await this.audit(`Donantes: creo ficha ${created.name}`.trim());
+    await this.notificacionService?.create?.({
+      tipo: 'info',
+      prioridad: 'info',
+      modulo: 'donors',
+      origen: 'Donantes',
+      titulo: 'Nuevo donante registrado',
+      mensaje: `${created.name} ya tiene ficha de donante y portal preparado.`,
+      entity_type: 'donor',
+      entity_id: created.id,
+      action_url: '/donors'
+    });
+    await this.dashboardService?.notifyDonationChanged?.({ type: 'donor_created', donor: created });
+    return created;
+  }
+
+  async update(id, payload = {}) {
+    this.assertPermission('donors', 'edit');
+    const current = await this.requireDonor(id);
+    const donors = await this.readDonors();
+    const clean = donorPayloadFromForm(payload, current, donors);
+    const duplicate = donors.find((item) => item.id !== id && (lower(item.email) === lower(clean.email) || lower(item.access_email) === lower(clean.email)));
+    if (duplicate) throw new Error('Ya existe un donante con ese email.');
+    const updated = await this.repository.updateDonor(id, clean);
+    await this.audit(`Donantes: actualizo ficha ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async activatePortal(id) {
+    this.assertPermission('donors', 'edit');
+    const current = await this.requireDonor(id);
+    const email = lower(current.access_email || current.email);
+    if (!email) throw new Error('El donante necesita un email de acceso.');
+    const updated = await this.repository.updateDonor(id, {
+      email,
+      access_email: email,
+      is_active: true,
+      portal_status: 'Activo',
+      portal_activated_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Donantes: activo portal para ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async deactivatePortal(id) {
+    this.assertPermission('donors', 'edit');
+    const current = await this.requireDonor(id);
+    const updated = await this.repository.updateDonor(id, {
+      is_active: false,
+      portal_status: 'Inactivo',
+      portal_deactivated_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Donantes: desactivo portal para ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async resendAccess(id) {
+    this.assertPermission('donors', 'edit');
+    const current = await this.requireDonor(id);
+    if (current.is_active === false) throw new Error('Activa el portal antes de reenviar el acceso.');
+    const email = lower(current.access_email || current.email);
+    if (!email) throw new Error('El donante necesita un email de acceso.');
+    const response = await this.requestAccessOtp(email);
+    await this.repository.updateDonor(id, {
+      last_otp_sent_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Donantes: reenvio acceso al portal para ${current.name}`.trim());
+    return response;
   }
 
   async requestAccessOtp(email) {
@@ -183,7 +324,7 @@ export class DonanteService {
     const target = lower(email);
     if (!target) return null;
     const donors = await this.readDonors();
-    return donors.find((item) => lower(item.email) === target || lower(item.contact_email) === target) || null;
+    return donors.find((item) => lower(item.email) === target || lower(item.access_email) === target || lower(item.contact_email) === target) || null;
   }
 
   async requireDonor(donorId) {

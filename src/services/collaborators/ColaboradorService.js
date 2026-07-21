@@ -52,7 +52,7 @@ function nextCollaboratorCode(collaborators = []) {
     const match = String(item?.code || '').match(/COL-(\d+)/i);
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
-  return `COL-${String(max + 1).padStart(4, '0')}`;
+  return `COL-${String(max + 1).padStart(6, '0')}`;
 }
 
 function collaboratorPayloadFromForm(payload = {}, current = {}, collaborators = []) {
@@ -67,7 +67,7 @@ function collaboratorPayloadFromForm(payload = {}, current = {}, collaborators =
     : current.is_active === true;
 
   return {
-    code: cleanText(payload.code || current.code) || nextCollaboratorCode(collaborators),
+    code: cleanText(current.code) || nextCollaboratorCode(collaborators),
     type: normalizeType(payload.type || current.type),
     name,
     tax_id: cleanText(payload.tax_id || current.tax_id),
