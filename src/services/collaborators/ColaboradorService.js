@@ -16,12 +16,73 @@ const DEFAULT_IMPACT = Object.freeze({
   campaignsSupported: 12
 });
 
+const COLLABORATOR_TYPES = ['Empresa', 'Comercio', 'Asociacion', 'Particular', 'Institucion'];
+const COLLABORATOR_STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
+
 function cleanText(value) {
   return String(value || '').trim();
 }
 
 function lower(value) {
   return cleanText(value).toLowerCase();
+}
+
+function safeNow() {
+  return new Date().toISOString();
+}
+
+function normalizeType(value) {
+  const clean = cleanText(value);
+  return COLLABORATOR_TYPES.find((item) => normalize(item) === normalize(clean)) || 'Empresa';
+}
+
+function normalizeStatus(value) {
+  const clean = cleanText(value);
+  return COLLABORATOR_STATUSES.find((item) => normalize(item) === normalize(clean)) || 'Activo';
+}
+
+function normalizePortalStatus(value, isActive) {
+  const clean = cleanText(value);
+  if (clean) return clean;
+  return isActive ? 'Activo' : 'Inactivo';
+}
+
+function nextCollaboratorCode(collaborators = []) {
+  const max = collaborators.reduce((highest, item) => {
+    const match = String(item?.code || '').match(/COL-(\d+)/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `COL-${String(max + 1).padStart(4, '0')}`;
+}
+
+function collaboratorPayloadFromForm(payload = {}, current = {}, collaborators = []) {
+  const name = cleanText(payload.name || current.name);
+  const email = cleanText(payload.email || payload.access_email || current.email || current.access_email).toLowerCase();
+  if (!name) throw new Error('El nombre del colaborador es obligatorio.');
+  if (!email) throw new Error('El email del colaborador es obligatorio.');
+
+  const now = safeNow();
+  const isPortalActive = payload.is_active !== undefined
+    ? payload.is_active === true || payload.is_active === 'true'
+    : current.is_active === true;
+
+  return {
+    code: cleanText(payload.code || current.code) || nextCollaboratorCode(collaborators),
+    type: normalizeType(payload.type || current.type),
+    name,
+    tax_id: cleanText(payload.tax_id || current.tax_id),
+    contact_name: cleanText(payload.contact_name || current.contact_name),
+    email,
+    access_email: cleanText(payload.access_email || payload.email || current.access_email || current.email).toLowerCase(),
+    phone: cleanText(payload.phone || current.phone),
+    address: cleanText(payload.address || current.address),
+    status: normalizeStatus(payload.status || current.status),
+    is_active: isPortalActive,
+    portal_status: normalizePortalStatus(payload.portal_status || current.portal_status, isPortalActive),
+    impact: payload.impact || current.impact || {},
+    notes: cleanText(payload.notes || current.notes),
+    updated_at: now
+  };
 }
 
 function normalizeDonationType(value) {
@@ -51,7 +112,8 @@ export class ColaboradorService {
     donacionService = null,
     recursoService = null,
     notificacionService = null,
-    dashboardService = null
+    dashboardService = null,
+    assertPermission = () => {}
   } = {}) {
     if (!repository) throw new Error('ColaboradorService necesita un repository.');
     this.repository = repository;
@@ -65,6 +127,87 @@ export class ColaboradorService {
     this.recursoService = recursoService;
     this.notificacionService = notificacionService;
     this.dashboardService = dashboardService;
+    this.assertPermission = assertPermission;
+  }
+
+  async create(payload = {}) {
+    this.assertPermission('collaborators', 'create');
+    const collaborators = await this.readCollaborators();
+    const clean = collaboratorPayloadFromForm(payload, { is_active: false }, collaborators);
+    const created = await this.repository.createCollaborator({
+      ...clean,
+      is_active: false,
+      portal_status: 'Inactivo',
+      created_at: safeNow()
+    });
+    await this.audit(`Colaboradores: creo ficha ${created.name}`.trim());
+    await this.notificacionService?.create?.({
+      tipo: 'info',
+      prioridad: 'info',
+      modulo: 'collaborators',
+      origen: 'Colaboradores',
+      titulo: 'Nuevo colaborador registrado',
+      mensaje: `${created.name} ya tiene ficha de colaborador y portal preparado.`,
+      entity_type: 'collaborator',
+      entity_id: created.id
+    });
+    await this.dashboardService?.notifyDonationChanged?.({ type: 'collaborator_created', collaborator: created });
+    return created;
+  }
+
+  async update(id, payload = {}) {
+    this.assertPermission('collaborators', 'edit');
+    const current = await this.requireCollaborator(id);
+    const collaborators = await this.readCollaborators();
+    const clean = collaboratorPayloadFromForm(payload, current, collaborators);
+    const updated = await this.repository.updateCollaborator(id, clean);
+    await this.audit(`Colaboradores: actualizo ficha ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async activatePortal(id) {
+    this.assertPermission('collaborators', 'edit');
+    const current = await this.requireCollaborator(id);
+    const email = cleanText(current.access_email || current.email).toLowerCase();
+    if (!email) throw new Error('El colaborador necesita un email de acceso.');
+    const updated = await this.repository.updateCollaborator(id, {
+      access_email: email,
+      email,
+      is_active: true,
+      portal_status: 'Activo',
+      portal_activated_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Colaboradores: activo portal para ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async deactivatePortal(id) {
+    this.assertPermission('collaborators', 'edit');
+    const current = await this.requireCollaborator(id);
+    const updated = await this.repository.updateCollaborator(id, {
+      is_active: false,
+      portal_status: 'Inactivo',
+      portal_deactivated_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Colaboradores: desactivo portal para ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async resendAccess(id) {
+    this.assertPermission('collaborators', 'edit');
+    const current = await this.requireCollaborator(id);
+    if (current.is_active === false) throw new Error('Activa el portal antes de reenviar el acceso.');
+    const email = cleanText(current.access_email || current.email).toLowerCase();
+    if (!email) throw new Error('El colaborador necesita un email de acceso.');
+    const response = await this.requestAccessOtp(email);
+    await this.repository.updateCollaborator(id, {
+      last_otp_sent_at: safeNow(),
+      updated_at: safeNow()
+    });
+    await this.audit(`Colaboradores: reenvio acceso al portal para ${current.name}`.trim());
+    return response;
   }
 
   async requestAccessOtp(email) {

@@ -1642,14 +1642,23 @@ alter table public.donations add column if not exists updated_at timestamptz not
 
 create table if not exists public.collaborators (
   id uuid primary key default gen_random_uuid(),
+  code text,
   type text not null default 'Empresa',
   name text not null,
+  tax_id text,
   contact_name text,
   email text not null unique,
+  access_email text,
   phone text,
   address text,
   logo_path text,
+  status text not null default 'Activo',
   is_active boolean not null default true,
+  portal_status text not null default 'Activo',
+  last_otp_sent_at timestamptz,
+  last_access_at timestamptz,
+  portal_activated_at timestamptz,
+  portal_deactivated_at timestamptz,
   impact jsonb not null default '{}'::jsonb,
   notes text,
   created_at timestamptz not null default now(),
@@ -1721,6 +1730,9 @@ begin
 end $$;
 
 create index if not exists idx_collaborators_email on public.collaborators(lower(email));
+create unique index if not exists idx_collaborators_code_unique on public.collaborators(code) where code is not null and code <> '';
+create index if not exists idx_collaborators_access_email on public.collaborators(lower(access_email));
+create index if not exists idx_collaborators_type_status on public.collaborators(type, status);
 create index if not exists idx_collaborator_portal_otps_collaborator on public.collaborator_portal_otps(collaborator_id, created_at desc);
 create index if not exists idx_collaborator_profile_updates_collaborator on public.collaborator_portal_profile_updates(collaborator_id, created_at desc);
 create index if not exists idx_collaborator_requests_collaborator on public.collaborator_portal_requests(collaborator_id, created_at desc);
@@ -1742,6 +1754,7 @@ security definer
 set search_path = public
 as $$
   select public.is_app_admin()
+    or public.can_app_permission('collaborators', action_id)
     or public.can_app_permission('donations', action_id)
     or public.can_app_permission('resources', action_id)
     or public.can_app_permission('settings', 'edit')
@@ -1820,6 +1833,7 @@ create table if not exists public.donors (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   email text not null unique,
+  collaborator_id uuid references public.collaborators(id) on delete set null,
   phone text,
   is_active boolean not null default true,
   impact jsonb not null default '{}'::jsonb,
@@ -1864,6 +1878,7 @@ create table if not exists public.donor_certificates (
 );
 
 create index if not exists idx_donors_email on public.donors(email);
+create index if not exists idx_donors_collaborator_id on public.donors(collaborator_id);
 create index if not exists idx_donor_portal_otps_donor on public.donor_portal_otps(donor_id, created_at desc);
 create index if not exists idx_donor_profile_updates_donor on public.donor_portal_profile_updates(donor_id, created_at desc);
 create index if not exists idx_donor_certificates_donor on public.donor_certificates(donor_id, issued_at desc);

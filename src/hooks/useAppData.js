@@ -428,7 +428,8 @@ export function useAppData(enabled = true, currentUser = null) {
       donacionService,
       recursoService,
       notificacionService,
-      dashboardService
+      dashboardService,
+      assertPermission
     });
   }
 
@@ -2326,6 +2327,27 @@ export function useAppData(enabled = true, currentUser = null) {
     updateVolunteer: async (id, payload) => {
       await voluntarioService.update(id, payload);
       await reload();
+    },
+    createCollaborator: async (payload) => {
+      await colaboradorService.create(payload);
+      await reload();
+    },
+    updateCollaborator: async (id, payload) => {
+      await colaboradorService.update(id, payload);
+      await reload();
+    },
+    activateCollaboratorPortal: async (id) => {
+      await colaboradorService.activatePortal(id);
+      await reload();
+    },
+    deactivateCollaboratorPortal: async (id) => {
+      await colaboradorService.deactivatePortal(id);
+      await reload();
+    },
+    resendCollaboratorAccess: async (id) => {
+      const result = await colaboradorService.resendAccess(id);
+      await reload();
+      return result;
     },
     deleteVolunteer: async (id) => {
       await voluntarioService.remove(id);

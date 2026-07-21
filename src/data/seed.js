@@ -149,14 +149,23 @@ export const seedData = {
   collaborators: [
     {
       id: demoCollaboratorId,
+      code: 'COL-0001',
       type: 'Empresa',
       name: 'Empresa Solidaria SL',
+      tax_id: '',
       contact_name: 'Ana Ruiz',
       email: 'colaborador@example.org',
+      access_email: 'colaborador@example.org',
       phone: '699 111 222',
       address: 'Calle de la Ayuda 21, Madrid',
       logo_path: '',
+      status: 'Activo',
       is_active: true,
+      portal_status: 'Activo',
+      last_otp_sent_at: null,
+      last_access_at: null,
+      portal_activated_at: new Date().toISOString(),
+      portal_deactivated_at: null,
       impact: {
         familiesServed: 186,
         minorsServed: 73,
@@ -392,7 +401,7 @@ export const seedData = {
   roles: [
     { id: 'superadmin', name: 'Superadministrador', modules: ['*'] },
     { id: 'president', name: 'Presidenta', modules: ['*'] },
-    { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'accounting', 'reports', 'receipts'] },
+    { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'accounting', 'collaborators', 'reports', 'receipts'] },
     { id: 'secretary', name: 'Secretaria', modules: ['agenda', 'beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
     { id: 'volunteer', name: 'Voluntario', modules: ['agenda', 'beneficiaries', 'deliveries', 'inventory', 'accounting'] },
     { id: 'viewer', name: 'Consulta', modules: ['agenda', 'dashboard', 'reports'] }

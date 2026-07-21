@@ -2,7 +2,7 @@ import { normalize } from '../../lib/formatters';
 
 const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
 const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
-const COLLABORATOR_KINDS = new Set(['empresa', 'iglesia', 'asociacion', 'fundacion', 'administracion', 'entidad', 'colaborador']);
+const COLLABORATOR_KINDS = new Set(['empresa', 'comercio', 'iglesia', 'asociacion', 'fundacion', 'administracion', 'institucion', 'entidad', 'colaborador']);
 
 function cleanText(value) {
   return String(value || '').trim();
@@ -358,8 +358,12 @@ export class DonacionService {
     const kind = resolveDonorKind(payload, contact) || resolveDonorKind(payload, previous) || 'Particular';
     if (isAnonymousKind(kind)) return null;
 
-    const donors = await this.repository.listDonors().catch(() => this.data.donors || []);
+    const [donors, collaborators] = await Promise.all([
+      this.repository.listDonors().catch(() => this.data.donors || []),
+      this.repository.listCollaborators().catch(() => this.data.collaborators || [])
+    ]);
     const existing = (donors || []).find((item) => lower(item.email) === lower(email));
+    const linkedCollaborator = (collaborators || []).find((item) => lower(item.email) === lower(email) || lower(item.access_email) === lower(email));
     const shouldBeActive = contact.is_active !== false && payload.is_active !== false;
 
     if (!shouldBeActive) {
@@ -379,6 +383,7 @@ export class DonacionService {
       name,
       email,
       phone: cleanText(contact.phone || payload.phone || payload.contact_phone || previous.phone),
+      collaborator_id: linkedCollaborator?.id || previous.collaborator_id || null,
       is_active: true,
       updated_at: new Date().toISOString()
     };
@@ -428,7 +433,10 @@ export class DonacionService {
       email,
       phone: cleanText(contact.phone || payload.phone || payload.contact_phone),
       address: cleanText(contact.address || payload.address || payload.contact_address),
+      access_email: email,
+      status: 'Activo',
       is_active: true,
+      portal_status: 'Activo',
       notes: cleanText(contact.notes || payload.notes || previous.notes),
       updated_at: new Date().toISOString()
     };

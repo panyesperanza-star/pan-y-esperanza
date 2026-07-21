@@ -18,6 +18,10 @@ export class ColaboradorRepository {
     return this.repository.list(COLLABORATOR_PORTAL_TABLES.collaborators);
   }
 
+  async createCollaborator(payload) {
+    return this.repository.create(COLLABORATOR_PORTAL_TABLES.collaborators, payload);
+  }
+
   async updateCollaborator(id, payload) {
     return this.repository.update(COLLABORATOR_PORTAL_TABLES.collaborators, id, payload);
   }

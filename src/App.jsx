@@ -10,6 +10,7 @@ import { AgendaOperativa } from './pages/AgendaOperativa';
 import { Beneficiaries } from './pages/Beneficiaries';
 import { BeneficiaryPortal } from './pages/BeneficiaryPortal';
 import { Backup } from './pages/Backup';
+import { Collaborators } from './pages/Collaborators';
 import { CollaboratorPortal } from './pages/CollaboratorPortal';
 import { Communications } from './pages/Communications';
 import { Dashboard } from './pages/Dashboard';
@@ -243,6 +244,7 @@ export default function App() {
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     accounting: <Accounting data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     volunteers: <Volunteers data={sorted} actions={actions} currentUser={currentUser} />,
+    collaborators: <Collaborators data={sorted} actions={actions} currentUser={currentUser} />,
     reports: <Reports data={sorted} actions={actions} />,
     backup: <Backup data={sorted} actions={actions} currentUser={currentUser} />,
     provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
