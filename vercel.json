@@ -23,6 +23,7 @@
     { "source": "/accounting", "destination": "/erp/index.html" },
     { "source": "/treasury", "destination": "/erp/index.html" },
     { "source": "/volunteers", "destination": "/erp/index.html" },
+    { "source": "/collaborators", "destination": "/erp/index.html" },
     { "source": "/reports", "destination": "/erp/index.html" },
     { "source": "/users", "destination": "/erp/index.html" },
     { "source": "/settings", "destination": "/erp/index.html" },

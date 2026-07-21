@@ -14,6 +14,11 @@ Ruta oficial:
 
 - `/collaborators`
 
+Enrutado de despliegue:
+
+- `vercel.json` reescribe `/collaborators` a `/erp/index.html`.
+- `vite.config.js` incluye `/collaborators` en las rutas ERP para desarrollo y preview.
+
 Campos administrativos incluidos:
 
 - Codigo

@@ -25,6 +25,7 @@ const erpRoutes = new Set([
   '/accounting',
   '/treasury',
   '/volunteers',
+  '/collaborators',
   '/reports',
   '/users',
   '/settings',
