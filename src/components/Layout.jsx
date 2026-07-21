@@ -39,14 +39,14 @@ export function Layout({ active, setActive, onReset, currentUser, onLogout, show
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /></Button>
         </div>
       </header>
-      {open && <div className="fixed inset-0 z-40 bg-black/30 lg:hidden"><aside className="h-full w-80 bg-white p-4"><div className="mb-5 flex items-center justify-between"><BrandLogo className="h-12 w-auto" showText={false} /><button className="rounded-md p-2" onClick={() => setOpen(false)}><X /></button></div>{nav}</aside></div>}
+      {open && <div className="fixed inset-0 z-40 bg-black/30 lg:hidden"><aside className="flex h-full w-80 flex-col bg-white p-4"><div className="mb-5 flex items-center justify-between"><BrandLogo className="h-12 w-auto" showText={false} /><button className="rounded-md p-2" onClick={() => setOpen(false)}><X /></button></div><div className="min-h-0 flex-1 overflow-y-auto pr-1">{nav}</div></aside></div>}
       <aside className="fixed inset-y-0 hidden w-72 border-r border-slate-200 bg-white p-5 lg:block">
         <BrandLogo className="h-16 w-auto" />
         <div className="mt-4 rounded-md bg-brand-50 p-3 text-sm text-brand-700">
           <p className="font-semibold">{currentUser?.first_name} {currentUser?.last_name}</p>
           <p>{currentUser?.role}</p>
         </div>
-        <div className="mt-8">{nav}</div>
+        <div className="mt-8 max-h-[calc(100vh-16rem)] overflow-y-auto pr-1">{nav}</div>
         <div className="absolute bottom-5 left-5 right-5 grid gap-2">
           {canShowDemoReset && <Button variant="secondary" onClick={onReset}><RotateCcw size={16} /> Reiniciar demo</Button>}
           <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Cerrar sesión</Button>
