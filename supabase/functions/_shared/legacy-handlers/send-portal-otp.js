@@ -626,12 +626,17 @@ async function listPublishedResources(supabase) {
 }
 
 async function audit(supabase, action) {
-  await supabase.from('audit_logs').insert({
-    user_name: 'Portal',
-    user_email: '',
-    action,
-    happened_at: new Date().toISOString()
-  }).catch(() => null);
+  try {
+    const { error } = await supabase.from('audit_logs').insert({
+      user_name: 'Portal',
+      user_email: '',
+      action,
+      happened_at: new Date().toISOString()
+    });
+    if (error) console.warn('[send-portal-otp] No se pudo registrar auditoria', { message: error.message });
+  } catch (error) {
+    console.warn('[send-portal-otp] No se pudo registrar auditoria', { message: error?.message || 'error desconocido' });
+  }
 }
 
 function buildAuthDescriptor(portal, subject) {
