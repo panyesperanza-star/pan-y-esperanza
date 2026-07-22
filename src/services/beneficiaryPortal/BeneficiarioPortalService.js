@@ -1,4 +1,5 @@
 import { normalize } from '../../lib/formatters';
+import { sendEmailViaApi } from '../../lib/emailClient';
 import { callPortalApi } from '../../lib/portalOtpClient';
 import {
   assertSessionShape,
@@ -23,6 +24,7 @@ function cleanText(value) {
 
 const ACCESS_LOCK_MAX_ATTEMPTS = 5;
 const ACCESS_LOCK_MINUTES = 15;
+const PUBLIC_ACCESS_URL = 'https://www.panyesperanza.org/acceder';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -176,6 +178,27 @@ function nextLockUntil(attempts) {
     : null;
 }
 
+function buildAccessEmailMessage({ beneficiary, account, temporaryPin = '' }) {
+  const name = cleanText(beneficiary.full_name || beneficiary.name || 'beneficiario');
+  const pin = cleanText(temporaryPin);
+  return [
+    `Hola ${name},`,
+    '',
+    'Ya tienes preparado tu acceso al Portal del Beneficiario de Pan y Esperanza.',
+    '',
+    `Identificador privado: ${account.access_identifier}`,
+    `URL de acceso: ${PUBLIC_ACCESS_URL}`,
+    '',
+    'Para entrar, abre la URL y pulsa "Recibo ayuda".',
+    'Necesitaras tu PIN personal para solicitar el codigo OTP de verificacion.',
+    pin ? `PIN temporal: ${pin}` : 'Por seguridad, el PIN no se incluye en este correo si ya fue generado anteriormente.',
+    '',
+    'Si no has solicitado este acceso o tienes dudas, contacta con Pan y Esperanza.',
+    '',
+    'Pan y Esperanza'
+  ].join('\n');
+}
+
 export class BeneficiarioPortalService {
   constructor({
     repository,
@@ -185,6 +208,7 @@ export class BeneficiarioPortalService {
     socialHistory = [],
     resources = [],
     notifications = [],
+    organizationSettings = {},
     audit = async () => {},
     beneficiarioService = null,
     entregaService = null,
@@ -199,6 +223,7 @@ export class BeneficiarioPortalService {
     this.socialHistory = socialHistory;
     this.resources = resources;
     this.notifications = notifications;
+    this.organizationSettings = organizationSettings;
     this.audit = audit;
     this.beneficiarioService = beneficiarioService;
     this.entregaService = entregaService;
@@ -403,16 +428,28 @@ export class BeneficiarioPortalService {
     return { account: updated, temporaryPin };
   }
 
-  async sendAccess(beneficiaryId) {
+  async sendAccess(beneficiaryId, { temporaryPin = '', organization = null } = {}) {
     const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const email = cleanText(beneficiary.email).toLowerCase();
+    if (!email) throw new Error('Este beneficiario no tiene email registrado para enviar el acceso.');
     const account = await this.getAccountForBeneficiary(beneficiary.id);
     if (!account) throw new Error('Activa el portal antes de enviar el acceso.');
+    if (account.status !== 'active') throw new Error('El portal debe estar activo antes de enviar el acceso.');
+    if (!account.access_identifier) throw new Error('El portal no tiene identificador privado generado.');
+
+    const emailResult = await sendEmailViaApi({
+      to: email,
+      subject: 'Acceso al Portal del Beneficiario',
+      message: buildAccessEmailMessage({ beneficiary, account, temporaryPin }),
+      organization: organization || this.organizationSettings || {}
+    });
+
     const updated = await this.repository.updateAccount(account.id, {
       invited_at: nowISO(),
       updated_at: nowISO()
     });
     await this.audit(`Portal beneficiario: acceso enviado para ${beneficiary.full_name || beneficiary.id}`.trim());
-    return updated;
+    return { account: updated, email: emailResult };
   }
 
   async activatePendingAccesses() {

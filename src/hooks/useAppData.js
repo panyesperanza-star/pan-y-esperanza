@@ -402,6 +402,7 @@ export function useAppData(enabled = true, currentUser = null) {
       socialHistory: appData.social_history || [],
       resources: appData.recursos || [],
       notifications: appData.notificaciones || [],
+      organizationSettings: appData.organization_settings?.[0] || {},
       audit,
       beneficiarioService,
       entregaService,
@@ -2023,8 +2024,8 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
       return result;
     },
-    sendBeneficiaryPortalAccess: async (id) => {
-      const result = await beneficiarioPortalService.sendAccess(id);
+    sendBeneficiaryPortalAccess: async (id, options = {}) => {
+      const result = await beneficiarioPortalService.sendAccess(id, options);
       await reload();
       return result;
     },

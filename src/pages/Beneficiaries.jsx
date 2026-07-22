@@ -47,7 +47,7 @@ import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../l
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { createPortalAccessPdf, printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
+import { printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, todayISO } from '../lib/formatters';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
@@ -881,32 +881,16 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       setNotice('Este beneficiario no tiene email registrado para enviar el acceso.');
       return;
     }
-    let account = portalAccount;
-    let pin = temporaryPortalPin;
-    if (!account) {
-      const result = await actions.activateBeneficiaryPortal(beneficiary.id);
-      account = result.account;
-      pin = result.temporaryPin || '';
-      setTemporaryPortalPin(pin);
+    if (!portalAccount || portalAccount.status !== 'active') {
+      setNotice('Activa el portal antes de enviar el acceso.');
+      return;
     }
-    const payload = buildPortalAccessPayload(account, pin);
-    const { doc, filename } = await createPortalAccessPdf(payload);
-    await sendEmailViaApi({
-      to: beneficiary.email,
-      subject: 'Acceso al Portal del Beneficiario',
-      message: [
-        `Hola ${beneficiary.full_name},`,
-        '',
-        'Adjuntamos tus datos de acceso al Portal del Beneficiario de Pan y Esperanza.',
-        'Por seguridad, conserva este documento y no compartas tus datos de acceso.',
-        '',
-        'Pan y Esperanza'
-      ].join('\n'),
-      attachments: [{ filename, blob: doc.output('blob'), contentType: 'application/pdf' }],
-      organization: data.organization_settings?.[0] || {}
-    });
-    await actions.sendBeneficiaryPortalAccess(beneficiary.id);
-    setNotice('Acceso enviado correctamente.');
+    try {
+      await actions.sendBeneficiaryPortalAccess(beneficiary.id, { temporaryPin: temporaryPortalPin });
+      setNotice('Acceso enviado correctamente.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo enviar el acceso. Intentalo de nuevo.');
+    }
   }
 
   return (
