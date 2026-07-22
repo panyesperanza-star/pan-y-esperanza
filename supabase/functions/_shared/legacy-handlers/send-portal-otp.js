@@ -269,16 +269,13 @@ async function createAndSendOtp({ supabase, portal, config, subject, action }) {
   if (error) throw error;
 
   const resend = new Resend(resendKey);
+  const emailContext = { label: config.label, code, expiresAt };
   const result = await resend.emails.send({
     from,
     to: email,
     subject: `Codigo de verificacion - ${config.label}`,
-    text: [
-      `Tu codigo de verificacion para ${config.label} es: ${code}`,
-      '',
-      `Caduca el ${new Date(expiresAt).toLocaleString('es-ES')}.`,
-      'Si no has solicitado este acceso, ignora este mensaje y contacta con Pan y Esperanza.'
-    ].join('\n')
+    text: buildOtpEmailText(emailContext),
+    html: buildOtpEmailHtml(emailContext)
   });
 
   if (result.error) {
@@ -296,6 +293,53 @@ async function createAndSendOtp({ supabase, portal, config, subject, action }) {
     deliveryStatus: 'sent',
     email
   };
+}
+
+function buildOtpEmailText({ label, code, expiresAt }) {
+  return [
+    `Tu codigo de verificacion para ${label} es: ${code}`,
+    '',
+    `Caduca el ${new Date(expiresAt).toLocaleString('es-ES')}.`,
+    'Si no has solicitado este acceso, ignora este mensaje y contacta con Pan y Esperanza.'
+  ].join('\n');
+}
+
+function buildOtpEmailHtml({ label, code, expiresAt }) {
+  const safeLabel = escapeHtml(label);
+  const safeCode = escapeHtml(code);
+  const safeExpiresAt = escapeHtml(new Date(expiresAt).toLocaleString('es-ES'));
+
+  return `
+    <!doctype html>
+    <html lang="es">
+      <body style="margin:0;background:#f5f7f2;font-family:Arial,Helvetica,sans-serif;color:#1f2933">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7f2;padding:28px 12px">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e6eadf">
+                <tr>
+                  <td style="padding:28px 28px 12px">
+                    <p style="margin:0 0 8px;color:#247e50;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">Pan y Esperanza</p>
+                    <h1 style="margin:0;color:#1f2933;font-size:24px;line-height:1.25">Codigo de verificacion</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 28px 28px">
+                    <p style="margin:0 0 18px;font-size:16px;line-height:1.6;color:#374151">Tu codigo de verificacion para ${safeLabel} es:</p>
+                    <div style="margin:0 0 20px;padding:18px 16px;background:#f1f7ef;border:1px solid #d8ead5;border-radius:14px;text-align:center">
+                      <span style="display:block;font-size:34px;line-height:1.2;font-weight:800;letter-spacing:8px;color:#247e50">${safeCode}</span>
+                    </div>
+                    <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#4b5563">Caduca el ${safeExpiresAt}.</p>
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280">Si no has solicitado este acceso, ignora este mensaje y contacta con Pan y Esperanza.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
 }
 
 async function verifyStoredOtp({ supabase, config, subjectId, challengeId, code, action }) {
@@ -675,6 +719,15 @@ async function parseBody(request) {
 
 function cleanText(value) {
   return String(value || '').trim();
+}
+
+function escapeHtml(value) {
+  return cleanText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function cleanEmail(value) {
