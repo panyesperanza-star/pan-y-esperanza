@@ -12,6 +12,7 @@
     { "source": "/acceso", "destination": "/acceso/" },
     { "source": "/dashboard", "destination": "/erp/index.html" },
     { "source": "/notifications", "destination": "/erp/index.html" },
+    { "source": "/social-care", "destination": "/erp/index.html" },
     { "source": "/agenda", "destination": "/erp/index.html" },
     { "source": "/beneficiaries", "destination": "/erp/index.html" },
     { "source": "/communications", "destination": "/erp/index.html" },
