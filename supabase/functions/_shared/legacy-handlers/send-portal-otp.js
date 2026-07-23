@@ -150,7 +150,11 @@ async function findSubjectForAccess(supabase, portal, credentials = {}) {
 }
 
 async function findCollaboratorForAccess(supabase, email) {
-  logPortalDebug('collaborator', 'buscando colaborador', { email: maskEmail(email), field: 'email' });
+  logPortalDebug('collaborator', 'buscando colaborador', {
+    table: 'collaborators',
+    field: 'email',
+    email: maskEmail(email)
+  });
   const { data: byEmail, error: emailError } = await supabase
     .from('collaborators')
     .select('*')
@@ -161,7 +165,11 @@ async function findCollaboratorForAccess(supabase, email) {
   let collaborator = byEmail;
   let matchedBy = byEmail ? 'email' : '';
   if (!collaborator) {
-    logPortalDebug('collaborator', 'buscando colaborador', { email: maskEmail(email), field: 'access_email' });
+    logPortalDebug('collaborator', 'buscando colaborador', {
+      table: 'collaborators',
+      field: 'access_email',
+      email: maskEmail(email)
+    });
     const { data: byAccessEmail, error: accessEmailError } = await supabase
       .from('collaborators')
       .select('*')
@@ -175,21 +183,41 @@ async function findCollaboratorForAccess(supabase, email) {
   logPortalDebug('collaborator', 'colaborador encontrado', {
     found: Boolean(collaborator),
     matchedBy,
-    collaboratorId: collaborator?.id || null
+    id: collaborator?.id || null,
+    email: maskEmail(collaborator?.email || ''),
+    accessEmail: maskEmail(collaborator?.access_email || '')
   });
 
   if (!collaborator) {
     throw httpError(403, 'ACCESS_DENIED', 'No hemos encontrado un colaborador con ese correo.');
   }
 
-  const portalStatus = normalizeText(collaborator.portal_status || 'Activo');
-  const status = normalizeText(collaborator.status || 'Activo');
-  const active = collaborator.is_active !== false && portalStatus !== 'inactivo' && status !== 'inactivo';
-  logPortalDebug('collaborator', 'estado colaborador', {
-    active,
-    isActive: collaborator.is_active !== false,
-    portalStatus: collaborator.portal_status || '',
-    status: collaborator.status || ''
+  const portalStatusRaw = cleanText(collaborator.portal_status || 'Activo');
+  const statusRaw = cleanText(collaborator.status || 'Activo');
+  const portalStatus = normalizeText(portalStatusRaw);
+  const status = normalizeText(statusRaw);
+  const hasPortalEnabledField = Object.prototype.hasOwnProperty.call(collaborator, 'portal_enabled');
+  const hasPortalAccessField = Object.prototype.hasOwnProperty.call(collaborator, 'portal_access');
+  const activeField = collaborator.is_active !== false;
+  const statusAllowsAccess = status !== 'inactivo';
+  const portalStatusAllowsAccess = portalStatus !== 'inactivo';
+  const inactiveReasons = [];
+  if (!activeField) inactiveReasons.push('is_active=false');
+  if (!statusAllowsAccess) inactiveReasons.push(`status=${statusRaw || '(vacio)'}`);
+  if (!portalStatusAllowsAccess) inactiveReasons.push(`portal_status=${portalStatusRaw || '(vacio)'}`);
+  const active = activeField && statusAllowsAccess && portalStatusAllowsAccess;
+
+  logPortalDebug('collaborator', 'validacion acceso colaborador', {
+    id: collaborator.id,
+    email: maskEmail(collaborator.email || ''),
+    accessEmail: maskEmail(collaborator.access_email || ''),
+    status: statusRaw,
+    active: activeField,
+    portalStatus: portalStatusRaw,
+    portalEnabled: hasPortalEnabledField ? collaborator.portal_enabled : 'campo_no_existente',
+    portalAccess: hasPortalAccessField ? collaborator.portal_access : 'campo_no_existente',
+    allowed: active,
+    motivo: inactiveReasons.length ? inactiveReasons.join(', ') : 'acceso_activo'
   });
 
   if (!active) throw httpError(403, 'SUBJECT_INACTIVE', 'El acceso no esta activo.');
