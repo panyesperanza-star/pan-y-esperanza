@@ -93,6 +93,16 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return response.result;
   }
 
+  async confirmDeliveryAttendance(session, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'confirm-delivery-attendance',
+      payload
+    });
+    return response.result;
+  }
+
   async changePin(session, payload = {}) {
     console.info('[beneficiary-access] PortalApiService changePin payload', {
       keys: Object.keys(payload || {}),

@@ -142,7 +142,7 @@ export function Deliveries({ data, actions, currentUser }) {
       {notice && <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">{notice}</div>}
 
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
-        <table className="w-full min-w-[1180px] text-left text-sm">
+        <table className="w-full min-w-[1320px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">Fecha</th>
@@ -156,6 +156,7 @@ export function Deliveries({ data, actions, currentUser }) {
               <th>Receptor</th>
               <th>Firma</th>
               <th>Estado</th>
+              <th>Estado asistencia</th>
               <th className="text-right pr-4">Acciones</th>
             </tr>
           </thead>
@@ -178,6 +179,9 @@ export function Deliveries({ data, actions, currentUser }) {
                   <td>
                     <span className={`rounded-md px-2 py-1 text-xs font-bold ${isCancelled ? 'bg-red-100 text-red-800 ring-1 ring-red-200' : 'bg-brand-50 text-brand-700'}`}>{isCancelled ? 'Anulada' : 'Activa'}</span>
                     {isCancelled && <p className="mt-1 max-w-xs text-xs">{item.cancellation_reason} · {item.cancelled_by_name || 'Usuario'} · {formatDateTime(item.cancelled_at)}</p>}
+                  </td>
+                  <td>
+                    <AttendanceStatusCell delivery={item} />
                   </td>
                   <td className="pr-4">
                     <div className="flex flex-wrap justify-end gap-2">
@@ -258,6 +262,21 @@ export function Deliveries({ data, actions, currentUser }) {
         </Modal>
       )}
     </>
+  );
+}
+
+function AttendanceStatusCell({ delivery }) {
+  const meta = deliveryAttendanceMeta(delivery.attendance_status);
+  return (
+    <div className="max-w-[14rem]">
+      <span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${meta.className}`}>{meta.label}</span>
+      {delivery.attendance_confirmed_at && (
+        <p className="mt-1 text-xs text-slate-500">
+          {formatDateTime(delivery.attendance_confirmed_at)} · {attendanceSourceLabel(delivery.attendance_source)}
+        </p>
+      )}
+      {delivery.attendance_reason && <p className="mt-1 text-xs text-slate-500">Motivo: {delivery.attendance_reason}</p>}
+    </div>
   );
 }
 
@@ -590,4 +609,18 @@ function buildDeliveryRelationWarnings(delivery, data) {
   if (delivery.status === 'Anulada') relations.push('Historial de anulación conservado en la entrega');
 
   return relations;
+}
+
+function deliveryAttendanceMeta(status) {
+  if (status === 'confirmed') return { label: 'Confirmada', className: 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100' };
+  if (status === 'unavailable') return { label: 'No asistira', className: 'bg-amber-50 text-amber-800 ring-1 ring-amber-100' };
+  if (status === 'needs_contact') return { label: 'Necesita contactar', className: 'bg-red-50 text-red-800 ring-1 ring-red-100' };
+  return { label: 'Pendiente', className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' };
+}
+
+function attendanceSourceLabel(source) {
+  if (source === 'portal') return 'Portal';
+  if (source === 'erp') return 'ERP';
+  if (source === 'system') return 'Sistema';
+  return 'Sin origen';
 }

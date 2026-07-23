@@ -607,6 +607,11 @@ function sanitizePortalDelivery(delivery = {}) {
     location: cleanText(delivery.location || delivery.delivery_location || delivery.place || delivery.address),
     help_type: delivery.help_type || '',
     status: delivery.status || 'Pendiente',
+    attendance_status: delivery.attendance_status || 'pending',
+    attendance_confirmed_at: delivery.attendance_confirmed_at || null,
+    attendance_source: delivery.attendance_source || null,
+    attendance_reason: delivery.attendance_reason || '',
+    attendance_notes: delivery.attendance_notes || '',
     created_at: delivery.created_at || null
   };
 }
@@ -701,6 +706,9 @@ async function executePortalAction(supabase, portal, subject, body) {
       const { data, error } = await supabase.from('beneficiary_portal_notices').update({ status: 'read', read_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', payload.noticeId).eq('beneficiary_id', subject.id).select().single();
       if (error) throw error;
       return data;
+    }
+    if (action === 'confirm-delivery-attendance') {
+      return updateDeliveryAttendanceFromPortal(supabase, subject, payload);
     }
     if (action === 'create-request' || action === 'request-profile-update') {
       const changes = action === 'create-request' ? { request_type: payload.request_type, message: payload.message, preferred_contact: payload.preferred_contact } : payload.changes || payload;
@@ -809,6 +817,138 @@ async function executePortalAction(supabase, portal, subject, body) {
   }
 
   throw httpError(400, 'INVALID_PORTAL_ACTION', 'Accion de portal no valida.');
+}
+
+async function updateDeliveryAttendanceFromPortal(supabase, beneficiary, payload = {}) {
+  const deliveryId = cleanText(payload.deliveryId || payload.delivery_id);
+  const requestedStatus = cleanText(payload.attendance_status || payload.status);
+  const status = normalizeAttendanceStatus(requestedStatus);
+  const reason = cleanText(payload.reason || payload.attendance_reason);
+  const notes = cleanText(payload.notes || payload.message);
+
+  if (!deliveryId) throw httpError(400, 'INVALID_DELIVERY', 'Entrega no valida.');
+  if (!status) throw httpError(400, 'INVALID_ATTENDANCE_STATUS', 'Estado de asistencia no valido.');
+  if (status === 'unavailable' && !isValidAttendanceReason(reason)) {
+    throw httpError(422, 'INVALID_ATTENDANCE_REASON', 'Selecciona un motivo valido.');
+  }
+
+  const { data: delivery, error: deliveryError } = await supabase
+    .from('deliveries')
+    .select('*')
+    .eq('id', deliveryId)
+    .eq('beneficiary_id', beneficiary.id)
+    .maybeSingle();
+  if (deliveryError) throw deliveryError;
+  if (!delivery || delivery.status === 'Anulada') throw httpError(404, 'DELIVERY_NOT_FOUND', 'No se ha encontrado la entrega programada.');
+  if (!isFutureDelivery(delivery)) throw httpError(422, 'DELIVERY_NOT_UPCOMING', 'Solo se puede confirmar la asistencia de entregas futuras.');
+
+  const now = new Date().toISOString();
+  const updatePayload = {
+    attendance_status: status,
+    attendance_confirmed_at: now,
+    attendance_source: 'portal',
+    attendance_reason: status === 'unavailable' ? reason : null,
+    attendance_notes: notes || attendanceStatusLabel(status)
+  };
+
+  const { data: updatedDelivery, error: updateError } = await supabase
+    .from('deliveries')
+    .update(updatePayload)
+    .eq('id', delivery.id)
+    .eq('beneficiary_id', beneficiary.id)
+    .select()
+    .single();
+  if (updateError) throw updateError;
+
+  let request = null;
+  if (status === 'needs_contact') {
+    const requestMessage = notes || `Necesito ayuda para asistir a la entrega del ${delivery.delivered_at || delivery.created_at || ''}.`;
+    const { data, error } = await supabase.from('beneficiary_portal_profile_updates').insert({
+      beneficiary_id: beneficiary.id,
+      requested_changes: {
+        request_type: 'delivery_attendance_help',
+        delivery_id: delivery.id,
+        message: requestMessage,
+        preferred_contact: 'portal'
+      },
+      status: 'pending',
+      notes: requestMessage,
+      requested_at: now,
+      created_at: now,
+      updated_at: now
+    }).select().single();
+    if (error) throw error;
+    request = data;
+  }
+
+  await notifyDeliveryAttendance(supabase, beneficiary, updatedDelivery, status, reason, request);
+  await audit(supabase, `Portal del Beneficiario: asistencia ${attendanceStatusLabel(status)} para entrega ${delivery.receipt_number || delivery.id}`);
+
+  return {
+    delivery: sanitizePortalDelivery(updatedDelivery),
+    request,
+    attendance: {
+      status,
+      confirmed_at: now,
+      source: 'portal',
+      reason: updatePayload.attendance_reason
+    }
+  };
+}
+
+async function notifyDeliveryAttendance(supabase, beneficiary, delivery, status, reason, request) {
+  const now = new Date().toISOString();
+  const label = attendanceStatusLabel(status);
+  const priority = status === 'confirmed' ? 'info' : status === 'unavailable' ? 'warning' : 'urgent';
+  const messageParts = [
+    `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha actualizado su asistencia: ${label}.`,
+    delivery.delivered_at ? `Entrega: ${delivery.delivered_at}.` : '',
+    reason ? `Motivo: ${reason}.` : '',
+    request?.id ? 'Se ha creado una solicitud asociada.' : ''
+  ].filter(Boolean);
+  const { error } = await supabase.from('notificaciones').insert({
+    tipo: status === 'needs_contact' ? 'urgent' : priority,
+    prioridad: priority,
+    modulo: 'deliveries',
+    origen: 'Portal del Beneficiario',
+    titulo: `Asistencia ${label}`,
+    mensaje: messageParts.join(' '),
+    estado: 'Pendiente',
+    leida: false,
+    entity_type: 'delivery',
+    entity_id: delivery.id,
+    action_url: '/deliveries',
+    dedupe_key: `delivery-attendance-${delivery.id}-${status}-${now}`,
+    metadata: {
+      beneficiary_id: beneficiary.id,
+      delivery_id: delivery.id,
+      attendance_status: status,
+      attendance_source: 'portal',
+      request_id: request?.id || null
+    },
+    created_at: now,
+    updated_at: now
+  });
+  if (error) console.warn('[send-portal-otp] No se pudo registrar notificacion de asistencia', { message: error.message });
+}
+
+function normalizeAttendanceStatus(value) {
+  const status = cleanText(value).toLowerCase();
+  if (status === 'confirmed') return 'confirmed';
+  if (status === 'unavailable') return 'unavailable';
+  if (status === 'needs_contact' || status === 'needs_help') return 'needs_contact';
+  return '';
+}
+
+function isValidAttendanceReason(value) {
+  return ['Trabajo', 'Enfermedad', 'Transporte', 'Otro'].includes(cleanText(value));
+}
+
+function attendanceStatusLabel(value) {
+  if (value === 'confirmed') return 'Confirmada';
+  if (value === 'unavailable') return 'No asistira';
+  if (value === 'needs_contact') return 'Necesita contactar';
+  return 'Pendiente';
 }
 
 async function changeBeneficiaryPin(supabase, beneficiary, payload = {}, rootPayload = {}) {

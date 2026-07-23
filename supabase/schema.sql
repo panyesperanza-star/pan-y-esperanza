@@ -304,6 +304,11 @@ create table public.deliveries (
   responsible_signature_storage_bucket text,
   responsible_signature_storage_path text,
   responsible_signature_signed_at timestamptz,
+  attendance_status text not null default 'pending' check (attendance_status in ('pending', 'confirmed', 'unavailable', 'needs_contact')),
+  attendance_confirmed_at timestamptz,
+  attendance_source text check (attendance_source is null or attendance_source in ('portal', 'erp', 'system')),
+  attendance_reason text,
+  attendance_notes text,
   notes text,
   status text not null default 'Activa' check (status in ('Activa', 'Anulada')),
   cancelled_at timestamptz,
@@ -1046,6 +1051,8 @@ create index beneficiaries_family_idx on public.beneficiaries (family_id);
 create index beneficiary_documents_family_idx on public.beneficiary_documents (family_id, uploaded_at desc);
 create index social_history_family_idx on public.social_history (family_id, date desc);
 create index deliveries_beneficiary_idx on public.deliveries (beneficiary_id, delivered_at desc);
+create index if not exists deliveries_attendance_status_idx on public.deliveries (attendance_status, delivered_at);
+create index if not exists deliveries_beneficiary_attendance_idx on public.deliveries (beneficiary_id, attendance_status, delivered_at);
 create index inventory_low_stock_idx on public.inventory_items (stock, low_stock_threshold);
 create index agenda_operativa_event_at_idx on public.agenda_operativa (event_at, status);
 create index agenda_operativa_campaign_idx on public.agenda_operativa (campaign_id, event_at);

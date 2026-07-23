@@ -388,7 +388,16 @@ export function BeneficiaryPortal({ data, actions }) {
           {activeTab === 'inicio' && (
             <PortalHome overview={overview} nextDelivery={nextDelivery} pendingDocs={pendingDocs} unreadNotices={unreadNotices} setActiveTab={setActiveTab} auth={session.auth} />
           )}
-          {activeTab === 'entrega' && <DeliveriesSection deliveries={overview.upcomingDeliveries || []} />}
+          {activeTab === 'entrega' && (
+            <DeliveriesSection
+              deliveries={overview.upcomingDeliveries || []}
+              service={portalService}
+              session={session}
+              onRefresh={refreshPortal}
+              setError={setError}
+              setSuccess={setSuccess}
+            />
+          )}
           {activeTab === 'historial' && <HistorySection history={overview.history || []} />}
           {activeTab === 'avisos' && <NoticesSection notices={overview.notices || []} service={portalService} session={session} onRefresh={refreshPortal} setError={setError} setSuccess={setSuccess} />}
           {activeTab === 'documentos' && <DocumentsSection documents={overview.documents || []} />}
@@ -1017,7 +1026,7 @@ function ActionCard({ title, text, action, onClick }) {
   );
 }
 
-function DeliveriesSection({ deliveries }) {
+function DeliveriesSection({ deliveries, service, session, onRefresh, setError, setSuccess }) {
   return (
     <Panel title="Proxima entrega" icon={CalendarDays}>
       {!deliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecera aqui." /> : (
@@ -1035,11 +1044,117 @@ function DeliveriesSection({ deliveries }) {
                 <DataRow label="Tipo de ayuda" value={delivery.help_type || 'Ayuda'} />
                 <DataRow label="Estado" value={delivery.status || 'Pendiente'} />
               </dl>
+              <DeliveryAttendanceControls
+                delivery={delivery}
+                service={service}
+                session={session}
+                onRefresh={onRefresh}
+                setError={setError}
+                setSuccess={setSuccess}
+              />
             </article>
           ))}
         </div>
       )}
     </Panel>
+  );
+}
+
+function DeliveryAttendanceControls({ delivery, service, session, onRefresh, setError, setSuccess }) {
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState('');
+  const attendanceStatus = delivery.attendance_status || 'pending';
+  const statusMeta = getAttendanceStatusMeta(attendanceStatus);
+
+  async function submitAttendance(status, nextReason = '') {
+    if (!service?.confirmDeliveryAttendance || !session?.token) {
+      setError('No se pudo confirmar la asistencia. Vuelve a acceder al portal.');
+      return;
+    }
+    setError('');
+    setSuccess('');
+    setBusy(status);
+    try {
+      const result = await withTimeout(service.confirmDeliveryAttendance(session, {
+        deliveryId: delivery.id,
+        attendance_status: status,
+        reason: nextReason
+      }));
+      if (status === 'confirmed') setSuccess('Gracias. Hemos registrado tu asistencia.');
+      if (status === 'unavailable') setSuccess('Hemos registrado que no podras asistir y avisaremos al equipo.');
+      if (status === 'needs_contact') setSuccess('Hemos creado una solicitud para que el equipo contacte contigo.');
+      setReasonOpen(false);
+      setReason('');
+      await onRefresh?.();
+      return result;
+    } catch (attendanceError) {
+      setError(attendanceError.message || 'No se pudo confirmar la asistencia.');
+      return null;
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function submitUnavailable() {
+    if (!reason) {
+      setError('Selecciona un motivo para indicar que no podras asistir.');
+      return;
+    }
+    submitAttendance('unavailable', reason);
+  }
+
+  return (
+    <div className="mt-4 rounded-md border border-brand-100 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-bold text-ink">Podras asistir?</p>
+          <p className="mt-1 text-sm text-slate-600">Tu respuesta ayuda al equipo a organizar la entrega.</p>
+        </div>
+        <span className={`inline-flex w-fit rounded-md px-2.5 py-1 text-xs font-bold ${statusMeta.className}`}>
+          {statusMeta.label}
+        </span>
+      </div>
+
+      {attendanceStatus === 'confirmed' && (
+        <p className="mt-3 rounded-md bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">Gracias. Hemos registrado tu asistencia.</p>
+      )}
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <Button type="button" disabled={Boolean(busy)} onClick={() => submitAttendance('confirmed')}>
+          {busy === 'confirmed' ? 'Guardando...' : 'Si, asistire'}
+        </Button>
+        <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => setReasonOpen((current) => !current)}>
+          No podre asistir
+        </Button>
+        <Button type="button" variant="secondary" disabled={Boolean(busy)} onClick={() => submitAttendance('needs_contact')}>
+          {busy === 'needs_contact' ? 'Enviando...' : 'Necesito ayuda'}
+        </Button>
+      </div>
+
+      {reasonOpen && (
+        <div className="mt-4 rounded-md bg-slate-50 p-4">
+          <FormField label="Motivo" required>
+            <select className={inputClass} value={reason} onChange={(event) => setReason(event.target.value)}>
+              <option value="">Selecciona un motivo</option>
+              <option value="Trabajo">Trabajo</option>
+              <option value="Enfermedad">Enfermedad</option>
+              <option value="Transporte">Transporte</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </FormField>
+          <Button type="button" className="mt-3" disabled={Boolean(busy)} onClick={submitUnavailable}>
+            {busy === 'unavailable' ? 'Guardando...' : 'Confirmar que no podre asistir'}
+          </Button>
+        </div>
+      )}
+
+      {delivery.attendance_confirmed_at && (
+        <p className="mt-3 text-xs font-semibold text-slate-500">
+          Actualizado el {formatDateTime(delivery.attendance_confirmed_at)} desde {delivery.attendance_source === 'portal' ? 'Portal del Beneficiario' : delivery.attendance_source || 'sistema'}.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1437,6 +1552,13 @@ function formatDeliveryTime(value) {
 
 function getDeliveryLocation(delivery = {}) {
   return delivery.location || delivery.delivery_location || delivery.place || delivery.address || 'Pendiente de confirmar';
+}
+
+function getAttendanceStatusMeta(status) {
+  if (status === 'confirmed') return { label: 'Confirmada', className: 'bg-emerald-50 text-emerald-800' };
+  if (status === 'unavailable') return { label: 'No asistira', className: 'bg-amber-50 text-amber-800' };
+  if (status === 'needs_contact') return { label: 'Necesita contactar', className: 'bg-red-50 text-red-800' };
+  return { label: 'Pendiente', className: 'bg-slate-100 text-slate-700' };
 }
 
 function normalizePhoneForWhatsApp(value) {

@@ -55,6 +55,7 @@
   'logged_out_at',
   'signature_signed_at',
   'responsible_signature_signed_at',
+  'attendance_confirmed_at',
   'created_at',
   'updated_at'
 ]);
