@@ -41,6 +41,7 @@ export function BeneficiaryPortal({ data, actions }) {
   const [challenge, setChallenge] = useState(null);
   const [session, setSession] = useState(null);
   const [overview, setOverview] = useState(null);
+  const [pinChange, setPinChange] = useState({ currentPin: '', newPin: '', confirmPin: '' });
   const [activeTab, setActiveTab] = useState('inicio');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -117,8 +118,9 @@ export function BeneficiaryPortal({ data, actions }) {
         otpCode: accessOtp,
         challengeId: challenge?.id
       }));
-      const nextSession = { ...result.session, auth: result.auth };
-      const nextOverview = await withTimeout(portalService.getPortalOverview(nextSession));
+      const baseSession = { ...result.session, auth: result.auth };
+      const nextOverview = await withTimeout(portalService.getPortalOverview(baseSession));
+      const nextSession = { ...result.session, auth: { ...result.auth, ...nextOverview.auth } };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
       setOverview(nextOverview);
       setSession(nextSession);
@@ -138,7 +140,34 @@ export function BeneficiaryPortal({ data, actions }) {
     setChallenge(null);
     setAccessOtp('');
     setCredentials({ accessIdentifier: '', pin: '' });
+    setPinChange({ currentPin: '', newPin: '', confirmPin: '' });
     setActiveTab('inicio');
+  }
+
+  async function handleChangePin(event) {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const result = await withTimeout(portalService.changePin(session, pinChange));
+      const nextAuth = {
+        ...(overview?.auth || {}),
+        mustChangePin: false,
+        pinChangedAt: result.pinChangedAt || new Date().toISOString()
+      };
+      const nextOverview = { ...overview, auth: nextAuth };
+      const nextSession = { ...session, auth: { ...(session?.auth || {}), ...nextAuth } };
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+      setOverview(nextOverview);
+      setSession(nextSession);
+      setPinChange({ currentPin: '', newPin: '', confirmPin: '' });
+      setSuccess('PIN cambiado correctamente. Ya puedes utilizar tu portal.');
+    } catch (changeError) {
+      setError(changeError.message || 'No se pudo cambiar el PIN.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function refreshPortal() {
@@ -220,6 +249,20 @@ export function BeneficiaryPortal({ data, actions }) {
 
   if (loading || !overview) {
     return <PortalShell><div className="flex min-h-screen items-center justify-center text-slate-600">Cargando portal...</div></PortalShell>;
+  }
+
+  if (overview.auth?.mustChangePin === true) {
+    return (
+      <PortalShell>
+        <ChangePinScreen
+          pinChange={pinChange}
+          setPinChange={setPinChange}
+          onSubmit={handleChangePin}
+          loading={loading}
+          error={error}
+        />
+      </PortalShell>
+    );
   }
 
   const beneficiary = overview.beneficiary;
@@ -311,6 +354,67 @@ export function BeneficiaryPortal({ data, actions }) {
 
 function PortalShell({ children }) {
   return <div className="min-h-screen bg-[#f7faf6] text-ink">{children}</div>;
+}
+
+function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) {
+  return (
+    <section className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
+      <div className="w-full max-w-[30rem]">
+        <form onSubmit={onSubmit} className="rounded-[1.25rem] border border-[#2f4a3a]/12 bg-white p-8 shadow-[0_1.5rem_4rem_rgba(37,33,29,0.12)] sm:p-10">
+          <div className="text-center">
+            <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+              <KeyRound size={22} />
+            </span>
+            <h1 className="mt-5 text-3xl font-bold leading-tight text-ink">Cambia tu PIN temporal</h1>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">
+              Para proteger tu portal, crea un PIN personal antes de continuar.
+            </p>
+          </div>
+
+          <div className="mt-8 space-y-5">
+            <FormField label="PIN temporal" required>
+              <input
+                className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                type="password"
+                value={pinChange.currentPin}
+                onChange={(event) => setPinChange((current) => ({ ...current, currentPin: event.target.value }))}
+                placeholder="Introduce el PIN temporal"
+                inputMode="numeric"
+                autoComplete="current-password"
+              />
+            </FormField>
+            <FormField label="Nuevo PIN" required>
+              <input
+                className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                type="password"
+                value={pinChange.newPin}
+                onChange={(event) => setPinChange((current) => ({ ...current, newPin: event.target.value }))}
+                placeholder="Entre 6 y 12 numeros"
+                inputMode="numeric"
+                autoComplete="new-password"
+              />
+            </FormField>
+            <FormField label="Repetir nuevo PIN" required>
+              <input
+                className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                type="password"
+                value={pinChange.confirmPin}
+                onChange={(event) => setPinChange((current) => ({ ...current, confirmPin: event.target.value }))}
+                placeholder="Repite el nuevo PIN"
+                inputMode="numeric"
+                autoComplete="new-password"
+              />
+            </FormField>
+          </div>
+
+          {error && <StatusBlock type="error" title="No se pudo cambiar el PIN" text={error} className="mt-5" />}
+          <Button type="submit" disabled={loading} className="mt-7 min-h-[3.9rem] w-full rounded-xl px-6 text-base">
+            <Lock size={18} /> Guardar PIN y continuar
+          </Button>
+        </form>
+      </div>
+    </section>
+  );
 }
 
 function SecurityFeature({ icon: Icon, title, text }) {

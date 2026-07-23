@@ -87,6 +87,16 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     });
     return response.result;
   }
+
+  async changePin(session, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'change-pin',
+      payload
+    });
+    return response.result;
+  }
 }
 
 export class CollaboratorPortalApiService extends BasePortalApiService {

@@ -539,15 +539,18 @@ async function buildOverview(supabase, portal, subject) {
 }
 
 async function buildBeneficiaryOverview(supabase, beneficiary) {
-  const [deliveries, documents, history, notices, resources, renewals, profileUpdates] = await Promise.all([
+  const [deliveries, documents, history, notices, resources, renewals, profileUpdates, accountResult] = await Promise.all([
     listBy(supabase, 'deliveries', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_documents', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'social_history', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_portal_notices', 'beneficiary_id', beneficiary.id),
     listPublishedResources(supabase),
     listBy(supabase, 'beneficiary_portal_renewals', 'beneficiary_id', beneficiary.id),
-    listBy(supabase, 'beneficiary_portal_profile_updates', 'beneficiary_id', beneficiary.id)
+    listBy(supabase, 'beneficiary_portal_profile_updates', 'beneficiary_id', beneficiary.id),
+    supabase.from('beneficiary_portal_accounts').select('must_change_pin,pin_changed_at').eq('beneficiary_id', beneficiary.id).maybeSingle()
   ]);
+  if (accountResult.error) throw accountResult.error;
+  const account = accountResult.data || {};
   const activeDeliveries = deliveries.filter((item) => cleanText(item.status).toLowerCase() !== 'anulada');
   return {
     beneficiary,
@@ -562,7 +565,12 @@ async function buildBeneficiaryOverview(supabase, beneficiary) {
     renewals,
     profileUpdates,
     requests: profileUpdates.filter((item) => item.requested_changes?.request_type || item.notes),
-    auth: { provider: 'server-api', requiresOtpForSensitiveActions: true },
+    auth: {
+      provider: 'server-api',
+      requiresOtpForSensitiveActions: true,
+      mustChangePin: account.must_change_pin === true,
+      pinChangedAt: account.pin_changed_at || null
+    },
     integrations: { portalApi: true }
   };
 }
@@ -624,6 +632,9 @@ async function executePortalAction(supabase, portal, subject, body) {
   const action = cleanText(body.portalAction);
   const payload = body.payload || {};
   if (portal === 'beneficiary') {
+    if (action === 'change-pin') {
+      return changeBeneficiaryPin(supabase, subject, payload);
+    }
     if (action === 'mark-notice-read') {
       const { data, error } = await supabase.from('beneficiary_portal_notices').update({ status: 'read', read_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', payload.noticeId).eq('beneficiary_id', subject.id).select().single();
       if (error) throw error;
@@ -736,6 +747,57 @@ async function executePortalAction(supabase, portal, subject, body) {
   }
 
   throw httpError(400, 'INVALID_PORTAL_ACTION', 'Accion de portal no valida.');
+}
+
+async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
+  const currentPin = cleanText(payload.currentPin || payload.current_pin);
+  const newPin = cleanText(payload.newPin || payload.new_pin);
+  const confirmPin = cleanText(payload.confirmPin || payload.confirm_pin || newPin);
+  if (!currentPin) throw httpError(400, 'INVALID_PIN', 'Introduce tu PIN temporal actual.');
+  if (!/^\d{6,12}$/.test(newPin)) throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe tener entre 6 y 12 numeros.');
+  if (newPin !== confirmPin) throw httpError(400, 'INVALID_PIN', 'Los PIN no coinciden.');
+  if (newPin === currentPin) throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe ser diferente al temporal.');
+
+  const { data: account, error: accountError } = await supabase
+    .from('beneficiary_portal_accounts')
+    .select('*')
+    .eq('beneficiary_id', beneficiary.id)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (accountError) throw accountError;
+  if (!account?.pin_hash || !account?.pin_salt) {
+    throw httpError(403, 'ACCESS_NOT_CONFIGURED', 'El acceso seguro no esta activado.');
+  }
+  if (cleanText(account.pin_hash) !== hashAccessPin(currentPin, account.pin_salt)) {
+    await registerFailedBeneficiaryAccess(supabase, account, account.access_identifier);
+    throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar el PIN temporal.');
+  }
+
+  const now = new Date().toISOString();
+  const salt = crypto.randomUUID();
+  const { data, error } = await supabase
+    .from('beneficiary_portal_accounts')
+    .update({
+      pin_hash: hashAccessPin(newPin, salt),
+      pin_salt: salt,
+      pin_set_at: now,
+      must_change_pin: false,
+      pin_changed_at: now,
+      temporary_pin_sent_at: null,
+      failed_access_attempts: 0,
+      last_failed_access_at: null,
+      locked_until: null,
+      updated_at: now
+    })
+    .eq('id', account.id)
+    .select()
+    .single();
+  if (error) throw error;
+  await audit(supabase, `Portal del Beneficiario: PIN cambiado por ${beneficiary.code || beneficiary.id}`);
+  return {
+    changed: true,
+    pinChangedAt: data.pin_changed_at
+  };
 }
 
 async function revokePendingOtps(supabase, config, subjectId, action = '') {
