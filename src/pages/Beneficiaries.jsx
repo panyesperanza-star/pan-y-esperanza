@@ -732,6 +732,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
+  const [portalNoticeOpen, setPortalNoticeOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
@@ -992,7 +993,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
           onDocument={requestDocumentUpload}
           onCreateCampaign={onCreateCampaign}
           onOpenAgenda={onOpenAgenda || onNewAppointment}
-          onNotice={() => { setNotice(''); setEmailOpen(true); }}
+          onNotice={() => { setNotice(''); setPortalNoticeOpen(true); }}
         />
         <input ref={quickDocumentInputRef} className="hidden" type="file" onChange={uploadQuickDocument} />
 
@@ -1081,6 +1082,15 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       {whatsAppOpen && (
         <Modal title="Enviar WhatsApp al beneficiario" onClose={() => setWhatsAppOpen(false)}>
           <BeneficiaryWhatsAppForm beneficiary={beneficiary} onSend={sendBeneficiaryWhatsApp} onCancel={() => setWhatsAppOpen(false)} />
+        </Modal>
+      )}
+      {portalNoticeOpen && (
+        <Modal title="Enviar aviso al portal" onClose={() => setPortalNoticeOpen(false)}>
+          <BeneficiaryPortalNoticeForm
+            beneficiary={beneficiary}
+            actions={actions}
+            onSent={(message) => { setNotice(message); setPortalNoticeOpen(false); }}
+          />
         </Modal>
       )}
       {deliveryOpen && (
@@ -1986,6 +1996,61 @@ function BeneficiaryWhatsAppForm({ beneficiary, onSend, onCancel }) {
         <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" disabled={!phone || sending}><MessageCircle size={17} /> {sending ? 'Abriendo...' : 'Abrir WhatsApp'}</Button>
       </div>
+    </form>
+  );
+}
+
+function BeneficiaryPortalNoticeForm({ beneficiary, actions, onSent }) {
+  const [form, setForm] = useState({
+    title: 'Aviso importante',
+    notice_type: 'general',
+    message: `Hola ${beneficiary.full_name}, tienes un nuevo aviso de Pan y Esperanza.`
+  });
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+
+  async function submit(event) {
+    event.preventDefault();
+    setStatus('Publicando aviso...');
+    setError('');
+    try {
+      await actions.createBeneficiaryPortalNotice(beneficiary.id, {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        notice_type: form.notice_type
+      });
+      onSent('Aviso publicado correctamente en el Portal del Beneficiario.');
+    } catch (noticeError) {
+      setStatus('');
+      setError(noticeError.message || 'No se pudo publicar el aviso.');
+    }
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={submit}>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <p className="font-semibold text-ink">{beneficiary.full_name}</p>
+        <p>El aviso aparecera en la pestaña Avisos de su portal.</p>
+      </div>
+      <FormField label="Tipo">
+        <select className={inputClass} value={form.notice_type} onChange={(event) => update('notice_type', event.target.value)}>
+          <option value="general">General</option>
+          <option value="appointment">Cita</option>
+          <option value="document">Documentacion</option>
+          <option value="delivery">Entrega</option>
+          <option value="urgent">Urgente</option>
+        </select>
+      </FormField>
+      <FormField label="Titulo">
+        <input className={inputClass} required value={form.title} onChange={(event) => update('title', event.target.value)} />
+      </FormField>
+      <FormField label="Mensaje">
+        <textarea className={`${inputClass} min-h-32`} required value={form.message} onChange={(event) => update('message', event.target.value)} />
+      </FormField>
+      {status && <p className="rounded-lg bg-brand-50 p-3 text-sm font-medium text-brand-700">{status}</p>}
+      {error && <p className="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
+      <div className="flex justify-end"><Button type="submit" disabled={Boolean(status)}><Mail size={18} /> Publicar aviso</Button></div>
     </form>
   );
 }

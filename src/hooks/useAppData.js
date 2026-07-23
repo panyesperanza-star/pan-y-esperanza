@@ -2029,6 +2029,11 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
       return result;
     },
+    createBeneficiaryPortalNotice: async (id, payload = {}) => {
+      const result = await beneficiarioPortalService.createNotice(id, payload);
+      await reload();
+      return result;
+    },
     activatePendingBeneficiaryPortals: async () => {
       const result = await beneficiarioPortalService.activatePendingAccesses();
       await reload();
