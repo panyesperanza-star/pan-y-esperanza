@@ -660,6 +660,12 @@ export async function createPortalAccessPdf({
   temporaryPin = '',
   organization = {}
 } = {}) {
+  console.info('[beneficiary-access] PDF generado con PIN', {
+    portalLabel,
+    hasIdentifier: Boolean(identifier),
+    hasEmail: Boolean(email),
+    hasTemporaryPin: Boolean(temporaryPin)
+  });
   const doc = new jsPDF();
   const orgName = organization.name || 'Asociacion Pan y Esperanza';
   const issuedAt = new Date().toISOString();
@@ -727,6 +733,11 @@ export async function createPortalAccessPdf({
 }
 
 export async function printPortalAccessPdf(payload = {}) {
+  console.info('[beneficiary-access] printPortalAccessPdf invocado', {
+    portalLabel: payload.portalLabel,
+    hasTemporaryPin: Boolean(payload.temporaryPin),
+    hasIdentifier: Boolean(payload.identifier)
+  });
   const { doc, filename } = await createPortalAccessPdf(payload);
   doc.save(filename);
   return { doc, filename };

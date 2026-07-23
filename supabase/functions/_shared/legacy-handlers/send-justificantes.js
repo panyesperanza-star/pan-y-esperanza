@@ -37,6 +37,16 @@ export default async function handler(request, response) {
     const isTest = Boolean(body.testMode);
     const shouldLogEmail = Boolean(body.logEmail) && !isTest;
     const receiptEntries = Array.isArray(body.receiptEntries) ? body.receiptEntries : [];
+    const isBeneficiaryAccessEmail = String(body.subject || '').toLowerCase().includes('acceso al portal del beneficiario');
+    if (isBeneficiaryAccessEmail) {
+      console.info('[beneficiary-access] Edge send-justificantes recibe correo de acceso', {
+        requestId,
+        recipientsCount: recipients.length,
+        hasMessage: Boolean(body.message),
+        messageHasTemporaryPin: /pin temporal/i.test(String(body.message || '')),
+        attachmentsCount: attachments.length
+      });
+    }
 
     if (!apiKey || !from) {
       console.error('[send-justificantes] Servicio no configurado', { requestId, hasApiKey: Boolean(apiKey), hasFrom: Boolean(from) });
@@ -148,6 +158,14 @@ export default async function handler(request, response) {
       attachmentsCount: resendAttachments.length,
       attachmentValidation
     });
+    if (isBeneficiaryAccessEmail) {
+      console.info('[beneficiary-access] resend.emails.send() ejecutado', {
+        requestId,
+        recipients,
+        subject: body.subject || 'Justificantes de entrega - Pan y Esperanza',
+        messageHasTemporaryPin: /pin temporal/i.test(String(body.message || ''))
+      });
+    }
 
     const resend = new Resend(apiKey);
     const result = await resend.emails.send({
@@ -165,6 +183,14 @@ export default async function handler(request, response) {
       error: result.error || null,
       hasProviderId: Boolean(result.data?.id)
     });
+    if (isBeneficiaryAccessEmail) {
+      console.info('[beneficiary-access] Resend respuesta correo acceso beneficiario', {
+        requestId,
+        accepted: Boolean(result.data?.id),
+        providerId: result.data?.id || null,
+        error: result.error?.message || null
+      });
+    }
 
     if (result.error) {
       const providerMessage = result.error.message || result.error.name || 'Error al enviar el correo.';

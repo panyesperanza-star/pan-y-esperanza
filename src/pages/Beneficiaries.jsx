@@ -833,6 +833,12 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   }
 
   function buildPortalAccessPayload(account = portalAccount, pin = temporaryPortalPin) {
+    console.info('[beneficiary-access] Payload PDF acceso beneficiario', {
+      beneficiaryId: beneficiary?.id || null,
+      accountId: account?.id || null,
+      hasIdentifier: Boolean(account?.access_identifier),
+      hasTemporaryPin: Boolean(pin)
+    });
     return {
       portalLabel: 'Portal del Beneficiario',
       name: beneficiary.full_name,
@@ -859,6 +865,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
 
   async function regeneratePortalPin() {
     try {
+      console.info('[beneficiary-access] UI Regenerar PIN invocado', { beneficiaryId: beneficiary.id });
       const result = await actions.regenerateBeneficiaryPortalPin(beneficiary.id);
       setTemporaryPortalPin(result.temporaryPin || '');
       setNotice('PIN regenerado y enviado correctamente. El PIN temporal se muestra una sola vez.');
@@ -870,6 +877,11 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   async function printPortalAccess() {
     let account = portalAccount;
     let pin = temporaryPortalPin;
+    console.info('[beneficiary-access] UI Imprimir acceso invocado', {
+      beneficiaryId: beneficiary.id,
+      hasAccount: Boolean(account),
+      hasTemporaryPin: Boolean(pin)
+    });
     if (!account) {
       const result = await actions.activateBeneficiaryPortal(beneficiary.id);
       account = result.account;
@@ -886,6 +898,10 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       return;
     }
     try {
+      console.info('[beneficiary-access] UI Enviar acceso invocado', {
+        beneficiaryId: beneficiary.id,
+        hasTemporaryPin: Boolean(temporaryPortalPin)
+      });
       const result = await actions.sendBeneficiaryPortalAccess(beneficiary.id, { temporaryPin: temporaryPortalPin });
       setTemporaryPortalPin(result.temporaryPin || temporaryPortalPin || '');
       setNotice('Acceso enviado correctamente. El PIN temporal se muestra una sola vez.');

@@ -1,4 +1,4 @@
-const CACHE_NAME = "pan-y-esperanza-public-v3";
+const CACHE_NAME = "pan-y-esperanza-public-v4";
 const STATIC_ASSETS = [
   "/assets/brand/logo.png",
   "/assets/photographs/hero.jpg",
@@ -37,6 +37,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    event.respondWith(fetch(request, { cache: "no-store" }));
+    return;
+  }
+
+  if (new URL(request.url).pathname.startsWith("/assets/")) {
     event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
