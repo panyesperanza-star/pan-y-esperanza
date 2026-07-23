@@ -742,6 +742,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const familyMembers = family ? data.beneficiaries.filter((item) => item.family_id === family.id) : [];
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
+  const portalRequests = (data.beneficiary_portal_profile_updates || []).filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
   const activeDeliveries = deliveries.filter(isActiveDelivery);
@@ -1029,7 +1030,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
               canEdit={canEdit}
               onOpenDocuments={() => setTab('documents')}
             />
-            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} />
+            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} requests={portalRequests} />
           </div>
         </section>
 
@@ -1368,26 +1369,215 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
   );
 }
 
-function IntelligentCaseBlock({ beneficiary, documents, deliveries, history }) {
-  const pendingDocs = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
-  const latestDelivery = getLatestDelivery(deliveries);
+function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, requests = [] }) {
+  const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests });
   return (
-    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm">
+    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm" aria-label="Resumen inteligente del expediente">
       <div className="flex items-start gap-3">
         <span className="rounded-xl bg-white p-2 text-brand-700 shadow-sm"><NotebookTabs size={20} /></span>
         <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Preparado para Sprint IA</p>
-          <h3 className="mt-1 text-lg font-bold text-ink">Resumen inteligente del expediente</h3>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Calculado con datos del ERP</p>
+          <h3 className="mt-1 text-lg font-bold text-ink">Resumen Inteligente</h3>
+          <p className="mt-1 text-sm text-slate-600">Reglas objetivas, sin IA externa ni datos inventados.</p>
         </div>
       </div>
       <div className="mt-4 grid gap-2 text-sm text-slate-700">
-        <p className="rounded-xl bg-white p-3">Se preparara un resumen social de {beneficiary.full_name} cuando se active IA.</p>
-        <p className="rounded-xl bg-white p-3">{pendingDocs ? `${pendingDocs} documento(s) pendientes de revision.` : 'Documentacion sin pendientes destacados.'}</p>
-        <p className="rounded-xl bg-white p-3">{latestDelivery ? `Ultima ayuda registrada el ${formatDate(latestDelivery.delivered_at)}.` : 'Sin entregas registradas todavia.'}</p>
-        <p className="rounded-xl bg-white p-3">{history.length ? `${history.length} registro(s) de seguimiento disponibles para analizar.` : 'Sin historial social registrado.'}</p>
+        {summary.items.map((item) => (
+          <div key={item.label} className="rounded-xl bg-white p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+            <p className="mt-1 font-semibold text-ink">{item.value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
+        <div className="mt-2 grid gap-2">
+          {summary.risks.map((risk) => (
+            <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
+          ))}
+          {!summary.risks.length && (
+            <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 rounded-xl bg-white/80 p-3">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
+        <p className="mt-1 text-sm font-semibold text-slate-700">{summary.sources.join(' · ')}</p>
       </div>
     </section>
   );
+}
+
+function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliveries = [], history = [], requests = [] }) {
+  const latestDelivery = getLatestPastDelivery(deliveries);
+  const nextDelivery = getNextFutureDelivery(deliveries);
+  const documentSummary = summarizeDocuments(documents);
+  const attendanceSummary = summarizeAttendance(deliveries);
+  const openRequests = requests.filter(isOpenPortalRequest);
+  const lastInteraction = getLastInteraction({ deliveries, documents, history, requests });
+  const observations = getRelevantObservations({ beneficiary, history, deliveries, requests });
+  const risks = detectBeneficiaryObjectiveRisks({ beneficiary, documents, deliveries, requests, latestDelivery });
+
+  return {
+    items: [
+      { label: 'Antigüedad en la asociacion', value: associationAgeLabel(beneficiary.joined_at || beneficiary.first_attention_at) },
+      { label: 'Ultima entrega', value: latestDelivery ? deliverySummaryLabel(latestDelivery) : 'Sin entregas anteriores registradas.' },
+      { label: 'Proxima entrega', value: nextDelivery ? deliverySummaryLabel(nextDelivery) : 'Sin entrega futura programada.' },
+      { label: 'Estado documental', value: documentSummary },
+      { label: 'Estado de asistencia', value: attendanceSummary },
+      { label: 'Solicitudes abiertas', value: openRequests.length ? `${openRequests.length} solicitud(es) pendientes o en gestion.` : 'Sin solicitudes abiertas.' },
+      { label: 'Ultima interaccion', value: lastInteraction },
+      { label: 'Observaciones relevantes', value: observations }
+    ],
+    risks,
+    sources: ['Expediente', 'Entregas', 'Documentacion', 'Seguimiento social', 'Portal del Beneficiario']
+  };
+}
+
+function associationAgeLabel(value) {
+  if (!value) return 'Fecha de alta no registrada.';
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) return 'Fecha de alta no valida.';
+  const today = new Date();
+  let months = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
+  if (today.getDate() < start.getDate()) months -= 1;
+  if (months <= 0) return `Menos de 1 mes desde el alta (${formatDate(value)}).`;
+  const years = Math.floor(months / 12);
+  const restMonths = months % 12;
+  const parts = [];
+  if (years) parts.push(`${years} año${years === 1 ? '' : 's'}`);
+  if (restMonths) parts.push(`${restMonths} mes${restMonths === 1 ? '' : 'es'}`);
+  return `${parts.join(' y ')} desde el alta (${formatDate(value)}).`;
+}
+
+function getLatestPastDelivery(deliveries = []) {
+  const now = Date.now();
+  return [...deliveries]
+    .filter((delivery) => deliveryDateValue(delivery) <= now)
+    .sort((a, b) => deliveryDateValue(b) - deliveryDateValue(a))[0] || null;
+}
+
+function getNextFutureDelivery(deliveries = []) {
+  const now = Date.now();
+  return [...deliveries]
+    .filter((delivery) => deliveryDateValue(delivery) > now)
+    .sort((a, b) => deliveryDateValue(a) - deliveryDateValue(b))[0] || null;
+}
+
+function deliveryDateValue(delivery) {
+  const date = delivery?.delivered_at || delivery?.scheduled_at || delivery?.created_at;
+  const time = delivery?.delivered_time || delivery?.delivery_time || delivery?.time || '00:00:00';
+  if (!date) return 0;
+  const parsed = new Date(`${date}T${time}`);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  const fallback = new Date(date);
+  return Number.isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+}
+
+function deliverySummaryLabel(delivery) {
+  return [
+    formatDate(delivery.delivered_at || delivery.scheduled_at || delivery.created_at),
+    delivery.delivered_time || delivery.delivery_time || delivery.time,
+    delivery.location || delivery.delivery_location || delivery.pickup_location,
+    delivery.help_type || 'Ayuda',
+    delivery.status,
+    attendanceStatusLabel(delivery.attendance_status)
+  ].filter(Boolean).join(' · ');
+}
+
+function summarizeDocuments(documents = []) {
+  if (!documents.length) return 'Sin documentacion registrada.';
+  const pending = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
+  const expired = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
+  const reviewed = documents.filter((doc) => documentStatus(doc) === 'Revisado').length;
+  const parts = [];
+  if (reviewed) parts.push(`${reviewed} revisado(s)`);
+  if (pending) parts.push(`${pending} pendiente(s)`);
+  if (expired) parts.push(`${expired} caducado(s)`);
+  return parts.join(' · ') || `${documents.length} documento(s) registrados.`;
+}
+
+function summarizeAttendance(deliveries = []) {
+  const relevant = deliveries.filter((delivery) => delivery.attendance_status);
+  if (!relevant.length) return 'Sin confirmaciones de asistencia registradas.';
+  const nextDelivery = getNextFutureDelivery(deliveries);
+  if (nextDelivery?.attendance_status) return `Proxima entrega: ${attendanceStatusLabel(nextDelivery.attendance_status)}.`;
+  const unavailable = relevant.filter((delivery) => normalize(delivery.attendance_status) === 'unavailable').length;
+  const needsContact = relevant.filter((delivery) => normalize(delivery.attendance_status) === 'needs_contact').length;
+  const confirmed = relevant.filter((delivery) => normalize(delivery.attendance_status) === 'confirmed').length;
+  return [
+    confirmed ? `${confirmed} confirmada(s)` : '',
+    unavailable ? `${unavailable} no asistencia(s)` : '',
+    needsContact ? `${needsContact} necesita(n) contacto` : ''
+  ].filter(Boolean).join(' · ') || 'Asistencia sin incidencias destacadas.';
+}
+
+function attendanceStatusLabel(value) {
+  const normalized = normalize(value);
+  if (!normalized) return '';
+  if (normalized === 'confirmed') return 'Asistencia confirmada';
+  if (normalized === 'unavailable') return 'No asistira';
+  if (normalized === 'needs_contact') return 'Necesita contacto';
+  if (normalized === 'pending') return 'Asistencia pendiente';
+  return String(value);
+}
+
+function isOpenPortalRequest(request) {
+  const status = normalize(request?.status);
+  return !['applied', 'resolved', 'resuelta', 'cancelled', 'canceled', 'cancelada'].includes(status);
+}
+
+function getLastInteraction({ deliveries = [], documents = [], history = [], requests = [] }) {
+  const candidates = [
+    ...history.map((item) => ({ type: item.entry_type || 'Seguimiento social', date: item.date || item.created_at })),
+    ...requests.map((item) => ({ type: 'Solicitud del portal', date: item.updated_at || item.requested_at || item.created_at })),
+    ...deliveries.map((item) => ({ type: 'Entrega', date: item.delivered_at || item.created_at })),
+    ...documents.map((item) => ({ type: 'Documento', date: item.uploaded_at || item.created_at }))
+  ]
+    .filter((item) => item.date)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const latest = candidates[0];
+  return latest ? `${latest.type} · ${formatDateTime(latest.date)}` : 'Sin interacciones registradas.';
+}
+
+function getRelevantObservations({ beneficiary, history = [], deliveries = [], requests = [] }) {
+  const latestIncident = [...history]
+    .filter((item) => normalize(item.entry_type).includes('incidencia'))
+    .sort((a, b) => String(b.date || b.created_at || '').localeCompare(String(a.date || a.created_at || '')))[0];
+  const openRequest = requests.filter(isOpenPortalRequest)
+    .sort((a, b) => String(b.updated_at || b.requested_at || b.created_at || '').localeCompare(String(a.updated_at || a.requested_at || a.created_at || '')))[0];
+  const attendanceIssue = [...deliveries]
+    .filter((delivery) => ['needs_contact', 'unavailable'].includes(normalize(delivery.attendance_status)))
+    .sort((a, b) => deliveryDateValue(b) - deliveryDateValue(a))[0];
+
+  return latestIncident?.notes
+    || openRequest?.notes
+    || openRequest?.requested_changes?.message
+    || attendanceIssue?.attendance_notes
+    || attendanceIssue?.attendance_reason
+    || beneficiary.notes
+    || 'Sin observaciones relevantes.';
+}
+
+function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveries = [], requests = [], latestDelivery }) {
+  const risks = [];
+  const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
+  const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
+  const unavailableCount = deliveries.filter((delivery) => normalize(delivery.attendance_status) === 'unavailable').length;
+  const needsContactCount = deliveries.filter((delivery) => normalize(delivery.attendance_status) === 'needs_contact').length;
+  const openRequests = requests.filter(isOpenPortalRequest).length;
+  const priority = socialPriorityLabel(beneficiary, []);
+
+  if (pendingDocuments) risks.push(`${pendingDocuments} documento(s) pendiente(s) de revision.`);
+  if (expiredDocuments) risks.push(`${expiredDocuments} documento(s) caducado(s).`);
+  if (unavailableCount >= 2) risks.push(`${unavailableCount} no asistencias registradas.`);
+  if (needsContactCount) risks.push(`${needsContactCount} entrega(s) marcadas como necesita contacto.`);
+  if (openRequests) risks.push(`${openRequests} solicitud(es) del portal sin resolver.`);
+  if (priority === 'Alta') risks.push('Situacion marcada como urgente o prioritaria en el expediente.');
+  if (latestDelivery && daysSince(latestDelivery.delivered_at || latestDelivery.created_at) > 45) risks.push('Mas de 45 dias desde la ultima ayuda registrada.');
+  if (!latestDelivery && deliveries.length === 0) risks.push('No existen entregas registradas en el expediente.');
+
+  return risks;
 }
 
 function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
