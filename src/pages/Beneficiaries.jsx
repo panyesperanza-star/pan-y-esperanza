@@ -44,6 +44,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
+import { removeBeneficiaryDocumentFile, resolveBeneficiaryDocumentUrl, uploadBeneficiaryDocumentFile } from '../lib/beneficiaryDocuments';
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
@@ -730,9 +731,11 @@ function FieldError({ children }) {
 function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
+  const [whatsAppOpen, setWhatsAppOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const quickDocumentInputRef = useRef(null);
   const family = data.families.find((item) => item.id === beneficiary.family_id);
   const familyArchived = isArchivedFamily(family);
   const familyMembers = family ? data.beneficiaries.filter((item) => item.family_id === family.id) : [];
@@ -778,12 +781,22 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   async function openWhatsApp() {
     const phone = normalizeWhatsAppPhone(beneficiary.phone);
     if (!phone) {
-      setNotice('Este beneficiario no tiene un teléfono válido para WhatsApp.');
+      setNotice('Este beneficiario no tiene un telefono valido para WhatsApp.');
       return;
     }
-    const message = `Hola ${beneficiary.full_name}, le contactamos desde Pan y Esperanza.`;
+    setNotice('');
+    setWhatsAppOpen(true);
+  }
+
+  async function sendBeneficiaryWhatsApp(message) {
+    const phone = normalizeWhatsAppPhone(beneficiary.phone);
+    if (!phone) {
+      setNotice('Este beneficiario no tiene un telefono valido para WhatsApp.');
+      return;
+    }
     window.open(buildWhatsAppUrl(phone, message), '_blank', 'noopener,noreferrer');
     setNotice('WhatsApp abierto correctamente. Revisa el mensaje antes de enviarlo.');
+    setWhatsAppOpen(false);
     try {
       await actions.createEmailLog({
         recipient: `WhatsApp ${phone}`,
@@ -798,6 +811,36 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     }
   }
 
+  function requestDocumentUpload() {
+    setTab('documents');
+    quickDocumentInputRef.current?.click();
+  }
+
+  async function uploadQuickDocument(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    let uploaded = null;
+    try {
+      setNotice('Subiendo documento...');
+      uploaded = await uploadBeneficiaryDocumentFile({ beneficiaryId: beneficiary.id, file });
+      await actions.createBeneficiaryDocument({
+        beneficiary_id: beneficiary.id,
+        document_type: DOCUMENT_TYPES[0],
+        file_name: file.name,
+        file_data_url: uploaded.fileDataUrl,
+        uploaded_at: todayISO(),
+        notes: ''
+      });
+      setNotice('Documento subido correctamente.');
+    } catch (error) {
+      if (uploaded?.fileDataUrl) {
+        await removeBeneficiaryDocumentFile(uploaded.fileDataUrl).catch((cleanupError) => console.warn('[BeneficiaryDocument] No se pudo limpiar la subida fallida', cleanupError));
+      }
+      setNotice(error.message || 'No se pudo subir el documento.');
+    } finally {
+      if (quickDocumentInputRef.current) quickDocumentInputRef.current.value = '';
+    }
+  }
   async function handlePhotoChange(photoDataUrl) {
     const previousPhotoUrl = beneficiary.photo_url;
     if (!photoDataUrl) {
@@ -946,11 +989,12 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
           canEdit={canEdit}
           onDelivery={() => setDeliveryOpen(true)}
           onNote={() => setTab('social')}
-          onDocument={() => setTab('documents')}
+          onDocument={requestDocumentUpload}
           onCreateCampaign={onCreateCampaign}
           onOpenAgenda={onOpenAgenda || onNewAppointment}
           onNotice={() => { setNotice(''); setEmailOpen(true); }}
         />
+        <input ref={quickDocumentInputRef} className="hidden" type="file" onChange={uploadQuickDocument} />
 
         <BeneficiaryPortalAdminBlock
           account={portalAccount}
@@ -1015,7 +1059,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
               />
             )}
             {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
-            {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} />}
+            {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} onNotice={setNotice} />}
             {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
             {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
           </div>
@@ -1032,6 +1076,11 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
             currentUser={currentUser}
             onSent={(message) => { setNotice(message); setEmailOpen(false); }}
           />
+        </Modal>
+      )}
+      {whatsAppOpen && (
+        <Modal title="Enviar WhatsApp al beneficiario" onClose={() => setWhatsAppOpen(false)}>
+          <BeneficiaryWhatsAppForm beneficiary={beneficiary} onSend={sendBeneficiaryWhatsApp} onCancel={() => setWhatsAppOpen(false)} />
         </Modal>
       )}
       {deliveryOpen && (
@@ -1299,7 +1348,7 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${documentStatusTone(status)}`}>{status}</span>
               </div>
-              {doc.file_data_url && <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-600" href={doc.file_data_url} download={doc.file_name}>Abrir documento</a>}
+              {doc.file_data_url && <DocumentDownloadButton doc={doc} />}
             </article>
           );
         })}
@@ -1808,50 +1857,136 @@ function DeliveriesPanel({ deliveries, beneficiary, allDeliveries }) {
   );
 }
 
-function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete }) {
+function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, uploadTrigger = 0, onNotice = () => {} }) {
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0]);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!uploadTrigger || !canEdit || uploading) return;
+    inputRef.current?.click();
+  }, [uploadTrigger, canEdit, uploading]);
 
   async function uploadDocument(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        await actions.createBeneficiaryDocument({ beneficiary_id: beneficiary.id, document_type: documentType, file_name: file.name, file_data_url: reader.result, uploaded_at: todayISO(), notes: '' });
-        if (inputRef.current) inputRef.current.value = '';
-      } finally {
-        setUploading(false);
+    let uploaded = null;
+    try {
+      uploaded = await uploadBeneficiaryDocumentFile({ beneficiaryId: beneficiary.id, file });
+      await actions.createBeneficiaryDocument({
+        beneficiary_id: beneficiary.id,
+        document_type: documentType,
+        file_name: file.name,
+        file_data_url: uploaded.fileDataUrl,
+        uploaded_at: todayISO(),
+        notes: ''
+      });
+      onNotice('Documento subido correctamente.');
+    } catch (error) {
+      if (uploaded?.fileDataUrl) {
+        await removeBeneficiaryDocumentFile(uploaded.fileDataUrl).catch((cleanupError) => console.warn('[BeneficiaryDocument] No se pudo limpiar la subida fallida', cleanupError));
       }
-    };
-    reader.onerror = () => setUploading(false);
-    reader.readAsDataURL(file);
+      onNotice(error.message || 'No se pudo subir el documento.');
+    } finally {
+      if (inputRef.current) inputRef.current.value = '';
+      setUploading(false);
+    }
   }
 
   async function removeDocument(doc) {
-    if (window.confirm(`¿Eliminar el documento ${doc.file_name}?`)) await actions.deleteBeneficiaryDocument(doc.id);
+    if (!window.confirm(`¿Eliminar el documento ${doc.file_name || 'seleccionado'}?`)) return;
+    try {
+      await actions.deleteBeneficiaryDocument(doc.id);
+      await removeBeneficiaryDocumentFile(doc.file_data_url).catch((cleanupError) => console.warn('[BeneficiaryDocument] No se pudo eliminar el archivo de Storage', cleanupError));
+      onNotice('Documento eliminado correctamente.');
+    } catch (error) {
+      onNotice(error.message || 'No se pudo eliminar el documento.');
+    }
   }
 
   return (
     <section>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <SectionHeading icon={Paperclip} title="Documentación" description="Archivos asociados al expediente." />
-        {canEdit && <div className="flex flex-col gap-2 sm:flex-row"><select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select><label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"><Upload size={17} /> {uploading ? 'Subiendo…' : 'Subir documento'}<input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} /></label></div>}
+        {canEdit && <div className="flex flex-col gap-2 sm:flex-row"><select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select><label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"><Upload size={17} /> {uploading ? 'Subiendo...' : 'Subir documento'}<input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} /></label></div>}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {documents.map((doc) => (
           <article key={doc.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <span className="rounded-lg bg-brand-50 p-2.5 text-brand-700"><FileText size={20} /></span>
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p><p className="mt-0.5 text-xs text-slate-500">{doc.document_type} · {formatDate(doc.uploaded_at)}</p></div>
-            {doc.file_data_url && <a className="focus-ring rounded-lg p-2 text-brand-700 hover:bg-brand-50" href={doc.file_data_url} download={doc.file_name} aria-label={`Descargar ${doc.file_name}`} title="Descargar"><Download size={18} /></a>}
+            {doc.file_data_url && <DocumentDownloadButton doc={doc} iconOnly />}
             {canDelete && <button className="focus-ring rounded-lg p-2 text-red-600 hover:bg-red-50" onClick={() => removeDocument(doc)} aria-label={`Eliminar ${doc.file_name}`} title="Eliminar"><Trash2 size={18} /></button>}
           </article>
         ))}
       </div>
       {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación a este expediente." /></div>}
     </section>
+  );
+}
+
+function DocumentDownloadButton({ doc, iconOnly = false }) {
+  const [opening, setOpening] = useState(false);
+
+  async function openDocument() {
+    if (!doc?.file_data_url || opening) return;
+    setOpening(true);
+    try {
+      const url = await resolveBeneficiaryDocumentUrl(doc.file_data_url);
+      if (!url) throw new Error('El documento no tiene una URL disponible.');
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.download = doc.file_name || 'documento';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      window.alert(error.message || 'No se pudo abrir el documento.');
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  if (iconOnly) {
+    return <button className="focus-ring rounded-lg p-2 text-brand-700 hover:bg-brand-50 disabled:opacity-60" type="button" onClick={openDocument} disabled={opening} aria-label={`Descargar ${doc.file_name || 'documento'}`} title="Descargar"><Download size={18} /></button>;
+  }
+
+  return <button className="mt-3 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-600 disabled:opacity-60" type="button" onClick={openDocument} disabled={opening}>{opening ? 'Abriendo...' : 'Abrir documento'}</button>;
+}
+
+function BeneficiaryWhatsAppForm({ beneficiary, onSend, onCancel }) {
+  const [message, setMessage] = useState(`Hola ${beneficiary.full_name}, le contactamos desde Pan y Esperanza.`);
+  const [sending, setSending] = useState(false);
+  const phone = normalizeWhatsAppPhone(beneficiary.phone);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!message.trim()) return;
+    setSending(true);
+    try {
+      await onSend(message.trim());
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={submit}>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <p className="font-semibold text-ink">{beneficiary.full_name}</p>
+        <p>{phone ? `WhatsApp ${phone}` : 'Sin teléfono válido'}</p>
+      </div>
+      <FormField label="Mensaje">
+        <textarea className={`${inputClass} min-h-32`} value={message} onChange={(event) => setMessage(event.target.value)} />
+      </FormField>
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" disabled={!phone || sending}><MessageCircle size={17} /> {sending ? 'Abriendo...' : 'Abrir WhatsApp'}</Button>
+      </div>
+    </form>
   );
 }
 
