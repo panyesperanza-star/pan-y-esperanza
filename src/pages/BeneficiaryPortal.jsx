@@ -352,7 +352,7 @@ export function BeneficiaryPortal({ data, actions }) {
               </p>
             </div>
             <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[420px]">
-              <HeroMetric label="Proxima entrega" value={nextDelivery ? formatDate(nextDelivery.delivered_at || nextDelivery.created_at) : 'Sin fecha'} />
+              <HeroMetric label="Proxima entrega" value={nextDelivery ? formatDeliveryDateTime(nextDelivery) : 'Sin fecha'} />
               <HeroMetric label="Avisos" value={unreadNotices.length} />
               <HeroMetric label="Documentos" value={pendingDocs.length} />
             </div>
@@ -549,7 +549,19 @@ function DeliveriesSection({ deliveries }) {
       {!deliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecera aqui." /> : (
         <div className="grid gap-3">
           {deliveries.map((delivery) => (
-            <InfoCard key={delivery.id} title={delivery.help_type || 'Entrega programada'} meta={formatDate(delivery.delivered_at || delivery.created_at)} text={delivery.status || 'Pendiente'} />
+            <article key={delivery.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h3 className="font-bold text-ink">{delivery.help_type || 'Entrega programada'}</h3>
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-600">{delivery.status || 'Pendiente'}</span>
+              </div>
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+                <DataRow label="Fecha" value={formatDate(delivery.delivered_at || delivery.created_at)} />
+                <DataRow label="Hora" value={formatDeliveryTime(delivery.delivered_time)} />
+                <DataRow label="Lugar" value={getDeliveryLocation(delivery)} />
+                <DataRow label="Tipo de ayuda" value={delivery.help_type || 'Ayuda'} />
+                <DataRow label="Estado" value={delivery.status || 'Pendiente'} />
+              </dl>
+            </article>
           ))}
         </div>
       )}
@@ -572,6 +584,8 @@ function HistorySection({ history }) {
 }
 
 function NoticesSection({ notices, service, session, onRefresh, setError, setSuccess }) {
+  const orderedNotices = sortNotices(notices);
+
   async function markRead(notice) {
     if (notice.source !== 'portal') return;
     try {
@@ -585,23 +599,29 @@ function NoticesSection({ notices, service, session, onRefresh, setError, setSuc
 
   return (
     <Panel title="Avisos" icon={Bell}>
-      {!notices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes apareceran en esta seccion." /> : (
+      {!orderedNotices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes apareceran en esta seccion." /> : (
         <div className="grid gap-3">
-          {notices.map((notice) => (
-            <article key={notice.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
+          {orderedNotices.map((notice) => {
+            const unread = normalize(notice.status) !== 'read';
+            return (
+            <article key={notice.id} className={`rounded-md border p-4 ${unread ? 'border-brand-100 bg-brand-50/60' : 'border-slate-100 bg-slate-50'}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-bold text-ink">{notice.title}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-bold text-ink">{notice.title}</h3>
+                    {unread && <span className="rounded-md bg-brand-600 px-2 py-1 text-xs font-bold text-white">Nuevo</span>}
+                  </div>
                   <p className="mt-1 text-sm text-slate-600">{notice.message}</p>
                   <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(notice.created_at)}</p>
                 </div>
-                <span className={`rounded-md px-2 py-1 text-xs font-bold ${normalize(notice.status) === 'read' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
-                  {normalize(notice.status) === 'read' ? 'Leido' : 'Pendiente'}
+                <span className={`rounded-md px-2 py-1 text-xs font-bold ${unread ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {unread ? 'Pendiente' : 'Leido'}
                 </span>
               </div>
-              {notice.source === 'portal' && normalize(notice.status) !== 'read' && <Button variant="secondary" className="mt-3" onClick={() => markRead(notice)}>Marcar como leido</Button>}
+              {notice.source === 'portal' && unread && <Button variant="secondary" className="mt-3" onClick={() => markRead(notice)}>Marcar como leido</Button>}
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
     </Panel>
@@ -609,24 +629,37 @@ function NoticesSection({ notices, service, session, onRefresh, setError, setSuc
 }
 
 function DocumentsSection({ documents }) {
+  const pendingDocuments = documents.filter(isPendingDocument);
+  const receivedDocuments = documents.filter((document) => !isPendingDocument(document));
+
   return (
     <Panel title="Documentos" icon={FileText}>
       {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentacion solicitada aparecera aqui." /> : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {documents.map((document) => (
-            <article key={document.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-ink">{document.document_type || document.file_name || 'Documento'}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{document.notes || document.file_name || 'Sin observaciones.'}</p>
-                  <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(document.uploaded_at)}</p>
-                </div>
-                <span className={`rounded-md px-2 py-1 text-xs font-bold ${isPendingDocument(document) ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {isPendingDocument(document) ? 'Pendiente' : 'Recibido'}
-                </span>
-              </div>
-            </article>
-          ))}
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <DataRow label="Documentos recibidos" value={receivedDocuments.length} />
+            <DataRow label="Documentos pendientes" value={pendingDocuments.length} />
+            <DataRow label="Estado documental" value={pendingDocuments.length ? 'Pendiente' : 'Al dia'} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {documents.map((document) => {
+              const pending = isPendingDocument(document);
+              return (
+                <article key={document.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-ink">{document.document_type || 'Documento'}</h3>
+                      <p className="mt-1 text-sm text-slate-600">Estado documental: {pending ? 'Pendiente' : 'Recibido'}</p>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(document.uploaded_at || document.created_at)}</p>
+                    </div>
+                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${pending ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                      {pending ? 'Pendiente' : 'Recibido'}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       )}
     </Panel>
@@ -888,11 +921,43 @@ function DataRow({ label, value }) {
 
 function getNextDelivery(deliveries = []) {
   const today = todayISO();
-  return deliveries.find((delivery) => String(delivery.delivered_at || delivery.created_at || '') >= today) || deliveries[0] || null;
+  return [...deliveries]
+    .sort(sortDeliveryAsc)
+    .find((delivery) => String(delivery.delivered_at || delivery.created_at || '') >= today) || deliveries[0] || null;
+}
+
+function sortDeliveryAsc(a = {}, b = {}) {
+  const dateCompare = String(a.delivered_at || a.created_at || '').localeCompare(String(b.delivered_at || b.created_at || ''));
+  if (dateCompare !== 0) return dateCompare;
+  return String(a.delivered_time || '').localeCompare(String(b.delivered_time || ''));
+}
+
+function formatDeliveryDateTime(delivery = {}) {
+  const date = formatDate(delivery.delivered_at || delivery.created_at);
+  const time = formatDeliveryTime(delivery.delivered_time);
+  return time === 'Pendiente' ? date : `${date} ${time}`;
+}
+
+function formatDeliveryTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return 'Pendiente';
+  return text.slice(0, 5);
+}
+
+function getDeliveryLocation(delivery = {}) {
+  return delivery.location || delivery.delivery_location || delivery.place || delivery.address || 'Pendiente de confirmar';
+}
+
+function sortNotices(notices = []) {
+  return [...notices].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 }
 
 function isPendingDocument(document) {
-  return !document.file_data_url || normalize(document.notes).includes('pendiente') || normalize(document.status).includes('pendiente');
+  const status = normalize(document.portal_status || document.status);
+  if (status === 'received' || status.includes('recib')) return false;
+  if (status === 'expired' || status.includes('caduc')) return true;
+  if (status === 'pending' || status.includes('pendiente')) return true;
+  return !document.file_data_url;
 }
 
 function withTimeout(promise, timeoutMs = PORTAL_REQUEST_TIMEOUT_MS) {

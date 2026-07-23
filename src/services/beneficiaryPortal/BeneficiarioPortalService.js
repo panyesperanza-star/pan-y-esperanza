@@ -50,6 +50,12 @@ function sortByDateDesc(a, b, field) {
   return String(b?.[field] || '').localeCompare(String(a?.[field] || ''));
 }
 
+function sortDeliveryAsc(a = {}, b = {}) {
+  const dateCompare = String(a.delivered_at || a.created_at || '').localeCompare(String(b.delivered_at || b.created_at || ''));
+  if (dateCompare !== 0) return dateCompare;
+  return String(a.delivered_time || '').localeCompare(String(b.delivered_time || ''));
+}
+
 function sanitizePortalAccountPayload(beneficiary, payload = {}) {
   return {
     beneficiary_id: beneficiary.id,
@@ -82,6 +88,43 @@ function sanitizeNoticePayload(beneficiaryId, payload = {}) {
     read_at: payload.read_at || null,
     created_at: payload.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
+  };
+}
+
+function sanitizePortalDelivery(delivery = {}) {
+  return {
+    id: delivery.id,
+    delivered_at: delivery.delivered_at || null,
+    delivered_time: delivery.delivered_time || null,
+    location: cleanText(delivery.location || delivery.delivery_location || delivery.place || delivery.address),
+    help_type: delivery.help_type || '',
+    status: delivery.status || 'Pendiente',
+    created_at: delivery.created_at || null
+  };
+}
+
+function inferPortalDocumentStatus(document = {}) {
+  const explicit = normalize(document.status);
+  const notes = normalize(document.notes);
+  if (explicit.includes('pendiente') || explicit === 'pending' || notes.includes('pendiente')) return 'pending';
+  if (explicit.includes('caduc') || explicit === 'expired') return 'expired';
+  if (document.file_data_url || document.file_url || document.storage_path || document.storage_bucket) return 'received';
+  if (explicit.includes('recib') || explicit === 'received' || explicit === 'uploaded') return 'received';
+  return 'pending';
+}
+
+function sanitizePortalDocument(document = {}) {
+  const status = inferPortalDocumentStatus(document);
+  return {
+    id: document.id,
+    beneficiary_id: document.beneficiary_id,
+    document_type: document.document_type || 'Documento',
+    status,
+    portal_status: status,
+    uploaded_at: document.uploaded_at || null,
+    expires_at: document.expires_at || null,
+    created_at: document.created_at || null,
+    updated_at: document.updated_at || null
   };
 }
 
@@ -618,7 +661,8 @@ export class BeneficiarioPortalService {
       .filter((delivery) => delivery.beneficiary_id === beneficiaryId)
       .filter(isActiveDelivery)
       .filter((delivery) => String(delivery.delivered_at || '') >= today)
-      .sort((a, b) => sortByDateAsc(a, b, 'delivered_at'));
+      .sort(sortDeliveryAsc)
+      .map(sanitizePortalDelivery);
   }
 
   async getHistory(beneficiaryId) {
@@ -651,6 +695,7 @@ export class BeneficiarioPortalService {
     const documents = await this.readDocuments();
     return documents
       .filter((document) => document.beneficiary_id === beneficiaryId)
+      .map(sanitizePortalDocument)
       .sort((a, b) => sortByDateDesc(a, b, 'uploaded_at'));
   }
 
