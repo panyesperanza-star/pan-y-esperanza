@@ -181,6 +181,7 @@ function nextLockUntil(attempts) {
 function buildAccessEmailMessage({ beneficiary, account, temporaryPin = '' }) {
   const name = cleanText(beneficiary.full_name || beneficiary.name || 'beneficiario');
   const pin = cleanText(temporaryPin);
+  if (!pin) throw new Error('No hay PIN temporal disponible para enviar el acceso.');
   return [
     `Hola ${name},`,
     '',
@@ -191,7 +192,9 @@ function buildAccessEmailMessage({ beneficiary, account, temporaryPin = '' }) {
     '',
     'Para entrar, abre la URL y pulsa "Recibo ayuda".',
     'Necesitaras tu PIN personal para solicitar el codigo OTP de verificacion.',
-    pin ? `PIN temporal: ${pin}` : 'Por seguridad, el PIN no se incluye en este correo si ya fue generado anteriormente.',
+    `PIN temporal: ${pin}`,
+    '',
+    'Este PIN es temporal. Cambialo en el primer acceso para mantener tu portal protegido.',
     '',
     'Si no has solicitado este acceso o tienes dudas, contacta con Pan y Esperanza.',
     '',
@@ -357,37 +360,45 @@ export class BeneficiarioPortalService {
     return accounts.find((item) => item.beneficiary_id === beneficiaryId) || null;
   }
 
-  async activateAccess(beneficiaryId) {
-    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+  async issueTemporaryPin(beneficiary, current = null) {
     const accounts = await this.repository.listAccounts();
-    const current = accounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
+    const account = current || accounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
     const temporaryPin = randomDigits(6);
     const salt = randomHex(12);
     const now = nowISO();
     const payload = {
       beneficiary_id: beneficiary.id,
-      auth_user_id: current?.auth_user_id || null,
-      access_identifier: normalizeAccessIdentifier(current?.access_identifier) || generateAccessIdentifier(accounts),
+      auth_user_id: account?.auth_user_id || null,
+      access_identifier: normalizeAccessIdentifier(account?.access_identifier) || generateAccessIdentifier(accounts),
       pin_hash: await hashAccessPin(temporaryPin, salt),
       pin_salt: salt,
       pin_set_at: now,
+      must_change_pin: true,
+      pin_changed_at: null,
+      temporary_pin_sent_at: null,
       failed_access_attempts: 0,
       last_failed_access_at: null,
       locked_until: null,
-      email: cleanText(beneficiary.email || current?.email).toLowerCase(),
-      phone: cleanText(beneficiary.phone || current?.phone),
+      email: cleanText(beneficiary.email || account?.email).toLowerCase(),
+      phone: cleanText(beneficiary.phone || account?.phone),
       status: 'active',
-      access_level: current?.access_level || 'beneficiary',
-      invited_at: current?.invited_at || now,
-      activated_at: now,
-      notes: cleanText(current?.notes),
+      access_level: account?.access_level || 'beneficiary',
+      invited_at: account?.invited_at || null,
+      activated_at: account?.activated_at || now,
+      notes: cleanText(account?.notes),
       updated_at: now
     };
 
-    const account = current
-      ? await this.repository.updateAccount(current.id, payload)
+    const savedAccount = account
+      ? await this.repository.updateAccount(account.id, payload)
       : await this.repository.createAccount({ ...payload, created_at: now });
 
+    return { account: savedAccount, temporaryPin };
+  }
+
+  async activateAccess(beneficiaryId) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const { account, temporaryPin } = await this.issueTemporaryPin(beneficiary);
     await this.audit(`Portal beneficiario: acceso activado para ${beneficiary.full_name || beneficiary.id}`.trim());
     await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'access_activated', account });
     return { account, temporaryPin };
@@ -407,33 +418,30 @@ export class BeneficiarioPortalService {
     return updated;
   }
 
-  async regeneratePin(beneficiaryId) {
+  async regeneratePin(beneficiaryId, { sendEmail = true, organization = null } = {}) {
     const beneficiary = await this.requireBeneficiary(beneficiaryId);
-    const account = await this.getAccountForBeneficiary(beneficiary.id);
-    if (!account) return this.activateAccess(beneficiary.id);
-    const temporaryPin = randomDigits(6);
-    const salt = randomHex(12);
-    const updated = await this.repository.updateAccount(account.id, {
-      pin_hash: await hashAccessPin(temporaryPin, salt),
-      pin_salt: salt,
-      pin_set_at: nowISO(),
-      failed_access_attempts: 0,
-      last_failed_access_at: null,
-      locked_until: null,
-      status: 'active',
-      updated_at: nowISO()
-    });
+    const current = await this.getAccountForBeneficiary(beneficiary.id);
+    const issued = await this.issueTemporaryPin(beneficiary, current);
+    let result = { account: issued.account, temporaryPin: issued.temporaryPin };
+    if (sendEmail) {
+      result = {
+        ...result,
+        ...(await this.sendAccessEmail({
+          beneficiary,
+          account: issued.account,
+          temporaryPin: issued.temporaryPin,
+          organization
+        }))
+      };
+    }
     await this.audit(`Portal beneficiario: PIN regenerado para ${beneficiary.full_name || beneficiary.id}`.trim());
-    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'pin_regenerated', account: updated });
-    return { account: updated, temporaryPin };
+    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'pin_regenerated', account: result.account });
+    return result;
   }
 
-  async sendAccess(beneficiaryId, { temporaryPin = '', organization = null } = {}) {
-    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+  async sendAccessEmail({ beneficiary, account, temporaryPin, organization = null }) {
     const email = cleanText(beneficiary.email).toLowerCase();
     if (!email) throw new Error('Este beneficiario no tiene email registrado para enviar el acceso.');
-    const account = await this.getAccountForBeneficiary(beneficiary.id);
-    if (!account) throw new Error('Activa el portal antes de enviar el acceso.');
     if (account.status !== 'active') throw new Error('El portal debe estar activo antes de enviar el acceso.');
     if (!account.access_identifier) throw new Error('El portal no tiene identificador privado generado.');
 
@@ -446,10 +454,27 @@ export class BeneficiarioPortalService {
 
     const updated = await this.repository.updateAccount(account.id, {
       invited_at: nowISO(),
+      temporary_pin_sent_at: nowISO(),
       updated_at: nowISO()
     });
-    await this.audit(`Portal beneficiario: acceso enviado para ${beneficiary.full_name || beneficiary.id}`.trim());
     return { account: updated, email: emailResult };
+  }
+
+  async sendAccess(beneficiaryId, { temporaryPin = '', organization = null } = {}) {
+    const beneficiary = await this.requireBeneficiary(beneficiaryId);
+    const current = await this.getAccountForBeneficiary(beneficiary.id);
+    const cleanPin = cleanText(temporaryPin);
+    const issued = cleanPin && current?.status === 'active' && current?.access_identifier
+      ? { account: current, temporaryPin: cleanPin }
+      : await this.issueTemporaryPin(beneficiary, current);
+    const sent = await this.sendAccessEmail({
+      beneficiary,
+      account: issued.account,
+      temporaryPin: issued.temporaryPin,
+      organization
+    });
+    await this.audit(`Portal beneficiario: acceso enviado para ${beneficiary.full_name || beneficiary.id}`.trim());
+    return { ...sent, temporaryPin: issued.temporaryPin };
   }
 
   async activatePendingAccesses() {

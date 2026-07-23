@@ -858,9 +858,13 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   }
 
   async function regeneratePortalPin() {
-    const result = await actions.regenerateBeneficiaryPortalPin(beneficiary.id);
-    setTemporaryPortalPin(result.temporaryPin || '');
-    setNotice('PIN regenerado correctamente. Imprime o envia el acceso antes de cerrar el expediente.');
+    try {
+      const result = await actions.regenerateBeneficiaryPortalPin(beneficiary.id);
+      setTemporaryPortalPin(result.temporaryPin || '');
+      setNotice('PIN regenerado y enviado correctamente. El PIN temporal se muestra una sola vez.');
+    } catch (error) {
+      setNotice(error.message || 'No se pudo regenerar y enviar el PIN.');
+    }
   }
 
   async function printPortalAccess() {
@@ -881,13 +885,10 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       setNotice('Este beneficiario no tiene email registrado para enviar el acceso.');
       return;
     }
-    if (!portalAccount || portalAccount.status !== 'active') {
-      setNotice('Activa el portal antes de enviar el acceso.');
-      return;
-    }
     try {
-      await actions.sendBeneficiaryPortalAccess(beneficiary.id, { temporaryPin: temporaryPortalPin });
-      setNotice('Acceso enviado correctamente.');
+      const result = await actions.sendBeneficiaryPortalAccess(beneficiary.id, { temporaryPin: temporaryPortalPin });
+      setTemporaryPortalPin(result.temporaryPin || temporaryPortalPin || '');
+      setNotice('Acceso enviado correctamente. El PIN temporal se muestra una sola vez.');
     } catch (error) {
       setNotice(error.message || 'No se pudo enviar el acceso. Intentalo de nuevo.');
     }
@@ -1149,6 +1150,7 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDo
 function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPin, canEdit, onActivate, onDeactivate, onRegeneratePin, onPrint, onSend }) {
   const active = account?.status === 'active';
   const pending = !account || !account.pin_hash;
+  const pinLabel = getPortalPinLabel(account, temporaryPin);
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Portal del Beneficiario">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1173,18 +1175,25 @@ function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPi
       <div className="mt-4 grid gap-3 md:grid-cols-5">
         <PortalField label="Estado" value={active ? 'Activo' : pending ? 'Pendiente' : account?.status || 'Inactivo'} />
         <PortalField label="Identificador privado" value={account?.access_identifier || 'Pendiente'} mono />
-        <PortalField label="PIN" value={temporaryPin ? 'Generado para entrega' : 'Oculto'} />
+        <PortalField label="PIN" value={pinLabel} />
         <PortalField label="Ultimo acceso" value={lastAccess ? formatDateTime(lastAccess) : '-'} />
         <PortalField label="Ultimo OTP" value={lastOtp ? formatDateTime(lastOtp) : '-'} />
       </div>
 
       {temporaryPin && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
-          PIN temporal: <span className="font-mono text-base font-bold">{temporaryPin}</span>. Solo se muestra ahora para imprimir o entregar el acceso.
+          PIN temporal: <span className="font-mono text-base font-bold">{temporaryPin}</span>. Solo se muestra ahora para imprimirlo o enviarlo por correo.
         </div>
       )}
     </section>
   );
+}
+
+function getPortalPinLabel(account, temporaryPin) {
+  if (temporaryPin) return temporaryPin;
+  if (!account?.pin_hash) return 'Pendiente';
+  if (account.pin_changed_at || account.must_change_pin === false) return 'No se muestra porque ya fue cambiado.';
+  return 'PIN temporal pendiente de cambio.';
 }
 
 function PortalField({ label, value, mono = false }) {

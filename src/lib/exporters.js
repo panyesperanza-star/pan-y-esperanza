@@ -671,7 +671,7 @@ export async function createPortalAccessPdf({
   ];
   if (identifier) accessRows.push(['Identificador privado', identifier]);
   if (email) accessRows.push(['Email de acceso', email]);
-  accessRows.push(['PIN', temporaryPin || 'No se muestra si ya fue cambiado o no se acaba de generar.']);
+  accessRows.push(['PIN', temporaryPin || 'No se muestra porque ya fue cambiado o no se ha generado en esta accion.']);
 
   doc.setFillColor(246, 249, 246);
   doc.rect(0, 0, 210, 46, 'F');
