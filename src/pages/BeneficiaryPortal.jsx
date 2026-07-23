@@ -1,18 +1,26 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Bell,
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  CircleHelp,
+  Clock3,
   FileText,
   History,
   Home,
   KeyRound,
   Lock,
   LogOut,
+  MapPin,
   MessageSquare,
+  PackageCheck,
+  Send,
   ShieldCheck,
-  UserRound
+  UserRound,
+  UsersRound,
+  X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
@@ -47,6 +55,7 @@ export function BeneficiaryPortal({ data, actions }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     if (!portalService) return;
@@ -407,6 +416,16 @@ export function BeneficiaryPortal({ data, actions }) {
           )}
         </section>
       </main>
+      <BeneficiaryAssistantPanel
+        service={portalService}
+        session={session}
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        setActiveTab={setActiveTab}
+        onRefresh={refreshPortal}
+        setError={setError}
+        setSuccess={setSuccess}
+      />
     </PortalShell>
   );
 }
@@ -509,28 +528,483 @@ function HeroMetric({ label, value }) {
   );
 }
 
-function PortalHome({ overview, nextDelivery, pendingDocs, unreadNotices, setActiveTab, auth }) {
+const DOCUMENT_STATUS_TONES = {
+  received: { label: 'Recibido', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
+  pending: { label: 'Pendiente', dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700' },
+  required: { label: 'Requerido', dot: 'bg-red-500', badge: 'bg-red-50 text-red-700' }
+};
+
+const ASSISTANT_QUICK_ACTIONS = [
+  { intent: 'next_delivery', label: 'Cuando es mi proxima entrega?' },
+  { intent: 'documents', label: 'Me falta algun documento?' },
+  { intent: 'notices', label: 'Ver mis avisos' },
+  { intent: 'create_request', label: 'Enviar una solicitud' },
+  { intent: 'contact', label: 'Contactar con la asociacion' }
+];
+
+function BeneficiaryAssistantPanel({ service, session, open, onOpenChange, setActiveTab, onRefresh, setError, setSuccess }) {
+  const [messages, setMessages] = useState([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: 'Hola. Puedo ayudarte con tu proxima entrega, documentos, avisos, solicitudes y datos de contacto de Pan y Esperanza.'
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState(null);
+
+  async function askAssistant(intent, text, extra = {}) {
+    const userText = String(text || '').trim();
+    if (!service?.askAssistant || !session?.token) {
+      setError('El asistente necesita una sesion activa.');
+      return;
+    }
+
+    setBusy(true);
+    setMessages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), role: 'user', text: userText || 'Consulta del portal' }
+    ]);
+
+    try {
+      const reply = await withTimeout(service.askAssistant(session, {
+        intent,
+        message: userText,
+        ...extra
+      }), 12000);
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: reply.answer,
+          action: reply.action,
+          requiresConfirmation: reply.requiresConfirmation === true,
+          draftRequest: reply.draftRequest || null
+        }
+      ]);
+      if (reply.requiresConfirmation && reply.draftRequest) setPendingRequest(reply.draftRequest);
+      if (reply.actionPerformed === 'request_created') {
+        setPendingRequest(null);
+        setSuccess('Solicitud enviada desde el asistente.');
+        await onRefresh?.();
+      }
+    } catch (assistantError) {
+      const message = assistantError.message || 'No se pudo completar la consulta del asistente.';
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: 'assistant', text: message }
+      ]);
+      setError(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const nextInput = input.trim();
+    if (!nextInput || busy) return;
+    setInput('');
+    askAssistant('ask', nextInput);
+  }
+
+  function handleQuickAction(action) {
+    if (busy) return;
+    askAssistant(action.intent, action.label);
+  }
+
+  function confirmPendingRequest() {
+    if (!pendingRequest || busy) return;
+    askAssistant('confirm_request', pendingRequest.message, { draftRequest: pendingRequest });
+  }
+
+  function cancelPendingRequest() {
+    setPendingRequest(null);
+    setMessages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), role: 'assistant', text: 'Solicitud cancelada. No se ha guardado ningun cambio.' }
+    ]);
+  }
+
+  function handleAssistantAction(action = {}) {
+    if (action.type === 'open_tab' && action.tab) {
+      setActiveTab(action.tab);
+      onOpenChange(false);
+    }
+  }
+
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-      <Panel title="Resumen" icon={Home}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ActionCard title="Proxima entrega" text={nextDelivery ? nextDelivery.help_type || nextDelivery.status || 'Entrega programada' : 'No hay entregas programadas.'} action="Ver entrega" onClick={() => setActiveTab('entrega')} />
-          <ActionCard title="Documentacion pendiente" text={`${pendingDocs.length} documento${pendingDocs.length === 1 ? '' : 's'} pendiente${pendingDocs.length === 1 ? '' : 's'}.`} action="Ver documentos" onClick={() => setActiveTab('documentos')} />
-          <ActionCard title="Avisos" text={`${unreadNotices.length} aviso${unreadNotices.length === 1 ? '' : 's'} sin leer.`} action="Ver avisos" onClick={() => setActiveTab('avisos')} />
-          <ActionCard title="Recursos personalizados" text={`${(overview.personalizedResources || []).length} recurso${(overview.personalizedResources || []).length === 1 ? '' : 's'} disponible${(overview.personalizedResources || []).length === 1 ? '' : 's'}.`} action="Ver recursos" onClick={() => setActiveTab('recursos')} />
+    <>
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        className="focus-ring fixed bottom-5 right-5 z-40 inline-flex min-h-12 items-center gap-2 rounded-full border border-brand-200 bg-white px-4 py-3 text-sm font-bold text-brand-700 shadow-panel transition hover:-translate-y-0.5 hover:border-brand-300 hover:bg-brand-50"
+      >
+        <CircleHelp size={18} /> &iquest;Necesitas ayuda?
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex bg-slate-900/25 p-3 sm:items-end sm:justify-end" role="dialog" aria-modal="true" aria-label="Asistente Pan y Esperanza">
+          <section className="flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-[28rem]">
+            <header className="flex items-start justify-between gap-4 border-b border-slate-100 bg-brand-50 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Asistente Pan y Esperanza</p>
+                <h2 className="mt-1 text-xl font-bold text-ink">Como puedo ayudarte?</h2>
+                <p className="mt-1 text-sm text-slate-600">Respuestas breves usando solo los datos autorizados de tu portal.</p>
+              </div>
+              <button type="button" onClick={() => onOpenChange(false)} className="focus-ring rounded-md p-2 text-slate-500 hover:bg-white hover:text-ink" aria-label="Cerrar asistente">
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="border-b border-slate-100 px-4 py-3">
+              <div className="grid gap-2">
+                {ASSISTANT_QUICK_ACTIONS.map((action) => (
+                  <button
+                    key={action.intent}
+                    type="button"
+                    onClick={() => handleQuickAction(action)}
+                    disabled={busy}
+                    className="focus-ring min-h-11 rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+              {messages.map((message) => (
+                <article key={message.id} className={`rounded-md px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'ml-8 bg-brand-600 text-white' : 'mr-8 bg-slate-50 text-slate-700'}`}>
+                  <p>{message.text}</p>
+                  {message.action?.type === 'open_tab' && (
+                    <button type="button" onClick={() => handleAssistantAction(message.action)} className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-bold text-brand-700">
+                      Abrir seccion <ArrowRight size={15} />
+                    </button>
+                  )}
+                  {message.action?.type === 'contact' && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <a className="focus-ring rounded-md bg-white px-3 py-2 text-sm font-bold text-brand-700" href={`mailto:${message.action.email}`}>Enviar correo</a>
+                      <a className="focus-ring rounded-md bg-white px-3 py-2 text-sm font-bold text-brand-700" href={`https://wa.me/${normalizePhoneForWhatsApp(message.action.phone)}`} target="_blank" rel="noreferrer">Abrir WhatsApp</a>
+                    </div>
+                  )}
+                  {message.requiresConfirmation && message.draftRequest && (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <button type="button" onClick={() => setPendingRequest(message.draftRequest)} className="focus-ring rounded-md bg-white px-3 py-2 text-sm font-bold text-brand-700">
+                        Revisar solicitud
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {busy && <p className="text-sm font-semibold text-slate-500">El asistente esta respondiendo...</p>}
+            </div>
+
+            {pendingRequest && (
+              <div className="border-t border-brand-100 bg-brand-50 px-4 py-3">
+                <p className="text-sm font-bold text-ink">Confirmar solicitud</p>
+                <p className="mt-1 text-sm text-slate-600">{pendingRequest.message}</p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button type="button" onClick={confirmPendingRequest} disabled={busy} className="focus-ring min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-wait disabled:opacity-60">
+                    Confirmar envio
+                  </button>
+                  <button type="button" onClick={cancelPendingRequest} disabled={busy} className="focus-ring min-h-11 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="border-t border-slate-100 bg-white p-4">
+              <label className="sr-only" htmlFor="beneficiary-assistant-input">Escribe tu consulta</label>
+              <div className="flex gap-2">
+                <textarea
+                  id="beneficiary-assistant-input"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  rows={2}
+                  className={`${inputClass} min-h-[3.25rem] resize-none rounded-xl text-base`}
+                  placeholder="Escribe tu consulta..."
+                  maxLength={1200}
+                />
+                <button type="submit" disabled={busy || !input.trim()} className="focus-ring inline-flex min-h-[3.25rem] w-14 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Enviar consulta">
+                  <Send size={19} />
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
-      </Panel>
-      <Panel title="Seguridad" icon={ShieldCheck}>
-        <div className="space-y-3 text-sm text-slate-600">
-          <p>El acceso se valida con identificador privado, PIN seguro y codigo OTP.</p>
-          <p>Las solicitudes y cambios de perfil requieren codigo OTP.</p>
-          <span className="inline-flex rounded-md bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700">
-            {auth?.supabaseAuthReady ? 'Supabase Auth preparado' : 'Modo seguro local'}
-          </span>
+      )}
+    </>
+  );
+}
+
+function PortalHome({ overview, nextDelivery, pendingDocs, unreadNotices, setActiveTab, auth }) {
+  const beneficiary = overview.beneficiary || {};
+  const orderedNotices = sortNotices(overview.notices || []);
+  const recentNotices = orderedNotices.slice(0, 3);
+  const documents = overview.documents || [];
+  const receivedDocs = documents.filter((document) => getDocumentStatusMeta(document).key === 'received');
+  const pendingOnlyDocs = documents.filter((document) => getDocumentStatusMeta(document).key === 'pending');
+  const requiredDocs = documents.filter((document) => getDocumentStatusMeta(document).key === 'required');
+
+  return (
+    <div className="beneficiary-portal-welcome mx-auto max-w-5xl space-y-4 sm:space-y-5">
+      <section className="overflow-hidden rounded-md border border-brand-700 bg-brand-700 text-white shadow-panel">
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-100">Portal del Beneficiario</p>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Hola, {firstName(beneficiary.full_name)}.</h2>
+            <p className="mt-3 max-w-2xl text-base leading-relaxed text-brand-50">
+              Todo lo importante de tu seguimiento aparece aqui, de forma clara y sencilla.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:min-w-72">
+            <HomeSignal label="Avisos nuevos" value={unreadNotices.length} />
+            <HomeSignal label="Documentos" value={pendingDocs.length ? 'Pendiente' : 'Al dia'} />
+          </div>
         </div>
-      </Panel>
+        <div className="border-t border-white/10 bg-white/10 px-5 py-3 text-sm font-semibold text-brand-50 sm:px-6">
+          Expediente {beneficiary.code || 'activo'} - Acceso protegido con {auth?.requiresOtpForSensitiveActions ? 'OTP' : 'PIN seguro'}
+        </div>
+      </section>
+
+      <NextDeliveryCard delivery={nextDelivery} onOpen={() => setActiveTab('entrega')} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <NoticeSummary notices={recentNotices} unreadCount={unreadNotices.length} onOpen={() => setActiveTab('avisos')} />
+        <DocumentStatusCard
+          pendingDocs={pendingDocs}
+          pendingOnlyDocs={pendingOnlyDocs}
+          receivedDocs={receivedDocs}
+          requiredDocs={requiredDocs}
+          totalDocs={documents.length}
+          onOpen={() => setActiveTab('documentos')}
+        />
+      </div>
+
+      <SolidaritySupportCard />
+      <style>{`
+        @keyframes beneficiaryPortalWelcome {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .beneficiary-portal-welcome {
+          animation: beneficiaryPortalWelcome 460ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .beneficiary-portal-welcome {
+            animation: none;
+          }
+        }
+      `}</style>
     </div>
   );
+}
+
+function HomeSignal({ label, value }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-white/10 p-3">
+      <p className="text-xl font-bold">{value}</p>
+      <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-brand-100">{label}</p>
+    </div>
+  );
+}
+
+function NextDeliveryCard({ delivery, onOpen }) {
+  if (!delivery) {
+    return (
+      <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            <span className="rounded-md bg-brand-50 p-3 text-brand-700"><CalendarDays size={24} /></span>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Proxima entrega</p>
+              <h3 className="mt-2 text-2xl font-bold text-ink">Aun no hay una entrega programada.</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+                Cuando el equipo registre una nueva entrega, aparecera aqui con la fecha, hora, lugar y estado.
+              </p>
+            </div>
+          </div>
+          <button type="button" onClick={onOpen} className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-brand-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-brand-700">
+            Ver detalles <ArrowRight size={16} />
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-md border border-brand-200 bg-white shadow-panel">
+      <div className="bg-brand-50 p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Proxima entrega</p>
+            <h3 className="mt-2 text-3xl font-bold tracking-tight text-ink">{delivery.help_type || 'Ayuda alimentaria'}</h3>
+            <p className="mt-2 text-sm text-slate-600">Tu siguiente cita registrada por Pan y Esperanza.</p>
+          </div>
+          <span className="rounded-md bg-white px-3 py-2 text-xs font-bold text-brand-700 shadow-sm">{delivery.status || 'Pendiente'}</span>
+        </div>
+      </div>
+      <div className="p-5 sm:p-6">
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <DeliveryDetail icon={CalendarDays} label="Fecha" value={formatDate(delivery.delivered_at || delivery.created_at)} />
+          <DeliveryDetail icon={Clock3} label="Hora" value={formatDeliveryTime(delivery.delivered_time)} />
+          <DeliveryDetail icon={MapPin} label="Lugar" value={getDeliveryLocation(delivery)} />
+          <DeliveryDetail icon={PackageCheck} label="Tipo de ayuda" value={delivery.help_type || 'Ayuda'} />
+          <DeliveryDetail icon={CheckCircle2} label="Estado" value={delivery.status || 'Pendiente'} />
+        </dl>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600">Si hay algun cambio, el equipo actualizara esta informacion.</p>
+          <button type="button" onClick={onOpen} className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-brand-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-brand-700">
+            Ver detalles <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DeliveryDetail({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-md bg-white p-3 shadow-sm">
+      <dt className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <Icon size={14} /> {label}
+      </dt>
+      <dd className="mt-2 font-semibold text-ink">{value || 'Pendiente'}</dd>
+    </div>
+  );
+}
+
+function DocumentStatusCard({ pendingDocs, pendingOnlyDocs, receivedDocs, requiredDocs, totalDocs, onOpen }) {
+  const state = pendingDocs.length ? 'Documentacion pendiente' : 'Documentacion al dia';
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Documentacion</p>
+          <h3 className="mt-2 text-xl font-bold text-ink">{state}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Consulta solo el estado documental. Los documentos internos no se descargan desde aqui.
+          </p>
+        </div>
+        <span className="rounded-md bg-slate-50 p-2 text-brand-700"><FileText size={20} /></span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <DocumentStatusCount tone="received" label="Recibido" value={receivedDocs.length} />
+        <DocumentStatusCount tone="pending" label="Pendiente" value={pendingOnlyDocs.length} />
+        <DocumentStatusCount tone="required" label="Requerido" value={requiredDocs.length} />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-semibold text-slate-500">Total: {totalDocs}</p>
+        <button type="button" onClick={onOpen} className="focus-ring inline-flex items-center gap-2 text-sm font-bold text-brand-700">
+        Ver estado documental <ArrowRight size={16} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DocumentStatusCount({ tone, label, value }) {
+  const meta = DOCUMENT_STATUS_TONES[tone] || DOCUMENT_STATUS_TONES.pending;
+  return (
+    <div className="rounded-md bg-slate-50 p-3">
+      <dt className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} aria-hidden="true" />
+        {label}
+      </dt>
+      <dd className="mt-1 font-semibold text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function NoticeSummary({ notices, unreadCount, onOpen }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Avisos</p>
+          <h3 className="mt-2 text-xl font-bold text-ink">
+            {unreadCount ? `${unreadCount} aviso${unreadCount === 1 ? '' : 's'} nuevo${unreadCount === 1 ? '' : 's'}` : 'Sin avisos nuevos'}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Comunicaciones importantes publicadas por el equipo.
+          </p>
+        </div>
+        <span className="rounded-md bg-slate-50 p-2 text-brand-700"><Bell size={20} /></span>
+      </div>
+      {!notices.length ? (
+        <div className="mt-4 rounded-md bg-slate-50 p-4">
+          <h4 className="font-bold text-ink">No tienes avisos pendientes.</h4>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">Cuando el equipo publique un aviso importante, aparecera aqui.</p>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {notices.map((notice) => {
+            const unread = normalize(notice.status) !== 'read';
+            return (
+              <article key={notice.id} className={`rounded-md border p-4 ${unread ? 'border-brand-100 bg-brand-50/60' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="font-bold text-ink">{notice.title || 'Aviso'}</h4>
+                  {unread && <span className="rounded-md bg-brand-600 px-2 py-1 text-xs font-bold text-white">Nuevo</span>}
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm text-slate-600">{notice.message || 'Aviso publicado por Pan y Esperanza.'}</p>
+                <p className="mt-3 text-xs font-semibold text-slate-500">{formatDate(notice.created_at)}</p>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      <div className="mt-4 flex justify-end">
+        <button type="button" onClick={onOpen} className="focus-ring inline-flex items-center gap-2 text-sm font-bold text-brand-700">
+          Ver avisos <ArrowRight size={16} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SummaryTile({ label, value, detail }) {
+  return (
+    <article className="rounded-md border border-slate-100 bg-slate-50 p-4">
+      <p className="text-2xl font-bold text-ink">{value}</p>
+      <h3 className="mt-1 text-sm font-bold text-slate-700">{label}</h3>
+      <p className="mt-1 text-xs leading-relaxed text-slate-500">{detail}</p>
+    </article>
+  );
+}
+
+function SolidaritySupportCard() {
+  const collaborators = ['Empresas colaboradoras', 'Comercios locales', 'Personas solidarias'];
+  return (
+    <section className="rounded-md border border-slate-200 bg-white/80 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <UsersRound size={16} className="text-brand-700" />
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Apoyo solidario</p>
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            Gracias a empresas y personas solidarias podemos mantener este acompanamiento.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {collaborators.map((item) => (
+              <span key={item} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-600">{item}</span>
+            ))}
+          </div>
+        </div>
+        <a href="/acceder" className="focus-ring inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-bold text-brand-700 transition hover:border-brand-300 hover:bg-brand-100">
+          Quiero colaborar <ArrowRight size={16} />
+        </a>
+      </div>
+    </section>
+  );
+}
+
+function firstName(name = '') {
+  return String(name || 'bienvenido').trim().split(/\s+/)[0] || 'bienvenido';
 }
 
 function ActionCard({ title, text, action, onClick }) {
@@ -630,31 +1104,38 @@ function NoticesSection({ notices, service, session, onRefresh, setError, setSuc
 
 function DocumentsSection({ documents }) {
   const pendingDocuments = documents.filter(isPendingDocument);
-  const receivedDocuments = documents.filter((document) => !isPendingDocument(document));
+  const receivedDocuments = documents.filter((document) => getDocumentStatusMeta(document).key === 'received');
+  const pendingOnlyDocuments = documents.filter((document) => getDocumentStatusMeta(document).key === 'pending');
+  const requiredDocuments = documents.filter((document) => getDocumentStatusMeta(document).key === 'required');
 
   return (
     <Panel title="Documentos" icon={FileText}>
       {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentacion solicitada aparecera aqui." /> : (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <DataRow label="Documentos recibidos" value={receivedDocuments.length} />
-            <DataRow label="Documentos pendientes" value={pendingDocuments.length} />
-            <DataRow label="Estado documental" value={pendingDocuments.length ? 'Pendiente' : 'Al dia'} />
+          <div className="rounded-md border border-slate-100 bg-slate-50 p-4">
+            <h3 className="font-bold text-ink">Estado documental</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Aqui se muestra unicamente si la documentacion esta recibida o pendiente. Los documentos internos no estan disponibles para descarga desde el portal.
+            </p>
           </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <DocumentStatusCount tone="received" label="Recibido" value={receivedDocuments.length} />
+            <DocumentStatusCount tone="pending" label="Pendiente" value={pendingOnlyDocuments.length} />
+            <DocumentStatusCount tone="required" label="Requerido" value={requiredDocuments.length} />
+          </div>
+          <DataRow label="Estado documental" value={pendingDocuments.length ? 'Pendiente' : 'Al dia'} />
           <div className="grid gap-3 md:grid-cols-2">
             {documents.map((document) => {
-              const pending = isPendingDocument(document);
+              const statusMeta = getDocumentStatusMeta(document);
               return (
                 <article key={document.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-ink">{document.document_type || 'Documento'}</h3>
-                      <p className="mt-1 text-sm text-slate-600">Estado documental: {pending ? 'Pendiente' : 'Recibido'}</p>
+                      <p className="mt-1 text-sm text-slate-600">Estado documental: {statusMeta.label}</p>
                       <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(document.uploaded_at || document.created_at)}</p>
                     </div>
-                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${pending ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                      {pending ? 'Pendiente' : 'Recibido'}
-                    </span>
+                    <DocumentStatusBadge status={statusMeta.key} />
                   </div>
                 </article>
               );
@@ -663,6 +1144,16 @@ function DocumentsSection({ documents }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+function DocumentStatusBadge({ status }) {
+  const meta = DOCUMENT_STATUS_TONES[status] || DOCUMENT_STATUS_TONES.pending;
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs font-bold ${meta.badge}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} aria-hidden="true" />
+      {meta.label}
+    </span>
   );
 }
 
@@ -948,16 +1439,29 @@ function getDeliveryLocation(delivery = {}) {
   return delivery.location || delivery.delivery_location || delivery.place || delivery.address || 'Pendiente de confirmar';
 }
 
+function normalizePhoneForWhatsApp(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '34611889167';
+  return digits.startsWith('34') ? digits : `34${digits}`;
+}
+
 function sortNotices(notices = []) {
   return [...notices].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 }
 
 function isPendingDocument(document) {
+  return getDocumentStatusMeta(document).key !== 'received';
+}
+
+function getDocumentStatusMeta(document) {
   const status = normalize(document.portal_status || document.status);
-  if (status === 'received' || status.includes('recib')) return false;
-  if (status === 'expired' || status.includes('caduc')) return true;
-  if (status === 'pending' || status.includes('pendiente')) return true;
-  return !document.file_data_url;
+  if (status === 'received' || status.includes('recib')) return { key: 'received', ...DOCUMENT_STATUS_TONES.received };
+  if (status === 'required' || status.includes('requer') || status.includes('solicit') || status.includes('caduc') || status.includes('expired')) {
+    return { key: 'required', ...DOCUMENT_STATUS_TONES.required };
+  }
+  if (status === 'pending' || status.includes('pendiente')) return { key: 'pending', ...DOCUMENT_STATUS_TONES.pending };
+  if (document.file_data_url) return { key: 'received', ...DOCUMENT_STATUS_TONES.received };
+  return { key: 'required', ...DOCUMENT_STATUS_TONES.required };
 }
 
 function withTimeout(promise, timeoutMs = PORTAL_REQUEST_TIMEOUT_MS) {

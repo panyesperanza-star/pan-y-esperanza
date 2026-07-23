@@ -236,6 +236,21 @@ create table if not exists public.portal_sessions (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.beneficiary_assistant_messages (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  portal_session_id uuid references public.portal_sessions(id) on delete set null,
+  session_id text,
+  category text not null default 'general',
+  user_message text not null,
+  assistant_response text not null,
+  action_performed text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint beneficiary_assistant_user_message_length check (char_length(user_message) <= 1200),
+  constraint beneficiary_assistant_response_length check (char_length(assistant_response) <= 3000)
+);
+
 create index if not exists beneficiary_portal_accounts_beneficiary_idx on public.beneficiary_portal_accounts (beneficiary_id);
 create index if not exists beneficiary_portal_accounts_auth_user_idx on public.beneficiary_portal_accounts (auth_user_id);
 create unique index if not exists beneficiary_portal_accounts_access_identifier_uidx on public.beneficiary_portal_accounts (access_identifier);
@@ -243,6 +258,9 @@ create index if not exists beneficiary_portal_otps_beneficiary_idx on public.ben
 create index if not exists beneficiary_portal_notices_beneficiary_idx on public.beneficiary_portal_notices (beneficiary_id, status);
 create index if not exists beneficiary_portal_renewals_beneficiary_idx on public.beneficiary_portal_renewals (beneficiary_id, status, renewal_due_at);
 create index if not exists beneficiary_portal_profile_updates_beneficiary_idx on public.beneficiary_portal_profile_updates (beneficiary_id, status);
+create index if not exists beneficiary_assistant_messages_beneficiary_idx on public.beneficiary_assistant_messages (beneficiary_id, created_at desc);
+create index if not exists beneficiary_assistant_messages_session_idx on public.beneficiary_assistant_messages (portal_session_id, created_at desc);
+create index if not exists beneficiary_assistant_messages_category_idx on public.beneficiary_assistant_messages (category, created_at desc);
 create index if not exists portal_sessions_subject_idx on public.portal_sessions (portal, subject_id, status, expires_at);
 
 create table public.inventory_items (
@@ -725,6 +743,7 @@ alter table public.beneficiary_portal_notices enable row level security;
 alter table public.beneficiary_portal_renewals enable row level security;
 alter table public.beneficiary_portal_profile_updates enable row level security;
 alter table public.portal_sessions enable row level security;
+alter table public.beneficiary_assistant_messages enable row level security;
 alter table public.deliveries enable row level security;
 alter table public.email_logs enable row level security;
 alter table public.inventory_items enable row level security;
@@ -1425,6 +1444,8 @@ grant select, insert, update on public.beneficiary_portal_notices to authenticat
 grant select, insert, update on public.beneficiary_portal_renewals to authenticated;
 grant select, insert, update on public.beneficiary_portal_profile_updates to authenticated;
 grant select, insert, update on public.portal_sessions to authenticated;
+revoke all on table public.beneficiary_assistant_messages from anon;
+revoke all on table public.beneficiary_assistant_messages from authenticated;
 revoke delete on public.beneficiary_portal_accounts from authenticated;
 revoke delete on public.beneficiary_portal_otps from authenticated;
 revoke delete on public.beneficiary_portal_notices from authenticated;

@@ -1,4 +1,5 @@
 import { callPortalApi } from '../../lib/portalOtpClient';
+import { askBeneficiaryAssistant } from '../beneficiaryAssistant/BeneficiaryAssistantService';
 
 class BasePortalApiService {
   constructor(portal) {
@@ -76,6 +77,10 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
       payload
     });
     return response.result;
+  }
+
+  async askAssistant(session, payload = {}) {
+    return askBeneficiaryAssistant(session, payload);
   }
 
   async markNoticeRead(session, noticeId) {
