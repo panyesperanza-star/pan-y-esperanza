@@ -6,6 +6,7 @@ const OTP_TTL_MINUTES = 10;
 const SESSION_TTL_HOURS = 8;
 const BENEFICIARY_ACCESS_LOCK_MAX_ATTEMPTS = 5;
 const BENEFICIARY_ACCESS_LOCK_MINUTES = 15;
+const PIN_RULE = /^\d{6,12}$/;
 
 const PORTALS = Object.freeze({
   beneficiary: {
@@ -750,13 +751,57 @@ async function executePortalAction(supabase, portal, subject, body) {
 }
 
 async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
-  const currentPin = cleanText(payload.currentPin || payload.current_pin);
-  const newPin = cleanText(payload.newPin || payload.new_pin);
-  const confirmPin = cleanText(payload.confirmPin || payload.confirm_pin || newPin);
-  if (!currentPin) throw httpError(400, 'INVALID_PIN', 'Introduce tu PIN temporal actual.');
-  if (!/^\d{6,12}$/.test(newPin)) throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe tener entre 6 y 12 numeros.');
-  if (newPin !== confirmPin) throw httpError(400, 'INVALID_PIN', 'Los PIN no coinciden.');
-  if (newPin === currentPin) throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe ser diferente al temporal.');
+  const currentPin = cleanText(payload.currentPin ?? payload.current_pin);
+  const newPin = cleanText(payload.newPin ?? payload.new_pin);
+  const confirmPin = cleanText(payload.confirmPin ?? payload.confirm_pin ?? newPin);
+  const currentPinValid = PIN_RULE.test(currentPin);
+  const newPinValid = PIN_RULE.test(newPin);
+  const confirmPinValid = PIN_RULE.test(confirmPin);
+  const sameConfirmation = newPin === confirmPin;
+  const sameAsCurrent = newPin === currentPin;
+  const rejectionReason = !currentPin
+    ? 'CURRENT_PIN_EMPTY'
+    : !currentPinValid
+      ? 'CURRENT_PIN_RULE_FAILED'
+      : !newPinValid
+        ? 'NEW_PIN_RULE_FAILED'
+        : !confirmPinValid
+          ? 'CONFIRM_PIN_RULE_FAILED'
+          : !sameConfirmation
+            ? 'PIN_CONFIRMATION_MISMATCH'
+            : sameAsCurrent
+              ? 'NEW_PIN_EQUALS_CURRENT'
+              : null;
+  console.info('[beneficiary-access] Edge cambio PIN validacion', {
+    beneficiaryId: beneficiary?.id || null,
+    payloadKeys: Object.keys(payload || {}),
+    currentPinLength: currentPin.length,
+    newPinLength: newPin.length,
+    confirmPinLength: confirmPin.length,
+    currentPinMasked: maskPinForLog(currentPin),
+    newPinMasked: maskPinForLog(newPin),
+    confirmPinMasked: maskPinForLog(confirmPin),
+    currentPinRegex: currentPinValid,
+    newPinRegex: newPinValid,
+    confirmPinRegex: confirmPinValid,
+    sameConfirmation,
+    sameAsCurrent,
+    rejectionReason,
+    rule: 'PIN numerico de 6 a 12 digitos'
+  });
+  if (rejectionReason) {
+    console.warn('[beneficiary-access] Edge cambio PIN rechazado', {
+      beneficiaryId: beneficiary?.id || null,
+      rejectionReason,
+      newPinLength: newPin.length,
+      newPinRegex: newPinValid,
+      newPinMasked: maskPinForLog(newPin)
+    });
+    if (rejectionReason === 'CURRENT_PIN_EMPTY') throw httpError(400, 'INVALID_PIN', 'Introduce tu PIN temporal actual.');
+    if (rejectionReason === 'PIN_CONFIRMATION_MISMATCH') throw httpError(400, 'INVALID_PIN', 'Los PIN no coinciden.');
+    if (rejectionReason === 'NEW_PIN_EQUALS_CURRENT') throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe ser diferente al temporal.');
+    throw httpError(400, 'INVALID_PIN', 'El nuevo PIN debe tener entre 6 y 12 numeros.');
+  }
 
   const { data: account, error: accountError } = await supabase
     .from('beneficiary_portal_accounts')
@@ -798,6 +843,13 @@ async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
     changed: true,
     pinChangedAt: data.pin_changed_at
   };
+}
+
+function maskPinForLog(value) {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (text.length <= 2) return '*'.repeat(text.length);
+  return `${'*'.repeat(text.length - 2)}${text.slice(-2)}`;
 }
 
 async function revokePendingOtps(supabase, config, subjectId, action = '') {

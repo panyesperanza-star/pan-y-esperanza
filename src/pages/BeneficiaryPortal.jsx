@@ -22,6 +22,7 @@ import { formatDate, normalize, todayISO } from '../lib/formatters';
 
 const SESSION_KEY = 'pan-y-esperanza-beneficiary-portal-session';
 const PORTAL_REQUEST_TIMEOUT_MS = 8000;
+const PIN_RULE = /^\d{6,12}$/;
 
 const TABS = [
   { id: 'inicio', label: 'Inicio', icon: Home },
@@ -149,8 +150,57 @@ export function BeneficiaryPortal({ data, actions }) {
     setError('');
     setSuccess('');
     setLoading(true);
+    const nextPinPayload = {
+      currentPin: String(pinChange.currentPin || '').trim(),
+      newPin: String(pinChange.newPin || '').trim(),
+      confirmPin: String(pinChange.confirmPin || '').trim()
+    };
+    const currentPinValid = PIN_RULE.test(nextPinPayload.currentPin);
+    const newPinValid = PIN_RULE.test(nextPinPayload.newPin);
+    const confirmPinValid = PIN_RULE.test(nextPinPayload.confirmPin);
+    const sameConfirmation = nextPinPayload.newPin === nextPinPayload.confirmPin;
+    const rejectionReason = !currentPinValid
+      ? 'CURRENT_PIN_RULE_FAILED'
+      : !newPinValid
+        ? 'NEW_PIN_RULE_FAILED'
+        : !confirmPinValid
+          ? 'CONFIRM_PIN_RULE_FAILED'
+          : !sameConfirmation
+            ? 'PIN_CONFIRMATION_MISMATCH'
+            : null;
+    console.info('[beneficiary-access] Frontend cambio PIN validacion', {
+      currentPinLength: nextPinPayload.currentPin.length,
+      newPinLength: nextPinPayload.newPin.length,
+      confirmPinLength: nextPinPayload.confirmPin.length,
+      currentPinMasked: maskPinForDebug(nextPinPayload.currentPin),
+      newPinMasked: maskPinForDebug(nextPinPayload.newPin),
+      confirmPinMasked: maskPinForDebug(nextPinPayload.confirmPin),
+      currentPinRegex: currentPinValid,
+      newPinRegex: newPinValid,
+      confirmPinRegex: confirmPinValid,
+      sameConfirmation,
+      rejectionReason,
+      rule: 'PIN numerico de 6 a 12 digitos'
+    });
+    if (rejectionReason) {
+      setLoading(false);
+      if (rejectionReason === 'PIN_CONFIRMATION_MISMATCH') {
+        setError('Los PIN no coinciden.');
+        return;
+      }
+      if (rejectionReason === 'CURRENT_PIN_RULE_FAILED') {
+        setError('El PIN temporal debe tener entre 6 y 12 numeros.');
+        return;
+      }
+      if (rejectionReason === 'CONFIRM_PIN_RULE_FAILED') {
+        setError('La confirmacion del PIN debe tener entre 6 y 12 numeros.');
+        return;
+      }
+      setError('El nuevo PIN debe tener entre 6 y 12 numeros.');
+      return;
+    }
     try {
-      const result = await withTimeout(portalService.changePin(session, pinChange));
+      const result = await withTimeout(portalService.changePin(session, nextPinPayload));
       const nextAuth = {
         ...(overview?.auth || {}),
         mustChangePin: false,
@@ -354,6 +404,13 @@ export function BeneficiaryPortal({ data, actions }) {
 
 function PortalShell({ children }) {
   return <div className="min-h-screen bg-[#f7faf6] text-ink">{children}</div>;
+}
+
+function maskPinForDebug(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  if (text.length <= 2) return '*'.repeat(text.length);
+  return `${'*'.repeat(text.length - 2)}${text.slice(-2)}`;
 }
 
 function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) {
