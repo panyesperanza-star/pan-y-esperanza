@@ -150,10 +150,11 @@ export function BeneficiaryPortal({ data, actions }) {
     setError('');
     setSuccess('');
     setLoading(true);
+    const formData = new FormData(event.currentTarget);
     const nextPinPayload = {
-      currentPin: String(pinChange.currentPin || '').trim(),
-      newPin: String(pinChange.newPin || '').trim(),
-      confirmPin: String(pinChange.confirmPin || '').trim()
+      currentPin: normalizePinInput(formData.get('currentPin') || pinChange.currentPin),
+      newPin: normalizePinInput(formData.get('newPin') || pinChange.newPin),
+      confirmPin: normalizePinInput(formData.get('confirmPin') || pinChange.confirmPin)
     };
     const currentPinValid = PIN_RULE.test(nextPinPayload.currentPin);
     const newPinValid = PIN_RULE.test(nextPinPayload.newPin);
@@ -200,6 +201,14 @@ export function BeneficiaryPortal({ data, actions }) {
       return;
     }
     try {
+      console.info('[beneficiary-access] Frontend enviando payload cambio PIN', {
+        keys: Object.keys(nextPinPayload),
+        hasCurrentPin: Boolean(nextPinPayload.currentPin),
+        hasNewPin: Boolean(nextPinPayload.newPin),
+        hasConfirmPin: Boolean(nextPinPayload.confirmPin),
+        newPinLength: nextPinPayload.newPin.length,
+        confirmMatches: nextPinPayload.newPin === nextPinPayload.confirmPin
+      });
       const result = await withTimeout(portalService.changePin(session, nextPinPayload));
       const nextAuth = {
         ...(overview?.auth || {}),
@@ -413,6 +422,10 @@ function maskPinForDebug(value) {
   return `${'*'.repeat(text.length - 2)}${text.slice(-2)}`;
 }
 
+function normalizePinInput(value) {
+  return String(value || '').trim();
+}
+
 function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) {
   return (
     <section className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#fff9f1_0%,#f6efe4_52%,#efe3d4_100%)] px-5 py-10 sm:px-8">
@@ -432,6 +445,7 @@ function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) 
             <FormField label="PIN temporal" required>
               <input
                 className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                name="currentPin"
                 type="password"
                 value={pinChange.currentPin}
                 onChange={(event) => setPinChange((current) => ({ ...current, currentPin: event.target.value }))}
@@ -443,6 +457,7 @@ function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) 
             <FormField label="Nuevo PIN" required>
               <input
                 className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                name="newPin"
                 type="password"
                 value={pinChange.newPin}
                 onChange={(event) => setPinChange((current) => ({ ...current, newPin: event.target.value }))}
@@ -454,6 +469,7 @@ function ChangePinScreen({ pinChange, setPinChange, onSubmit, loading, error }) 
             <FormField label="Repetir nuevo PIN" required>
               <input
                 className={`${inputClass} min-h-[3.75rem] rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-brand-600 focus:ring-brand-600`}
+                name="confirmPin"
                 type="password"
                 value={pinChange.confirmPin}
                 onChange={(event) => setPinChange((current) => ({ ...current, confirmPin: event.target.value }))}

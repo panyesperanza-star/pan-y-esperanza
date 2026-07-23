@@ -631,10 +631,11 @@ async function buildDonorOverview(supabase, donor) {
 
 async function executePortalAction(supabase, portal, subject, body) {
   const action = cleanText(body.portalAction);
-  const payload = body.payload || {};
+  const payload = body.payload && typeof body.payload === 'object' ? body.payload : {};
+  const rootPayload = body && typeof body === 'object' ? body : {};
   if (portal === 'beneficiary') {
     if (action === 'change-pin') {
-      return changeBeneficiaryPin(supabase, subject, payload);
+      return changeBeneficiaryPin(supabase, subject, payload, rootPayload);
     }
     if (action === 'mark-notice-read') {
       const { data, error } = await supabase.from('beneficiary_portal_notices').update({ status: 'read', read_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', payload.noticeId).eq('beneficiary_id', subject.id).select().single();
@@ -750,10 +751,13 @@ async function executePortalAction(supabase, portal, subject, body) {
   throw httpError(400, 'INVALID_PORTAL_ACTION', 'Accion de portal no valida.');
 }
 
-async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
-  const currentPin = cleanText(payload.currentPin ?? payload.current_pin);
-  const newPin = cleanText(payload.newPin ?? payload.new_pin);
-  const confirmPin = cleanText(payload.confirmPin ?? payload.confirm_pin ?? newPin);
+async function changeBeneficiaryPin(supabase, beneficiary, payload = {}, rootPayload = {}) {
+  const currentPinField = pickPinField(payload, rootPayload, ['currentPin', 'current_pin', 'pinActual', 'current_access_pin']);
+  const newPinField = pickPinField(payload, rootPayload, ['newPin', 'new_pin', 'pin', 'newAccessPin', 'new_access_pin']);
+  const confirmPinField = pickPinField(payload, rootPayload, ['confirmPin', 'confirm_pin', 'pinConfirmacion', 'repeatPin', 'repeat_pin']);
+  const currentPin = cleanText(currentPinField.value);
+  const newPin = cleanText(newPinField.value);
+  const confirmPin = cleanText(confirmPinField.value || newPin);
   const currentPinValid = PIN_RULE.test(currentPin);
   const newPinValid = PIN_RULE.test(newPin);
   const confirmPinValid = PIN_RULE.test(confirmPin);
@@ -775,6 +779,14 @@ async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
   console.info('[beneficiary-access] Edge cambio PIN validacion', {
     beneficiaryId: beneficiary?.id || null,
     payloadKeys: Object.keys(payload || {}),
+    rootKeys: Object.keys(rootPayload || {}),
+    currentPinField: currentPinField.name,
+    newPinField: newPinField.name,
+    confirmPinField: confirmPinField.name,
+    newPinReceived: Boolean(newPinField.name),
+    confirmPinReceived: Boolean(confirmPinField.name),
+    newPinType: typeof newPinField.value,
+    confirmPinType: typeof confirmPinField.value,
     currentPinLength: currentPin.length,
     newPinLength: newPin.length,
     confirmPinLength: confirmPin.length,
@@ -793,6 +805,9 @@ async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
     console.warn('[beneficiary-access] Edge cambio PIN rechazado', {
       beneficiaryId: beneficiary?.id || null,
       rejectionReason,
+      newPinReceived: Boolean(newPinField.name),
+      newPinField: newPinField.name,
+      newPinType: typeof newPinField.value,
       newPinLength: newPin.length,
       newPinRegex: newPinValid,
       newPinMasked: maskPinForLog(newPin)
@@ -843,6 +858,20 @@ async function changeBeneficiaryPin(supabase, beneficiary, payload = {}) {
     changed: true,
     pinChangedAt: data.pin_changed_at
   };
+}
+
+function pickPinField(payload = {}, rootPayload = {}, names = []) {
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(payload, name)) {
+      return { name: `payload.${name}`, value: payload[name] };
+    }
+  }
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(rootPayload, name)) {
+      return { name: `body.${name}`, value: rootPayload[name] };
+    }
+  }
+  return { name: '', value: '' };
 }
 
 function maskPinForLog(value) {

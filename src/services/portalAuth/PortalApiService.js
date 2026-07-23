@@ -89,6 +89,17 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
   }
 
   async changePin(session, payload = {}) {
+    console.info('[beneficiary-access] PortalApiService changePin payload', {
+      keys: Object.keys(payload || {}),
+      hasCurrentPin: Boolean(payload?.currentPin),
+      hasNewPin: Boolean(payload?.newPin),
+      hasConfirmPin: Boolean(payload?.confirmPin),
+      currentPinType: typeof payload?.currentPin,
+      newPinType: typeof payload?.newPin,
+      confirmPinType: typeof payload?.confirmPin,
+      newPinLength: String(payload?.newPin || '').length,
+      confirmMatches: String(payload?.newPin || '') === String(payload?.confirmPin || '')
+    });
     const response = await callPortalApi('portal-action', {
       portal: this.portal,
       session,
