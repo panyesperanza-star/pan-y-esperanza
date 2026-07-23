@@ -168,6 +168,12 @@ async function hashAccessPin(pin, salt) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function temporaryPinMatchesAccount(pin, account) {
+  const cleanPin = cleanText(pin);
+  if (!cleanPin || !account?.pin_hash || !account?.pin_salt) return false;
+  return cleanText(account.pin_hash) === await hashAccessPin(cleanPin, account.pin_salt);
+}
+
 function isLocked(account) {
   return account?.locked_until && new Date(account.locked_until).getTime() > Date.now();
 }
@@ -499,7 +505,19 @@ export class BeneficiarioPortalService {
     const beneficiary = await this.requireBeneficiary(beneficiaryId);
     const current = await this.getAccountForBeneficiary(beneficiary.id);
     const cleanPin = cleanText(temporaryPin);
-    const issued = cleanPin && current?.status === 'active' && current?.access_identifier
+    const canReuseProvidedPin = cleanPin && current?.status === 'active' && current?.access_identifier
+      ? await temporaryPinMatchesAccount(cleanPin, current)
+      : false;
+    console.info('[beneficiary-access] Validacion PIN temporal antes de enviar acceso', {
+      beneficiaryId,
+      accountId: current?.id || null,
+      hasProvidedTemporaryPin: Boolean(cleanPin),
+      hasHash: Boolean(current?.pin_hash),
+      hasSalt: Boolean(current?.pin_salt),
+      must_change_pin: current?.must_change_pin,
+      providedTemporaryPinMatchesStoredHash: canReuseProvidedPin
+    });
+    const issued = canReuseProvidedPin
       ? { account: current, temporaryPin: cleanPin }
       : await this.issueTemporaryPin(beneficiary, current);
     const sent = await this.sendAccessEmail({

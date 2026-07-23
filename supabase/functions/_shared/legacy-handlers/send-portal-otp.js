@@ -825,10 +825,57 @@ async function changeBeneficiaryPin(supabase, beneficiary, payload = {}, rootPay
     .eq('status', 'active')
     .maybeSingle();
   if (accountError) throw accountError;
+  const temporaryPinHash = account?.pin_hash ? cleanText(account.pin_hash) : '';
+  const temporaryPinSalt = account?.pin_salt ? cleanText(account.pin_salt) : '';
+  const temporaryPinHashExists = Boolean(temporaryPinHash && temporaryPinSalt);
+  const temporaryPinMatches = temporaryPinHashExists && temporaryPinHash === hashAccessPin(currentPin, temporaryPinSalt);
+  const pinExpired = false;
+  const accountStateDetail = account?.must_change_pin === false ? 'must_change_pin=false' : 'must_change_pin=true';
+  const rejectionDetail = !account
+    ? 'cuenta incorrecta'
+    : !temporaryPinHashExists
+      ? 'hash inexistente'
+      : pinExpired
+        ? 'PIN expirado'
+        : !temporaryPinMatches
+          ? 'hash no coincide'
+          : 'PIN temporal valido';
+  console.info('[beneficiary-access] Edge validacion PIN temporal', {
+    beneficiaryLocated: Boolean(beneficiary?.id),
+    beneficiaryId: beneficiary?.id || null,
+    accountLocated: Boolean(account?.id),
+    accountId: account?.id || null,
+    accountBeneficiaryId: account?.beneficiary_id || null,
+    accountMatchesBeneficiary: Boolean(account?.beneficiary_id && account.beneficiary_id === beneficiary?.id),
+    accessIdentifier: maskIdentifier(account?.access_identifier || ''),
+    accountStatus: account?.status || null,
+    must_change_pin: account?.must_change_pin ?? null,
+    hasTemporaryHash: temporaryPinHashExists,
+    hasPinHash: Boolean(temporaryPinHash),
+    hasPinSalt: Boolean(temporaryPinSalt),
+    temporaryPinSentAt: account?.temporary_pin_sent_at || null,
+    pinSetAt: account?.pin_set_at || null,
+    pinExpired,
+    pinExpirationPolicy: 'not_configured',
+    algorithm: 'sha256(pin:salt)',
+    temporaryPinComparison: temporaryPinMatches,
+    accountStateDetail,
+    rejectionDetail
+  });
   if (!account?.pin_hash || !account?.pin_salt) {
+    console.warn('[beneficiary-access] Edge PIN temporal rechazado', {
+      beneficiaryId: beneficiary?.id || null,
+      accountId: account?.id || null,
+      rejectionDetail: !account ? 'cuenta incorrecta' : 'hash inexistente'
+    });
     throw httpError(403, 'ACCESS_NOT_CONFIGURED', 'El acceso seguro no esta activado.');
   }
-  if (cleanText(account.pin_hash) !== hashAccessPin(currentPin, account.pin_salt)) {
+  if (!temporaryPinMatches) {
+    console.warn('[beneficiary-access] Edge PIN temporal rechazado', {
+      beneficiaryId: beneficiary?.id || null,
+      accountId: account?.id || null,
+      rejectionDetail
+    });
     await registerFailedBeneficiaryAccess(supabase, account, account.access_identifier);
     throw httpError(403, 'ACCESS_DENIED', 'No hemos podido validar el PIN temporal.');
   }
