@@ -38,10 +38,12 @@ export default async function handler(request, response) {
     return sendJson(response, 405, { ok: false, code: 'METHOD_NOT_ALLOWED', error: 'Metodo no permitido.' });
   }
 
+  let requestPortal = '';
   try {
     const body = await parseBody(request);
     const operation = cleanText(body.operation || body.action || 'request-access');
     const portal = cleanText(body.portal);
+    requestPortal = portal;
     const config = PORTALS[portal];
     if (!config) return sendJson(response, 400, { ok: false, code: 'INVALID_PORTAL', error: 'Portal no valido.' });
 
@@ -49,7 +51,9 @@ export default async function handler(request, response) {
 
     if (operation === 'request-access') {
       const subject = await findSubjectForAccess(supabase, portal, body.credentials || body);
-      return sendJson(response, 200, { ok: true, ...(await createAndSendOtp({ supabase, portal, config, subject, action: 'access' })) });
+      const otpResponse = await createAndSendOtp({ supabase, portal, config, subject, action: 'access' });
+      logPortalDebug(portal, 'respuesta final', { ok: true, status: 200, deliveryStatus: otpResponse.deliveryStatus });
+      return sendJson(response, 200, { ok: true, ...otpResponse });
     }
 
     if (operation === 'verify-access') {
@@ -104,6 +108,7 @@ export default async function handler(request, response) {
     return sendJson(response, 400, { ok: false, code: 'INVALID_OPERATION', error: 'Operacion no valida.' });
   } catch (error) {
     const status = error.status || 500;
+    logPortalDebug(requestPortal, 'respuesta final', { ok: false, status, code: error.code || 'PORTAL_AUTH_FAILED' });
     return sendJson(response, status, {
       ok: false,
       code: error.code || 'PORTAL_AUTH_FAILED',
@@ -130,6 +135,8 @@ async function findSubjectForAccess(supabase, portal, credentials = {}) {
 
   const email = cleanEmail(credentials.email || credentials);
   if (!email) throw httpError(400, 'INVALID_EMAIL', 'Correo no valido.');
+  if (portal === 'collaborator') return findCollaboratorForAccess(supabase, email);
+
   const table = portal === 'collaborator' ? 'collaborators' : 'donors';
   const { data, error } = await supabase
     .from(table)
@@ -140,6 +147,58 @@ async function findSubjectForAccess(supabase, portal, credentials = {}) {
   if (!data) throw httpError(403, 'ACCESS_DENIED', `No hemos encontrado ${portal === 'collaborator' ? 'un colaborador' : 'un donante'} con ese correo.`);
   if (data.is_active === false) throw httpError(403, 'SUBJECT_INACTIVE', 'El acceso no esta activo.');
   return data;
+}
+
+async function findCollaboratorForAccess(supabase, email) {
+  logPortalDebug('collaborator', 'buscando colaborador', { email: maskEmail(email), field: 'email' });
+  const { data: byEmail, error: emailError } = await supabase
+    .from('collaborators')
+    .select('*')
+    .ilike('email', email)
+    .maybeSingle();
+  if (emailError) throw emailError;
+
+  let collaborator = byEmail;
+  let matchedBy = byEmail ? 'email' : '';
+  if (!collaborator) {
+    logPortalDebug('collaborator', 'buscando colaborador', { email: maskEmail(email), field: 'access_email' });
+    const { data: byAccessEmail, error: accessEmailError } = await supabase
+      .from('collaborators')
+      .select('*')
+      .ilike('access_email', email)
+      .maybeSingle();
+    if (accessEmailError) throw accessEmailError;
+    collaborator = byAccessEmail;
+    matchedBy = byAccessEmail ? 'access_email' : '';
+  }
+
+  logPortalDebug('collaborator', 'colaborador encontrado', {
+    found: Boolean(collaborator),
+    matchedBy,
+    collaboratorId: collaborator?.id || null
+  });
+
+  if (!collaborator) {
+    throw httpError(403, 'ACCESS_DENIED', 'No hemos encontrado un colaborador con ese correo.');
+  }
+
+  const portalStatus = normalizeText(collaborator.portal_status || 'Activo');
+  const status = normalizeText(collaborator.status || 'Activo');
+  const active = collaborator.is_active !== false && portalStatus !== 'inactivo' && status !== 'inactivo';
+  logPortalDebug('collaborator', 'estado colaborador', {
+    active,
+    isActive: collaborator.is_active !== false,
+    portalStatus: collaborator.portal_status || '',
+    status: collaborator.status || ''
+  });
+
+  if (!active) throw httpError(403, 'SUBJECT_INACTIVE', 'El acceso no esta activo.');
+
+  return {
+    ...collaborator,
+    email: cleanEmail(collaborator.access_email || collaborator.email || email),
+    contact_email: cleanEmail(collaborator.email || email)
+  };
 }
 
 async function findBeneficiaryForSecureAccess(supabase, credentials = {}) {
@@ -248,6 +307,7 @@ async function createAndSendOtp({ supabase, portal, config, subject, action }) {
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString();
   const email = cleanEmail(subject.email || subject.contact_email);
   if (!email) throw httpError(400, 'INVALID_EMAIL', 'No existe correo electronico para enviar el OTP.');
+  logPortalDebug(portal, 'email utilizado', { email: maskEmail(email), action });
 
   const otpPayload = {
     id,
@@ -267,6 +327,7 @@ async function createAndSendOtp({ supabase, portal, config, subject, action }) {
 
   const { data: otp, error } = await supabase.from(config.otpTable).insert(otpPayload).select().single();
   if (error) throw error;
+  logPortalDebug(portal, 'OTP generado', { otpId: otp.id, expiresAt });
 
   const resend = new Resend(resendKey);
   const emailContext = { label: config.label, code, expiresAt };
@@ -276,6 +337,11 @@ async function createAndSendOtp({ supabase, portal, config, subject, action }) {
     subject: `Codigo de verificacion - ${config.label}`,
     text: buildOtpEmailText(emailContext),
     html: buildOtpEmailHtml(emailContext)
+  });
+  logPortalDebug(portal, 'resultado resend', {
+    ok: !result.error,
+    messageId: result.data?.id || result.id || null,
+    error: result.error?.message || null
   });
 
   if (result.error) {
@@ -735,11 +801,24 @@ function cleanEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
 }
 
+function maskEmail(value) {
+  const email = cleanEmail(value);
+  if (!email) return '';
+  const [name, domain] = email.split('@');
+  const visibleName = name.length <= 2 ? `${name.slice(0, 1)}***` : `${name.slice(0, 2)}***`;
+  return `${visibleName}@${domain}`;
+}
+
 function normalizeText(value) {
   return cleanText(value)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+function logPortalDebug(portal, message, details = {}) {
+  if (portal !== 'collaborator') return;
+  console.info('[send-portal-otp][collaborator]', message, details);
 }
 
 function httpError(status, code, message) {
