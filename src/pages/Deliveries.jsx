@@ -15,7 +15,7 @@ import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 
-export function Deliveries({ data, actions, currentUser }) {
+export function Deliveries({ data, actions, currentUser, navigationTarget }) {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(null);
   const [signatureTarget, setSignatureTarget] = useState(null);
@@ -28,6 +28,7 @@ export function Deliveries({ data, actions, currentUser }) {
   const signatureRequired = actions.configuracion?.isDeliverySignatureRequired?.(organization) === true;
   const canDeleteDirectly = canDeleteDefinitively(currentUser, 'deliveries', organization);
   const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries', organization);
+  const highlightedDeliveryId = navigationTarget?.moduleId === 'deliveries' ? navigationTarget.itemId : '';
 
   function requestDeletePermanently(item) {
     setDeleteTarget({
@@ -140,6 +141,11 @@ export function Deliveries({ data, actions, currentUser }) {
       />
 
       {notice && <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">{notice}</div>}
+      {highlightedDeliveryId && (
+        <div className="mb-5 rounded-md border border-brand-100 bg-brand-50 p-3 text-sm font-semibold text-brand-700">
+          Entrega relacionada resaltada para seguimiento.
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[1320px] text-left text-sm">
@@ -165,7 +171,7 @@ export function Deliveries({ data, actions, currentUser }) {
               const beneficiary = data.beneficiaries.find((entry) => entry.id === item.beneficiary_id);
               const isCancelled = item.status === 'Anulada';
               return (
-                <tr key={item.id} className={isCancelled ? 'bg-slate-50/80 text-slate-600' : ''}>
+                <tr key={item.id} className={`${isCancelled ? 'bg-slate-50/80 text-slate-600' : ''} ${highlightedDeliveryId === item.id ? 'bg-brand-50 ring-2 ring-inset ring-brand-200' : ''}`}>
                   <td className="px-4 py-3">{formatDate(item.delivered_at)}</td>
                   <td>{item.receipt_number || '-'}</td>
                   <td>{item.beneficiary_name}</td>

@@ -1,4 +1,4 @@
-import { isRoleActionAllowed, MODULES } from './constants';
+import { isRoleActionAllowed, LEGACY_ROLE_PERMISSIONS, MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
 const SESSION_KEY = 'pye-current-user';
@@ -125,7 +125,10 @@ export function canAccess(user, moduleId) {
   if (moduleId === 'provider') return isSystemSuperadmin(user);
   if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
-  if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.view);
+  if (hasPermissionMatrix(user)) {
+    if (hasModulePermissionEntry(user, moduleId)) return Boolean(user.permission_matrix?.[moduleId]?.view);
+    return roleCanAccess(user, moduleId);
+  }
   return Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
 
@@ -139,7 +142,10 @@ export function canDo(user, moduleId, action = 'view') {
   if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
   if (!isRoleActionAllowed(user.role, moduleId, action)) return false;
-  if (hasPermissionMatrix(user)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
+  if (hasPermissionMatrix(user)) {
+    if (hasModulePermissionEntry(user, moduleId)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
+    return roleCanDo(user, moduleId, action);
+  }
   return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
 
@@ -189,4 +195,18 @@ function normalizeOwnerName(value) {
 
 function hasPermissionMatrix(user) {
   return Boolean(user?.permission_matrix && Object.keys(user.permission_matrix).length);
+}
+
+function hasModulePermissionEntry(user, moduleId) {
+  return Object.prototype.hasOwnProperty.call(user?.permission_matrix || {}, moduleId);
+}
+
+function roleCanAccess(user, moduleId) {
+  const permissions = ROLE_PERMISSIONS[user?.role] || LEGACY_ROLE_PERMISSIONS[user?.role] || [];
+  return permissions.includes('*') || permissions.includes(moduleId);
+}
+
+function roleCanDo(user, moduleId, action) {
+  const matrix = ROLE_PERMISSION_MATRIX[user?.role] || {};
+  return Boolean(matrix?.[moduleId]?.[action]) || (action === 'view' && roleCanAccess(user, moduleId));
 }

@@ -27,6 +27,7 @@ import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { SocialCareCenter } from './pages/SocialCareCenter';
 import { Volunteers } from './pages/Volunteers';
 import { createPortalApiActions } from './services/portalAuth/PortalApiService';
 
@@ -234,13 +235,14 @@ export default function App() {
 
   const pages = {
     dashboard: <Dashboard data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
-    notifications: <Notifications data={sorted} actions={actions} currentUser={currentUser} />,
+    notifications: <Notifications data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
+    'social-care': <SocialCareCenter data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     agenda: <AgendaOperativa data={sorted} actions={actions} currentUser={currentUser} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
-    deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} />,
+    deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
@@ -285,6 +287,8 @@ function buildNavigationPath(target) {
   if (target.profileId) params.set('profile', target.profileId);
   if (target.familyId) params.set('family', target.familyId);
   if (target.itemId) params.set('item', target.itemId);
+  if (target.caseId) params.set('case', target.caseId);
+  if (target.requestId) params.set('request', target.requestId);
   if (target.operationType) params.set('operation', target.operationType);
   const query = params.toString();
   return `${getModulePath(target.moduleId)}${query ? `?${query}` : ''}`;
@@ -313,6 +317,8 @@ function readNavigationTargetFromLocation() {
     profileId: params.get('profile') || '',
     familyId: params.get('family') || '',
     itemId: params.get('item') || '',
+    caseId: params.get('case') || '',
+    requestId: params.get('request') || '',
     operationType: params.get('operation') || '',
     key: Date.now()
   };

@@ -1,11 +1,11 @@
-import { Bell, Boxes, Building2, Calculator, CalendarDays, DatabaseBackup, FileText, Gift, HandHeart, Handshake, Heart, Home, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
+import { Bell, Boxes, Building2, Calculator, CalendarDays, DatabaseBackup, FileText, Gift, HandHeart, Handshake, Heart, Home, Inbox, LogOut, Mail, Menu, PackageCheck, PieChart, RotateCcw, ServerCog, Users, UserRoundCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { MODULES } from '../lib/constants';
 import { canAccess } from '../lib/auth';
 import { BrandLogo } from './BrandLogo';
 import { Button } from './Button';
 
-const icons = { dashboard: Home, notifications: Bell, agenda: CalendarDays, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, donors: Heart, accounting: Calculator, volunteers: UserRoundCheck, collaborators: Handshake, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
+const icons = { dashboard: Home, notifications: Bell, 'social-care': Inbox, agenda: CalendarDays, settings: Building2, beneficiaries: HandHeart, communications: Mail, families: Users, deliveries: PackageCheck, receipts: FileText, inventory: Boxes, donations: Gift, donors: Heart, accounting: Calculator, volunteers: UserRoundCheck, collaborators: Handshake, reports: PieChart, users: Users, backup: DatabaseBackup, provider: ServerCog };
 
 export function Layout({ active, setActive, onReset, currentUser, onLogout, showReset = true, notificationCount = 0, children }) {
   const [open, setOpen] = useState(false);

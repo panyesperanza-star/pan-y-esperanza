@@ -28,7 +28,7 @@ const iconByType = {
   error: AlertCircle
 };
 
-export function Notifications({ data, actions }) {
+export function Notifications({ data, actions, onNavigate }) {
   const [filters, setFilters] = useState({ search: '', moduleId: '', type: '' });
   const notifications = data.notificaciones || [];
   const filteredNotifications = useMemo(
@@ -110,6 +110,7 @@ export function Notifications({ data, actions }) {
               key={notification.id}
               notification={notification}
               onRead={() => actions.markNotificationRead?.(notification.id)}
+              onOpen={() => openNotification(notification, onNavigate)}
             />
           ))}
           {!filteredNotifications.length && (
@@ -133,7 +134,7 @@ function NotificationMetric({ label, value, icon: Icon, tone }) {
   );
 }
 
-function NotificationRow({ notification, onRead }) {
+function NotificationRow({ notification, onRead, onOpen }) {
   const type = normalizedType(notification);
   const Icon = iconByType[type] || Info;
   const read = isRead(notification);
@@ -158,8 +159,8 @@ function NotificationRow({ notification, onRead }) {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {notification.action_url && (
-            <Button variant="secondary" onClick={() => { window.history.pushState({}, '', notification.action_url); window.dispatchEvent(new Event('popstate')); }}>
+          {(notification.action_url || notification.metadata?.request_id || notification.entity_type === 'beneficiary_portal') && (
+            <Button variant="secondary" onClick={onOpen}>
               Abrir modulo
             </Button>
           )}
@@ -172,6 +173,26 @@ function NotificationRow({ notification, onRead }) {
       </div>
     </article>
   );
+}
+
+function openNotification(notification, onNavigate) {
+  const requestId = notification.metadata?.request_id;
+  if (requestId && onNavigate) {
+    onNavigate({ moduleId: 'social-care', requestId });
+    return;
+  }
+  if (notification.entity_type === 'beneficiary_portal' && notification.entity_id && onNavigate) {
+    onNavigate({ moduleId: 'social-care', requestId: notification.entity_id });
+    return;
+  }
+  if (notification.metadata?.delivery_id && notification.metadata?.attendance_status && onNavigate) {
+    onNavigate({ moduleId: 'social-care', itemId: notification.metadata.delivery_id });
+    return;
+  }
+  if (notification.action_url) {
+    window.history.pushState({}, '', notification.action_url);
+    window.dispatchEvent(new Event('popstate'));
+  }
 }
 
 function filterNotifications(notifications, filters) {
@@ -216,6 +237,9 @@ function normalizeModule(value) {
     volunteers: 'volunteers',
     recursos: 'resources',
     resources: 'resources',
+    solicitudes: 'social-care',
+    'social-care': 'social-care',
+    socialcare: 'social-care',
     configuracion: 'settings',
     settings: 'settings',
     dashboard: 'dashboard'

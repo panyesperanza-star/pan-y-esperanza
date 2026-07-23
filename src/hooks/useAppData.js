@@ -1836,6 +1836,67 @@ export function useAppData(enabled = true, currentUser = null) {
       await notificacionService.markAllAsRead();
       await reload();
     },
+    updateSocialCareCase: async (reference = {}, payload = {}) => {
+      assertPermission('social-care', 'edit');
+      const now = new Date().toISOString();
+      const status = String(payload.status || '').trim();
+      const notes = String(payload.notes || '').trim();
+      const isResolved = status === 'applied';
+      let updatedRequest = null;
+
+      if (reference.request_id) {
+        const updatePayload = {
+          status: status || 'pending',
+          notes,
+          updated_at: now
+        };
+        if (isResolved) {
+          updatePayload.resolved_at = now;
+          updatePayload.reviewed_by = currentUser?.id || null;
+        }
+        updatedRequest = await repositoryUpdate('beneficiary_portal_profile_updates', reference.request_id, updatePayload);
+      }
+
+      const relatedNotifications = (appData.notificaciones || []).filter((notification) => isRelatedSocialCareNotification(notification, reference));
+      for (const notification of relatedNotifications) {
+        const metadata = {
+          ...(notification.metadata || {}),
+          social_care_status: status || 'pending',
+          social_care_notes: notes,
+          social_care_updated_at: now,
+          social_care_reviewed_by: currentUser?.id || null
+        };
+        if (isResolved) {
+          metadata.social_care_resolved_at = now;
+        }
+        await repositoryUpdate('notificaciones', notification.id, {
+          metadata,
+          ...(isResolved ? {
+            leida: true,
+            estado: 'Leida',
+            read_at: now,
+            read_by: currentUser?.id || null
+          } : {}),
+          updated_at: now
+        });
+      }
+
+      if (isResolved && payload.notifyUser && reference.beneficiary_id) {
+        await repositoryCreate('beneficiary_portal_notices', {
+          beneficiary_id: reference.beneficiary_id,
+          title: 'Solicitud atendida',
+          message: 'El equipo de Pan y Esperanza ha atendido tu solicitud. Si necesitas ampliar informacion, puedes contactar con la asociacion.',
+          notice_type: 'request',
+          status: 'unread',
+          created_at: now,
+          updated_at: now
+        });
+      }
+
+      await audit(`Centro de Atencion Social: actualizo caso ${reference.request_id || reference.delivery_id || reference.notification_id || ''}`.trim());
+      await reload();
+      return updatedRequest;
+    },
     createAgendaEvent: async (payload) => {
       const created = await agendaService.createEvent(payload);
       await reload();
@@ -2576,4 +2637,15 @@ function withAppDataTimeout(promise, timeoutMs) {
   return Promise.race([promise, timeout]).finally(() => {
     globalThis.clearTimeout(timeoutId);
   });
+}
+
+function isRelatedSocialCareNotification(notification, reference = {}) {
+  if (!notification) return false;
+  const metadata = notification.metadata || {};
+  return Boolean(
+    (reference.notification_id && notification.id === reference.notification_id)
+    || (reference.request_id && metadata.request_id === reference.request_id)
+    || (reference.delivery_id && metadata.delivery_id === reference.delivery_id)
+    || (reference.delivery_id && notification.entity_type === 'delivery' && notification.entity_id === reference.delivery_id)
+  );
 }
