@@ -22,7 +22,7 @@ import {
   UsersRound,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -389,14 +389,20 @@ export function BeneficiaryPortal({ data, actions }) {
             <PortalHome overview={overview} nextDelivery={nextDelivery} pendingDocs={pendingDocs} unreadNotices={unreadNotices} setActiveTab={setActiveTab} auth={session.auth} />
           )}
           {activeTab === 'entrega' && (
-            <DeliveriesSection
-              deliveries={overview.upcomingDeliveries || []}
-              service={portalService}
-              session={session}
-              onRefresh={refreshPortal}
-              setError={setError}
-              setSuccess={setSuccess}
-            />
+            <PortalSectionBoundary
+              sectionName="Proxima entrega"
+              onRecover={() => setActiveTab('inicio')}
+              fallbackMessage="No hemos podido cargar tus proximas entregas. Intentalo de nuevo mas tarde."
+            >
+              <DeliveriesSection
+                deliveries={overview.upcomingDeliveries || []}
+                service={portalService}
+                session={session}
+                onRefresh={refreshPortal}
+                setError={setError}
+                setSuccess={setSuccess}
+              />
+            </PortalSectionBoundary>
           )}
           {activeTab === 'historial' && <HistorySection history={overview.history || []} />}
           {activeTab === 'avisos' && <NoticesSection notices={overview.notices || []} service={portalService} session={session} onRefresh={refreshPortal} setError={setError} setSuccess={setSuccess} />}
@@ -1026,23 +1032,59 @@ function ActionCard({ title, text, action, onClick }) {
   );
 }
 
+class PortalSectionBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    console.error(`[PortalBeneficiario] Error al renderizar ${this.props.sectionName || 'seccion'}`, error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Panel title={this.props.sectionName || 'Seccion'} icon={AlertTriangle}>
+          <StatusBlock
+            type="error"
+            title="No hemos podido cargar esta informacion."
+            text={this.props.fallbackMessage || 'Intentalo de nuevo mas tarde.'}
+          />
+          <Button type="button" variant="secondary" className="mt-4" onClick={this.props.onRecover}>
+            Volver al Inicio
+          </Button>
+        </Panel>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 function DeliveriesSection({ deliveries, service, session, onRefresh, setError, setSuccess }) {
+  const safeDeliveries = Array.isArray(deliveries) ? deliveries.filter(Boolean) : [];
+
   return (
     <Panel title="Proxima entrega" icon={CalendarDays}>
-      {!deliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecera aqui." /> : (
+      {!safeDeliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecera aqui." /> : (
         <div className="grid gap-3">
-          {deliveries.map((delivery) => (
-            <article key={delivery.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
+          {safeDeliveries.map((delivery, index) => (
+            <article key={delivery.id || `delivery-${index}`} className="rounded-md border border-slate-100 bg-slate-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <h3 className="font-bold text-ink">{delivery.help_type || 'Entrega programada'}</h3>
-                <span className="rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-600">{delivery.status || 'Pendiente'}</span>
+                <h3 className="font-bold text-ink">{safeDisplayValue(delivery.help_type, 'Entrega programada')}</h3>
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-600">{safeDisplayValue(delivery.status, 'Pendiente')}</span>
               </div>
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-                <DataRow label="Fecha" value={formatDate(delivery.delivered_at || delivery.created_at)} />
+                <DataRow label="Fecha" value={safeFormatDate(delivery.delivered_at || delivery.created_at)} />
                 <DataRow label="Hora" value={formatDeliveryTime(delivery.delivered_time)} />
                 <DataRow label="Lugar" value={getDeliveryLocation(delivery)} />
-                <DataRow label="Tipo de ayuda" value={delivery.help_type || 'Ayuda'} />
-                <DataRow label="Estado" value={delivery.status || 'Pendiente'} />
+                <DataRow label="Tipo de ayuda" value={safeDisplayValue(delivery.help_type, 'Ayuda')} />
+                <DataRow label="Estado" value={safeDisplayValue(delivery.status, 'Pendiente')} />
               </dl>
               <DeliveryAttendanceControls
                 delivery={delivery}
@@ -1061,35 +1103,41 @@ function DeliveriesSection({ deliveries, service, session, onRefresh, setError, 
 }
 
 function DeliveryAttendanceControls({ delivery, service, session, onRefresh, setError, setSuccess }) {
+  const deliveryRecord = delivery || {};
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState('');
-  const attendanceStatus = delivery.attendance_status || 'pending';
+  const attendanceStatus = safeAttendanceStatus(deliveryRecord.attendance_status);
   const statusMeta = getAttendanceStatusMeta(attendanceStatus);
 
   async function submitAttendance(status, nextReason = '') {
     if (!service?.confirmDeliveryAttendance || !session?.token) {
-      setError('No se pudo confirmar la asistencia. Vuelve a acceder al portal.');
+      setError?.('No se pudo confirmar la asistencia. Vuelve a acceder al portal.');
       return;
     }
-    setError('');
-    setSuccess('');
+    if (!deliveryRecord.id) {
+      setError?.('No se pudo identificar la entrega. Intentalo de nuevo mas tarde.');
+      return;
+    }
+    setError?.('');
+    setSuccess?.('');
     setBusy(status);
     try {
       const result = await withTimeout(service.confirmDeliveryAttendance(session, {
-        deliveryId: delivery.id,
+        deliveryId: deliveryRecord.id,
         attendance_status: status,
         reason: nextReason
       }));
-      if (status === 'confirmed') setSuccess('Gracias. Hemos registrado tu asistencia.');
-      if (status === 'unavailable') setSuccess('Hemos registrado que no podras asistir y avisaremos al equipo.');
-      if (status === 'needs_contact') setSuccess('Hemos creado una solicitud para que el equipo contacte contigo.');
+      if (status === 'confirmed') setSuccess?.('Gracias. Hemos registrado tu asistencia.');
+      if (status === 'unavailable') setSuccess?.('Hemos registrado que no podras asistir y avisaremos al equipo.');
+      if (status === 'needs_contact') setSuccess?.('Hemos creado una solicitud para que el equipo contacte contigo.');
       setReasonOpen(false);
       setReason('');
       await onRefresh?.();
       return result;
     } catch (attendanceError) {
-      setError(attendanceError.message || 'No se pudo confirmar la asistencia.');
+      console.error('[PortalBeneficiario] Error al confirmar asistencia', attendanceError);
+      setError?.(attendanceError.message || 'No se pudo confirmar la asistencia.');
       return null;
     } finally {
       setBusy('');
@@ -1098,7 +1146,7 @@ function DeliveryAttendanceControls({ delivery, service, session, onRefresh, set
 
   function submitUnavailable() {
     if (!reason) {
-      setError('Selecciona un motivo para indicar que no podras asistir.');
+      setError?.('Selecciona un motivo para indicar que no podras asistir.');
       return;
     }
     submitAttendance('unavailable', reason);
@@ -1149,9 +1197,9 @@ function DeliveryAttendanceControls({ delivery, service, session, onRefresh, set
         </div>
       )}
 
-      {delivery.attendance_confirmed_at && (
+      {deliveryRecord.attendance_confirmed_at && (
         <p className="mt-3 text-xs font-semibold text-slate-500">
-          Actualizado el {formatDateTime(delivery.attendance_confirmed_at)} desde {delivery.attendance_source === 'portal' ? 'Portal del Beneficiario' : delivery.attendance_source || 'sistema'}.
+          Actualizado el {safeFormatDateTime(deliveryRecord.attendance_confirmed_at)} desde {deliveryRecord.attendance_source === 'portal' ? 'Portal del Beneficiario' : safeDisplayValue(deliveryRecord.attendance_source, 'sistema')}.
         </p>
       )}
     </div>
@@ -1520,7 +1568,7 @@ function DataRow({ label, value }) {
   return (
     <div className="rounded-md bg-slate-50 p-3">
       <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 font-semibold text-ink">{value || 'No indicado'}</dd>
+      <dd className="mt-1 font-semibold text-ink">{safeDisplayValue(value, 'No indicado')}</dd>
     </div>
   );
 }
@@ -1539,19 +1587,19 @@ function sortDeliveryAsc(a = {}, b = {}) {
 }
 
 function formatDeliveryDateTime(delivery = {}) {
-  const date = formatDate(delivery.delivered_at || delivery.created_at);
+  const date = safeFormatDate(delivery.delivered_at || delivery.created_at);
   const time = formatDeliveryTime(delivery.delivered_time);
   return time === 'Pendiente' ? date : `${date} ${time}`;
 }
 
 function formatDeliveryTime(value) {
-  const text = String(value || '').trim();
+  const text = safeString(value).trim();
   if (!text) return 'Pendiente';
   return text.slice(0, 5);
 }
 
 function getDeliveryLocation(delivery = {}) {
-  return delivery.location || delivery.delivery_location || delivery.place || delivery.address || 'Pendiente de confirmar';
+  return safeDisplayValue(delivery.location || delivery.delivery_location || delivery.place || delivery.address, 'Pendiente de confirmar');
 }
 
 function getAttendanceStatusMeta(status) {
@@ -1559,6 +1607,59 @@ function getAttendanceStatusMeta(status) {
   if (status === 'unavailable') return { label: 'No asistira', className: 'bg-amber-50 text-amber-800' };
   if (status === 'needs_contact') return { label: 'Necesita contactar', className: 'bg-red-50 text-red-800' };
   return { label: 'Pendiente', className: 'bg-slate-100 text-slate-700' };
+}
+
+function safeAttendanceStatus(value) {
+  const status = safeString(value);
+  return ['pending', 'confirmed', 'unavailable', 'needs_contact'].includes(status) ? status : 'pending';
+}
+
+function safeFormatDate(value) {
+  const text = safeString(value);
+  if (!text) return '-';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    console.error('[PortalBeneficiario] Fecha de entrega no valida', { value: text });
+    return '-';
+  }
+  try {
+    return formatDate(text);
+  } catch (error) {
+    console.error('[PortalBeneficiario] Error al formatear fecha de entrega', error);
+    return '-';
+  }
+}
+
+function safeFormatDateTime(value) {
+  const text = safeString(value);
+  if (!text) return '-';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    console.error('[PortalBeneficiario] Fecha y hora de asistencia no valida', { value: text });
+    return '-';
+  }
+  try {
+    return new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+  } catch (error) {
+    console.error('[PortalBeneficiario] Error al formatear fecha y hora de asistencia', error);
+    return '-';
+  }
+}
+
+function safeDisplayValue(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return safeFormatDateTime(value.toISOString());
+  console.error('[PortalBeneficiario] Valor no renderizable en Proxima entrega', { value });
+  return fallback;
+}
+
+function safeString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  return '';
 }
 
 function normalizePhoneForWhatsApp(value) {
