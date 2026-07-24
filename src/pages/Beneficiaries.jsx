@@ -1,4 +1,4 @@
-import {
+﻿import {
   CalendarDays,
   CalendarPlus,
   Camera,
@@ -84,8 +84,8 @@ const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 
 const SEX_OPTIONS = ['Mujer', 'Hombre', 'No binario', 'Prefiere no indicar'];
 const MARITAL_STATUS_OPTIONS = ['Soltero/a', 'Casado/a', 'Pareja de hecho', 'Separado/a', 'Divorciado/a', 'Viudo/a'];
-const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'Derivación', 'Información y orientación'];
-const OBSERVATION_ENTRY_TYPE = 'Observación';
+const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atenciÃ³n', 'Incidencia', 'DerivaciÃ³n', 'InformaciÃ³n y orientaciÃ³n'];
+const OBSERVATION_ENTRY_TYPE = 'ObservaciÃ³n';
 const OBJECTIVE_ENTRY_TYPE = 'Objetivo';
 const DELIVERY_TRACKING_ENTRY_TYPE = 'Entrega de ayuda';
 
@@ -214,7 +214,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
     <>
       <PageHeader
         title="Beneficiarios"
-        description="Gestión de personas atendidas y acceso a su expediente."
+        description="GestiÃ³n de personas atendidas y acceso a su expediente."
         actions={(
           <div className="flex flex-wrap gap-2">
             {canEdit && <Button variant="secondary" onClick={activatePendingPortals}><KeyRound size={18} /> Activar portales pendientes</Button>}
@@ -243,7 +243,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
             <span className="sr-only">Buscar beneficiarios</span>
             <input
               className="w-full bg-transparent py-2.5 text-sm outline-none"
-              placeholder="Buscar por nombre, documento, código, teléfono o email"
+              placeholder="Buscar por nombre, documento, cÃ³digo, telÃ©fono o email"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -257,7 +257,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
             </select>
           </label>
           <label>
-            <span className="sr-only">Filtrar por situación</span>
+            <span className="sr-only">Filtrar por situaciÃ³n</span>
             <select className={inputClass} value={situationFilter} onChange={(event) => setSituationFilter(event.target.value)}>
               <option>Todas</option>
               {BENEFICIARY_SITUATIONS.map((item) => <option key={item}>{item}</option>)}
@@ -292,18 +292,18 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
                       <h3 className="truncate font-bold text-ink">{item.full_name}</h3>
                       <StatusBadge active={item.is_active} />
                     </div>
-                    <p className="mt-1 text-sm text-slate-500"><span className="font-semibold text-brand-700">{item.code}</span><span className="mx-2 text-slate-300">•</span>{item.document_id || 'Sin documento'}</p>
+                    <p className="mt-1 text-sm text-slate-500"><span className="font-semibold text-brand-700">{item.code}</span><span className="mx-2 text-slate-300">â€¢</span>{item.document_id || 'Sin documento'}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-1 lg:gap-1">
-                  <MetaLine icon={Users} text={family ? `${family.family_code} · ${family.responsible_name}` : `${item.family_members || 1} miembros · ${item.minors_count || 0} menores`} />
-                  <MetaLine icon={Phone} text={item.phone || 'Sin teléfono'} />
+                  <MetaLine icon={Users} text={family ? `${family.family_code} Â· ${family.responsible_name}` : `${item.family_members || 1} miembros Â· ${item.minors_count || 0} menores`} />
+                  <MetaLine icon={Phone} text={item.phone || 'Sin telÃ©fono'} />
                 </div>
 
                 <div className="flex flex-wrap gap-2 lg:block">
                   <SituationBadge value={item.situation} />
-                  <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={14} /> Última ayuda: {formatDate(item.last_help_at)}</p>
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 size={14} /> Ãšltima ayuda: {formatDate(item.last_help_at)}</p>
                   <p className="mt-1 text-xs text-slate-400">{activeDeliveries.length} {activeDeliveries.length === 1 ? 'entrega activa' : 'entregas activas'}</p>
                 </div>
 
@@ -311,7 +311,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
                   <Button variant="secondary" onClick={() => setProfileId(item.id)}><FileText size={16} /> Abrir expediente <ChevronRight size={15} /></Button>
                   <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => printBeneficiaryPdf(item, deliveries)} aria-label={`Descargar resumen del expediente de ${item.full_name}`} title="Resumen del expediente"><Printer size={17} /></button>
                   {canEdit && <button className="focus-ring rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" onClick={() => setEditing(item)} aria-label={`Editar a ${item.full_name}`} title="Editar"><Edit3 size={17} /></button>}
-                  {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminación de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'}><Trash2 size={17} /></button>}
+                  {(canDeleteDirectly || canRequestDeletion) && <button className="focus-ring rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => removeBeneficiary(item)} aria-label={`${canDeleteDirectly ? 'Eliminar' : 'Solicitar eliminaciÃ³n de'} ${item.full_name}`} title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminaciÃ³n definitiva'}><Trash2 size={17} /></button>}
                 </div>
               </div>
             </article>
@@ -321,7 +321,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
           <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
             <Search className="mx-auto text-slate-300" size={34} />
             <h3 className="mt-3 font-bold text-ink">No hay resultados</h3>
-            <p className="mt-1 text-sm text-slate-500">Prueba con otra búsqueda o cambia los filtros.</p>
+            <p className="mt-1 text-sm text-slate-500">Prueba con otra bÃºsqueda o cambia los filtros.</p>
           </div>
         )}
       </section>
@@ -332,7 +332,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
         </Modal>
       )}
       {profile && (
-        <Modal wide title={`Expediente · ${profile.code}`} onClose={() => setProfileId(null)}>
+        <Modal wide title={`Expediente Â· ${profile.code}`} onClose={() => setProfileId(null)}>
           <BeneficiaryProfile
             data={data}
             actions={actions}
@@ -353,7 +353,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
         </Modal>
       )}
       {deletionTarget && (
-        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeletionTarget(null)}>
+        <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminaciÃ³n definitiva'} onClose={() => setDeletionTarget(null)}>
           {canDeleteDirectly ? (
             <DirectDeletionForm
               recordLabel={deletionTarget.item.full_name || deletionTarget.item.code || deletionTarget.item.id}
@@ -401,11 +401,11 @@ function StatusBadge({ active }) {
 function SituationBadge({ value }) {
   if (['activa', 'inactiva'].includes(normalize(value))) return null;
   const tone = value === 'Urgente' ? 'bg-orange-50 text-orange-700 ring-orange-200' : value === 'Inactiva' ? 'bg-slate-100 text-slate-600 ring-slate-200' : value === 'Seguimiento' ? 'bg-blue-50 text-blue-700 ring-blue-200' : 'bg-brand-50 text-brand-700 ring-brand-100';
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tone}`}>{value || 'Sin situación'}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${tone}`}>{value || 'Sin situaciÃ³n'}</span>;
 }
 
 function targetLabelForBeneficiaries(filter) {
-  if (filter === 'critical-families') return 'Familias críticas';
+  if (filter === 'critical-families') return 'Familias crÃ­ticas';
   if (filter === 'stale-help') return 'Sin ayuda +30 dias';
   if (filter === 'family-detail') return 'Expediente seleccionado';
   return '';
@@ -428,13 +428,13 @@ function buildBeneficiaryRelationWarnings(beneficiary, data) {
   if (history.length) relations.push(`Seguimiento: ${history.length}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
   if (emailLogs.length) relations.push(`Comunicaciones: ${emailLogs.length}`);
-  if (beneficiary.profile_photo) relations.push('Fotografía de perfil');
+  if (beneficiary.profile_photo) relations.push('FotografÃ­a de perfil');
   return relations;
 }
 
 function SocialSituationBadge({ value }) {
   const normalized = normalize(value);
-  const label = normalized === 'activa' ? 'Atención general' : normalized === 'inactiva' ? 'Sin seguimiento' : value || 'Sin situación';
+  const label = normalized === 'activa' ? 'AtenciÃ³n general' : normalized === 'inactiva' ? 'Sin seguimiento' : value || 'Sin situaciÃ³n';
   const tone = normalized === 'urgente'
     ? 'bg-orange-50 text-orange-700 ring-orange-200'
     : normalized === 'prioritario'
@@ -536,7 +536,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     }
     const duplicateCode = findDuplicateBeneficiaryCode(beneficiaries, form, form.id);
     if (duplicateCode) {
-      setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese código.' });
+      setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese cÃ³digo.' });
       codeInputRef.current?.focus();
       return false;
     }
@@ -552,13 +552,13 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
       return;
     }
     if (form.__family_mode === 'existing' && isArchivedFamily(families.find((family) => family.id === form.family_id)) && initial.family_id !== form.family_id) {
-      setFormError('No se pueden añadir nuevos miembros a una familia archivada.');
+      setFormError('No se pueden aÃ±adir nuevos miembros a una familia archivada.');
       return;
     }
     if (form.__family_mode === 'new') {
       const duplicateFamily = families.find((family) => normalize(family.family_code) === normalize(form.__new_family?.family_code));
       if (duplicateFamily) {
-        setFormError('Ya existe una familia con ese código.');
+        setFormError('Ya existe una familia con ese cÃ³digo.');
         return;
       }
     }
@@ -571,10 +571,10 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese documento.' });
         documentInputRef.current?.focus();
       } else if (message.includes('code') || message.includes('codigo')) {
-        setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese código.' });
+        setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese cÃ³digo.' });
         codeInputRef.current?.focus();
       } else {
-        setFormError(message || 'No se pudo guardar el beneficiario. Revisa los datos e inténtalo de nuevo.');
+        setFormError(message || 'No se pudo guardar el beneficiario. Revisa los datos e intÃ©ntalo de nuevo.');
       }
     } finally {
       setSaving(false);
@@ -585,8 +585,8 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     <form className="space-y-5" onSubmit={submit}>
       {formError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">{formError}</div>}
 
-      <FormSection icon={CircleUserRound} title="Identificación" description="Datos básicos de la persona atendida.">
-        <FormField label="Código de beneficiario">
+      <FormSection icon={CircleUserRound} title="IdentificaciÃ³n" description="Datos bÃ¡sicos de la persona atendida.">
+        <FormField label="CÃ³digo de beneficiario">
           <input ref={codeInputRef} className={`${inputClass}${errorClass('code')}`} required value={form.code || ''} onChange={(event) => update('code', event.target.value)} />
           {fieldErrors.code && <FieldError>{fieldErrors.code}</FieldError>}
         </FormField>
@@ -614,29 +614,29 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         <FormField label="Estado civil">
           <select className={inputClass} value={form.marital_status || ''} onChange={(event) => update('marital_status', event.target.value)}><option value="">Sin indicar</option>{MARITAL_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select>
         </FormField>
-        <FormField label="Primera atención">
+        <FormField label="Primera atenciÃ³n">
           <input className={inputClass} type="date" value={form.first_attention_at || ''} onChange={(event) => update('first_attention_at', event.target.value)} />
         </FormField>
       </FormSection>
 
-      <FormSection icon={Phone} title="Contacto y domicilio" description="Información para comunicaciones y atención.">
-        <FormField label="Teléfono">
+      <FormSection icon={Phone} title="Contacto y domicilio" description="InformaciÃ³n para comunicaciones y atenciÃ³n.">
+        <FormField label="TelÃ©fono">
           <input className={inputClass} type="tel" autoComplete="tel" value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} />
         </FormField>
         <FormField label="Email">
           <input className={inputClass} type="email" autoComplete="email" value={form.email || ''} onChange={(event) => update('email', event.target.value)} />
         </FormField>
         <div className="sm:col-span-2">
-          <FormField label="Dirección completa">
+          <FormField label="DirecciÃ³n completa">
             <input className={inputClass} autoComplete="street-address" value={form.address_full || ''} onChange={(event) => update('address_full', event.target.value)} />
           </FormField>
         </div>
-        <FormField label="Código postal">
+        <FormField label="CÃ³digo postal">
           <input className={inputClass} inputMode="numeric" autoComplete="postal-code" value={form.postal_code || ''} onChange={(event) => update('postal_code', event.target.value)} />
         </FormField>
       </FormSection>
 
-      <FormSection icon={Users} title="Unidad familiar" description="Vinculación y composición familiar actual.">
+      <FormSection icon={Users} title="Unidad familiar" description="VinculaciÃ³n y composiciÃ³n familiar actual.">
         <FormField label="Pertenece a una familia?">
           <select className={inputClass} value={form.__family_mode === 'none' ? 'No' : 'Si'} onChange={(event) => updateFamilyMode(event.target.value === 'Si' ? (activeFamilies.length ? 'existing' : 'new') : 'none')}>
             <option>No</option>
@@ -644,12 +644,12 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
           </select>
         </FormField>
         {form.__family_mode !== 'none' && (
-          <FormField label="Relación familiar">
+          <FormField label="RelaciÃ³n familiar">
             <input className={inputClass} value={form.family_relationship || ''} onChange={(event) => update('family_relationship', event.target.value)} placeholder="Responsable, hijo/a, pareja..." />
           </FormField>
         )}
         {form.__family_mode !== 'none' && (
-          <FormField label="Modo de vinculación">
+          <FormField label="Modo de vinculaciÃ³n">
             <select className={inputClass} value={form.__family_mode} onChange={(event) => updateFamilyMode(event.target.value)}>
               <option value="existing" disabled={!activeFamilies.length && !selectedArchivedFamily}>Seleccionar familia existente</option>
               <option value="new">Crear nueva familia</option>
@@ -662,17 +662,17 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
               <option value="">Selecciona una familia</option>
               {selectableFamilies.map((family) => <option key={family.id} value={family.id} disabled={isArchivedFamily(family) && initial.family_id !== family.id}>{family.family_code} - {family.responsible_name}{isArchivedFamily(family) ? ' (Archivada)' : ''}</option>)}
             </select>
-            {selectedArchivedFamily && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">Esta familia está archivada. Se conserva la vinculación existente, pero no admite nuevos miembros.</p>}
+            {selectedArchivedFamily && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">Esta familia estÃ¡ archivada. Se conserva la vinculaciÃ³n existente, pero no admite nuevos miembros.</p>}
           </FormField>
         )}
         {form.__family_mode === 'new' && (
           <div className="grid gap-4 rounded-xl border border-brand-100 bg-brand-50/40 p-4 sm:col-span-2 sm:grid-cols-2">
-            <FormField label="Código familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
+            <FormField label="CÃ³digo familia"><input className={inputClass} required value={form.__new_family.family_code || ''} onChange={(event) => updateNewFamily('family_code', event.target.value)} /></FormField>
             <FormField label="Responsable">
-              <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{form.full_name || 'Se asignará al beneficiario creado'}</div>
+              <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{form.full_name || 'Se asignarÃ¡ al beneficiario creado'}</div>
             </FormField>
-            <div className="sm:col-span-2"><FormField label="Dirección familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
-            <FormField label="Teléfono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
+            <div className="sm:col-span-2"><FormField label="DirecciÃ³n familiar"><input className={inputClass} value={form.__new_family.address || ''} onChange={(event) => updateNewFamily('address', event.target.value)} /></FormField></div>
+            <FormField label="TelÃ©fono familiar"><input className={inputClass} value={form.__new_family.phone || ''} onChange={(event) => updateNewFamily('phone', event.target.value)} /></FormField>
             <FormField label="Email familiar"><input className={inputClass} type="email" value={form.__new_family.email || ''} onChange={(event) => updateNewFamily('email', event.target.value)} /></FormField>
             <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.__new_family.dependents_count ?? 0} onChange={(event) => updateNewFamily('dependents_count', Number(event.target.value))} /></FormField>
             <div className="sm:col-span-2"><FormField label="Observaciones familiares"><textarea className={inputClass} rows="3" value={form.__new_family.notes || ''} onChange={(event) => updateNewFamily('notes', event.target.value)} /></FormField></div>
@@ -686,8 +686,8 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         </FormField>
       </FormSection>
 
-      <FormSection icon={ClipboardList} title="Atención y situación" description="Estado operativo y ayuda solicitada.">
-        <FormField label="Situación">
+      <FormSection icon={ClipboardList} title="AtenciÃ³n y situaciÃ³n" description="Estado operativo y ayuda solicitada.">
+        <FormField label="SituaciÃ³n">
           <select className={inputClass} value={form.situation || 'Activa'} onChange={(event) => update('situation', event.target.value)}>{BENEFICIARY_SITUATIONS.map((item) => <option key={item}>{item}</option>)}</select>
         </FormField>
         <FormField label="Ayuda solicitada">
@@ -698,14 +698,14 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         </FormField>
         <div className="sm:col-span-2">
           <FormField label="Observaciones">
-            <textarea className={inputClass} rows="4" value={form.notes || ''} onChange={(event) => update('notes', event.target.value)} placeholder="Información relevante para la atención..." />
+            <textarea className={inputClass} rows="4" value={form.notes || ''} onChange={(event) => update('notes', event.target.value)} placeholder="InformaciÃ³n relevante para la atenciÃ³n..." />
           </FormField>
         </div>
       </FormSection>
 
       <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:justify-end">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Guardando…' : form.id ? 'Guardar cambios' : 'Crear beneficiario'}</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Guardandoâ€¦' : form.id ? 'Guardar cambios' : 'Crear beneficiario'}</Button>
       </div>
     </form>
   );
@@ -853,7 +853,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
       } catch (cleanupError) {
         console.warn('[BeneficiaryPhoto] La referencia se elimino, pero fallo la limpieza del objeto anterior', cleanupError);
       }
-      setNotice('Fotografía eliminada correctamente.');
+      setNotice('FotografÃ­a eliminada correctamente.');
       return { displayUrl: null };
     }
 
@@ -868,12 +868,12 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     } catch (databaseError) {
       await removeBeneficiaryPhoto(uploaded.photoUrl).catch((cleanupError) => console.warn('[BeneficiaryPhoto] No se pudo limpiar la subida fallida', cleanupError));
       console.error('[BeneficiaryPhoto] Error al guardar la referencia', databaseError);
-      throw new Error(`La fotografía se subió, pero no se pudo guardar en el expediente: ${databaseError.message}`);
+      throw new Error(`La fotografÃ­a se subiÃ³, pero no se pudo guardar en el expediente: ${databaseError.message}`);
     }
     if (previousPhotoUrl && previousPhotoUrl !== uploaded.photoUrl) {
       await removeBeneficiaryPhoto(previousPhotoUrl).catch((cleanupError) => console.warn('[BeneficiaryPhoto] No se pudo limpiar la fotografia sustituida', cleanupError));
     }
-    setNotice('Fotografía actualizada correctamente.');
+    setNotice('FotografÃ­a actualizada correctamente.');
     return uploaded;
   }
 
@@ -1095,7 +1095,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         </Modal>
       )}
       {deliveryOpen && (
-        <Modal wide title={`Nueva entrega · ${beneficiary.full_name}`} onClose={() => setDeliveryOpen(false)}>
+        <Modal wide title={`Nueva entrega Â· ${beneficiary.full_name}`} onClose={() => setDeliveryOpen(false)}>
           <DeliveryForm
             data={data}
             initialBeneficiaryId={beneficiary.id}
@@ -1147,7 +1147,7 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, canEd
               <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
                 <span className="font-mono font-bold text-brand-700">{beneficiary.code}</span>
                 <span>{beneficiary.document_id || 'Sin documento'}</span>
-                <span>{family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'}</span>
+                <span>{family ? `${family.family_code} Â· ${family.responsible_name}` : 'Sin unidad familiar'}</span>
               </div>
             </div>
           </div>
@@ -1200,7 +1200,7 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDo
     { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
     { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },
     { label: 'Subir documento', icon: Upload, onClick: onDocument, enabled: canEdit },
-    { label: 'Crear campaña', icon: CalendarPlus, onClick: onCreateCampaign, enabled: Boolean(onCreateCampaign) },
+    { label: 'Crear campaÃ±a', icon: CalendarPlus, onClick: onCreateCampaign, enabled: Boolean(onCreateCampaign) },
     { label: 'Abrir Agenda', icon: CalendarDays, onClick: onOpenAgenda, enabled: Boolean(onOpenAgenda) },
     { label: 'Enviar aviso', icon: Mail, onClick: onNotice, enabled: true }
   ];
@@ -1355,7 +1355,7 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
                 <span className="rounded-lg bg-white p-2 text-brand-700 shadow-sm"><FileText size={18} /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{doc.document_type || 'Documento'} · {formatDate(doc.uploaded_at)}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{doc.document_type || 'Documento'} Â· {formatDate(doc.uploaded_at)}</p>
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${documentStatusTone(status)}`}>{status}</span>
               </div>
@@ -1370,40 +1370,121 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
 }
 
 function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, requests = [] }) {
+  const [activePanel, setActivePanel] = useState('summary');
   const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests });
+  const assistantPanels = [
+    { id: 'summary', label: 'ðŸ“‹ Resumen' },
+    { id: 'risks', label: 'âš ï¸ Riesgos' },
+    { id: 'recommendations', label: 'ðŸ’¡ Recomendaciones', disabled: true },
+    { id: 'sources', label: 'ðŸ“š Fuentes' }
+  ];
   return (
-    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm" aria-label="Resumen inteligente del expediente">
+    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm" aria-label="Asistente del Expediente">
       <div className="flex items-start gap-3">
         <span className="rounded-xl bg-white p-2 text-brand-700 shadow-sm"><NotebookTabs size={20} /></span>
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Calculado con datos del ERP</p>
-          <h3 className="mt-1 text-lg font-bold text-ink">Resumen Inteligente</h3>
+          <h3 className="mt-1 text-lg font-bold text-ink">ðŸ¤– Asistente del Expediente</h3>
           <p className="mt-1 text-sm text-slate-600">Reglas objetivas, sin IA externa ni datos inventados.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 text-sm text-slate-700">
-        {summary.items.map((item) => (
-          <div key={item.label} className="rounded-xl bg-white p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
-            <p className="mt-1 font-semibold text-ink">{item.value}</p>
+
+      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Secciones del asistente del expediente">
+        {assistantPanels.map((panel) => {
+          const active = activePanel === panel.id;
+          return (
+            <button
+              key={panel.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              disabled={panel.disabled}
+              onClick={() => !panel.disabled && setActivePanel(panel.id)}
+              className={`focus-ring rounded-xl px-3 py-2 text-sm font-bold transition ${
+                active
+                  ? 'bg-brand-700 text-white shadow-sm'
+                  : panel.disabled
+                    ? 'cursor-not-allowed bg-white/50 text-slate-400'
+                    : 'bg-white text-slate-700 hover:bg-brand-100 hover:text-brand-800'
+              }`}
+            >
+              {panel.label}
+              {panel.disabled && <span className="ml-2 text-[11px] font-semibold">Disponible proximamente</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4">
+        {activePanel === 'summary' && (
+          <div className="grid gap-2 text-sm text-slate-700">
+            {summary.items.map((item) => (
+              <div key={item.label} className="rounded-xl bg-white p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+                <p className="mt-1 font-semibold text-ink">{item.value}</p>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
+
+        {activePanel === 'risks' && (
+          <div className="rounded-xl border border-white/70 bg-white/70 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
+            <div className="mt-2 grid gap-2">
+              {summary.risks.map((risk) => (
+                <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
+              ))}
+              {!summary.risks.length && (
+                <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'sources' && (
+          <div className="rounded-xl bg-white/80 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
+            <div className="mt-2 grid gap-2">
+              {summary.sources.map((source) => (
+                <p key={source} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{source}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'recommendations' && (
+          <div className="rounded-xl border border-slate-100 bg-white p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Recomendaciones</p>
+            <p className="mt-1 text-sm font-semibold text-slate-600">Disponible proximamente en Sprint 3.2.</p>
+          </div>
+        )}
       </div>
-      <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
-        <div className="mt-2 grid gap-2">
-          {summary.risks.map((risk) => (
-            <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
-          ))}
-          {!summary.risks.length && (
-            <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
-          )}
+
+      {activePanel !== 'risks' && (
+        <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
+          <div className="mt-2 grid gap-2">
+            {summary.risks.slice(0, 2).map((risk) => (
+              <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
+            ))}
+            {!summary.risks.length && (
+              <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
+            )}
+            {summary.risks.length > 2 && (
+              <button type="button" className="text-left text-sm font-bold text-brand-700 hover:text-brand-900" onClick={() => setActivePanel('risks')}>
+                Ver todos los riesgos detectados
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="mt-4 rounded-xl bg-white/80 p-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
-        <p className="mt-1 text-sm font-semibold text-slate-700">{summary.sources.join(' · ')}</p>
-      </div>
+      )}
+
+      {activePanel !== 'sources' && (
+        <div className="mt-4 rounded-xl bg-white/80 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
+          <p className="mt-1 text-sm font-semibold text-slate-700">{summary.sources.join(' Â· ')}</p>
+        </div>
+      )}
     </section>
   );
 }
@@ -1420,7 +1501,7 @@ function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliv
 
   return {
     items: [
-      { label: 'Antigüedad en la asociacion', value: associationAgeLabel(beneficiary.joined_at || beneficiary.first_attention_at) },
+      { label: 'AntigÃ¼edad en la asociacion', value: associationAgeLabel(beneficiary.joined_at || beneficiary.first_attention_at) },
       { label: 'Ultima entrega', value: latestDelivery ? deliverySummaryLabel(latestDelivery) : 'Sin entregas anteriores registradas.' },
       { label: 'Proxima entrega', value: nextDelivery ? deliverySummaryLabel(nextDelivery) : 'Sin entrega futura programada.' },
       { label: 'Estado documental', value: documentSummary },
@@ -1445,7 +1526,7 @@ function associationAgeLabel(value) {
   const years = Math.floor(months / 12);
   const restMonths = months % 12;
   const parts = [];
-  if (years) parts.push(`${years} año${years === 1 ? '' : 's'}`);
+  if (years) parts.push(`${years} aÃ±o${years === 1 ? '' : 's'}`);
   if (restMonths) parts.push(`${restMonths} mes${restMonths === 1 ? '' : 'es'}`);
   return `${parts.join(' y ')} desde el alta (${formatDate(value)}).`;
 }
@@ -1482,7 +1563,7 @@ function deliverySummaryLabel(delivery) {
     delivery.help_type || 'Ayuda',
     delivery.status,
     attendanceStatusLabel(delivery.attendance_status)
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(' Â· ');
 }
 
 function summarizeDocuments(documents = []) {
@@ -1494,7 +1575,7 @@ function summarizeDocuments(documents = []) {
   if (reviewed) parts.push(`${reviewed} revisado(s)`);
   if (pending) parts.push(`${pending} pendiente(s)`);
   if (expired) parts.push(`${expired} caducado(s)`);
-  return parts.join(' · ') || `${documents.length} documento(s) registrados.`;
+  return parts.join(' Â· ') || `${documents.length} documento(s) registrados.`;
 }
 
 function summarizeAttendance(deliveries = []) {
@@ -1509,7 +1590,7 @@ function summarizeAttendance(deliveries = []) {
     confirmed ? `${confirmed} confirmada(s)` : '',
     unavailable ? `${unavailable} no asistencia(s)` : '',
     needsContact ? `${needsContact} necesita(n) contacto` : ''
-  ].filter(Boolean).join(' · ') || 'Asistencia sin incidencias destacadas.';
+  ].filter(Boolean).join(' Â· ') || 'Asistencia sin incidencias destacadas.';
 }
 
 function attendanceStatusLabel(value) {
@@ -1537,7 +1618,7 @@ function getLastInteraction({ deliveries = [], documents = [], history = [], req
     .filter((item) => item.date)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const latest = candidates[0];
-  return latest ? `${latest.type} · ${formatDateTime(latest.date)}` : 'Sin interacciones registradas.';
+  return latest ? `${latest.type} Â· ${formatDateTime(latest.date)}` : 'Sin interacciones registradas.';
 }
 
 function getRelevantObservations({ beneficiary, history = [], deliveries = [], requests = [] }) {
@@ -1595,14 +1676,14 @@ function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery,
             <h2 className="mt-2 break-words text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
               <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-slate-400" /> Alta: {formatDate(beneficiary.joined_at)}</span>
-              <span className="flex items-center gap-1.5"><Users size={15} className="text-slate-400" /> {family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'}</span>
+              <span className="flex items-center gap-1.5"><Users size={15} className="text-slate-400" /> {family ? `${family.family_code} Â· ${family.responsible_name}` : 'Sin unidad familiar'}</span>
             </div>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 lg:max-w-sm lg:justify-end">
           {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
           <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
-          <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe de Atención Social</Button>
+          <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe de AtenciÃ³n Social</Button>
           <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
           <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
           <Button variant="secondary" onClick={onNewAppointment}><CalendarPlus size={17} /> Nueva cita</Button>
@@ -1628,7 +1709,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
       .catch((photoError) => {
         if (!active) return;
         setPhoto(null);
-        setError(photoError.message || 'No se pudo recuperar la fotografía.');
+        setError(photoError.message || 'No se pudo recuperar la fotografÃ­a.');
       });
     return () => { active = false; };
   }, [beneficiary.id, beneficiary.photo_url, beneficiary.photo_data_url, beneficiary.photo, beneficiary.avatar_url]);
@@ -1645,7 +1726,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
       const result = await onChange(optimized);
       setPhoto(result?.displayUrl || optimized);
     } catch (photoError) {
-      setError(photoError.message || 'No se pudo procesar la fotografía.');
+      setError(photoError.message || 'No se pudo procesar la fotografÃ­a.');
     } finally {
       setWorking(false);
       if (galleryInputRef.current) galleryInputRef.current.value = '';
@@ -1654,14 +1735,14 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
   }
 
   async function removePhoto() {
-    if (!window.confirm('¿Eliminar la fotografía del beneficiario?')) return;
+    if (!window.confirm('Â¿Eliminar la fotografÃ­a del beneficiario?')) return;
     setWorking(true);
     setError('');
     try {
       await onChange(null);
       setPhoto(null);
     } catch (photoError) {
-      setError(photoError.message || 'No se pudo eliminar la fotografía.');
+      setError(photoError.message || 'No se pudo eliminar la fotografÃ­a.');
     } finally {
       setWorking(false);
     }
@@ -1670,7 +1751,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
   return (
     <div className="relative w-28 shrink-0">
       <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-brand-50 text-3xl font-bold text-brand-700 shadow-lg">
-        {photo ? <a href={photo} target="_blank" rel="noreferrer" className="h-full w-full" title="Abrir fotografía"><img src={photo} alt={`Fotografía de ${beneficiary.full_name}`} className="h-full w-full object-cover" onError={() => setError('La fotografía existe, pero el navegador no ha podido mostrarla.')} /></a> : initials(beneficiary.full_name)}
+        {photo ? <a href={photo} target="_blank" rel="noreferrer" className="h-full w-full" title="Abrir fotografÃ­a"><img src={photo} alt={`FotografÃ­a de ${beneficiary.full_name}`} className="h-full w-full object-cover" onError={() => setError('La fotografÃ­a existe, pero el navegador no ha podido mostrarla.')} /></a> : initials(beneficiary.full_name)}
         {working && <span className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/55 text-white"><Loader2 className="animate-spin" size={25} /></span>}
       </div>
       {canEdit && (
@@ -1685,7 +1766,7 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
             <span className="sr-only">Hacer una foto</span>
             <input ref={cameraInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={working} onChange={selectPhoto} />
           </label>
-          {photo && canDelete && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografía" title="Eliminar fotografía"><ImageOff size={17} /></button>}
+          {photo && canDelete && <button className="focus-ring flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md ring-1 ring-slate-200 hover:bg-red-50" onClick={removePhoto} disabled={working} aria-label="Eliminar fotografÃ­a" title="Eliminar fotografÃ­a"><ImageOff size={17} /></button>}
         </div>
       )}
       {error && <p className="absolute left-0 top-full z-20 mt-4 w-64 rounded-lg border border-red-200 bg-white p-2 text-xs font-semibold text-red-700 shadow-lg" role="alert">{error}</p>}
@@ -1697,9 +1778,9 @@ function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, va
   const latestDelivery = getLatestDelivery(deliveries);
   const cards = [
     { label: 'Beneficiario desde', value: formatDate(beneficiary.joined_at), icon: CalendarDays, tone: 'brand' },
-    { label: 'Última ayuda', value: latestDelivery ? formatDate(latestDelivery.delivered_at) : '-', detail: latestDelivery?.help_type || '', icon: Clock3, tone: 'blue' },
+    { label: 'Ãšltima ayuda', value: latestDelivery ? formatDate(latestDelivery.delivered_at) : '-', detail: latestDelivery?.help_type || '', icon: Clock3, tone: 'blue' },
     { label: 'Total entregas', value: deliveries.length, icon: PackageCheck, tone: 'brand' },
-    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'Valoración parcial' : '', icon: Euro, tone: 'amber' },
+    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'ValoraciÃ³n parcial' : '', icon: Euro, tone: 'amber' },
     { label: 'Documentos', value: documents.length, icon: Paperclip, tone: 'violet' },
     { label: 'Incidencias', value: incidents, icon: ClipboardList, tone: incidents ? 'red' : 'slate' }
   ];
@@ -1708,7 +1789,7 @@ function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, va
     violet: 'bg-violet-50 text-violet-700', red: 'bg-red-50 text-red-700', slate: 'bg-slate-100 text-slate-600'
   };
   return (
-    <section className="grid gap-3 bg-slate-50/70 px-5 pt-6 sm:grid-cols-2 sm:px-7 xl:grid-cols-6" aria-label="Resumen rápido del expediente">
+    <section className="grid gap-3 bg-slate-50/70 px-5 pt-6 sm:grid-cols-2 sm:px-7 xl:grid-cols-6" aria-label="Resumen rÃ¡pido del expediente">
       {cards.map(({ label, value, detail, icon: Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={`inline-flex rounded-lg p-2 ${tones[tone]}`}><Icon size={18} /></span><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p>{detail && <p className="mt-1 truncate text-xs font-medium text-slate-500">{detail}</p>}</div>)}
     </section>
   );
@@ -1719,25 +1800,25 @@ function OverviewPanel({ beneficiary, family, deliveries, history }) {
   const latestHistory = [...history].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <InfoCard icon={HeartHandshake} title="Situación actual">
+      <InfoCard icon={HeartHandshake} title="SituaciÃ³n actual">
         <div className="flex flex-wrap gap-2"><SituationBadge value={beneficiary.situation} /><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{beneficiary.requested_help || 'Ayuda sin especificar'}</span></div>
         <p className="mt-4 text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p>
       </InfoCard>
       <InfoCard icon={ContactRound} title="Contacto principal">
         <div className="space-y-3">
-          <ContactLine icon={Phone} label="Teléfono" value={beneficiary.phone} />
+          <ContactLine icon={Phone} label="TelÃ©fono" value={beneficiary.phone} />
           <ContactLine icon={Mail} label="Email" value={beneficiary.email} />
-          <ContactLine icon={MapPin} label="Dirección" value={[beneficiary.address_full, beneficiary.postal_code].filter(Boolean).join(' · ')} />
+          <ContactLine icon={MapPin} label="DirecciÃ³n" value={[beneficiary.address_full, beneficiary.postal_code].filter(Boolean).join(' Â· ')} />
         </div>
       </InfoCard>
-      <InfoCard icon={PackageCheck} title="Última entrega">
-        {latestDelivery ? <><p className="font-bold text-ink">{latestDelivery.help_type || 'Ayuda entregada'}</p><p className="mt-1 text-sm text-slate-500">{formatDate(latestDelivery.delivered_at)} · {latestDelivery.inventory_item_name || 'Sin producto'}</p><p className="mt-3 text-sm text-slate-600">Cantidad: {latestDelivery.quantity || '-'} · Responsable: {latestDelivery.responsible || '-'}</p></> : <p className="text-sm text-slate-500">No hay entregas registradas.</p>}
+      <InfoCard icon={PackageCheck} title="Ãšltima entrega">
+        {latestDelivery ? <><p className="font-bold text-ink">{latestDelivery.help_type || 'Ayuda entregada'}</p><p className="mt-1 text-sm text-slate-500">{formatDate(latestDelivery.delivered_at)} Â· {latestDelivery.inventory_item_name || 'Sin producto'}</p><p className="mt-3 text-sm text-slate-600">Cantidad: {latestDelivery.quantity || '-'} Â· Responsable: {latestDelivery.responsible || '-'}</p></> : <p className="text-sm text-slate-500">No hay entregas registradas.</p>}
       </InfoCard>
-      <InfoCard icon={NotebookTabs} title="Último seguimiento">
+      <InfoCard icon={NotebookTabs} title="Ãšltimo seguimiento">
         {latestHistory ? <><div className="flex items-center justify-between gap-3"><p className="font-bold text-ink">{latestHistory.entry_type || 'Seguimiento'}</p><span className="text-xs text-slate-500">{formatDate(latestHistory.date)}</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{latestHistory.notes}</p></> : <p className="text-sm text-slate-500">No hay anotaciones de seguimiento.</p>}
       </InfoCard>
-      <InfoCard icon={Users} title="Unidad familiar"><InfoGrid items={[["Unidad", family ? `${family.family_code} · ${family.responsible_name}` : 'Sin unidad familiar'], ['Miembros', beneficiary.family_members], ['Menores', beneficiary.minors_count], ['Contacto', family?.phone || family?.email]]} /></InfoCard>
-      <InfoCard icon={CalendarDays} title="Fechas del expediente"><InfoGrid items={[["Primera atención", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Última ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
+      <InfoCard icon={Users} title="Unidad familiar"><InfoGrid items={[["Unidad", family ? `${family.family_code} Â· ${family.responsible_name}` : 'Sin unidad familiar'], ['Miembros', beneficiary.family_members], ['Menores', beneficiary.minors_count], ['Contacto', family?.phone || family?.email]]} /></InfoCard>
+      <InfoCard icon={CalendarDays} title="Fechas del expediente"><InfoGrid items={[["Primera atenciÃ³n", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)], ['Ãšltima ayuda', formatDate(beneficiary.last_help_at)], ['Estado', beneficiary.is_active ? 'Activo' : 'Inactivo']]} /></InfoCard>
     </div>
   );
 }
@@ -1745,22 +1826,22 @@ function OverviewPanel({ beneficiary, family, deliveries, history }) {
 function PersonalDataPanel({ beneficiary }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <InfoCard icon={UserRound} title="Información personal">
+      <InfoCard icon={UserRound} title="InformaciÃ³n personal">
         <InfoGrid items={[["Nombre completo", beneficiary.full_name], ['Fecha de nacimiento', formatDate(beneficiary.birth_date)], ['Sexo', beneficiary.sex], ['Nacionalidad', beneficiary.nationality], ['Estado civil', beneficiary.marital_status]]} />
       </InfoCard>
       <InfoCard icon={FileText} title="Documento identificativo">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">DNI, NIE o pasaporte</p>
           <p className="mt-2 text-xl font-bold tracking-wide text-ink">{beneficiary.document_id || '-'}</p>
-          <div className="mt-4 border-t border-slate-200 pt-3"><p className="text-xs text-slate-500">Código de beneficiario</p><p className="mt-1 font-mono text-sm font-bold text-brand-700">{beneficiary.code}</p></div>
+          <div className="mt-4 border-t border-slate-200 pt-3"><p className="text-xs text-slate-500">CÃ³digo de beneficiario</p><p className="mt-1 font-mono text-sm font-bold text-brand-700">{beneficiary.code}</p></div>
         </div>
       </InfoCard>
       <InfoCard icon={ContactRound} title="Contacto">
-        <div className="space-y-3"><ContactLine icon={Phone} label="Teléfono" value={beneficiary.phone} /><ContactLine icon={Mail} label="Email" value={beneficiary.email} /><ContactLine icon={MapPin} label="Dirección" value={beneficiary.address_full} /><ContactLine icon={Home} label="Código postal" value={beneficiary.postal_code} /></div>
+        <div className="space-y-3"><ContactLine icon={Phone} label="TelÃ©fono" value={beneficiary.phone} /><ContactLine icon={Mail} label="Email" value={beneficiary.email} /><ContactLine icon={MapPin} label="DirecciÃ³n" value={beneficiary.address_full} /><ContactLine icon={Home} label="CÃ³digo postal" value={beneficiary.postal_code} /></div>
       </InfoCard>
-      <InfoCard icon={ClipboardList} title="Situación actual">
+      <InfoCard icon={ClipboardList} title="SituaciÃ³n actual">
         <div className="mb-4 flex flex-wrap gap-2"><StatusBadge active={beneficiary.is_active} /><SituationBadge value={beneficiary.situation} /><span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">{beneficiary.requested_help || 'Ayuda sin especificar'}</span></div>
-        <InfoGrid items={[["Primera atención", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)]]} />
+        <InfoGrid items={[["Primera atenciÃ³n", formatDate(beneficiary.first_attention_at)], ['Fecha de alta', formatDate(beneficiary.joined_at)]]} />
         <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-medium text-slate-500">Observaciones</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{beneficiary.notes || 'No hay observaciones registradas.'}</p></div>
       </InfoCard>
     </div>
@@ -1769,16 +1850,16 @@ function PersonalDataPanel({ beneficiary }) {
 
 function FamilyPanel({ beneficiary, family, members, archived, canAddMember, canCreateFamily, onAddMember, onCreateFamily }) {
   if (!family) {
-    return <EmptyState icon={Users} title="Sin unidad familiar" text="Este beneficiario no está vinculado a ninguna unidad familiar." action={canCreateFamily ? <Button onClick={onCreateFamily}><Plus size={17} /> Crear unidad familiar</Button> : null} />;
+    return <EmptyState icon={Users} title="Sin unidad familiar" text="Este beneficiario no estÃ¡ vinculado a ninguna unidad familiar." action={canCreateFamily ? <Button onClick={onCreateFamily}><Plus size={17} /> Crear unidad familiar</Button> : null} />;
   }
   return (
     <section>
       <div className={`flex flex-col gap-4 rounded-xl border p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between ${archived ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white'}`}>
-        <div><p className={`text-xs font-bold uppercase tracking-wide ${archived ? 'text-slate-600' : 'text-brand-700'}`}>Unidad familiar</p><h3 className="mt-1 text-2xl font-bold text-ink">{family.family_code}</h3><p className="mt-2 text-sm text-slate-600">Titular: <strong>{family.responsible_name || beneficiary.full_name}</strong></p>{archived && <p className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-300">Familia archivada: no se pueden añadir miembros ni registrar nuevas entregas.</p>}</div>
-        {canAddMember && <Button onClick={onAddMember}><UserPlus size={17} /> Añadir miembro</Button>}
+        <div><p className={`text-xs font-bold uppercase tracking-wide ${archived ? 'text-slate-600' : 'text-brand-700'}`}>Unidad familiar</p><h3 className="mt-1 text-2xl font-bold text-ink">{family.family_code}</h3><p className="mt-2 text-sm text-slate-600">Titular: <strong>{family.responsible_name || beneficiary.full_name}</strong></p>{archived && <p className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-300">Familia archivada: no se pueden aÃ±adir miembros ni registrar nuevas entregas.</p>}</div>
+        {canAddMember && <Button onClick={onAddMember}><UserPlus size={17} /> AÃ±adir miembro</Button>}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3"><FamilyMetric label="Miembros vinculados" value={members.length || beneficiary.family_members || 1} /><FamilyMetric label="Menores" value={members.length ? members.reduce((sum, item) => sum + Number(item.minors_count || 0), 0) : beneficiary.minors_count || 0} /><FamilyMetric label="Dependientes" value={family.dependents_count || 0} /></div>
-      <div className="mt-5"><SectionHeading icon={Users} title="Miembros de la unidad" description="Beneficiarios vinculados a esta familia." /><div className="mt-4 grid gap-3 sm:grid-cols-2">{members.map((member) => <article key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-700">{initials(member.full_name)}</span><div className="min-w-0"><p className="truncate font-bold text-ink">{member.full_name}</p><p className="text-xs text-slate-500">{member.code} · {member.id === beneficiary.id ? 'Expediente actual' : member.situation || 'Miembro'}</p></div></article>)}</div>{!members.length && <div className="mt-4"><EmptyState icon={Users} title="Sin miembros vinculados" text="La unidad familiar existe, pero todavía no tiene beneficiarios vinculados." /></div>}</div>
+      <div className="mt-5"><SectionHeading icon={Users} title="Miembros de la unidad" description="Beneficiarios vinculados a esta familia." /><div className="mt-4 grid gap-3 sm:grid-cols-2">{members.map((member) => <article key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-700">{initials(member.full_name)}</span><div className="min-w-0"><p className="truncate font-bold text-ink">{member.full_name}</p><p className="text-xs text-slate-500">{member.code} Â· {member.id === beneficiary.id ? 'Expediente actual' : member.situation || 'Miembro'}</p></div></article>)}</div>{!members.length && <div className="mt-4"><EmptyState icon={Users} title="Sin miembros vinculados" text="La unidad familiar existe, pero todavÃ­a no tiene beneficiarios vinculados." /></div>}</div>
     </section>
   );
 }
@@ -1801,10 +1882,10 @@ function QuickFamilyForm({ beneficiary, onSubmit }) {
         setSaving(false);
       }
     }}>
-      <FormField label="Código familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField>
+      <FormField label="CÃ³digo familiar"><input className={inputClass} required value={form.family_code} onChange={(event) => update('family_code', event.target.value)} /></FormField>
       <FormField label="Responsable"><div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{beneficiary.full_name}</div></FormField>
-      <div className="sm:col-span-2"><FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
-      <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+      <div className="sm:col-span-2"><FormField label="DirecciÃ³n"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField></div>
+      <FormField label="TelÃ©fono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
       <FormField label="Dependientes"><input className={inputClass} type="number" min="0" value={form.dependents_count} onChange={(event) => update('dependents_count', Number(event.target.value))} /></FormField>
       <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
@@ -1913,7 +1994,7 @@ function buildProfessionalTimeline({ beneficiary, deliveries = [], documents = [
       key: `delivery-${delivery.id}`,
       date: delivery.delivered_at || delivery.created_at,
       title: 'Entrega registrada',
-      detail: [delivery.help_type || 'Ayuda', delivery.inventory_item_name, delivery.quantity ? `Cantidad ${delivery.quantity}` : '', delivery.responsible].filter(Boolean).join(' · '),
+      detail: [delivery.help_type || 'Ayuda', delivery.inventory_item_name, delivery.quantity ? `Cantidad ${delivery.quantity}` : '', delivery.responsible].filter(Boolean).join(' Â· '),
       icon: PackageCheck,
       tone: 'bg-blue-50 text-blue-700'
     })),
@@ -1921,7 +2002,7 @@ function buildProfessionalTimeline({ beneficiary, deliveries = [], documents = [
       key: `document-${doc.id}`,
       date: doc.uploaded_at || doc.created_at,
       title: `Documento ${documentStatus(doc).toLowerCase()}`,
-      detail: [doc.document_type || 'Documento', doc.file_name].filter(Boolean).join(' · '),
+      detail: [doc.document_type || 'Documento', doc.file_name].filter(Boolean).join(' Â· '),
       icon: Paperclip,
       tone: documentStatus(doc) === 'Pendiente' ? 'bg-amber-50 text-amber-700' : 'bg-violet-50 text-violet-700'
     })),
@@ -2004,7 +2085,7 @@ function loadPhotoImage(sourceUrl) {
 
 function renderSquarePhoto(image, maxSize, quality) {
   const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
-  if (!sourceSize) throw new Error('La imagen seleccionada no tiene un tamaño válido.');
+  if (!sourceSize) throw new Error('La imagen seleccionada no tiene un tamaÃ±o vÃ¡lido.');
   const targetSize = Math.min(maxSize, sourceSize);
   const sourceX = Math.max((image.naturalWidth - sourceSize) / 2, 0);
   const sourceY = Math.max((image.naturalHeight - sourceSize) / 2, 0);
@@ -2042,16 +2123,16 @@ function DeliveriesPanel({ deliveries, beneficiary, allDeliveries }) {
           <article key={delivery.id} className={`rounded-xl border bg-white p-4 shadow-sm ${isActiveDelivery(delivery) ? 'border-slate-200' : 'border-amber-200'}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-brand-50 p-2 text-brand-700"><PackageCheck size={17} /></span><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-bold text-ink">{delivery.help_type || 'Ayuda entregada'}</h4>{!isActiveDelivery(delivery) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Anulada</span>}</div><p className="text-xs text-slate-500">{formatDate(delivery.delivered_at)} · {delivery.receipt_number || 'Sin número de justificante'}</p></div></div>
+                <div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-brand-50 p-2 text-brand-700"><PackageCheck size={17} /></span><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-bold text-ink">{delivery.help_type || 'Ayuda entregada'}</h4>{!isActiveDelivery(delivery) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">Anulada</span>}</div><p className="text-xs text-slate-500">{formatDate(delivery.delivered_at)} Â· {delivery.receipt_number || 'Sin nÃºmero de justificante'}</p></div></div>
                 <div className="mt-3 grid gap-1 text-sm text-slate-600 sm:grid-cols-2 sm:gap-x-8"><p><strong>Producto:</strong> {delivery.inventory_item_name || '-'}</p><p><strong>Cantidad:</strong> {delivery.quantity || '-'}</p><p><strong>Responsable:</strong> {delivery.responsible || '-'}</p><p><strong>Firma:</strong> {delivery.signature_data_url ? 'Disponible' : 'No disponible'}</p></div>
                 {delivery.notes && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{delivery.notes}</p>}
-                {!isActiveDelivery(delivery) && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p><strong>Motivo:</strong> {delivery.cancellation_reason || '-'}</p><p className="mt-1 text-xs"><strong>Anulada por:</strong> {delivery.cancelled_by_name || '-'} · {formatDateTime(delivery.cancelled_at)}</p></div>}
+                {!isActiveDelivery(delivery) && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p><strong>Motivo:</strong> {delivery.cancellation_reason || '-'}</p><p className="mt-1 text-xs"><strong>Anulada por:</strong> {delivery.cancelled_by_name || '-'} Â· {formatDateTime(delivery.cancelled_at)}</p></div>}
               </div>
               <Button variant="secondary" onClick={() => printDeliveryReceiptPdf(delivery, beneficiary, allDeliveries)}><Printer size={16} /> Justificante</Button>
             </div>
           </article>
         ))}
-        {!deliveries.length && <EmptyState icon={PackageCheck} title="Sin entregas registradas" text="Las entregas aparecerán aquí cuando se registren desde su módulo." />}
+        {!deliveries.length && <EmptyState icon={PackageCheck} title="Sin entregas registradas" text="Las entregas aparecerÃ¡n aquÃ­ cuando se registren desde su mÃ³dulo." />}
       </div>
     </section>
   );
@@ -2095,7 +2176,7 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
   }
 
   async function removeDocument(doc) {
-    if (!window.confirm(`¿Eliminar el documento ${doc.file_name || 'seleccionado'}?`)) return;
+    if (!window.confirm(`Â¿Eliminar el documento ${doc.file_name || 'seleccionado'}?`)) return;
     try {
       await actions.deleteBeneficiaryDocument(doc.id);
       await removeBeneficiaryDocumentFile(doc.file_data_url).catch((cleanupError) => console.warn('[BeneficiaryDocument] No se pudo eliminar el archivo de Storage', cleanupError));
@@ -2108,20 +2189,20 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
   return (
     <section>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <SectionHeading icon={Paperclip} title="Documentación" description="Archivos asociados al expediente." />
+        <SectionHeading icon={Paperclip} title="DocumentaciÃ³n" description="Archivos asociados al expediente." />
         {canEdit && <div className="flex flex-col gap-2 sm:flex-row"><select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select><label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"><Upload size={17} /> {uploading ? 'Subiendo...' : 'Subir documento'}<input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} /></label></div>}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {documents.map((doc) => (
           <article key={doc.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <span className="rounded-lg bg-brand-50 p-2.5 text-brand-700"><FileText size={20} /></span>
-            <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p><p className="mt-0.5 text-xs text-slate-500">{doc.document_type} · {formatDate(doc.uploaded_at)}</p></div>
+            <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p><p className="mt-0.5 text-xs text-slate-500">{doc.document_type} Â· {formatDate(doc.uploaded_at)}</p></div>
             {doc.file_data_url && <DocumentDownloadButton doc={doc} iconOnly />}
             {canDelete && <button className="focus-ring rounded-lg p-2 text-red-600 hover:bg-red-50" onClick={() => removeDocument(doc)} aria-label={`Eliminar ${doc.file_name}`} title="Eliminar"><Trash2 size={18} /></button>}
           </article>
         ))}
       </div>
-      {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación a este expediente." /></div>}
+      {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="TodavÃ­a no se ha adjuntado documentaciÃ³n a este expediente." /></div>}
     </section>
   );
 }
@@ -2177,7 +2258,7 @@ function BeneficiaryWhatsAppForm({ beneficiary, onSend, onCancel }) {
     <form className="grid gap-4" onSubmit={submit}>
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
         <p className="font-semibold text-ink">{beneficiary.full_name}</p>
-        <p>{phone ? `WhatsApp ${phone}` : 'Sin teléfono válido'}</p>
+        <p>{phone ? `WhatsApp ${phone}` : 'Sin telÃ©fono vÃ¡lido'}</p>
       </div>
       <FormField label="Mensaje">
         <textarea className={`${inputClass} min-h-32`} value={message} onChange={(event) => setMessage(event.target.value)} />
@@ -2221,7 +2302,7 @@ function BeneficiaryPortalNoticeForm({ beneficiary, actions, onSent }) {
     <form className="grid gap-4" onSubmit={submit}>
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
         <p className="font-semibold text-ink">{beneficiary.full_name}</p>
-        <p>El aviso aparecera en la pestaña Avisos de su portal.</p>
+        <p>El aviso aparecera en la pestaÃ±a Avisos de su portal.</p>
       </div>
       <FormField label="Tipo">
         <select className={inputClass} value={form.notice_type} onChange={(event) => update('notice_type', event.target.value)}>
@@ -2250,8 +2331,8 @@ function EmailsPanel({ emailLogs }) {
     <section>
       <SectionHeading icon={Mail} title="Comunicaciones" description="Historial de emails vinculados al beneficiario." />
       <div className="mt-4 space-y-3">
-        {emailLogs.map((log) => <article key={log.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start gap-3"><span className="rounded-lg bg-blue-50 p-2 text-blue-700"><Mail size={18} /></span><div className="min-w-0"><h4 className="font-bold text-ink">{log.subject || 'Sin asunto'}</h4><p className="mt-0.5 text-xs text-slate-500">{formatDate(log.sent_at)} · {log.recipient}</p><p className="mt-2 text-sm text-slate-600">{log.result || '-'}</p></div></div></article>)}
-        {!emailLogs.length && <EmptyState icon={Mail} title="Sin comunicaciones" text="Los emails enviados a este beneficiario aparecerán aquí." />}
+        {emailLogs.map((log) => <article key={log.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start gap-3"><span className="rounded-lg bg-blue-50 p-2 text-blue-700"><Mail size={18} /></span><div className="min-w-0"><h4 className="font-bold text-ink">{log.subject || 'Sin asunto'}</h4><p className="mt-0.5 text-xs text-slate-500">{formatDate(log.sent_at)} Â· {log.recipient}</p><p className="mt-2 text-sm text-slate-600">{log.result || '-'}</p></div></div></article>)}
+        {!emailLogs.length && <EmptyState icon={Mail} title="Sin comunicaciones" text="Los emails enviados a este beneficiario aparecerÃ¡n aquÃ­." />}
       </div>
     </section>
   );
@@ -2283,7 +2364,7 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, organization, actions, 
     setError('');
     if (!form.recipients) {
       setStatus('');
-      setError('Este beneficiario no tiene correo electrónico registrado.');
+      setError('Este beneficiario no tiene correo electrÃ³nico registrado.');
       return;
     }
     if (form.attachReceipt && !latestDelivery) {
@@ -2313,7 +2394,7 @@ function BeneficiaryEmailForm({ beneficiary, deliveries, organization, actions, 
       <FormField label="Destinatario"><input className={inputClass} type="email" required value={form.recipients} onChange={(event) => update('recipients', event.target.value)} /></FormField>
       <FormField label="Asunto"><input className={inputClass} value={form.subject} onChange={(event) => update('subject', event.target.value)} /></FormField>
       <FormField label="Mensaje"><textarea className={inputClass} rows="5" value={form.message} onChange={(event) => update('message', event.target.value)} /></FormField>
-      <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" disabled={!latestDelivery} checked={form.attachReceipt} onChange={(event) => update('attachReceipt', event.target.checked)} />Adjuntar justificante PDF de la última entrega</label>
+      <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" disabled={!latestDelivery} checked={form.attachReceipt} onChange={(event) => update('attachReceipt', event.target.checked)} />Adjuntar justificante PDF de la Ãºltima entrega</label>
       {status && <p className="rounded-lg bg-brand-50 p-3 text-sm font-medium text-brand-700">{status}</p>}
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
       <div className="flex justify-end"><Button type="submit" disabled={Boolean(status)}><Mail size={18} /> Enviar email</Button></div>
@@ -2385,20 +2466,20 @@ function SocialHistory({ history, deliveries = [], beneficiary, actions, current
 
   return (
     <section className="space-y-5">
-      <SectionHeading icon={NotebookTabs} title="Seguimiento" description="Diario de intervención social, objetivos, observaciones e indicadores del expediente." />
+      <SectionHeading icon={NotebookTabs} title="Seguimiento" description="Diario de intervenciÃ³n social, objetivos, observaciones e indicadores del expediente." />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {indicators.map((indicator) => <TrackingMetric key={indicator.label} {...indicator} />)}
       </div>
       {canEdit && (
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submitIntervention}>
-            <h4 className="font-bold text-ink">Nueva intervención</h4>
+            <h4 className="font-bold text-ink">Nueva intervenciÃ³n</h4>
             <div className="mt-3 grid gap-3 sm:grid-cols-[180px_170px_1fr]">
               <FormField label="Tipo"><select className={inputClass} value={entryType} onChange={(event) => setEntryType(event.target.value)}>{SOCIAL_ENTRY_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
               <FormField label="Fecha"><input className={inputClass} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></FormField>
-              <div className="sm:col-span-3"><FormField label="Relato de la intervención"><textarea className={inputClass} required rows="4" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Describe qué atención se realizó, qué se observó y qué seguimiento queda pendiente." /></FormField></div>
+              <div className="sm:col-span-3"><FormField label="Relato de la intervenciÃ³n"><textarea className={inputClass} required rows="4" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Describe quÃ© atenciÃ³n se realizÃ³, quÃ© se observÃ³ y quÃ© seguimiento queda pendiente." /></FormField></div>
             </div>
-            <div className="mt-3 flex justify-end"><Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Guardando...' : 'Añadir al diario'}</Button></div>
+            <div className="mt-3 flex justify-end"><Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Guardando...' : 'AÃ±adir al diario'}</Button></div>
           </form>
 
           <div className="grid gap-4">
@@ -2412,12 +2493,12 @@ function SocialHistory({ history, deliveries = [], beneficiary, actions, current
             </form>
 
             <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" onSubmit={submitObservation}>
-              <h4 className="font-bold text-ink">Observación independiente</h4>
+              <h4 className="font-bold text-ink">ObservaciÃ³n independiente</h4>
               <div className="mt-3 grid gap-3">
                 <FormField label="Fecha"><input className={inputClass} type="date" value={observationDate} onChange={(event) => setObservationDate(event.target.value)} /></FormField>
-                <FormField label="Observación"><textarea className={inputClass} required rows="3" value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="Anota una observación relevante sin convertirla en intervención." /></FormField>
+                <FormField label="ObservaciÃ³n"><textarea className={inputClass} required rows="3" value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="Anota una observaciÃ³n relevante sin convertirla en intervenciÃ³n." /></FormField>
               </div>
-              <div className="mt-3 flex justify-end"><Button type="submit" variant="secondary" disabled={saving || !observation.trim()}><NotebookTabs size={17} /> Guardar observación</Button></div>
+              <div className="mt-3 flex justify-end"><Button type="submit" variant="secondary" disabled={saving || !observation.trim()}><NotebookTabs size={17} /> Guardar observaciÃ³n</Button></div>
             </form>
           </div>
         </div>
@@ -2429,7 +2510,7 @@ function SocialHistory({ history, deliveries = [], beneficiary, actions, current
       </div>
 
       <div>
-        <SectionHeading icon={CalendarDays} title="Diario cronológico" description="Historia documentada de intervenciones y entregas registradas." />
+        <SectionHeading icon={CalendarDays} title="Diario cronolÃ³gico" description="Historia documentada de intervenciones y entregas registradas." />
         <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
           {diary.map((item) => (
             <article key={item.key} className="relative flex gap-4">
@@ -2438,7 +2519,7 @@ function SocialHistory({ history, deliveries = [], beneficiary, actions, current
             </article>
           ))}
         </div>
-        {!diary.length && <div className="mt-4"><EmptyState icon={NotebookTabs} title="Sin seguimiento" text="Todavía no hay intervenciones documentadas en este expediente." /></div>}
+        {!diary.length && <div className="mt-4"><EmptyState icon={NotebookTabs} title="Sin seguimiento" text="TodavÃ­a no hay intervenciones documentadas en este expediente." /></div>}
       </div>
     </section>
   );
@@ -2489,7 +2570,7 @@ function buildTrackingDiary(history = [], deliveries = []) {
       raw: item,
       date: item.date || item.created_at,
       type: item.entry_type || 'Seguimiento',
-      notes: item.notes || 'Intervención registrada en el expediente.',
+      notes: item.notes || 'IntervenciÃ³n registrada en el expediente.',
       icon: trackingIconFor(item.entry_type),
       tone: trackingToneFor(item.entry_type)
     }));
@@ -2540,10 +2621,10 @@ function buildTrackingIndicators(beneficiary, diary, observations, objectives) {
   const latest = diary[0];
   const days = latest?.date ? daysSince(latest.date) : null;
   return [
-    { label: 'Intervenciones', value: diary.length, detail: latest ? `Última: ${formatDate(latest.date)}` : 'Sin intervenciones', tone: 'brand' },
+    { label: 'Intervenciones', value: diary.length, detail: latest ? `Ãšltima: ${formatDate(latest.date)}` : 'Sin intervenciones', tone: 'brand' },
     { label: 'Objetivos', value: objectives.length, detail: objectives.length ? 'Definidos en seguimiento' : 'Sin objetivos definidos', tone: 'blue' },
     { label: 'Observaciones', value: observations.length, detail: observations.length ? 'Registro independiente' : 'Sin observaciones', tone: 'slate' },
-    { label: 'Estado seguimiento', value: trackingStatusLabel(beneficiary, days), detail: days === null ? 'Sin fecha registrada' : `Hace ${days} día${days === 1 ? '' : 's'}`, tone: days !== null && days > 30 ? 'amber' : 'brand' }
+    { label: 'Estado seguimiento', value: trackingStatusLabel(beneficiary, days), detail: days === null ? 'Sin fecha registrada' : `Hace ${days} dÃ­a${days === 1 ? '' : 's'}`, tone: days !== null && days > 30 ? 'amber' : 'brand' }
   ];
 }
 
@@ -2558,7 +2639,7 @@ function trackingStatusLabel(beneficiary, days) {
   if (!beneficiary.is_active) return 'Inactivo';
   if (days === null) return 'Sin seguimiento';
   if (days > 30) return 'Revisar';
-  if (days > 15) return 'Próximo';
+  if (days > 15) return 'PrÃ³ximo';
   return 'Actualizado';
 }
 
