@@ -743,6 +743,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
   const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
   const portalRequests = (data.beneficiary_portal_profile_updates || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const portalNotices = (data.beneficiary_portal_notices || []).filter((item) => item.beneficiary_id === beneficiary.id);
   const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
   const activeDeliveries = deliveries.filter(isActiveDelivery);
@@ -1030,7 +1031,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
               canEdit={canEdit}
               onOpenDocuments={() => setTab('documents')}
             />
-            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} requests={portalRequests} />
+            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} requests={portalRequests} notices={portalNotices} />
           </div>
         </section>
 
@@ -1369,127 +1370,328 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
   );
 }
 
-function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, requests = [] }) {
+function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, requests = [], notices = [] }) {
   const [activePanel, setActivePanel] = useState('summary');
-  const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests });
+  const [showQuestionBox, setShowQuestionBox] = useState(false);
+  const [assistantQuestion, setAssistantQuestion] = useState('');
+  const [assistantAnswer, setAssistantAnswer] = useState('');
+  const [previewAction, setPreviewAction] = useState(null);
+  const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests, notices });
   const assistantPanels = [
-    { id: 'summary', label: 'ðŸ“‹ Resumen' },
-    { id: 'risks', label: 'âš ï¸ Riesgos' },
-    { id: 'recommendations', label: 'ðŸ’¡ Recomendaciones', disabled: true },
-    { id: 'sources', label: 'ðŸ“š Fuentes' }
+    { id: 'summary', label: '📋 Resumen' },
+    { id: 'risks', label: '⚠️ Riesgos' },
+    { id: 'recommendations', label: '💡 Recomendaciones' },
+    { id: 'sources', label: '📚 Fuentes' },
+    { id: 'chronology', label: '📅 Cronología' },
+    { id: 'nextSteps', label: '✅ Próximos pasos' }
   ];
+  const quickActions = [
+    { label: 'Resumir expediente', action: () => setActivePanel('summary') },
+    { label: 'Ver riesgos', action: () => setActivePanel('risks') },
+    { label: 'Próximos pasos', action: () => setActivePanel('nextSteps') },
+    { label: 'Preparar WhatsApp', action: () => setPreviewAction(buildAssistantPreview('whatsapp', beneficiary, summary)) },
+    { label: 'Preparar Email', action: () => setPreviewAction(buildAssistantPreview('email', beneficiary, summary)) },
+    { label: 'Crear seguimiento', action: () => setPreviewAction(buildAssistantPreview('tracking', beneficiary, summary)) },
+    { label: 'Generar informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
+    { label: 'Más...', action: () => setShowQuestionBox((value) => !value) }
+  ];
+
+  function submitQuestion(event) {
+    event.preventDefault();
+    setAssistantAnswer(buildAssistantAnswer(assistantQuestion, summary));
+  }
+
   return (
-    <section className="rounded-2xl border border-brand-100 bg-brand-50 p-5 shadow-sm" aria-label="Asistente del Expediente">
-      <div className="flex items-start gap-3">
-        <span className="rounded-xl bg-white p-2 text-brand-700 shadow-sm"><NotebookTabs size={20} /></span>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Calculado con datos del ERP</p>
-          <h3 className="mt-1 text-lg font-bold text-ink">ðŸ¤– Asistente del Expediente</h3>
-          <p className="mt-1 text-sm text-slate-600">Reglas objetivas, sin IA externa ni datos inventados.</p>
+    <section className="overflow-hidden rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-emerald-50 shadow-sm" aria-label="Asistente Pan y Esperanza">
+      <div className="border-b border-brand-100 bg-white/80 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="rounded-2xl bg-brand-700 p-3 text-white shadow-sm"><NotebookTabs size={22} /></span>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Calculado con datos del ERP</p>
+              <h3 className="mt-1 text-xl font-black text-ink">🤖 Asistente Pan y Esperanza</h3>
+              <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">Asistente operativo basado exclusivamente en datos reales del ERP.</p>
+            </div>
+          </div>
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-black shadow-sm ${summary.status.tone}`}>
+            {summary.status.icon} {summary.status.label}
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-800">
+          El Asistente Pan y Esperanza nunca toma decisiones automáticamente. Solo resume, organiza y recomienda utilizando datos reales del ERP.
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Secciones del asistente del expediente">
-        {assistantPanels.map((panel) => {
-          const active = activePanel === panel.id;
-          return (
-            <button
-              key={panel.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              disabled={panel.disabled}
-              onClick={() => !panel.disabled && setActivePanel(panel.id)}
-              className={`focus-ring rounded-xl px-3 py-2 text-sm font-bold transition ${
-                active
-                  ? 'bg-brand-700 text-white shadow-sm'
-                  : panel.disabled
-                    ? 'cursor-not-allowed bg-white/50 text-slate-400'
-                    : 'bg-white text-slate-700 hover:bg-brand-100 hover:text-brand-800'
-              }`}
-            >
-              {panel.label}
-              {panel.disabled && <span className="ml-2 text-[11px] font-semibold">Disponible proximamente</span>}
-            </button>
-          );
-        })}
-      </div>
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1.45fr)_minmax(330px,0.75fr)]">
+        <div className="p-5">
+          <div className="flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Secciones del asistente Pan y Esperanza">
+            {assistantPanels.map((panel) => {
+              const active = activePanel === panel.id;
+              return (
+                <button
+                  key={panel.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActivePanel(panel.id)}
+                  className={`focus-ring shrink-0 rounded-2xl px-4 py-2.5 text-sm font-black transition ${
+                    active
+                      ? 'bg-brand-700 text-white shadow-sm'
+                      : 'bg-white text-slate-700 shadow-sm ring-1 ring-slate-100 hover:bg-brand-50 hover:text-brand-800'
+                  }`}
+                >
+                  {panel.label}
+                </button>
+              );
+            })}
+          </div>
 
-      <div className="mt-4">
-        {activePanel === 'summary' && (
-          <div className="grid gap-2 text-sm text-slate-700">
-            {summary.items.map((item) => (
-              <div key={item.label} className="rounded-xl bg-white p-3">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
-                <p className="mt-1 font-semibold text-ink">{item.value}</p>
+          <div className="mt-4 min-h-[360px]">
+            {activePanel === 'summary' && <AssistantSummaryPanel summary={summary} />}
+            {activePanel === 'risks' && <AssistantRisksPanel summary={summary} />}
+            {activePanel === 'recommendations' && <AssistantRecommendationsPanel summary={summary} onPreview={setPreviewAction} beneficiary={beneficiary} />}
+            {activePanel === 'sources' && <AssistantSourcesPanel summary={summary} />}
+            {activePanel === 'chronology' && <AssistantChronologyPanel entries={summary.chronology} />}
+            {activePanel === 'nextSteps' && <AssistantNextStepsPanel steps={summary.nextSteps} />}
+          </div>
+
+          <AssistantMemoryPanel memory={summary.memory} />
+        </div>
+
+        <aside className="border-t border-brand-100 bg-white/75 p-5 xl:border-l xl:border-t-0">
+          <div className="sticky top-4 space-y-4">
+            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-wide text-brand-700">Copiloto del trabajador social</p>
+              <h4 className="mt-2 text-lg font-black text-ink">He analizado este expediente.</h4>
+              <p className="mt-2 text-sm font-semibold text-slate-600">Hoy te recomiendo revisar:</p>
+              <div className="mt-3 grid gap-2">
+                {summary.focusItems.map((item) => (
+                  <div key={item} className="rounded-2xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">{item}</div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-
-        {activePanel === 'risks' && (
-          <div className="rounded-xl border border-white/70 bg-white/70 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
-            <div className="mt-2 grid gap-2">
-              {summary.risks.map((risk) => (
-                <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
-              ))}
-              {!summary.risks.length && (
-                <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
-              )}
+              <VerifiedSources sources={summary.verifiedSources} compact />
             </div>
-          </div>
-        )}
 
-        {activePanel === 'sources' && (
-          <div className="rounded-xl bg-white/80 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
-            <div className="mt-2 grid gap-2">
-              {summary.sources.map((source) => (
-                <p key={source} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm font-semibold text-slate-700">{source}</p>
-              ))}
+            <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="px-1 text-xs font-black uppercase tracking-wide text-slate-500">Acciones rápidas</p>
+              <div className="mt-3 grid gap-2">
+                {quickActions.map((item) => (
+                  <button key={item.label} type="button" onClick={item.action} className="focus-ring rounded-2xl border border-slate-100 bg-white px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
 
-        {activePanel === 'recommendations' && (
-          <div className="rounded-xl border border-slate-100 bg-white p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Recomendaciones</p>
-            <p className="mt-1 text-sm font-semibold text-slate-600">Disponible proximamente en Sprint 3.2.</p>
+            {showQuestionBox && (
+              <form onSubmit={submitQuestion} className="rounded-3xl border border-brand-100 bg-brand-50 p-4 shadow-sm">
+                <label className="text-xs font-black uppercase tracking-wide text-brand-700" htmlFor={`assistant-question-${beneficiary.id}`}>Pregunta al asistente</label>
+                <textarea
+                  id={`assistant-question-${beneficiary.id}`}
+                  className="mt-2 min-h-28 w-full rounded-2xl border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                  value={assistantQuestion}
+                  onChange={(event) => setAssistantQuestion(event.target.value)}
+                  placeholder="Ejemplo: ¿qué debería revisar hoy?"
+                />
+                <div className="mt-3 flex justify-end">
+                  <Button type="submit" variant="secondary">Responder con datos del ERP</Button>
+                </div>
+                {assistantAnswer && (
+                  <div className="mt-3 rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700">
+                    <p>{assistantAnswer}</p>
+                    <VerifiedSources sources={summary.verifiedSources} compact />
+                  </div>
+                )}
+              </form>
+            )}
+
+            {previewAction && (
+              <AssistantPreviewCard preview={previewAction} onChange={setPreviewAction} onCancel={() => setPreviewAction(null)} sources={summary.verifiedSources} />
+            )}
           </div>
-        )}
+        </aside>
       </div>
-
-      {activePanel !== 'risks' && (
-        <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-brand-700">Riesgos detectados</p>
-          <div className="mt-2 grid gap-2">
-            {summary.risks.slice(0, 2).map((risk) => (
-              <p key={risk} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{risk}</p>
-            ))}
-            {!summary.risks.length && (
-              <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">No hay riesgos objetivos destacados con los datos actuales.</p>
-            )}
-            {summary.risks.length > 2 && (
-              <button type="button" className="text-left text-sm font-bold text-brand-700 hover:text-brand-900" onClick={() => setActivePanel('risks')}>
-                Ver todos los riesgos detectados
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activePanel !== 'sources' && (
-        <div className="mt-4 rounded-xl bg-white/80 p-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fuentes utilizadas</p>
-          <p className="mt-1 text-sm font-semibold text-slate-700">{summary.sources.join(' Â· ')}</p>
-        </div>
-      )}
     </section>
   );
 }
 
-function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliveries = [], history = [], requests = [] }) {
+function AssistantSummaryPanel({ summary }) {
+  return (
+    <div className="space-y-4">
+      <article className="rounded-3xl border border-white bg-white p-5 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-wide text-brand-700">Resumen redactado</p>
+        <p className="mt-3 text-lg font-bold leading-relaxed text-ink">{summary.narrative}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {summary.highlights.map((item) => (
+            <span key={item} className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-black text-brand-700">{item}</span>
+          ))}
+        </div>
+      </article>
+      <div className="grid gap-3 md:grid-cols-2">
+        {summary.items.map((item) => (
+          <div key={item.label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{item.label}</p>
+            <p className="mt-1 text-sm font-bold text-ink">{item.value}</p>
+          </div>
+        ))}
+      </div>
+      <VerifiedSources sources={summary.verifiedSources} />
+    </div>
+  );
+}
+
+function AssistantRisksPanel({ summary }) {
+  return (
+    <div className="space-y-3">
+      {summary.risks.map((risk) => (
+        <article key={`${risk.level}-${risk.motive}`} className={`rounded-3xl border p-4 shadow-sm ${risk.cardTone}`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide">{risk.levelIcon} {risk.level}</p>
+              <h4 className="mt-1 text-base font-black text-ink">{risk.motive}</h4>
+              <p className="mt-2 text-sm font-semibold text-slate-700">Dato que lo justifica: {risk.evidence}</p>
+            </div>
+            <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-black text-slate-700">{risk.action}</span>
+          </div>
+        </article>
+      ))}
+      {!summary.risks.length && (
+        <div className="rounded-3xl border border-brand-100 bg-white p-5 text-sm font-bold text-brand-700 shadow-sm">No hay riesgos objetivos destacados con los datos actuales.</div>
+      )}
+      <VerifiedSources sources={summary.verifiedSources} />
+    </div>
+  );
+}
+
+function AssistantRecommendationsPanel({ summary, beneficiary, onPreview }) {
+  return (
+    <div className="space-y-3">
+      {summary.recommendations.map((recommendation) => (
+        <article key={recommendation.title} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-brand-700">Recomendación basada en reglas del ERP.</p>
+              <h4 className="mt-1 text-base font-black text-ink">{recommendation.title}</h4>
+              <p className="mt-2 text-sm font-semibold text-slate-600">Impacto: {recommendation.impact}</p>
+              <p className="mt-1 text-sm text-slate-600">Motivo: {recommendation.reason}</p>
+            </div>
+            <Button variant="secondary" onClick={() => onPreview(buildAssistantPreview(recommendation.previewType || 'tracking', beneficiary, summary, recommendation))}>{recommendation.button}</Button>
+          </div>
+        </article>
+      ))}
+      <VerifiedSources sources={summary.verifiedSources} />
+    </div>
+  );
+}
+
+function AssistantSourcesPanel({ summary }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {summary.sources.map((source) => (
+        <article key={source.name} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">{source.name}</p>
+          <h4 className="mt-1 text-sm font-black text-ink">{source.lastUsed}</h4>
+          <p className="mt-2 text-sm text-slate-600">{source.detail}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function AssistantChronologyPanel({ entries }) {
+  return (
+    <div className="space-y-3">
+      {entries.map((entry) => (
+        <article key={entry.key} className="flex gap-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-lg ${entry.tone}`}>{entry.icon}</span>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">{entry.date ? formatDateTime(entry.date) : 'Sin fecha registrada'}</p>
+            <h4 className="mt-1 font-black text-ink">{entry.title}</h4>
+            <p className="mt-1 text-sm font-semibold text-slate-600">{entry.detail}</p>
+          </div>
+        </article>
+      ))}
+      {!entries.length && <div className="rounded-3xl border border-slate-100 bg-white p-5 text-sm font-bold text-slate-600 shadow-sm">No hay eventos cronológicos suficientes para mostrar.</div>}
+    </div>
+  );
+}
+
+function AssistantNextStepsPanel({ steps }) {
+  return (
+    <div className="space-y-3">
+      {steps.map((step) => (
+        <article key={step.title} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className={`mt-1 h-5 w-5 shrink-0 rounded-md border-2 ${step.priorityTone}`} aria-hidden="true" />
+            <div>
+              <h4 className="font-black text-ink">{step.title}</h4>
+              <p className="mt-1 text-sm font-semibold text-slate-600">{step.reason}</p>
+              <p className="mt-2 text-xs font-black uppercase tracking-wide text-slate-500">No modifica datos automaticamente.</p>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function AssistantMemoryPanel({ memory }) {
+  return (
+    <section className="mt-5 rounded-3xl border border-slate-100 bg-white/85 p-4 shadow-sm" aria-label="Memoria del caso">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-brand-700">🧠 Memoria del caso</p>
+          <h4 className="mt-1 font-black text-ink">Recomendaciones anteriores y resultado</h4>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {memory.map((item) => (
+          <article key={item.key} className="rounded-2xl bg-slate-50 p-3">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">{item.when}</p>
+            <p className="mt-1 text-sm font-bold text-ink">{item.recommendation}</p>
+            <p className="mt-1 text-sm text-slate-600">Resultado: {item.result}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AssistantPreviewCard({ preview, onChange, onCancel, sources }) {
+  return (
+    <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-amber-700">{preview.label}</p>
+      <h4 className="mt-1 font-black text-ink">{preview.title}</h4>
+      <textarea
+        className="mt-3 min-h-36 w-full rounded-2xl border border-amber-100 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
+        value={preview.body}
+        onChange={(event) => onChange({ ...preview, body: event.target.value })}
+      />
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button variant="secondary" onClick={() => onChange({ ...preview, editable: true })}>Editar</Button>
+        <Button variant="secondary" onClick={() => onChange({ ...preview, sent: true })}>Enviar</Button>
+      </div>
+      {preview.sent && <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm font-bold text-amber-800">Borrador preparado. Revisa y confirma desde el canal correspondiente antes de enviarlo.</p>}
+      <VerifiedSources sources={sources} compact />
+    </div>
+  );
+}
+
+function VerifiedSources({ sources, compact = false }) {
+  return (
+    <div className={`${compact ? 'mt-3' : 'mt-4'} rounded-2xl bg-white/80 p-3`}>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">Fuentes verificadas:</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {sources.map((source) => (
+          <span key={source} className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700">✓ {source}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliveries = [], history = [], requests = [], notices = [] }) {
   const latestDelivery = getLatestPastDelivery(deliveries);
   const nextDelivery = getNextFutureDelivery(deliveries);
   const documentSummary = summarizeDocuments(documents);
@@ -1497,9 +1699,24 @@ function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliv
   const openRequests = requests.filter(isOpenPortalRequest);
   const lastInteraction = getLastInteraction({ deliveries, documents, history, requests });
   const observations = getRelevantObservations({ beneficiary, history, deliveries, requests });
-  const risks = detectBeneficiaryObjectiveRisks({ beneficiary, documents, deliveries, requests, latestDelivery });
+  const risks = detectBeneficiaryObjectiveRisks({ beneficiary, documents, deliveries, requests, latestDelivery, nextDelivery });
+  const recommendations = buildAssistantRecommendations({ beneficiary, documents, deliveries, requests, risks, nextDelivery });
+  const nextSteps = buildAssistantNextSteps({ documents, deliveries, requests, nextDelivery, recommendations });
+  const sources = buildAssistantSources({ beneficiary, documents, deliveries, history, requests, notices, latestDelivery, nextDelivery, lastInteraction, observations });
+  const chronology = buildAssistantChronology({ beneficiary, deliveries, documents, history, requests, notices });
+  const status = buildAssistantStatus(risks);
+  const memory = buildAssistantMemory({ history, documents, requests });
+  const verifiedSources = ['Expediente', 'Entregas', 'Documentacion', 'Solicitudes', 'Observaciones'];
+  const narrative = buildAssistantNarrative({ beneficiary, latestDelivery, nextDelivery, documentSummary, openRequests, observations, status });
+  const focusItems = buildAssistantFocusItems({ risks, recommendations, nextSteps });
 
   return {
+    narrative,
+    highlights: [
+      beneficiary.is_active ? 'Expediente activo' : 'Expediente inactivo',
+      nextDelivery ? 'Próxima entrega programada' : 'Sin entrega futura',
+      openRequests.length ? 'Solicitud abierta' : 'Sin solicitudes abiertas'
+    ],
     items: [
       { label: 'AntigÃ¼edad en la asociacion', value: associationAgeLabel(beneficiary.joined_at || beneficiary.first_attention_at) },
       { label: 'Ultima entrega', value: latestDelivery ? deliverySummaryLabel(latestDelivery) : 'Sin entregas anteriores registradas.' },
@@ -1511,8 +1728,288 @@ function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliv
       { label: 'Observaciones relevantes', value: observations }
     ],
     risks,
-    sources: ['Expediente', 'Entregas', 'Documentacion', 'Seguimiento social', 'Portal del Beneficiario']
+    recommendations,
+    sources,
+    chronology,
+    nextSteps,
+    memory,
+    status,
+    focusItems,
+    verifiedSources
   };
+}
+
+function buildAssistantStatus(risks = []) {
+  if (risks.some((risk) => risk.level === 'Alto')) {
+    return { icon: '🔴', label: 'Atención prioritaria', tone: 'border-red-100 bg-red-50 text-red-700' };
+  }
+  if (risks.some((risk) => risk.level === 'Medio')) {
+    return { icon: '🟡', label: 'Requiere seguimiento', tone: 'border-amber-100 bg-amber-50 text-amber-700' };
+  }
+  return { icon: '🟢', label: 'Expediente estable', tone: 'border-brand-100 bg-brand-50 text-brand-700' };
+}
+
+function buildAssistantNarrative({ beneficiary, latestDelivery, nextDelivery, documentSummary, openRequests, observations, status }) {
+  const joined = associationAgeLabel(beneficiary.joined_at || beneficiary.first_attention_at).replace(/\.$/, '');
+  const activeLabel = beneficiary.is_active ? 'Beneficiario activo' : 'Beneficiario inactivo';
+  const nextLabel = nextDelivery ? `Tiene una entrega programada: ${deliverySummaryLabel(nextDelivery)}.` : 'No tiene una entrega futura programada.';
+  const latestLabel = latestDelivery ? `La última ayuda registrada fue ${deliverySummaryLabel(latestDelivery)}.` : 'No constan entregas anteriores registradas.';
+  const requestLabel = openRequests.length ? `Mantiene ${openRequests.length} solicitud(es) pendiente(s) de seguimiento.` : 'No mantiene solicitudes abiertas en el portal.';
+  return `${activeLabel}; ${joined}. ${latestLabel} ${nextLabel} Estado documental: ${documentSummary}. ${requestLabel} Estado general calculado: ${status.label}. Observaciones relevantes: ${observations}`;
+}
+
+function buildAssistantRecommendations({ beneficiary, documents = [], deliveries = [], requests = [], risks = [], nextDelivery }) {
+  const recommendations = [];
+  const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
+  const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
+  const openRequests = requests.filter(isOpenPortalRequest).length;
+  const nextAttendance = normalize(nextDelivery?.attendance_status);
+  if (pendingDocuments || expiredDocuments) {
+    recommendations.push({
+      title: 'Solicitar revisión documental',
+      impact: 'Reduce bloqueos en próximas revisiones y entregas.',
+      reason: `${pendingDocuments} documento(s) pendiente(s) y ${expiredDocuments} caducado(s).`,
+      button: 'Preparar aviso',
+      previewType: 'email'
+    });
+  }
+  if (openRequests) {
+    recommendations.push({
+      title: 'Crear seguimiento de solicitud abierta',
+      impact: 'Evita que una petición del portal quede sin respuesta.',
+      reason: `${openRequests} solicitud(es) pendientes o en gestión.`,
+      button: 'Crear seguimiento',
+      previewType: 'tracking'
+    });
+  }
+  if (nextDelivery && (!nextAttendance || nextAttendance === 'pending')) {
+    recommendations.push({
+      title: 'Confirmar asistencia a próxima entrega',
+      impact: 'Mejora la planificación y evita ausencias.',
+      reason: 'Existe una entrega futura sin confirmación cerrada.',
+      button: 'Preparar WhatsApp',
+      previewType: 'whatsapp'
+    });
+  }
+  if (!beneficiary.phone && !beneficiary.email) {
+    recommendations.push({
+      title: 'Actualizar datos de contacto',
+      impact: 'Permite avisos y coordinación directa.',
+      reason: 'No consta teléfono ni email en el expediente.',
+      button: 'Crear seguimiento',
+      previewType: 'tracking'
+    });
+  }
+  if (!recommendations.length) {
+    recommendations.push({
+      title: 'Mantener seguimiento ordinario',
+      impact: 'Conserva la continuidad del acompañamiento.',
+      reason: risks.length ? 'Hay riesgos menores revisables.' : 'No hay riesgos objetivos destacados.',
+      button: 'Generar borrador',
+      previewType: 'report'
+    });
+  }
+  return recommendations;
+}
+
+function buildAssistantNextSteps({ documents = [], requests = [], nextDelivery, recommendations = [] }) {
+  const steps = [];
+  const hasPendingDocuments = documents.some((doc) => ['Pendiente', 'Caducado'].includes(documentStatus(doc)));
+  if (nextDelivery) {
+    steps.push({
+      title: 'Confirmar asistencia',
+      reason: `Próxima entrega: ${deliverySummaryLabel(nextDelivery)}.`,
+      priorityTone: normalize(nextDelivery.attendance_status) === 'confirmed' ? 'border-brand-500 bg-brand-50' : 'border-amber-400 bg-amber-50'
+    });
+  }
+  if (hasPendingDocuments) {
+    steps.push({ title: 'Revisar documentación', reason: summarizeDocuments(documents), priorityTone: 'border-amber-400 bg-amber-50' });
+  }
+  if (requests.filter(isOpenPortalRequest).length) {
+    steps.push({ title: 'Abrir solicitud', reason: 'Hay solicitudes del portal pendientes o en gestión.', priorityTone: 'border-red-400 bg-red-50' });
+  }
+  if (recommendations.some((item) => item.previewType === 'whatsapp')) {
+    steps.push({ title: 'Contactar', reason: 'El asistente recomienda preparar una comunicación previa.', priorityTone: 'border-blue-400 bg-blue-50' });
+  }
+  steps.push({ title: 'Crear seguimiento', reason: 'Registrar revisión manual si el equipo lo considera necesario.', priorityTone: 'border-slate-300 bg-slate-50' });
+  steps.push({ title: 'Preparar aviso', reason: 'Disponible como borrador; requiere confirmación del equipo.', priorityTone: 'border-slate-300 bg-slate-50' });
+  return steps;
+}
+
+function buildAssistantSources({ beneficiary, documents = [], deliveries = [], history = [], requests = [], notices = [], latestDelivery, nextDelivery, lastInteraction, observations }) {
+  return [
+    {
+      name: 'Expediente',
+      lastUsed: beneficiary.updated_at ? formatDateTime(beneficiary.updated_at) : formatDate(beneficiary.joined_at || beneficiary.first_attention_at),
+      detail: [beneficiary.full_name, beneficiary.code, beneficiary.situation, beneficiary.is_active ? 'Activo' : 'Inactivo'].filter(Boolean).join(' · ')
+    },
+    {
+      name: 'Entregas',
+      lastUsed: latestDelivery || nextDelivery ? deliverySummaryLabel(latestDelivery || nextDelivery) : 'Sin entregas usadas',
+      detail: `${deliveries.length} entrega(s) vinculadas al expediente.`
+    },
+    {
+      name: 'Documentación',
+      lastUsed: summarizeDocuments(documents),
+      detail: `${documents.length} documento(s) revisados por reglas objetivas.`
+    },
+    {
+      name: 'Solicitudes',
+      lastUsed: requests.length ? getLastRequestLabel(requests) : 'Sin solicitudes del portal',
+      detail: `${requests.filter(isOpenPortalRequest).length} solicitud(es) abiertas.`
+    },
+    {
+      name: 'Avisos',
+      lastUsed: notices.length ? getLastNoticeLabel(notices) : 'Sin avisos del portal',
+      detail: `${notices.length} aviso(s) vinculados al beneficiario.`
+    },
+    {
+      name: 'Observaciones',
+      lastUsed: lastInteraction,
+      detail: observations
+    }
+  ];
+}
+
+function buildAssistantChronology({ beneficiary, deliveries = [], documents = [], history = [], requests = [], notices = [] }) {
+  const entries = [
+    {
+      key: `assistant-alta-${beneficiary.id}`,
+      date: beneficiary.joined_at || beneficiary.first_attention_at,
+      title: 'Alta del beneficiario',
+      detail: beneficiary.first_attention_at ? `Primera atención: ${formatDate(beneficiary.first_attention_at)}` : 'Registro inicial del expediente.',
+      icon: '🤝',
+      tone: 'bg-brand-50 text-brand-700'
+    },
+    ...deliveries.map((delivery) => ({
+      key: `assistant-delivery-${delivery.id}`,
+      date: delivery.delivered_at || delivery.scheduled_at || delivery.created_at,
+      title: 'Entrega',
+      detail: deliverySummaryLabel(delivery),
+      icon: '📦',
+      tone: 'bg-blue-50 text-blue-700'
+    })),
+    ...documents.map((doc) => ({
+      key: `assistant-document-${doc.id}`,
+      date: doc.uploaded_at || doc.created_at,
+      title: 'Documento',
+      detail: [doc.document_type || 'Documento', documentStatus(doc), doc.file_name].filter(Boolean).join(' · '),
+      icon: '📄',
+      tone: documentStatus(doc) === 'Pendiente' ? 'bg-amber-50 text-amber-700' : 'bg-violet-50 text-violet-700'
+    })),
+    ...history.map((item) => ({
+      key: `assistant-history-${item.id}`,
+      date: item.date || item.created_at,
+      title: assistantHistoryTitle(item),
+      detail: item.notes || 'Registro de seguimiento.',
+      icon: assistantHistoryIcon(item),
+      tone: 'bg-slate-100 text-slate-700'
+    })),
+    ...requests.map((request) => ({
+      key: `assistant-request-${request.id}`,
+      date: request.updated_at || request.requested_at || request.created_at,
+      title: 'Solicitud',
+      detail: request.notes || request.requested_changes?.message || request.type || request.status || 'Solicitud creada desde el portal.',
+      icon: '📥',
+      tone: 'bg-amber-50 text-amber-700'
+    })),
+    ...notices.map((notice) => ({
+      key: `assistant-notice-${notice.id}`,
+      date: notice.created_at || notice.published_at,
+      title: 'Aviso',
+      detail: notice.title || notice.message || notice.body || 'Aviso del portal.',
+      icon: '📢',
+      tone: 'bg-brand-50 text-brand-700'
+    }))
+  ];
+  return entries
+    .filter((item) => item.date || item.detail)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function buildAssistantMemory({ history = [], documents = [], requests = [] }) {
+  const memory = [];
+  const latestDocument = [...documents].sort((a, b) => String(b.uploaded_at || b.created_at || '').localeCompare(String(a.uploaded_at || a.created_at || '')))[0];
+  if (latestDocument) {
+    memory.push({
+      key: `memory-doc-${latestDocument.id}`,
+      when: latestDocument.uploaded_at || latestDocument.created_at ? formatDate(latestDocument.uploaded_at || latestDocument.created_at) : 'Sin fecha',
+      recommendation: 'Se recomendó revisar documentación.',
+      result: `Estado actual: ${documentStatus(latestDocument)}.`
+    });
+  }
+  const latestRequest = [...requests].sort((a, b) => String(b.updated_at || b.requested_at || b.created_at || '').localeCompare(String(a.updated_at || a.requested_at || a.created_at || '')))[0];
+  if (latestRequest) {
+    memory.push({
+      key: `memory-request-${latestRequest.id}`,
+      when: latestRequest.updated_at || latestRequest.requested_at || latestRequest.created_at ? formatDate(latestRequest.updated_at || latestRequest.requested_at || latestRequest.created_at) : 'Sin fecha',
+      recommendation: 'Se recomendó revisar una solicitud del portal.',
+      result: latestRequest.status || 'Pendiente de valoración.'
+    });
+  }
+  const latestTracking = [...history].filter((item) => normalize(item.entry_type).includes('seguimiento') || normalize(item.entry_type).includes('objetivo')).sort((a, b) => String(b.date || b.created_at || '').localeCompare(String(a.date || a.created_at || '')))[0];
+  if (latestTracking) {
+    memory.push({
+      key: `memory-history-${latestTracking.id}`,
+      when: latestTracking.date || latestTracking.created_at ? formatDate(latestTracking.date || latestTracking.created_at) : 'Sin fecha',
+      recommendation: latestTracking.entry_type || 'Seguimiento registrado',
+      result: latestTracking.notes || 'Registrado en el historial social.'
+    });
+  }
+  if (!memory.length) {
+    memory.push({
+      key: 'memory-empty',
+      when: 'Sin registros previos',
+      recommendation: 'Aún no hay recomendaciones anteriores con resultado verificable.',
+      result: 'El asistente empezará a mostrar memoria cuando existan documentos, solicitudes o seguimientos registrados.'
+    });
+  }
+  return memory.slice(0, 3);
+}
+
+function buildAssistantFocusItems({ risks = [], recommendations = [], nextSteps = [] }) {
+  const items = [];
+  risks.slice(0, 2).forEach((risk) => items.push(`${risk.level}: ${risk.motive}`));
+  recommendations.slice(0, 2).forEach((recommendation) => items.push(recommendation.title));
+  nextSteps.slice(0, 2).forEach((step) => items.push(step.title));
+  return [...new Set(items)].slice(0, 4).length ? [...new Set(items)].slice(0, 4) : ['Seguimiento ordinario del expediente'];
+}
+
+function buildAssistantPreview(type, beneficiary, summary, recommendation = null) {
+  const name = beneficiary.full_name || 'beneficiario/a';
+  const nextDelivery = summary.items.find((item) => item.label === 'Proxima entrega')?.value || 'Sin entrega futura programada.';
+  const riskText = summary.risks.map((risk) => `${risk.level}: ${risk.motive}`).join('\n') || 'Sin riesgos objetivos destacados.';
+  const bodies = {
+    whatsapp: `Hola ${name}. Te escribimos desde Pan y Esperanza para revisar tu próxima entrega: ${nextDelivery}. Por favor, confirma si necesitas apoyo o tienes alguna duda.`,
+    email: `Hola ${name},\n\nDesde Pan y Esperanza queremos revisar contigo tu expediente. ${recommendation?.reason || 'Hemos detectado una revisión pendiente basada en los datos del ERP.'}\n\nGracias.`,
+    tracking: `Seguimiento propuesto para ${name}:\n\nMotivo: ${recommendation?.reason || 'Revisión sugerida por el Asistente Pan y Esperanza.'}\nRiesgos detectados:\n${riskText}\n\nAcción propuesta: ${recommendation?.title || 'Revisar expediente y registrar actuación.'}`,
+    report: `Borrador de informe social de ${name}\n\n${summary.narrative}\n\nRiesgos detectados:\n${riskText}\n\nPróximos pasos:\n${summary.nextSteps.map((step) => `- ${step.title}: ${step.reason}`).join('\n')}`
+  };
+  const labels = {
+    whatsapp: 'Vista previa de WhatsApp',
+    email: 'Vista previa de Email',
+    tracking: 'Borrador de seguimiento',
+    report: 'Borrador de informe social'
+  };
+  return {
+    label: labels[type] || 'Borrador del asistente',
+    title: recommendation?.title || labels[type] || 'Borrador',
+    body: bodies[type] || bodies.tracking
+  };
+}
+
+function buildAssistantAnswer(question, summary) {
+  const normalized = normalize(question);
+  if (!normalized) return 'Escribe una pregunta sobre este expediente para preparar una respuesta basada en datos del ERP.';
+  if (normalized.includes('riesgo')) {
+    return summary.risks.length
+      ? `Riesgos detectados: ${summary.risks.map((risk) => `${risk.level}: ${risk.motive}`).join('; ')}.`
+      : 'No hay riesgos objetivos destacados con los datos actuales.';
+  }
+  if (normalized.includes('document')) return `Estado documental: ${summary.items.find((item) => item.label === 'Estado documental')?.value || 'Sin datos documentales.'}`;
+  if (normalized.includes('entrega')) return `Próxima entrega: ${summary.items.find((item) => item.label === 'Proxima entrega')?.value || 'Sin entrega futura programada.'}`;
+  if (normalized.includes('pendiente') || normalized.includes('hoy')) return `Pendiente recomendado: ${summary.nextSteps.map((step) => step.title).join(', ')}.`;
+  return summary.narrative;
 }
 
 function associationAgeLabel(value) {
@@ -1640,7 +2137,48 @@ function getRelevantObservations({ beneficiary, history = [], deliveries = [], r
     || 'Sin observaciones relevantes.';
 }
 
-function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveries = [], requests = [], latestDelivery }) {
+function getLastRequestLabel(requests = []) {
+  const latest = [...requests]
+    .sort((a, b) => String(b.updated_at || b.requested_at || b.created_at || '').localeCompare(String(a.updated_at || a.requested_at || a.created_at || '')))[0];
+  if (!latest) return 'Sin solicitudes del portal';
+  return [
+    latest.status || 'Solicitud',
+    latest.updated_at || latest.requested_at || latest.created_at ? formatDateTime(latest.updated_at || latest.requested_at || latest.created_at) : '',
+    latest.notes || latest.requested_changes?.message || latest.type
+  ].filter(Boolean).join(' · ');
+}
+
+function getLastNoticeLabel(notices = []) {
+  const latest = [...notices]
+    .sort((a, b) => String(b.created_at || b.published_at || '').localeCompare(String(a.created_at || a.published_at || '')))[0];
+  if (!latest) return 'Sin avisos del portal';
+  return [
+    latest.title || latest.subject || 'Aviso',
+    latest.created_at || latest.published_at ? formatDateTime(latest.created_at || latest.published_at) : '',
+    latest.status
+  ].filter(Boolean).join(' · ');
+}
+
+function assistantHistoryTitle(item) {
+  const normalized = normalize(`${item.entry_type || ''} ${item.notes || ''}`);
+  if (normalized.includes('llamada') || normalized.includes('telefono')) return 'Llamada registrada';
+  if (normalized.includes('whatsapp')) return 'WhatsApp';
+  if (normalized.includes('aviso')) return 'Aviso';
+  if (normalized.includes('seguimiento')) return 'Seguimiento';
+  if (normalized.includes('donacion')) return 'Donación';
+  return item.entry_type || 'Seguimiento social';
+}
+
+function assistantHistoryIcon(item) {
+  const normalized = normalize(`${item.entry_type || ''} ${item.notes || ''}`);
+  if (normalized.includes('llamada') || normalized.includes('telefono')) return '☎';
+  if (normalized.includes('whatsapp')) return '💬';
+  if (normalized.includes('aviso')) return '📢';
+  if (normalized.includes('donacion')) return '❤️';
+  return '🤝';
+}
+
+function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveries = [], requests = [], latestDelivery, nextDelivery }) {
   const risks = [];
   const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
   const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
@@ -1649,16 +2187,33 @@ function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveri
   const openRequests = requests.filter(isOpenPortalRequest).length;
   const priority = socialPriorityLabel(beneficiary, []);
 
-  if (pendingDocuments) risks.push(`${pendingDocuments} documento(s) pendiente(s) de revision.`);
-  if (expiredDocuments) risks.push(`${expiredDocuments} documento(s) caducado(s).`);
-  if (unavailableCount >= 2) risks.push(`${unavailableCount} no asistencias registradas.`);
-  if (needsContactCount) risks.push(`${needsContactCount} entrega(s) marcadas como necesita contacto.`);
-  if (openRequests) risks.push(`${openRequests} solicitud(es) del portal sin resolver.`);
-  if (priority === 'Alta') risks.push('Situacion marcada como urgente o prioritaria en el expediente.');
-  if (latestDelivery && daysSince(latestDelivery.delivered_at || latestDelivery.created_at) > 45) risks.push('Mas de 45 dias desde la ultima ayuda registrada.');
-  if (!latestDelivery && deliveries.length === 0) risks.push('No existen entregas registradas en el expediente.');
+  if (expiredDocuments) risks.push(buildRisk('Alto', 'Documentación caducada', `${expiredDocuments} documento(s) caducado(s).`, 'Solicitar actualización documental'));
+  if (pendingDocuments) risks.push(buildRisk('Medio', 'Documentación pendiente', `${pendingDocuments} documento(s) pendiente(s) de revisión.`, 'Preparar aviso documental'));
+  if (unavailableCount >= 2) risks.push(buildRisk('Alto', 'Ausencias repetidas', `${unavailableCount} no asistencias registradas.`, 'Contactar antes de la próxima entrega'));
+  if (needsContactCount) risks.push(buildRisk('Medio', 'Entrega marcada como necesita contacto', `${needsContactCount} entrega(s) requieren contacto.`, 'Abrir seguimiento'));
+  if (openRequests) risks.push(buildRisk('Medio', 'Solicitud abierta', `${openRequests} solicitud(es) del portal sin resolver.`, 'Abrir solicitud'));
+  if (priority === 'Alta') risks.push(buildRisk('Alto', 'Situación prioritaria', 'Situación marcada como urgente o prioritaria en el expediente.', 'Revisión del equipo'));
+  if (latestDelivery && daysSince(latestDelivery.delivered_at || latestDelivery.created_at) > 45) risks.push(buildRisk('Medio', 'Tiempo sin ayuda reciente', 'Más de 45 días desde la última ayuda registrada.', 'Revisar frecuencia de ayuda'));
+  if (!latestDelivery && deliveries.length === 0) risks.push(buildRisk('Bajo', 'Sin entregas registradas', 'No existen entregas registradas en el expediente.', 'Verificar historial'));
+  if (nextDelivery && !normalize(nextDelivery.attendance_status)) risks.push(buildRisk('Bajo', 'Asistencia sin confirmar', 'La próxima entrega no tiene confirmación de asistencia.', 'Confirmar asistencia'));
 
   return risks;
+}
+
+function buildRisk(level, motive, evidence, action) {
+  const levelMap = {
+    Alto: { levelIcon: '🔴', cardTone: 'border-red-100 bg-red-50' },
+    Medio: { levelIcon: '🟡', cardTone: 'border-amber-100 bg-amber-50' },
+    Bajo: { levelIcon: '🟢', cardTone: 'border-brand-100 bg-brand-50' }
+  };
+  return {
+    level,
+    motive,
+    evidence,
+    action,
+    levelIcon: levelMap[level]?.levelIcon || '🟢',
+    cardTone: levelMap[level]?.cardTone || 'border-brand-100 bg-brand-50'
+  };
 }
 
 function CrmHeader({ beneficiary, family, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
