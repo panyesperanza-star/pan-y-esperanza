@@ -24,7 +24,7 @@ Reglas de trabajo:
 - No romper rutas actuales.
 - No eliminar compatibilidad local/Supabase mientras haya usuarios o datos que dependan de ella.
 - Usar `useAppData` como fachada temporal mientras se extrae logica hacia Services.
-- Migrar por dominios pequeños, con build y pruebas manuales tras cada sprint.
+- Migrar por dominios pequeÃ±os, con build y pruebas manuales tras cada sprint.
 
 Objetivo final:
 
@@ -745,7 +745,7 @@ Antes de empezar:
 
 Durante:
 
-- Cambios pequeños.
+- Cambios pequeÃ±os.
 - Mantener `actions` compatibles.
 - No cambiar UI.
 - No cambiar nombres de rutas.

@@ -1,4 +1,4 @@
-﻿# ERP Business Rules
+# ERP Business Rules
 
 Documento de referencia obligatoria para todo el desarrollo futuro del ERP de Pan y Esperanza.
 

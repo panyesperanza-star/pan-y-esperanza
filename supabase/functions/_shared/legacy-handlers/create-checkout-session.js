@@ -104,7 +104,7 @@ export default async function handler(request, response) {
 
   if (!secretKey) {
     return sendJson(response, 501, {
-      message: "Stripe no esta configurado todavia.",
+      message: "Stripe no está configurado todavía.",
     });
   }
 
@@ -125,7 +125,7 @@ export default async function handler(request, response) {
 
   if (!priceId) {
     return sendJson(response, 501, {
-      message: "El precio de donacion no esta configurado todavia.",
+      message: "El precio de donación no está configurado todavía.",
     });
   }
 

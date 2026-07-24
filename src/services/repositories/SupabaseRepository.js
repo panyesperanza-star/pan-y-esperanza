@@ -1,4 +1,4 @@
-﻿const DATE_FIELDS = new Set([
+const DATE_FIELDS = new Set([
   'birth_date',
   'first_attention_at',
   'joined_at',
@@ -97,7 +97,8 @@ const OPTIONAL_TABLES = new Set([
   'campana_entregas',
   'campana_agenda_eventos',
   'categorias_recursos',
-  'recursos'
+  'recursos',
+  'platform_maintenance_logs'
 ]);
 
 const SECURITY_TABLES = new Set([

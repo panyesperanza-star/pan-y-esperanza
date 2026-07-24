@@ -2463,10 +2463,14 @@
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     gap: var(--space-md);
-    padding: var(--space-md);
+    bottom: var(--space-sm);
+    gap: var(--space-sm);
+    padding: var(--space-sm);
   }
 
   .cookie-consent__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: stretch;
   }
 

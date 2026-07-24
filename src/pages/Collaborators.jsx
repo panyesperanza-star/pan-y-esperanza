@@ -8,7 +8,7 @@ import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDateTime, normalize } from '../lib/formatters';
 
-const TYPES = ['Empresa', 'Comercio', 'Asociacion', 'Particular', 'Institucion'];
+const TYPES = ['Empresa', 'Comercio', 'Asociación', 'Particular', 'Institución'];
 const STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
 
 export function Collaborators({ data, actions, currentUser }) {
@@ -165,7 +165,7 @@ export function Collaborators({ data, actions, currentUser }) {
               {!filtered.length && (
                 <tr>
                   <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={6}>
-                    {collaborators.length ? 'No hay colaboradores que coincidan con los filtros.' : 'Todavia no hay colaboradores registrados.'}
+                    {collaborators.length ? 'No hay colaboradores que coincidan con los filtros.' : 'Todavía no hay colaboradores registrados.'}
                   </td>
                 </tr>
               )}

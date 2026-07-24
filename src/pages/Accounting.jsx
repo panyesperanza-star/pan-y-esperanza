@@ -2234,7 +2234,7 @@ function buildAreaGroups(report) {
       tone: 'bg-cyan-50 text-cyan-700',
       items: [
         { label: 'Donaciones en especie', detail: 'Entradas que no aumentan caja ni bancos.', value: report.metrics.socialEvents },
-        { label: 'Valor social recibido', detail: 'Valor estimado que llega a la asociacion.', value: formatMoney(report.socialReceived) },
+        { label: 'Valor social recibido', detail: 'Valor estimado que llega a la asociación.', value: formatMoney(report.socialReceived) },
         { label: 'Valor social entregado', detail: 'Valor estimado entregado a beneficiarios.', value: formatMoney(report.socialDelivered) }
       ]
     },
@@ -2797,7 +2797,7 @@ function inferAccountingDonorKind(name = '') {
   const value = normalize(name);
   if (value.includes('iglesia') || value.includes('parroquia')) return 'Iglesia';
   if (value.includes('fundacion')) return 'Fundacion';
-  if (value.includes('asociacion')) return 'Asociacion';
+  if (value.includes('asociacion')) return 'Asociación';
   if (value.includes('ayuntamiento') || value.includes('administracion')) return 'Administracion';
   if (/\b(sl|s l|sa|s a)\b/.test(value) || value.includes('empresa')) return 'Empresa';
   if (value.includes('anonimo')) return 'Anonimo';

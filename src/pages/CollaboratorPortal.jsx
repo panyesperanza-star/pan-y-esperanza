@@ -146,7 +146,7 @@ export function CollaboratorPortal({ actions }) {
                     />
                   </FormField>
                 </div>
-                {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-5" />}
+                {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mt-5" />}
                 {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-5" />}
                 <Button type="submit" className="mt-7 min-h-[3.9rem] w-full rounded-xl px-6 text-base"><KeyRound size={18} /> Solicitar codigo OTP</Button>
               </form>
@@ -188,7 +188,7 @@ export function CollaboratorPortal({ actions }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mb-5" />}
+        {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mb-5" />}
         {error && <StatusBlock type="error" title="Atencion" text={error} className="mb-5" />}
 
         <section className="rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
@@ -273,7 +273,7 @@ function ImpactSection({ impact }) {
 function DonationsSection({ donations }) {
   return (
     <Panel title="Mis donaciones" icon={Gift}>
-      {!donations.length ? <EmptyState title="Sin donaciones registradas." text="Cuando exista una colaboracion aparecera aqui." /> : (
+      {!donations.length ? <EmptyState title="Sin donaciones registradas." text="Cuando exista una colaboración aparecerá aquí." /> : (
         <div className="grid gap-3">
           {donations.map((donation) => (
             <article key={donation.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -357,7 +357,7 @@ function NewDonationSection({ service, collaborator, session, refresh, setError,
 function CertificatesSection({ certificates, collaborator }) {
   return (
     <Panel title="Certificados" icon={Award}>
-      {!certificates.length ? <EmptyState title="No hay certificados disponibles." text="Los certificados validados apareceran aqui." /> : (
+      {!certificates.length ? <EmptyState title="No hay certificados disponibles." text="Los certificados validados aparecerán aquí." /> : (
         <div className="grid gap-3 md:grid-cols-2">
           {certificates.map((certificate) => (
             <article key={certificate.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -387,7 +387,7 @@ function CampaignsSection({ service, collaborator, session, campaigns, refresh, 
 
   return (
     <Panel title="Campanas" icon={CalendarDays}>
-      {!campaigns.length ? <EmptyState title="No hay campanas activas." text="Las campanas activas y futuras apareceran aqui." /> : (
+      {!campaigns.length ? <EmptyState title="No hay campañas activas." text="Las campañas activas y futuras aparecerán aquí." /> : (
         <div className="grid gap-3 md:grid-cols-2">
           {campaigns.map((campaign) => (
             <article key={campaign.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -445,7 +445,7 @@ function ResourcesSection({ service, collaborator, session, resources, refresh, 
         </form>
       </Panel>
       <Panel title="Recursos enviados" icon={BookOpen}>
-        {!resources.length ? <EmptyState title="Sin recursos enviados." text="Los recursos propuestos apareceran aqui." /> : (
+        {!resources.length ? <EmptyState title="Sin recursos enviados." text="Los recursos propuestos aparecerán aquí." /> : (
           <div className="space-y-3">
             {resources.map((resource) => (
               <InfoCard key={resource.id} title={resource.titulo} meta={resource.status === 'published' ? 'Publicado' : 'En revision'} text={resource.descripcion} />

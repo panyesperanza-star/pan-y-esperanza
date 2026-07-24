@@ -452,15 +452,40 @@ create table public.app_users (
   last_name text,
   email text not null unique,
   phone text,
-  role text not null check (role in ('Superadministrador', 'Superadministrador del sistema', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
+  role text not null check (role in ('Superadministrador', 'Superadministrador del sistema', 'Platform Owner', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario', 'Coordinador', 'Presidente', 'Tesorero', 'Secretario', 'Administrador', 'Consulta')),
   position text,
   status text not null default 'Activo' check (status in ('Activo', 'Inactivo', 'Bloqueado')),
   is_active boolean not null default true,
   permissions jsonb not null default '[]'::jsonb,
   permission_matrix jsonb not null default '{}'::jsonb,
+  organization_scope text not null default 'organization' check (organization_scope in ('organization', 'platform')),
+  platform_owner_provider text,
   profile_photo text,
   last_access_at timestamptz,
   created_by text,
+  created_at timestamptz not null default now(),
+  constraint app_users_platform_owner_scope_check check (
+    role <> 'Platform Owner'
+    or (organization_scope = 'platform' and platform_owner_provider = 'ALTHEMON')
+  )
+);
+
+create table public.platform_maintenance_logs (
+  id uuid primary key default gen_random_uuid(),
+  operation_id text not null,
+  operation_label text not null,
+  operation_scope text not null,
+  risk_level text not null check (risk_level in ('alto', 'critico')),
+  status text not null check (status in ('prepared', 'password_failed', 'cancelled', 'executed', 'failed')),
+  reason text not null,
+  result text not null default '',
+  provider text not null default 'ALTHEMON',
+  requested_by uuid references public.app_users(id) on delete set null,
+  user_name text not null default '',
+  user_email text not null default '',
+  user_role text not null default '',
+  user_agent text not null default '',
+  metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -772,6 +797,7 @@ alter table public.campana_agenda_eventos enable row level security;
 alter table public.notificaciones enable row level security;
 alter table public.roles enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.platform_maintenance_logs enable row level security;
 alter table public.app_users enable row level security;
 alter table public.deletion_requests enable row level security;
 alter table public.password_reset_tokens enable row level security;
@@ -898,6 +924,14 @@ create policy "authenticated_read_roles" on public.roles for select to authentic
 create policy "authenticated_write_roles" on public.roles for all to authenticated using (true) with check (true);
 create policy "authenticated_read_audit_logs" on public.audit_logs for select to authenticated using (true);
 create policy "authenticated_write_audit_logs" on public.audit_logs for all to authenticated using (true) with check (true);
+create index platform_maintenance_logs_created_idx on public.platform_maintenance_logs (created_at desc);
+create index platform_maintenance_logs_operation_idx on public.platform_maintenance_logs (operation_id, created_at desc);
+create policy "platform_maintenance_logs_select_owner" on public.platform_maintenance_logs for select to authenticated using (public.is_platform_owner());
+create policy "platform_maintenance_logs_insert_owner" on public.platform_maintenance_logs for insert to authenticated with check (public.is_platform_owner());
+create policy "platform_maintenance_logs_no_update" on public.platform_maintenance_logs for update to authenticated using (false) with check (false);
+create policy "platform_maintenance_logs_no_delete" on public.platform_maintenance_logs for delete to authenticated using (false);
+grant select, insert on public.platform_maintenance_logs to authenticated;
+revoke update, delete on public.platform_maintenance_logs from authenticated;
 create policy "password_reset_tokens_no_client_access" on public.password_reset_tokens for all to authenticated using (false) with check (false);
 
 create or replace function public.current_app_user()
@@ -951,6 +985,14 @@ as $$
   )
 $$;
 
+create or replace function public.is_platform_owner_role(role_name text)
+returns boolean
+language sql
+immutable
+as $$
+  select lower(trim(coalesce(role_name, ''))) = 'platform owner'
+$$;
+
 create or replace function public.is_system_superadmin()
 returns boolean
 language sql
@@ -969,10 +1011,32 @@ as $$
   )
 $$;
 
+create or replace function public.is_platform_owner()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.app_users u
+    where (u.auth_user_id = auth.uid()
+       or lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
+      and public.is_platform_owner_role(u.role)
+      and u.organization_scope = 'platform'
+      and u.platform_owner_provider = 'ALTHEMON'
+      and u.is_active = true
+      and coalesce(u.status, 'Activo') = 'Activo'
+  )
+$$;
+
 create policy "app_users_select_self_or_admin" on public.app_users for select to authenticated using (
   public.is_system_superadmin()
+  or public.is_platform_owner()
   or (
     not public.is_system_superadmin_role(role)
+    and not public.is_platform_owner_role(role)
     and (
       public.is_app_admin()
       or auth_user_id = auth.uid()
@@ -982,12 +1046,14 @@ create policy "app_users_select_self_or_admin" on public.app_users for select to
 );
 create policy "app_users_insert_admin" on public.app_users for insert to authenticated with check (
   public.is_system_superadmin()
-  or (public.is_app_admin() and not public.is_system_superadmin_role(role))
+  or (public.is_app_admin() and not public.is_system_superadmin_role(role) and not public.is_platform_owner_role(role))
 );
 create policy "app_users_update_self_or_admin" on public.app_users for update to authenticated using (
   public.is_system_superadmin()
+  or public.is_platform_owner()
   or (
     not public.is_system_superadmin_role(role)
+    and not public.is_platform_owner_role(role)
     and (
       public.is_app_admin()
       or auth_user_id = auth.uid()
@@ -996,8 +1062,10 @@ create policy "app_users_update_self_or_admin" on public.app_users for update to
   )
 ) with check (
   public.is_system_superadmin()
+  or public.is_platform_owner()
   or (
     not public.is_system_superadmin_role(role)
+    and not public.is_platform_owner_role(role)
     and (
       public.is_app_admin()
       or auth_user_id = auth.uid()
@@ -1007,12 +1075,14 @@ create policy "app_users_update_self_or_admin" on public.app_users for update to
 );
 create policy "app_users_delete_admin" on public.app_users for delete to authenticated using (
   public.is_system_superadmin()
-  or (public.is_app_admin() and not public.is_system_superadmin_role(role))
+  or (public.is_app_admin() and not public.is_system_superadmin_role(role) and not public.is_platform_owner_role(role))
 );
 grant execute on function public.current_app_user() to authenticated;
 grant execute on function public.is_app_admin() to authenticated;
 grant execute on function public.is_system_superadmin_role(text) to authenticated;
 grant execute on function public.is_system_superadmin() to authenticated;
+grant execute on function public.is_platform_owner_role(text) to authenticated;
+grant execute on function public.is_platform_owner() to authenticated;
 
 create policy "authenticated_read_documentos" on storage.objects for select to authenticated using (bucket_id = 'documentos');
 create policy "authenticated_write_documentos" on storage.objects for all to authenticated using (bucket_id = 'documentos') with check (bucket_id = 'documentos');

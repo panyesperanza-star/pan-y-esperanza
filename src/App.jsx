@@ -1,8 +1,8 @@
-﻿import { AlertTriangle, Database } from 'lucide-react';
+import { AlertTriangle, Database } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { useAppData } from './hooks/useAppData';
-import { canAccess, clearStoredUser, consumeJustSignedIn, getFirstAccessibleModule, getStoredUser, isSystemSuperadmin, refreshCurrentUser, signIn, signOut } from './lib/auth';
+import { canAccess, clearStoredUser, consumeJustSignedIn, getFirstAccessibleModule, getStoredUser, isPlatformOwner, isSystemSuperadmin, refreshCurrentUser, signIn, signOut } from './lib/auth';
 import { getModuleByPath, getModulePath } from './lib/constants';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { Accounting } from './pages/Accounting';
@@ -23,6 +23,7 @@ import { Families } from './pages/Families';
 import { Inventory } from './pages/Inventory';
 import { Login } from './pages/Login';
 import { Notifications } from './pages/Notifications';
+import { PlatformTools } from './pages/PlatformTools';
 import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
@@ -33,6 +34,10 @@ import { createPortalApiActions } from './services/portalAuth/PortalApiService';
 
 const SESSION_VALIDATION_TIMEOUT_MS = 12000;
 const SIGN_OUT_TIMEOUT_MS = 5000;
+const EMPTY_PLATFORM_DATA = Object.freeze({
+  notificaciones: Object.freeze([]),
+  platform_maintenance_logs: Object.freeze([])
+});
 
 export default function App() {
   const hasResetToken = Boolean(new URLSearchParams(window.location.search).get('reset_token'));
@@ -49,7 +54,8 @@ export default function App() {
   const [skipInitialSessionValidation] = useState(() => consumeJustSignedIn());
   const [authReady, setAuthReady] = useState(true);
   const portalActions = useMemo(() => createPortalApiActions(), []);
-  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
+  const isPlatformOwnerUser = isPlatformOwner(currentUser);
+  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -162,6 +168,7 @@ export default function App() {
   }
 
   const sorted = useMemo(() => {
+    if (isPlatformOwnerUser && !data) return EMPTY_PLATFORM_DATA;
     if (!data) return null;
     return {
       ...data,
@@ -176,6 +183,7 @@ export default function App() {
       social_value_events: [...(data.social_value_events || [])].sort((a, b) => String(b.social_value_at || b.created_at).localeCompare(String(a.social_value_at || a.created_at))),
       deletion_requests: [...(data.deletion_requests || [])].sort((a, b) => String(b.requested_at || b.created_at).localeCompare(String(a.requested_at || a.created_at))),
       notificaciones: [...(data.notificaciones || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      platform_maintenance_logs: [...(data.platform_maintenance_logs || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       agenda_operativa: [...(data.agenda_operativa || [])].sort((a, b) => String(a.event_at || a.created_at).localeCompare(String(b.event_at || b.created_at))),
       campanas: [...(data.campanas || [])].sort((a, b) => String(a.start_date || a.created_at).localeCompare(String(b.start_date || b.created_at))),
       donors: [...(data.donors || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'es', { numeric: true })),
@@ -183,7 +191,7 @@ export default function App() {
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
     };
-  }, [data]);
+  }, [data, isPlatformOwnerUser]);
 
   if (hasResetToken) {
     return <Login onAccess={handleLoginAccess} />;
@@ -225,9 +233,9 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f7faf6] px-4">
         <section className="max-w-lg rounded-md border border-slate-200 bg-white p-8 text-center shadow-panel">
-          <h1 className="text-2xl font-bold text-ink">Sin modulos asignados</h1>
+          <h1 className="text-2xl font-bold text-ink">Sin módulos asignados</h1>
           <p className="mt-3 text-slate-600">Tu cuenta esta activa, pero no tiene permisos de visualizacion. Solicita acceso a un administrador.</p>
-          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesiÃ³n</button>
+          <button className="focus-ring mt-6 rounded-md bg-brand-600 px-4 py-2 font-semibold text-white" onClick={logout}>Cerrar sesión</button>
         </section>
       </main>
     );
@@ -253,6 +261,7 @@ export default function App() {
     reports: <Reports data={sorted} actions={actions} />,
     backup: <Backup data={sorted} actions={actions} currentUser={currentUser} />,
     provider: <ProviderPanel data={sorted} actions={actions} currentUser={currentUser} />,
+    'platform-tools': <PlatformTools data={sorted} actions={actions} currentUser={currentUser} />,
     users: <Settings key="users" data={sorted} actions={actions} currentUser={currentUser} initialTab="users" />
   };
 

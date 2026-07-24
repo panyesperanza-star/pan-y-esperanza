@@ -64,8 +64,8 @@ export default async function handler(request, response) {
       return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_ACTION', error: 'No tiene permiso para crear usuarios.' });
     }
 
-    if (isSystemSuperadminRole(user.role)) {
-      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'El Superadministrador del sistema no se gestiona desde una asociacion.' });
+    if (isProtectedSystemRole(user.role)) {
+      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'Los roles internos de plataforma no se gestionan desde una asociación.' });
     }
 
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -177,6 +177,14 @@ function isSystemSuperadminRole(role) {
   return normalized === 'superadministrador del sistema'
     || normalized === 'superadministrador sistema'
     || normalized === 'system superadmin';
+}
+
+function isPlatformOwnerRole(role) {
+  return String(role || '').trim().toLowerCase() === 'platform owner';
+}
+
+function isProtectedSystemRole(role) {
+  return isSystemSuperadminRole(role) || isPlatformOwnerRole(role);
 }
 
 function normalizeSupabaseAuthError(message) {

@@ -203,7 +203,7 @@ export function BeneficiaryPortal({ data, actions }) {
         return;
       }
       if (rejectionReason === 'CONFIRM_PIN_RULE_FAILED') {
-        setError('La confirmacion del PIN debe tener entre 6 y 12 numeros.');
+        setError('La confirmación del PIN debe tener entre 6 y 12 números.');
         return;
       }
       setError('El nuevo PIN debe tener entre 6 y 12 numeros.');
@@ -348,7 +348,7 @@ export function BeneficiaryPortal({ data, actions }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mb-5" />}
+        {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mb-5" />}
         {error && <StatusBlock type="error" title="Atencion" text={error} className="mb-5" />}
 
         <section className="rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
@@ -554,7 +554,7 @@ const ASSISTANT_QUICK_ACTIONS = [
   { intent: 'documents', label: 'Me falta algun documento?' },
   { intent: 'notices', label: 'Ver mis avisos' },
   { intent: 'create_request', label: 'Enviar una solicitud' },
-  { intent: 'contact', label: 'Contactar con la asociacion' }
+  { intent: 'contact', label: 'Contactar con la asociación' }
 ];
 
 function BeneficiaryAssistantPanel({ service, session, open, onOpenChange, setActiveTab, onRefresh, setError, setSuccess }) {
@@ -839,7 +839,7 @@ function NextDeliveryCard({ delivery, onOpen }) {
               <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Proxima entrega</p>
               <h3 className="mt-2 text-2xl font-bold text-ink">Aun no hay una entrega programada.</h3>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-                Cuando el equipo registre una nueva entrega, aparecera aqui con la fecha, hora, lugar y estado.
+                Cuando el equipo registre una nueva entrega, aparecerá aquí con la fecha, hora, lugar y estado.
               </p>
             </div>
           </div>
@@ -953,7 +953,7 @@ function NoticeSummary({ notices, unreadCount, onOpen }) {
       {!notices.length ? (
         <div className="mt-4 rounded-md bg-slate-50 p-4">
           <h4 className="font-bold text-ink">No tienes avisos pendientes.</h4>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">Cuando el equipo publique un aviso importante, aparecera aqui.</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">Cuando el equipo publique un aviso importante, aparecerá aquí.</p>
         </div>
       ) : (
         <div className="mt-4 space-y-3">
@@ -1071,7 +1071,7 @@ function DeliveriesSection({ deliveries, service, session, onRefresh, setError, 
 
   return (
     <Panel title="Proxima entrega" icon={CalendarDays}>
-      {!safeDeliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecera aqui." /> : (
+      {!safeDeliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecerá aquí." /> : (
         <div className="grid gap-3">
           {safeDeliveries.map((delivery, index) => (
             <article key={delivery.id || `delivery-${index}`} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -1209,7 +1209,7 @@ function DeliveryAttendanceControls({ delivery, service, session, onRefresh, set
 function HistorySection({ history }) {
   return (
     <Panel title="Historial de entregas" icon={History}>
-      {!history.length ? <EmptyState title="No hay historial disponible." text="Las entregas y comunicaciones registradas apareceran aqui." /> : (
+      {!history.length ? <EmptyState title="No hay historial disponible." text="Las entregas y comunicaciones registradas aparecerán aquí." /> : (
         <div className="space-y-3">
           {history.map((item) => (
             <InfoCard key={`${item.source}-${item.id}`} title={item.source === 'delivery' ? 'Entrega' : item.title || 'Historial social'} meta={formatDate(item.timeline_at)} text={item.help_type || item.notes || item.status || 'Registro del expediente'} />
@@ -1236,7 +1236,7 @@ function NoticesSection({ notices, service, session, onRefresh, setError, setSuc
 
   return (
     <Panel title="Avisos" icon={Bell}>
-      {!orderedNotices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes apareceran en esta seccion." /> : (
+      {!orderedNotices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes aparecerán en esta sección." /> : (
         <div className="grid gap-3">
           {orderedNotices.map((notice) => {
             const unread = normalize(notice.status) !== 'read';
@@ -1273,7 +1273,7 @@ function DocumentsSection({ documents }) {
 
   return (
     <Panel title="Documentos" icon={FileText}>
-      {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentacion solicitada aparecera aqui." /> : (
+      {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentación solicitada aparecerá aquí." /> : (
         <div className="space-y-4">
           <div className="rounded-md border border-slate-100 bg-slate-50 p-4">
             <h3 className="font-bold text-ink">Estado documental</h3>
@@ -1323,7 +1323,7 @@ function DocumentStatusBadge({ status }) {
 function ResourcesSection({ resources }) {
   return (
     <Panel title="Centro de Recursos personalizado" icon={BookOpen}>
-      {!resources.length ? <EmptyState title="No hay recursos personalizados." text="Cuando haya recursos publicados para tu perfil apareceran aqui." /> : (
+      {!resources.length ? <EmptyState title="No hay recursos personalizados." text="Cuando haya recursos publicados para tu perfil aparecerán aquí." /> : (
         <div className="grid gap-3 md:grid-cols-2">
           {resources.map((resource) => (
             <article key={resource.id || resource.slug || resource.titulo} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -1390,7 +1390,7 @@ function RequestsSection({ service, beneficiary, session, requests, onRefresh, s
         </form>
       </Panel>
       <Panel title="Solicitudes enviadas" icon={History}>
-        {!requests.length ? <EmptyState title="Sin solicitudes." text="Las solicitudes enviadas apareceran aqui." /> : (
+        {!requests.length ? <EmptyState title="Sin solicitudes." text="Las solicitudes enviadas aparecerán aquí." /> : (
           <div className="space-y-3">
             {requests.map((request) => (
               <InfoCard key={request.id} title={request.requested_changes?.request_type || 'Solicitud'} meta={request.status || 'Pendiente'} text={request.notes || request.requested_changes?.message || 'Solicitud registrada'} />

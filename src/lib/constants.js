@@ -20,7 +20,8 @@ export const MODULES = [
   { id: 'users', label: 'Usuarios', path: '/users' },
   { id: 'settings', label: 'Configuración', path: '/settings' },
   { id: 'backup', label: 'Copias', path: '/backup' },
-  { id: 'provider', label: 'Panel del proveedor', path: '/provider' }
+  { id: 'provider', label: 'Panel del proveedor', path: '/provider' },
+  { id: 'platform-tools', label: 'Herramientas de Plataforma', path: '/platform-tools', hidden: true }
 ];
 
 export function getModuleByPath(pathname) {

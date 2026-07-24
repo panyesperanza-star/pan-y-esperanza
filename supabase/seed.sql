@@ -73,7 +73,7 @@ values
   ('reminder', 'reminder', 'beneficiaries', 'Beneficiarios', 'Documentacion pendiente', 'Revisa los expedientes con documentacion pendiente de actualizacion.', 'Pendiente', false, 'beneficiary', '/beneficiaries', 'demo-beneficiary-document-pending', '{}'::jsonb);
 
 insert into public.treasury_incomes (income_at, category, concept, amount, donor, payment_method, notes)
-values (current_date, 'Donaciones', 'Donacion economica inicial', 600, 'Empresa Solidaria SL', 'Transferencia', 'Ingreso de ejemplo para tesoreria.');
+values (current_date, 'Donaciones', 'Donación económica inicial', 600, 'Empresa Solidaria SL', 'Transferencia', 'Ingreso de ejemplo para tesorería.');
 
 insert into public.treasury_expenses (expense_at, category, concept, amount, supplier, responsible, notes)
 values (current_date, 'Alimentacion', 'Compra de alimentos frescos', 180, 'Mercado local', 'Elizabeth', 'Gasto de ejemplo para control de caja.');

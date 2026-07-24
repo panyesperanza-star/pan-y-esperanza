@@ -1,4 +1,4 @@
-﻿import { seedData } from '../data/seed';
+import { seedData } from '../data/seed';
 import { normalizeDocument } from './formatters';
 import { hasSupabaseConfig, supabase } from './supabase';
 
@@ -58,6 +58,7 @@ const TABLES = [
   'recursos',
   'roles',
   'audit_logs',
+  'platform_maintenance_logs',
   'app_users'
 ];
 const OPTIONAL_TABLES = new Set([
@@ -97,7 +98,8 @@ const OPTIONAL_TABLES = new Set([
   'campana_entregas',
   'campana_agenda_eventos',
   'categorias_recursos',
-  'recursos'
+  'recursos',
+  'platform_maintenance_logs'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';

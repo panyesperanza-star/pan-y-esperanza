@@ -110,7 +110,7 @@ export function Dashboard({ data, actions, currentUser, onNavigate }) {
 
   return (
     <>
-      <PageHeader title="CENTRO DE OPERACIONES" description="Pagina principal para decidir que necesita Pan y Esperanza hoy." />
+      <PageHeader title="CENTRO DE OPERACIONES" description="Página principal para decidir qué necesita Pan y Esperanza hoy." />
       <IntelligentOperationsCenter
         operations={operations}
         assistant={assistant}
@@ -617,7 +617,7 @@ function ProductCriticalList({ items, today }) {
 }
 
 function DonationFocusList({ items }) {
-  if (!items.length) return <EmptyState title="No hay donaciones recientes." text="Todavia no hay movimientos para mostrar." />;
+  if (!items.length) return <EmptyState title="No hay donaciones recientes." text="Todavía no hay movimientos para mostrar." />;
   return (
     <div className="space-y-3">
       {items.slice(0, LIST_LIMIT).map((item) => (
@@ -662,7 +662,7 @@ function ResourceFocusList({ items }) {
 }
 
 function ActivityFocusList({ items }) {
-  if (!items.length) return <EmptyState title="Sin actividad reciente." text="Todavia no hay movimientos consolidados." />;
+  if (!items.length) return <EmptyState title="Sin actividad reciente." text="Todavía no hay movimientos consolidados." />;
   return (
     <div className="space-y-3">
       {items.slice(0, 6).map((item) => (
@@ -950,7 +950,7 @@ function FamilyPriorityCard({ family, destination, onOpen }) {
         <Metric label="Miembros" value={family.membersCount} />
         <Metric label="Menores" value={family.minorsCount} />
         <Metric label="Dias sin ayuda" value={family.daysWithoutHelpText} />
-        <Metric label="Ãšltima ayuda" value={family.lastHelpText} />
+        <Metric label="Última ayuda" value={family.lastHelpText} />
       </dl>
       <div className="mt-4 rounded-md bg-white/70 p-3 text-sm text-slate-700">
         <strong>Motivo:</strong> {family.priorityReason}
@@ -1038,7 +1038,7 @@ function buildFamilyListDestination(families, moduleId, filter) {
     moduleId,
     filter,
     beneficiaryIds: families.flatMap((family) => family.beneficiaryIds || []),
-    label: 'Familias crÃ­ticas'
+    label: 'Familias críticas'
   };
 }
 
@@ -1059,7 +1059,7 @@ function buildFamilyDetailDestination(family, moduleId) {
 function buildPriorityCards(operations, currentUser, familyModule) {
   return [
     familyModule && {
-      title: 'Familias crÃ­ticas',
+      title: 'Familias críticas',
       value: operations.criticalFamilies.length,
       detail: `${operations.urgentFamilies.length} urgentes, ${operations.priorityFamilies.length} priorizadas`,
       icon: ShieldAlert,
@@ -1109,7 +1109,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
       tone: operations.overdueDebts.length ? 'red' : 'green'
     },
     canAccess(currentUser, 'accounting') && {
-      title: 'Prestamos pendientes',
+      title: 'Préstamos pendientes',
       value: operations.pendingLoans.length,
       detail: formatMoney(operations.pendingLoanAmount),
       icon: HandCoins,
@@ -1145,7 +1145,7 @@ function buildPriorityCards(operations, currentUser, familyModule) {
 function buildQuickItems(operations, currentUser, familyModule) {
   return [
     familyModule && {
-      title: 'Familias crÃ­ticas',
+      title: 'Familias críticas',
       value: operations.criticalFamilies.length,
       icon: ShieldAlert,
       moduleId: familyModule,
@@ -1213,8 +1213,8 @@ function buildQuickItems(operations, currentUser, familyModule) {
 function buildTasks(operations, currentUser, familyModule) {
   return [
     familyModule && operations.criticalFamilies.length > 0 && {
-      title: 'Revisar familias crÃ­ticas',
-      detail: pluralSummary(operations.criticalFamilies.length, 'familia crÃ­tica requiere atenciÃ³n', 'familias crÃ­ticas requieren atenciÃ³n'),
+      title: 'Revisar familias críticas',
+      detail: pluralSummary(operations.criticalFamilies.length, 'familia crítica requiere atención', 'familias críticas requieren atención'),
       priority: 'Critica',
       action: 'Ver familias',
       moduleId: familyModule,
@@ -1245,7 +1245,7 @@ function buildTasks(operations, currentUser, familyModule) {
     },
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && {
       title: 'Enviar justificantes pendientes',
-      detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revisiÃ³n', 'justificantes necesitan revisiÃ³n'),
+      detail: pluralSummary(operations.pendingReceipts.length, 'justificante necesita revisión', 'justificantes necesitan revisión'),
       priority: 'Alta',
       action: 'Ver justificantes',
       moduleId: 'receipts',
@@ -1257,7 +1257,7 @@ function buildTasks(operations, currentUser, familyModule) {
     },
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && {
       title: 'Revisar deudas vencidas',
-      detail: `${pluralSummary(operations.overdueDebts.length, 'deuda vencida requiere pago o revisiÃ³n', 'deudas vencidas requieren pago o revisiÃ³n')} Total: ${formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0))}.`,
+      detail: `${pluralSummary(operations.overdueDebts.length, 'deuda vencida requiere pago o revisión', 'deudas vencidas requieren pago o revisión')} Total: ${formatMoney(operations.overdueDebts.reduce((total, debt) => total + Number(debt.outstanding || 0), 0))}.`,
       priority: 'Critica',
       action: 'Abrir contabilidad',
       moduleId: 'accounting',
@@ -1272,7 +1272,7 @@ function buildTasks(operations, currentUser, familyModule) {
       destination: { moduleId: 'accounting', filter: 'upcoming-debt-payments' }
     },
     canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && {
-      title: 'Revisar prestamos pendientes',
+      title: 'Revisar préstamos pendientes',
       detail: `Pendiente de devolver: ${formatMoney(operations.pendingLoanAmount)}.`,
       priority: 'Media',
       action: 'Abrir contabilidad',
@@ -1292,15 +1292,15 @@ function buildTasks(operations, currentUser, familyModule) {
 function buildAssistantState(operations, currentUser, familyModule) {
   const primary = getPrimaryAction(operations, currentUser, familyModule);
   const parts = [
-    familyModule && operations.criticalFamilies.length > 0 && pluralLabel(operations.criticalFamilies.length, 'familia crÃ­tica', 'familias crÃ­ticas'),
+    familyModule && operations.criticalFamilies.length > 0 && pluralLabel(operations.criticalFamilies.length, 'familia crítica', 'familias críticas'),
     canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0 && pluralLabel(operations.todayDeliveries.length, 'entrega de hoy', 'entregas de hoy'),
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && pluralLabel(operations.criticalStock.length, 'producto critico', 'productos criticos'),
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
     canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
-    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'prÃ©stamo pendiente', 'prÃ©stamos pendientes'),
-    canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donaciÃ³n pendiente', 'donaciones pendientes')
+    canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'préstamo pendiente', 'préstamos pendientes'),
+    canAccess(currentUser, 'donations') && operations.pendingDonations.length > 0 && pluralLabel(operations.pendingDonations.length, 'donación pendiente', 'donaciones pendientes')
   ].filter(Boolean);
   const userName = displayUserName(currentUser);
   const message = parts.length
@@ -1319,7 +1319,7 @@ function getPrimaryAction(operations, currentUser, familyModule) {
   if (familyModule && operations.criticalFamilies.length > 0) {
     return {
       destination: buildFamilyDetailDestination(operations.criticalFamilies[0], familyModule),
-      recommendation: 'Empieza revisando la familia crÃ­tica con mÃ¡s riesgo.'
+      recommendation: 'Empieza revisando la familia crítica con más riesgo.'
     };
   }
   if (canAccess(currentUser, 'deliveries') && operations.todayDeliveries.length > 0) {
@@ -1385,7 +1385,7 @@ function buildCommunicationCards(operations, currentUser, secureSummary) {
       }
     },
     canAccess(currentUser, 'users') && {
-      title: 'Recuperaciones de contraseÃ±a',
+      title: 'Recuperaciones de contraseña',
       value: secureSummary.loading ? '...' : secureSummary.pendingPasswordResets ?? 0,
       detail: secureSummary.loading ? 'Cargando solicitudes vigentes' : 'Solicitudes vigentes',
       icon: KeyRound,
@@ -1417,7 +1417,7 @@ function buildSummaryCards(operations, data, currentUser) {
       icon: AlertTriangle
     },
     canAccess(currentUser, 'accounting') && {
-      label: 'Prestamos pendientes',
+      label: 'Préstamos pendientes',
       value: operations.pendingLoans.length,
       icon: HandCoins
     },

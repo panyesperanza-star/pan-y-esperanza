@@ -11,9 +11,9 @@ import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../l
 import { exportTreasuryExcel, exportTreasuryPdf } from '../lib/exporters';
 import { formatDate, todayISO } from '../lib/formatters';
 
-const tabs = ['Ingresos', 'Gastos', 'Prestamos', 'Caja y bancos', 'Informes'];
+const tabs = ['Ingresos', 'Gastos', 'Préstamos', 'Caja y bancos', 'Informes'];
 const incomeCategories = ['Donaciones', 'Subvenciones', 'Cuotas', 'Otros'];
-const expenseCategories = ['Alimentacion', 'Higiene', 'Transporte', 'Alquiler', 'Material', 'Otros'];
+const expenseCategories = ['Alimentación', 'Higiene', 'Transporte', 'Alquiler', 'Material', 'Otros'];
 
 export function Treasury({ data, actions, currentUser, embedded = false, permissionModule = 'treasury' }) {
   const [tab, setTab] = useState('Ingresos');
@@ -72,15 +72,15 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
         ))}
       </div>
 
-      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_incomes', 'treasury_income', item, item.concept || 'Ingreso de tesoreria', actions.deleteTreasuryIncome))} />}
-      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_expenses', 'treasury_expense', item, item.concept || 'Gasto de tesoreria', actions.deleteTreasuryExpense))} />}
-      {tab === 'Prestamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Prestamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Préstamo de tesorería', actions.deleteTreasuryLoan))} />}
-      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_accounts', 'treasury_account', item, item.name || 'Cuenta de tesoreria', actions.deleteTreasuryAccount))} />}
+      {tab === 'Ingresos' && <IncomeTable rows={data.treasury_incomes || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Ingresos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_incomes', 'treasury_income', item, item.concept || 'Ingreso de tesorería', actions.deleteTreasuryIncome))} />}
+      {tab === 'Gastos' && <ExpenseTable rows={data.treasury_expenses || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Gastos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_expenses', 'treasury_expense', item, item.concept || 'Gasto de tesorería', actions.deleteTreasuryExpense))} />}
+      {tab === 'Préstamos' && <LoanTable rows={data.treasury_loans || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Préstamos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_loans', 'treasury_loan', item, item.concept || item.person || 'Préstamo de tesorería', actions.deleteTreasuryLoan))} />}
+      {tab === 'Caja y bancos' && <AccountTable rows={data.treasury_accounts || []} canEdit={canEdit} canDelete={canDelete} canDeleteDirectly={canDeleteDirectly} onEdit={(item) => setModal({ type: 'Caja y bancos', item })} onDelete={(item) => setDeletionTarget(buildTreasuryDeletionTarget('treasury_accounts', 'treasury_account', item, item.name || 'Cuenta de tesorería', actions.deleteTreasuryAccount))} />}
       {tab === 'Informes' && <ReportsPanel data={data} indicators={indicators} />}
 
       {modal?.type === 'Ingresos' && <Modal title={modal.item ? 'Editar ingreso' : 'Nuevo ingreso'} onClose={close}><IncomeForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryIncome(modal.item.id, payload) : await actions.createTreasuryIncome(payload); close(); }} /></Modal>}
       {modal?.type === 'Gastos' && <Modal title={modal.item ? 'Editar gasto' : 'Nuevo gasto'} onClose={close}><ExpenseForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryExpense(modal.item.id, payload) : await actions.createTreasuryExpense(payload); close(); }} /></Modal>}
-      {modal?.type === 'Prestamos' && <Modal title={modal.item ? 'Editar préstamo' : 'Nuevo préstamo'} onClose={close}><LoanForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryLoan(modal.item.id, payload) : await actions.createTreasuryLoan(payload); close(); }} /></Modal>}
+      {modal?.type === 'Préstamos' && <Modal title={modal.item ? 'Editar préstamo' : 'Nuevo préstamo'} onClose={close}><LoanForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryLoan(modal.item.id, payload) : await actions.createTreasuryLoan(payload); close(); }} /></Modal>}
       {modal?.type === 'Caja y bancos' && <Modal title={modal.item ? 'Editar cuenta' : 'Nueva cuenta'} onClose={close}><AccountForm initial={modal.item} onSubmit={async (payload) => { modal.item ? await actions.updateTreasuryAccount(modal.item.id, payload) : await actions.createTreasuryAccount(payload); close(); }} /></Modal>}
       {deletionTarget && (
         <Modal title={canDeleteDirectly ? 'Eliminar definitivamente' : 'Solicitar eliminación definitiva'} onClose={() => setDeletionTarget(null)}>
@@ -110,8 +110,8 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Tesorería integrada</p>
-            <h3 className="text-xl font-bold text-ink">Registros historicos dentro de Contabilidad</h3>
-            <p className="mt-1 text-sm text-slate-600">Ingresos, gastos, prestamos, caja, bancos e informes heredados, sin entrada independiente en el menu.</p>
+            <h3 className="text-xl font-bold text-ink">Registros históricos dentro de Contabilidad</h3>
+            <p className="mt-1 text-sm text-slate-600">Ingresos, gastos, préstamos, caja, bancos e informes heredados, sin entrada independiente en el menú.</p>
           </div>
           {['Informes'].includes(tab) ? null : actionButton}
         </div>
@@ -124,7 +124,7 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
     <>
       <PageHeader
         title="Tesorería"
-        description="Control de ingresos, gastos, prestamos adelantados, caja y bancos."
+        description="Control de ingresos, gastos, préstamos adelantados, caja y bancos."
         actions={['Informes'].includes(tab) ? null : actionButton}
       />
       {content}
@@ -133,7 +133,7 @@ export function Treasury({ data, actions, currentUser, embedded = false, permiss
 }
 
 function IncomeTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
-  return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Donante', 'Forma de pago', 'Documento', 'Observaciones']} rows={rows.map((item) => ({
+  return <DataTable columns={['Fecha', 'Categoría', 'Concepto', 'Importe', 'Donante', 'Forma de pago', 'Documento', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.income_at), item.category || '-', item.concept, money(item.amount), item.donor || '-', item.payment_method || '-', item.document_name || '-', item.notes || '-'],
     item
@@ -141,7 +141,7 @@ function IncomeTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDe
 }
 
 function ExpenseTable({ rows, canEdit, canDelete, canDeleteDirectly, onEdit, onDelete }) {
-  return <DataTable columns={['Fecha', 'Categoria', 'Concepto', 'Importe', 'Proveedor', 'Responsable', 'Factura', 'Observaciones']} rows={rows.map((item) => ({
+  return <DataTable columns={['Fecha', 'Categoría', 'Concepto', 'Importe', 'Proveedor', 'Responsable', 'Factura', 'Observaciones']} rows={rows.map((item) => ({
     id: item.id,
     cells: [formatDate(item.expense_at), item.category || '-', item.concept, money(item.amount), item.supplier || '-', item.responsible || '-', item.invoice_name || '-', item.notes || '-'],
     item
@@ -208,8 +208,8 @@ function ReportsPanel({ data, indicators }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
-        <h2 className="text-lg font-semibold text-ink">Informes de tesoreria</h2>
-        <p className="mt-1 text-sm text-slate-600">Exporta indicadores, ingresos, gastos, prestamos y cuentas.</p>
+        <h2 className="text-lg font-semibold text-ink">Informes de tesorería</h2>
+        <p className="mt-1 text-sm text-slate-600">Exporta indicadores, ingresos, gastos, préstamos y cuentas.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => exportTreasuryPdf(data, indicators)}><Download size={18} /> PDF</Button>
           <Button variant="secondary" onClick={() => exportTreasuryExcel(data, indicators)}><FileSpreadsheet size={18} /> Excel</Button>
@@ -228,7 +228,7 @@ function IncomeForm({ initial, onSubmit }) {
   const [form, setForm] = useState(initial || { income_at: todayISO(), category: 'Donaciones', concept: '', amount: 0, donor: '', payment_method: 'Transferencia', notes: '', document_name: '' });
   return <TreasuryForm onSubmit={onSubmit} form={form} setForm={setForm} submitLabel="Guardar ingreso">
     <FormField label="Fecha"><input className={inputClass} type="date" required value={form.income_at} onChange={(event) => update(setForm, 'income_at', event.target.value)} /></FormField>
-    <FormField label="Categoria"><select className={inputClass} value={form.category || 'Donaciones'} onChange={(event) => update(setForm, 'category', event.target.value)}>{incomeCategories.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+    <FormField label="Categoría"><select className={inputClass} value={form.category || 'Donaciones'} onChange={(event) => update(setForm, 'category', event.target.value)}>{incomeCategories.map((item) => <option key={item}>{item}</option>)}</select></FormField>
     <FormField label="Concepto"><input className={inputClass} required value={form.concept} onChange={(event) => update(setForm, 'concept', event.target.value)} /></FormField>
     <FormField label="Importe"><input className={inputClass} type="number" step="0.01" min="0" required value={form.amount} onChange={(event) => update(setForm, 'amount', Number(event.target.value))} /></FormField>
     <FormField label="Donante"><input className={inputClass} value={form.donor} onChange={(event) => update(setForm, 'donor', event.target.value)} /></FormField>
@@ -239,10 +239,10 @@ function IncomeForm({ initial, onSubmit }) {
 }
 
 function ExpenseForm({ initial, onSubmit }) {
-  const [form, setForm] = useState(initial || { expense_at: todayISO(), category: 'Alimentacion', concept: '', amount: 0, supplier: '', responsible: '', invoice_name: '', notes: '' });
+  const [form, setForm] = useState(initial || { expense_at: todayISO(), category: 'Alimentación', concept: '', amount: 0, supplier: '', responsible: '', invoice_name: '', notes: '' });
   return <TreasuryForm onSubmit={onSubmit} form={form} setForm={setForm} submitLabel="Guardar gasto">
     <FormField label="Fecha"><input className={inputClass} type="date" required value={form.expense_at} onChange={(event) => update(setForm, 'expense_at', event.target.value)} /></FormField>
-    <FormField label="Categoria"><select className={inputClass} value={form.category || 'Alimentacion'} onChange={(event) => update(setForm, 'category', event.target.value)}>{expenseCategories.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+    <FormField label="Categoría"><select className={inputClass} value={form.category || 'Alimentación'} onChange={(event) => update(setForm, 'category', event.target.value)}>{expenseCategories.map((item) => <option key={item}>{item}</option>)}</select></FormField>
     <FormField label="Concepto"><input className={inputClass} required value={form.concept} onChange={(event) => update(setForm, 'concept', event.target.value)} /></FormField>
     <FormField label="Importe"><input className={inputClass} type="number" step="0.01" min="0" required value={form.amount} onChange={(event) => update(setForm, 'amount', Number(event.target.value))} /></FormField>
     <FormField label="Proveedor"><input className={inputClass} value={form.supplier} onChange={(event) => update(setForm, 'supplier', event.target.value)} /></FormField>

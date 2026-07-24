@@ -4,6 +4,8 @@ import { hasSupabaseConfig, supabase } from './supabase';
 const SESSION_KEY = 'pye-current-user';
 const JUST_SIGNED_IN_KEY = 'pye-just-signed-in';
 export const SYSTEM_SUPERADMIN_ROLE = 'Superadministrador del sistema';
+export const PLATFORM_OWNER_ROLE = 'Platform Owner';
+export const PLATFORM_OWNER_PROVIDER = 'ALTHEMON';
 
 export function getStoredUser() {
   const raw = localStorage.getItem(SESSION_KEY);
@@ -68,6 +70,26 @@ export async function signOut() {
   clearStoredUser();
 }
 
+export async function verifyCurrentUserPassword(password, currentUser) {
+  const cleanPassword = String(password || '');
+  if (!cleanPassword) throw new Error('Introduce la contraseña del Platform Owner.');
+  if (!currentUser?.email) throw new Error('No se ha podido verificar la identidad del usuario.');
+
+  if (hasSupabaseConfig) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: currentUser.email,
+      password: cleanPassword
+    });
+    if (error || data?.user?.email?.toLowerCase() !== currentUser.email.toLowerCase()) {
+      throw new Error('La contraseña del Platform Owner no es válida.');
+    }
+    return true;
+  }
+
+  if (currentUser.password && currentUser.password === cleanPassword) return true;
+  throw new Error('La verificación de contraseña solo está disponible con una sesión real de Supabase.');
+}
+
 export async function refreshCurrentUser() {
   if (!hasSupabaseConfig || !supabase) return getStoredUser();
   const { data, error } = await supabase.auth.getSession();
@@ -122,6 +144,8 @@ export function isUserActive(user) {
 
 export function canAccess(user, moduleId) {
   if (!user) return false;
+  if (moduleId === 'platform-tools') return isPlatformOwner(user);
+  if (isPlatformOwner(user)) return false;
   if (moduleId === 'provider') return isSystemSuperadmin(user);
   if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
@@ -138,6 +162,8 @@ export function getFirstAccessibleModule(user) {
 
 export function canDo(user, moduleId, action = 'view') {
   if (!user) return false;
+  if (moduleId === 'platform-tools') return isPlatformOwner(user);
+  if (isPlatformOwner(user)) return false;
   if (moduleId === 'provider') return isSystemSuperadmin(user);
   if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
@@ -182,6 +208,16 @@ export function isSystemSuperadmin(user) {
     || role === 'superadministrador del sistema'
     || role === 'superadministrador sistema'
     || role === 'system superadmin';
+}
+
+export function isPlatformOwner(user) {
+  const role = String(user?.role || '').trim().toLowerCase();
+  const provider = String(user?.platform_owner_provider || user?.platform_provider || user?.provider || '').trim().toUpperCase();
+  const scope = String(user?.organization_scope || user?.scope || '').trim().toLowerCase();
+  return role === PLATFORM_OWNER_ROLE.toLowerCase()
+    && provider === PLATFORM_OWNER_PROVIDER
+    && scope === 'platform'
+    && isUserActive(user);
 }
 
 function normalizeOwnerName(value) {

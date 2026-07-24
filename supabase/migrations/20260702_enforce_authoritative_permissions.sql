@@ -37,7 +37,7 @@ set permissions = permissions - '*'
 where role <> 'Superadministrador'
   and permissions ? '*';
 
--- El perfil Voluntario antiguo incluia Tesoreria por defecto. Se revoca
+-- El perfil Voluntario antiguo incluía Tesorería por defecto. Se revoca
 -- durante la migracion; un administrador puede concederla despues de forma explicita.
 update public.app_users
 set permission_matrix = jsonb_set(

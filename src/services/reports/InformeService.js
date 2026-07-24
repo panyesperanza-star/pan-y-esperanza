@@ -1,18 +1,18 @@
-﻿import { BarChart3, Boxes, Euro, FileText, Gift, Home, PackageCheck, UserRoundCheck, Users } from 'lucide-react';
+import { BarChart3, Boxes, Euro, FileText, Gift, Home, PackageCheck, UserRoundCheck, Users } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { exportExcel } from '../../lib/exporters';
 import { formatDate, normalize } from '../../lib/formatters';
 const REPORTS = [
   { id: 'beneficiaries', title: 'Beneficiarios', icon: Users, description: 'Altas, estado del expediente y seguimiento de personas atendidas.' },
-  { id: 'families', title: 'Familias', icon: Home, description: 'Unidades familiares, composiciÃ³n, ayudas y valor social recibido.' },
+  { id: 'families', title: 'Familias', icon: Home, description: 'Unidades familiares, composición, ayudas y valor social recibido.' },
   { id: 'deliveries', title: 'Entregas', icon: PackageCheck, description: 'Ayudas entregadas, justificantes, productos y responsables.' },
-  { id: 'inventory', title: 'Inventario', icon: Boxes, description: 'Stock, lotes, caducidades, categorÃ­as y alertas operativas.' },
+  { id: 'inventory', title: 'Inventario', icon: Boxes, description: 'Stock, lotes, caducidades, categorías y alertas operativas.' },
   { id: 'donors', title: 'Donantes', icon: Gift, description: 'CRM de donantes, dinero recibido, valor social y actividad.' },
-  { id: 'economic', title: 'EconÃ³mico', icon: Euro, description: 'Ingresos, gastos, caja, bancos, prÃ©stamos, deudas y valor social.' },
-  { id: 'volunteers', title: 'Voluntarios', icon: UserRoundCheck, description: 'Expedientes de voluntariado, disponibilidad, participaciones y colaboraciÃ³n.' },
+  { id: 'economic', title: 'Económico', icon: Euro, description: 'Ingresos, gastos, caja, bancos, préstamos, deudas y valor social.' },
+  { id: 'volunteers', title: 'Voluntarios', icon: UserRoundCheck, description: 'Expedientes de voluntariado, disponibilidad, participaciones y colaboración.' },
   { id: 'annual', title: 'Memoria anual de actividad', icon: FileText, description: 'Informe institucional principal para administraciones y entidades colaboradoras.', featured: true },
-  { id: 'statistics', title: 'EstadÃ­sticas', icon: BarChart3, description: 'Indicadores agregados de actividad social, inventario, donantes y economÃ­a.' }
+  { id: 'statistics', title: 'Estadísticas', icon: BarChart3, description: 'Indicadores agregados de actividad social, inventario, donantes y economía.' }
 ];
 
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
@@ -170,7 +170,7 @@ function buildBeneficiaryReport(beneficiaries, families, deliveries, period) {
         name: beneficiary.full_name || '-',
         document: beneficiary.document_id || '-',
         family: family ? `${family.family_code || ''} ${family.responsible_name || ''}`.trim() : 'Sin familia',
-        type: beneficiary.situation || 'Sin situaciÃ³n',
+        type: beneficiary.situation || 'Sin situación',
         status: beneficiary.is_active === false ? 'Inactivo' : 'Activo',
         joined: beneficiary.joined_at,
         lastHelp: beneficiary.last_help_at || latestDate(beneficiaryDeliveries, 'delivered_at'),
@@ -186,14 +186,14 @@ function buildBeneficiaryReport(beneficiaries, families, deliveries, period) {
     description: REPORTS[0].description,
     tableTitle: 'Listado de beneficiarios',
     columns: [
-      { key: 'code', label: 'CÃ³digo' },
+      { key: 'code', label: 'Código' },
       { key: 'name', label: 'Nombre' },
       { key: 'document', label: 'Documento' },
       { key: 'family', label: 'Unidad familiar' },
-      { key: 'type', label: 'SituaciÃ³n' },
+      { key: 'type', label: 'Situación' },
       { key: 'status', label: 'Estado' },
       { key: 'joined', label: 'Alta', type: 'date' },
-      { key: 'lastHelp', label: 'Ãšltima ayuda', type: 'date' },
+      { key: 'lastHelp', label: 'Última ayuda', type: 'date' },
       { key: 'deliveries', label: 'Entregas' }
     ],
     metrics: [
@@ -239,14 +239,14 @@ function buildFamilyReport(families, beneficiaries, deliveries, inventory, perio
     description: REPORTS[1].description,
     tableTitle: 'Expedientes familiares',
     columns: [
-      { key: 'code', label: 'CÃ³digo' },
+      { key: 'code', label: 'Código' },
       { key: 'responsible', label: 'Responsable' },
       { key: 'status', label: 'Estado' },
       { key: 'members', label: 'Miembros' },
       { key: 'minors', label: 'Menores' },
       { key: 'deliveries', label: 'Entregas' },
       { key: 'socialValue', label: 'Valor social', type: 'currency' },
-      { key: 'lastHelp', label: 'Ãšltima ayuda', type: 'date' }
+      { key: 'lastHelp', label: 'Última ayuda', type: 'date' }
     ],
     metrics: [
       { label: 'Familias', value: rows.length },
@@ -317,7 +317,7 @@ function buildInventoryReport(inventory) {
       id: item.id,
       date: item.expires_at || item.created_at,
       name: item.name || '-',
-      type: item.category || 'Sin categorÃ­a',
+      type: item.category || 'Sin categoría',
       lot: item.lot || '-',
       stock: Number(item.stock || 0),
       unit: item.unit || '-',
@@ -337,18 +337,18 @@ function buildInventoryReport(inventory) {
     tableTitle: 'Estado del inventario',
     columns: [
       { key: 'name', label: 'Producto' },
-      { key: 'type', label: 'CategorÃ­a' },
+      { key: 'type', label: 'Categoría' },
       { key: 'lot', label: 'Lote' },
       { key: 'stock', label: 'Stock' },
       { key: 'unit', label: 'Unidad' },
-      { key: 'threshold', label: 'MÃ­nimo' },
+      { key: 'threshold', label: 'Mínimo' },
       { key: 'expires', label: 'Caducidad', type: 'date' },
       { key: 'status', label: 'Estado' }
     ],
     metrics: [
       { label: 'Productos', value: rows.length },
       { label: 'Stock total', value: rows.reduce((sum, row) => sum + Number(row.stock || 0), 0) },
-      { label: 'Bajo mÃ­nimo', value: rows.filter((row) => row.status === 'Bajo stock').length },
+      { label: 'Bajo mínimo', value: rows.filter((row) => row.status === 'Bajo stock').length },
       { label: 'Caducados', value: rows.filter((row) => row.status === 'Caducado').length }
     ],
     rows
@@ -366,11 +366,11 @@ function buildDonorReport(rows) {
       { key: 'name', label: 'Donante' },
       { key: 'type', label: 'Tipo' },
       { key: 'contact', label: 'Contacto' },
-      { key: 'phone', label: 'TelÃ©fono' },
+      { key: 'phone', label: 'Teléfono' },
       { key: 'donations', label: 'Donaciones' },
       { key: 'money', label: 'Dinero', type: 'currency' },
       { key: 'social', label: 'Valor social', type: 'currency' },
-      { key: 'lastDonation', label: 'Ãšltima donaciÃ³n', type: 'date' },
+      { key: 'lastDonation', label: 'Última donación', type: 'date' },
       { key: 'status', label: 'Estado' }
     ],
     metrics: [
@@ -387,10 +387,10 @@ function buildEconomicReport(rows, data, filters) {
   const breakdown = buildEconomicBreakdown(rows, data, filters);
   return {
     id: 'economic',
-    title: 'EconÃ³mico',
+    title: 'Económico',
     icon: Euro,
     description: REPORTS[5].description,
-    tableTitle: 'LÃ­nea econÃ³mica consolidada',
+    tableTitle: 'Línea económica consolidada',
     columns: [
       { key: 'date', label: 'Fecha', type: 'date' },
       { key: 'type', label: 'Tipo' },
@@ -405,7 +405,7 @@ function buildEconomicReport(rows, data, filters) {
       { label: 'Bancos', value: formatCurrency(breakdown.bankBalance), detail: 'Saldo en cuentas bancarias' },
       { label: 'Ingresos', value: formatCurrency(breakdown.incomeTotal), detail: 'Entradas monetarias registradas' },
       { label: 'Gastos', value: formatCurrency(breakdown.expenseTotal), detail: 'Salidas monetarias registradas' },
-      { label: 'PrÃ©stamos', value: formatCurrency(breakdown.loanPending), detail: 'Pendiente de devolver' },
+      { label: 'Préstamos', value: formatCurrency(breakdown.loanPending), detail: 'Pendiente de devolver' },
       { label: 'Deudas', value: formatCurrency(breakdown.debtPending), detail: 'Pendiente de pagar' },
       { label: 'Balance', value: formatCurrency(breakdown.balance), detail: 'Caja y bancos disponibles' }
     ],
@@ -423,14 +423,14 @@ function buildVolunteerReport(rows) {
     tableTitle: 'Informe de voluntarios',
     columns: [
       { key: 'date', label: 'Fecha alta', type: 'date' },
-      { key: 'code', label: 'CÃ³digo' },
+      { key: 'code', label: 'Código' },
       { key: 'name', label: 'Voluntario' },
       { key: 'status', label: 'Estado' },
       { key: 'type', label: 'Disponibilidad' },
       { key: 'tasks', label: 'Tareas habituales' },
       { key: 'participations', label: 'Participaciones' },
-      { key: 'days', label: 'DÃ­as colaborados' },
-      { key: 'lastActivity', label: 'Ãšltima actividad', type: 'date' }
+      { key: 'days', label: 'Días colaborados' },
+      { key: 'lastActivity', label: 'Última actividad', type: 'date' }
     ],
     metrics: [
       { label: 'Voluntarios', value: rows.length },
@@ -445,9 +445,9 @@ function buildVolunteerReport(rows) {
         detail: 'Agrupa la disponibilidad declarada por los voluntarios para planificar turnos.'
       },
       {
-        title: 'ColaboraciÃ³n',
-        value: `${rows.reduce((sum, row) => sum + Number(row.days || 0), 0)} dÃ­as`,
-        detail: 'Suma de dÃ­as colaborados registrados en el historial de voluntariado.'
+        title: 'Colaboración',
+        value: `${rows.reduce((sum, row) => sum + Number(row.days || 0), 0)} días`,
+        detail: 'Suma de días colaborados registrados en el historial de voluntariado.'
       }
     ],
     rows
@@ -499,8 +499,8 @@ function buildEconomicBreakdown(rows, data, filters) {
       { title: 'Caja', value: formatCurrency(cashBalance), amount: cashBalance, detail: 'Efectivo disponible en cuentas de caja.' },
       { title: 'Bancos', value: formatCurrency(bankBalance), amount: bankBalance, detail: 'Saldo disponible en cuentas bancarias.' },
       { title: 'Ingresos', value: formatCurrency(incomeTotal), amount: incomeTotal, detail: 'Donaciones monetarias e ingresos registrados en el periodo.' },
-      { title: 'Gastos', value: formatCurrency(expenseTotal), amount: expenseTotal, detail: 'Gastos, compras y ayudas econÃ³micas registradas en el periodo.' },
-      { title: 'PrÃ©stamos', value: formatCurrency(loanPending), amount: loanPending, detail: `${formatCurrency(loanReceived)} recibido; ${formatCurrency(loanReturned)} devuelto.` },
+      { title: 'Gastos', value: formatCurrency(expenseTotal), amount: expenseTotal, detail: 'Gastos, compras y ayudas económicas registradas en el periodo.' },
+      { title: 'Préstamos', value: formatCurrency(loanPending), amount: loanPending, detail: `${formatCurrency(loanReceived)} recibido; ${formatCurrency(loanReturned)} devuelto.` },
       { title: 'Deudas', value: formatCurrency(debtPending), amount: debtPending, detail: `${formatCurrency(debtRegistered)} registrado; ${formatCurrency(debtPaid)} pagado.` },
       { title: 'Balance', value: formatCurrency(balance), amount: balance, detail: 'Suma actual de caja y bancos.' }
     ]
@@ -569,31 +569,31 @@ function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
   const rows = [
     {
       id: 'annual-social',
-      section: 'AtenciÃ³n social',
+      section: 'Atención social',
       type: 'Actividad social',
       status: 'Incluido',
-      summary: `Durante ${yearText}, la asociaciÃ³n ha mantenido ${stats.activeBeneficiaries} expedientes activos y ha registrado ${stats.deliveries} entregas de ayuda.`,
-      result: `${stats.activeBeneficiaries} beneficiarios activos Â· ${stats.deliveries} entregas`
+      summary: `Durante ${yearText}, la asociación ha mantenido ${stats.activeBeneficiaries} expedientes activos y ha registrado ${stats.deliveries} entregas de ayuda.`,
+      result: `${stats.activeBeneficiaries} beneficiarios activos · ${stats.deliveries} entregas`
     },
     {
       id: 'annual-families',
       section: 'Unidades familiares',
       type: 'Familias',
       status: 'Incluido',
-      summary: `La intervenciÃ³n alcanza a ${stats.families} unidades familiares, con ${stats.minors} menores identificados en los expedientes.`,
-      result: `${stats.families} familias Â· ${stats.minors} menores`
+      summary: `La intervención alcanza a ${stats.families} unidades familiares, con ${stats.minors} menores identificados en los expedientes.`,
+      result: `${stats.families} familias · ${stats.minors} menores`
     },
     {
       id: 'annual-resources',
       section: 'Recursos movilizados',
       type: 'Recursos',
       status: 'Incluido',
-      summary: `Se han movilizado recursos alimentarios, ayudas materiales y apoyos econÃ³micos registrados en la plataforma.`,
+      summary: `Se han movilizado recursos alimentarios, ayudas materiales y apoyos económicos registrados en la plataforma.`,
       result: `${formatCurrency(stats.socialDelivered)} en valor social entregado`
     },
     {
       id: 'annual-donors',
-      section: 'Donantes y colaboraciÃ³n',
+      section: 'Donantes y colaboración',
       type: 'Donantes',
       status: 'Incluido',
       summary: `El CRM de donantes recoge ${donorRows.length} donantes, con ${formatCurrency(stats.moneyReceived)} en aportaciones monetarias y ${formatCurrency(stats.socialReceived)} en valor social recibido.`,
@@ -605,14 +605,14 @@ function buildAnnualReport(data, filters, stats, donorRows, economicRows) {
       type: 'Voluntarios',
       status: 'Incluido',
       summary: `El equipo de voluntariado cuenta con ${stats.activeVolunteers || 0} personas activas y ${stats.volunteerParticipations || 0} participaciones registradas.`,
-      result: `${stats.activeVolunteers || 0} voluntarios activos Â· ${stats.volunteerParticipations || 0} participaciones`
+      result: `${stats.activeVolunteers || 0} voluntarios activos · ${stats.volunteerParticipations || 0} participaciones`
     },
     {
       id: 'annual-economic',
-      section: 'Resumen econÃ³mico',
-      type: 'EconÃ³mico',
+      section: 'Resumen económico',
+      type: 'Económico',
       status: 'Incluido',
-      summary: `La lÃ­nea econÃ³mica consolidada incluye ${economicRows.length} movimientos, integrando caja, banco, donaciones, prÃ©stamos, deudas y valor social.`,
+      summary: `La línea económica consolidada incluye ${economicRows.length} movimientos, integrando caja, banco, donaciones, préstamos, deudas y valor social.`,
       result: `${economicRows.length} movimientos`
     }
   ];
@@ -652,16 +652,16 @@ function buildStatisticsReport(stats) {
     { id: 'stat-volunteer-participations', group: 'Voluntariado', type: 'Participaciones', metric: 'Participaciones registradas', value: stats.volunteerParticipations, status: 'Calculado' },
     { id: 'stat-inventory', group: 'Inventario', type: 'Stock', metric: 'Productos en inventario', value: stats.inventoryItems, status: 'Calculado' },
     { id: 'stat-donors', group: 'Donantes', type: 'CRM', metric: 'Donantes registrados', value: stats.donors, status: 'Calculado' },
-    { id: 'stat-money', group: 'EconomÃ­a', type: 'Ingresos', metric: 'Dinero recibido', value: stats.moneyReceived, status: 'Calculado', valueType: 'currency' },
+    { id: 'stat-money', group: 'Economía', type: 'Ingresos', metric: 'Dinero recibido', value: stats.moneyReceived, status: 'Calculado', valueType: 'currency' },
     { id: 'stat-social-received', group: 'Valor social', type: 'Recibido', metric: 'Valor social recibido', value: stats.socialReceived, status: 'Calculado', valueType: 'currency' },
     { id: 'stat-social-delivered', group: 'Valor social', type: 'Entregado', metric: 'Valor social entregado', value: stats.socialDelivered, status: 'Calculado', valueType: 'currency' }
   ];
   return {
     id: 'statistics',
-    title: 'EstadÃ­sticas',
+    title: 'Estadísticas',
     icon: BarChart3,
     description: REPORTS[8].description,
-    tableTitle: 'Indicadores estadÃ­sticos',
+    tableTitle: 'Indicadores estadísticos',
     columns: [
       { key: 'group', label: 'Grupo' },
       { key: 'type', label: 'Tipo' },
@@ -801,13 +801,13 @@ function buildEconomicRows(data, period) {
     }));
   asArray(data.treasury_incomes)
     .filter((income) => period(income.income_at || income.created_at))
-    .forEach((income) => rows.push({ id: `income-${income.id}`, date: income.income_at, type: 'Ingreso', concept: income.concept || income.category || '-', contact: income.donor || '-', amount: Number(income.amount || 0), direction: 'in', status: income.status || 'Registrado', source: 'TesorerÃ­a histÃ³rica', search: [income.concept, income.category, income.donor].join(' ') }));
+    .forEach((income) => rows.push({ id: `income-${income.id}`, date: income.income_at, type: 'Ingreso', concept: income.concept || income.category || '-', contact: income.donor || '-', amount: Number(income.amount || 0), direction: 'in', status: income.status || 'Registrado', source: 'Tesorería histórica', search: [income.concept, income.category, income.donor].join(' ') }));
   asArray(data.treasury_expenses)
     .filter((expense) => period(expense.expense_at || expense.created_at))
-    .forEach((expense) => rows.push({ id: `expense-${expense.id}`, date: expense.expense_at, type: 'Gasto', concept: expense.concept || expense.category || '-', contact: expense.supplier || expense.responsible || '-', amount: Number(expense.amount || 0), direction: 'out', status: expense.status || 'Registrado', source: 'TesorerÃ­a histÃ³rica', search: [expense.concept, expense.category, expense.supplier, expense.responsible].join(' ') }));
+    .forEach((expense) => rows.push({ id: `expense-${expense.id}`, date: expense.expense_at, type: 'Gasto', concept: expense.concept || expense.category || '-', contact: expense.supplier || expense.responsible || '-', amount: Number(expense.amount || 0), direction: 'out', status: expense.status || 'Registrado', source: 'Tesorería histórica', search: [expense.concept, expense.category, expense.supplier, expense.responsible].join(' ') }));
   asArray(data.loan_records)
     .filter((loan) => isActiveRecord(loan) && period(loan.loan_at || loan.created_at))
-    .forEach((loan) => rows.push({ id: `loan-${loan.id}`, date: loan.loan_at, type: 'PrÃ©stamo', concept: loan.reason || loan.notes || '-', contact: contactsById.get(loan.contact_id)?.name || '-', amount: Number(loan.principal_amount || 0), direction: 'in', status: loanOutstandingForReport(loan, activeLoanMovements) > 0 ? 'Pendiente' : 'Devuelto', source: 'PrÃ©stamos', search: [loan.reason, loan.notes, contactsById.get(loan.contact_id)?.name].join(' ') }));
+    .forEach((loan) => rows.push({ id: `loan-${loan.id}`, date: loan.loan_at, type: 'Préstamo', concept: loan.reason || loan.notes || '-', contact: contactsById.get(loan.contact_id)?.name || '-', amount: Number(loan.principal_amount || 0), direction: 'in', status: loanOutstandingForReport(loan, activeLoanMovements) > 0 ? 'Pendiente' : 'Devuelto', source: 'Préstamos', search: [loan.reason, loan.notes, contactsById.get(loan.contact_id)?.name].join(' ') }));
   asArray(data.debt_records)
     .filter((debt) => isActiveRecord(debt) && period(debt.debt_at || debt.created_at))
     .forEach((debt) => rows.push({ id: `debt-${debt.id}`, date: debt.debt_at, type: 'Deuda', concept: debt.reason || debt.notes || '-', contact: contactsById.get(debt.contact_id)?.name || '-', amount: Number(debt.original_amount || 0), direction: 'neutral', status: debtOutstandingForReport(debt, activeDebtMovements) > 0 ? 'Pendiente' : 'Pagado', source: 'Deudas', search: [debt.reason, debt.notes, contactsById.get(debt.contact_id)?.name].join(' ') }));
@@ -894,7 +894,7 @@ function exportAnnualActivityPdf(report, rows, filters) {
   doc.setFontSize(22);
   doc.text('MEMORIA ANUAL DE ACTIVIDAD', 105, 28, { align: 'center' });
   doc.setFontSize(13);
-  doc.text(`AsociaciÃ³n Pan y Esperanza Â· ${yearText}`, 105, 40, { align: 'center' });
+  doc.text(`Asociación Pan y Esperanza · ${yearText}`, 105, 40, { align: 'center' });
   doc.setTextColor(23, 33, 27);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
@@ -932,7 +932,7 @@ function exportAnnualActivityPdf(report, rows, filters) {
   });
   doc.setFontSize(9);
   doc.setTextColor(96, 112, 100);
-  doc.text('Memoria generada desde la plataforma Pan y Esperanza. La informaciÃ³n procede de los registros internos de la entidad.', 14, 286);
+  doc.text('Memoria generada desde la plataforma Pan y Esperanza. La información procede de los registros internos de la entidad.', 14, 286);
   doc.save(`${reportFilename(report)}-${yearText}.pdf`);
 }
 
@@ -1001,10 +1001,10 @@ function dateMatchesFilters(value, filters) {
 
 function periodLabel(filters) {
   const parts = [];
-  if (filters.year !== 'Todos') parts.push(`AÃ±o ${filters.year}`);
+  if (filters.year !== 'Todos') parts.push(`Año ${filters.year}`);
   if (filters.dateFrom) parts.push(`desde ${formatDate(filters.dateFrom)}`);
   if (filters.dateTo) parts.push(`hasta ${formatDate(filters.dateTo)}`);
-  return parts.length ? parts.join(' Â· ') : 'Todos los registros';
+  return parts.length ? parts.join(' · ') : 'Todos los registros';
 }
 
 function availableYears(data = {}) {
@@ -1148,9 +1148,9 @@ function donorMetadata(contact) {
 function inferDonorKind(name = '') {
   const value = normalize(name);
   if (value.includes('iglesia') || value.includes('parroquia')) return 'Iglesia';
-  if (value.includes('fundacion')) return 'FundaciÃ³n';
-  if (value.includes('asociacion')) return 'AsociaciÃ³n';
-  if (value.includes('ayuntamiento') || value.includes('administracion')) return 'AdministraciÃ³n';
+  if (value.includes('fundacion')) return 'Fundación';
+  if (value.includes('asociacion')) return 'Asociación';
+  if (value.includes('ayuntamiento') || value.includes('administracion')) return 'Administración';
   if (/\b(sl|s l|sa|s a)\b/.test(value) || value.includes('empresa')) return 'Empresa';
   return 'Particular';
 }
@@ -1158,14 +1158,14 @@ function inferDonorKind(name = '') {
 function eventTypeLabel(type) {
   const labels = {
     income: 'Ingreso',
-    donation_money: 'DonaciÃ³n monetaria',
-    donation_in_kind: 'DonaciÃ³n en especie',
+    donation_money: 'Donación monetaria',
+    donation_in_kind: 'Donación en especie',
     expense: 'Gasto',
     purchase: 'Compra de inventario',
-    loan: 'PrÃ©stamo',
+    loan: 'Préstamo',
     debt: 'Deuda',
-    correction: 'CorrecciÃ³n',
-    void: 'AnulaciÃ³n'
+    correction: 'Corrección',
+    void: 'Anulación'
   };
   return labels[type] || type || 'Movimiento';
 }
@@ -1185,8 +1185,8 @@ function movementTypeLabel(type) {
     bank_out: 'Salida banco',
     transfer_out: 'Transferencia salida',
     transfer_in: 'Transferencia entrada',
-    correction: 'CorrecciÃ³n',
-    void: 'AnulaciÃ³n'
+    correction: 'Corrección',
+    void: 'Anulación'
   };
   return labels[type] || type || 'Movimiento';
 }

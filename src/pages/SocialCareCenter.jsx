@@ -451,8 +451,8 @@ function buildCases(data) {
 }
 
 function isAttentionRequest(request) {
-  const changes = request?.requested_changes || {};
-  return Boolean(changes.request_type || changes.message || request?.notes);
+  const changes = requestá.requested_changes || {};
+  return Boolean(changes.request_type || changes.message || requestá.notes);
 }
 
 function filterCases(cases, filters) {
@@ -585,7 +585,7 @@ function deliveryLabel(delivery) {
 }
 
 function buildCaseSummary({ data, beneficiary, delivery, request, notification }) {
-  const beneficiaryId = beneficiary?.id || delivery?.beneficiary_id || request?.beneficiary_id || '';
+  const beneficiaryId = beneficiary?.id || delivery?.beneficiary_id || requestá.beneficiary_id || '';
   const beneficiaryDeliveries = (data.deliveries || [])
     .filter((item) => item.beneficiary_id === beneficiaryId)
     .sort((a, b) => String(a.delivered_at || a.created_at || '').localeCompare(String(b.delivered_at || b.created_at || '')));
@@ -595,8 +595,8 @@ function buildCaseSummary({ data, beneficiary, delivery, request, notification }
   const lastDelivery = pastDeliveries[pastDeliveries.length - 1] || delivery || null;
   const nextDelivery = futureDeliveries[0] || null;
   const relevantNotes = [
-    request?.notes,
-    request?.requested_changes?.message,
+    requestá.notes,
+    requestá.requested_changes?.message,
     delivery?.attendance_notes,
     delivery?.attendance_reason,
     beneficiary?.notes,
@@ -607,7 +607,7 @@ function buildCaseSummary({ data, beneficiary, delivery, request, notification }
     lastDelivery: summaryDeliveryLabel(lastDelivery) || 'Sin entregas registradas',
     nextDelivery: summaryDeliveryLabel(nextDelivery) || 'Sin entrega futura registrada',
     documentStatus: documentStatusFor(data, beneficiaryId),
-    lastInteraction: formatDateTime(notification?.created_at || request?.requested_at || request?.created_at || delivery?.attendance_confirmed_at || delivery?.created_at) || '-',
+    lastInteraction: formatDateTime(notification?.created_at || requestá.requested_at || requestá.created_at || delivery?.attendance_confirmed_at || delivery?.created_at) || '-',
     relevantNotes: relevantNotes || 'Sin observaciones relevantes'
   };
 }

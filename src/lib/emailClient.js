@@ -15,7 +15,7 @@ export const EMAIL_TEMPLATES = [
     id: 'pickup',
     name: 'Aviso de recogida',
     subject: 'Aviso de recogida - Pan y Esperanza',
-    message: 'Le informamos de que puede acudir a recoger la ayuda asignada en el horario indicado por la asociacion.'
+    message: 'Le informamos de que puede acudir a recoger la ayuda asignada en el horario indicado por la asociación.'
   },
   {
     id: 'documentation',

@@ -1,4 +1,4 @@
-﻿import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
+import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
@@ -368,7 +368,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
           value={form.signature_data_url}
           required={signatureRequired}
           onChange={(value) => update('signature_data_url', value)}
-          description="La firma queda asociada a la entrega y aparecera en el justificante PDF."
+          description="La firma queda asociada a la entrega y aparecerá en el justificante PDF."
         />
       </div>
       <div className="sm:col-span-2">

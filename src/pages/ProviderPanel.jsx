@@ -28,7 +28,7 @@ export function ProviderPanel({ data, actions, currentUser }) {
     setResolving(null);
     setMessage(payload.decision === 'Aprobada'
       ? `Solicitud aprobada. Se elimino definitivamente el registro ${result.deletedRecordType || 'solicitado'}.`
-      : 'Solicitud rechazada y notificacion enviada a la asociacion.');
+      : 'Solicitud rechazada y notificación enviada a la asociación.');
   }
 
   return (
@@ -76,7 +76,7 @@ export function ProviderPanel({ data, actions, currentUser }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr><th className="px-4 py-3">Fecha</th><th>Asociacion</th><th>Registro</th><th>Estado</th><th>Resuelto por</th><th>Motivo</th></tr>
+                <tr><th className="px-4 py-3">Fecha</th><th>Asociación</th><th>Registro</th><th>Estado</th><th>Resuelto por</th><th>Motivo</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {resolved.map((request) => (
@@ -131,9 +131,9 @@ function DeletionRequestCard({ request, onApprove, onReject }) {
           <StatusPill status={request.status} />
         </div>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
-          <RequestMeta label="Asociacion" value={request.association_name} />
+          <RequestMeta label="Asociación" value={request.association_name} />
           <RequestMeta label="Usuario" value={request.requester_name || request.requester_email} />
-          <RequestMeta label="Modulo" value={request.module} />
+          <RequestMeta label="Módulo" value={request.module} />
           <RequestMeta label="Fecha" value={formatDateTime(request.requested_at)} />
         </dl>
         <p className="mt-3 text-sm text-slate-700"><span className="font-semibold text-ink">Motivo:</span> {request.reason}</p>

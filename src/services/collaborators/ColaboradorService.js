@@ -16,7 +16,7 @@ const DEFAULT_IMPACT = Object.freeze({
   campaignsSupported: 12
 });
 
-const COLLABORATOR_TYPES = ['Empresa', 'Comercio', 'Asociacion', 'Particular', 'Institucion'];
+const COLLABORATOR_TYPES = ['Empresa', 'Comercio', 'Asociación', 'Particular', 'Institución'];
 const COLLABORATOR_STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
 
 function cleanText(value) {

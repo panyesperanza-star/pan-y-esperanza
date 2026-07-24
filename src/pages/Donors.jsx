@@ -8,7 +8,7 @@ import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
-const TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociacion', 'Institucion'];
+const TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociación', 'Institución'];
 const STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
 
 export function Donors({ data, actions, currentUser }) {
@@ -167,7 +167,7 @@ export function Donors({ data, actions, currentUser }) {
               {!filtered.length && (
                 <tr>
                   <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={6}>
-                    {donors.length ? 'No hay donantes que coincidan con los filtros.' : 'Todavia no hay donantes registrados.'}
+                    {donors.length ? 'No hay donantes que coincidan con los filtros.' : 'Todavía no hay donantes registrados.'}
                   </td>
                 </tr>
               )}

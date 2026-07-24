@@ -686,7 +686,7 @@ Tambien:
    - Riesgo: bajo, pero conviene documentarlo.
 
 2. **Textos con caracteres mojibake en algunas cadenas**
-   - Archivos: varias vistas/constantes muestran caracteres como `ConfiguraciÃ³n` en snapshots.
+   - Archivos: varias vistas/constantes muestran caracteres como `Configuración` en snapshots.
    - Riesgo: visual medio/bajo segun navegador y fuente de datos.
    - Accion: normalizar codificacion UTF-8 en una fase especifica.
 

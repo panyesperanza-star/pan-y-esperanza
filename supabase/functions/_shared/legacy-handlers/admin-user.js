@@ -68,8 +68,8 @@ export default async function handler(request, response) {
       return sendJson(response, 404, { ok: false, code: 'USER_NOT_FOUND', error: 'Usuario no encontrado.' });
     }
 
-    if (isSystemSuperadminRole(existing.role)) {
-      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'El Superadministrador del sistema no se gestiona desde una asociacion.' });
+    if (isProtectedSystemRole(existing.role)) {
+      return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'Los roles internos de plataforma no se gestionan desde una asociación.' });
     }
 
     if ((action === 'delete' || action === 'deactivate' || action === 'block') && await isLastActiveSuperadmin(admin, existing)) {
@@ -78,8 +78,8 @@ export default async function handler(request, response) {
 
     if (action === 'update') {
       const payload = sanitizeProfile(body.user || {});
-      if (isSystemSuperadminRole(payload.role)) {
-        return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'El Superadministrador del sistema no se gestiona desde una asociacion.' });
+      if (isProtectedSystemRole(payload.role)) {
+        return sendJson(response, 403, { ok: false, code: 'FORBIDDEN_SYSTEM_ROLE', error: 'Los roles internos de plataforma no se gestionan desde una asociación.' });
       }
       delete payload.id;
       delete payload.auth_user_id;
@@ -116,7 +116,7 @@ export default async function handler(request, response) {
       const { error: authError } = await admin.auth.admin.updateUserById(existing.auth_user_id, { password });
       if (authError) throw authError;
       await writeAudit(admin, requester.profile, `Restableció contraseña de usuario: ${existing.email}`);
-      return sendJson(response, 200, { ok: true, message: 'Contrasena restablecida correctamente.' });
+      return sendJson(response, 200, { ok: true, message: 'Contraseña restablecida correctamente.' });
     }
 
     if (action === 'delete') {
@@ -185,6 +185,14 @@ function isSystemSuperadminRole(role) {
   return normalized === 'superadministrador del sistema'
     || normalized === 'superadministrador sistema'
     || normalized === 'system superadmin';
+}
+
+function isPlatformOwnerRole(role) {
+  return String(role || '').trim().toLowerCase() === 'platform owner';
+}
+
+function isProtectedSystemRole(role) {
+  return isSystemSuperadminRole(role) || isPlatformOwnerRole(role);
 }
 
 async function syncAuthUser(admin, user) {

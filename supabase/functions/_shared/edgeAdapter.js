@@ -135,7 +135,7 @@ export function serveLegacyHandler(handler) {
       return new Response(JSON.stringify({
         ok: false,
         code: "EDGE_FUNCTION_FAILED",
-        error: error?.message || "No se pudo completar la operacion.",
+        error: error?.message || "No se pudo completar la operación.",
       }), {
         status: 500,
         headers: {

@@ -90,7 +90,7 @@ export default async function handler(request, response) {
 
   if (!apiKey || !from || !to) {
     return sendJson(response, 503, {
-      message: "El servicio de voluntariado no esta configurado todavia.",
+      message: "El servicio de voluntariado no está configurado todavía.",
     });
   }
 

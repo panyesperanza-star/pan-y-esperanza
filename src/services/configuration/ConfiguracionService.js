@@ -1,4 +1,4 @@
-﻿function cleanText(value) {
+function cleanText(value) {
   return String(value || '').trim();
 }
 

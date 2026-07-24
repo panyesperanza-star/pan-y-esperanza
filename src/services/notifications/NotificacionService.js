@@ -524,7 +524,7 @@ function configurationMessage(type, settings) {
   if (type === 'storage_checked') return 'Se ha comprobado el estado del almacenamiento.';
   if (type === 'integration_error') return 'Hay una integracion que requiere revision.';
   if (type === 'environment_incomplete') return 'Faltan variables de entorno necesarias.';
-  return `La configuracion de ${settings?.name || 'la asociacion'} ha cambiado.`;
+  return `La configuración de ${settings?.name || 'la asociación'} ha cambiado.`;
 }
 
 function agendaTitle(type) {

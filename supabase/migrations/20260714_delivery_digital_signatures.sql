@@ -1,4 +1,4 @@
-﻿-- Sprint ERP 13: firmas digitales de entregas.
+-- Sprint ERP 13: firmas digitales de entregas.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('delivery-signatures', 'delivery-signatures', false, 1048576, array['image/png'])

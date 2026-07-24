@@ -667,7 +667,7 @@ export async function createPortalAccessPdf({
     hasTemporaryPin: Boolean(temporaryPin)
   });
   const doc = new jsPDF();
-  const orgName = organization.name || 'Asociacion Pan y Esperanza';
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
   const issuedAt = new Date().toISOString();
   const accessRows = [
     ['Nombre', name || '-'],
@@ -724,7 +724,7 @@ export async function createPortalAccessPdf({
   doc.text(doc.splitTextToSize('Documento privado. No compartas tus datos de acceso. Pan y Esperanza nunca solicitara tu PIN completo por telefono o redes sociales.', 170), 20, 244);
   doc.setDrawColor(219, 229, 220);
   doc.line(14, 272, 196, 272);
-  doc.text('Asociacion Pan y Esperanza - Acceso privado', 14, 280);
+  doc.text('Asociación Pan y Esperanza - Acceso privado', 14, 280);
 
   return {
     doc,
@@ -785,7 +785,7 @@ export async function exportTreasuryPdf(data, indicators) {
 }
 
 export function exportTreasuryExcel(data, indicators) {
-  exportExcel('Tesoreria-Pan-y-Esperanza', [
+  exportExcel('Tesorería-Pan-y-Esperanza', [
     {
       name: 'Indicadores',
       rows: [

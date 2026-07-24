@@ -96,11 +96,11 @@ export const AI_USE_CASES = Object.freeze({
   deliveryProductSuggestions: createUseCase({
     id: 'entregas.sugerencia_productos',
     moduleId: AI_MODULES.deliveries,
-    title: 'Sugerencias de productos segun unidad familiar',
+    title: 'Sugerencias de productos según unidad familiar',
     action: 'suggest_delivery_products',
     requiredData: ['beneficiary', 'family', 'inventory'],
     expectedOutput: 'Sugerencias no vinculantes de productos y cantidades.',
-    systemPrompt: 'Sugiere productos segun unidad familiar y disponibilidad. La confirmacion humana y el stock real son obligatorios.'
+    systemPrompt: 'Sugiere productos según unidad familiar y disponibilidad. La confirmación humana y el stock real son obligatorios.'
   }),
   deliveryIncidents: createUseCase({
     id: 'entregas.incidencias',
@@ -217,7 +217,7 @@ export const AI_USE_CASES = Object.freeze({
     action: 'detect_smart_alerts',
     requiredData: ['dashboard_metrics', 'inventory', 'deliveries'],
     expectedOutput: 'Alertas potenciales ordenadas por prioridad.',
-    systemPrompt: 'Detecta alertas operativas sin ejecutar acciones. Toda alerta requiere confirmacion humana.'
+    systemPrompt: 'Detecta alertas operativas sin ejecutar acciones. Toda alerta requiere confirmación humana.'
   }),
   dashboardRecommendedTasks: createUseCase({
     id: 'dashboard.tareas_recomendadas',

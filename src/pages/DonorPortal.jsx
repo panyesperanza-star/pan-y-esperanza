@@ -144,7 +144,7 @@ export function DonorPortal({ actions }) {
                     />
                   </FormField>
                 </div>
-                {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mt-5" />}
+                {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mt-5" />}
                 {error && <StatusBlock type="error" title="No se pudo acceder" text={error} className="mt-5" />}
                 <Button type="submit" className="mt-7 min-h-[3.9rem] w-full rounded-xl px-6 text-base"><KeyRound size={18} /> Solicitar codigo OTP</Button>
               </form>
@@ -186,7 +186,7 @@ export function DonorPortal({ actions }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {success && <StatusBlock type="success" title="Operacion realizada" text={success} className="mb-5" />}
+        {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mb-5" />}
         {error && <StatusBlock type="error" title="Atencion" text={error} className="mb-5" />}
 
         <section className="rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
@@ -273,7 +273,7 @@ function ImpactSection({ impact, compact = false }) {
 function DonationsSection({ donations }) {
   return (
     <Panel title="Mis donaciones" icon={Gift}>
-      {!donations.length ? <EmptyState title="Todavia no hay donaciones registradas." text="Cuando realices una aportacion validada aparecera en este historial." /> : (
+      {!donations.length ? <EmptyState title="Todavía no hay donaciones registradas." text="Cuando realices una aportación validada aparecerá en este historial." /> : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-100 text-sm">
             <thead>
@@ -374,7 +374,7 @@ function DonateAgainSection({ donor, session, campaigns, service, refresh, setSu
 function CertificatesSection({ certificates, donor }) {
   return (
     <Panel title="Certificados" icon={Award}>
-      {!certificates.length ? <EmptyState title="No hay certificados disponibles." text="Los certificados validados apareceran aqui." /> : (
+      {!certificates.length ? <EmptyState title="No hay certificados disponibles." text="Los certificados validados aparecerán aquí." /> : (
         <div className="grid gap-3 md:grid-cols-2">
           {certificates.map((certificate) => (
             <article key={certificate.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -397,7 +397,7 @@ function CertificatesSection({ certificates, donor }) {
 function CampaignsSection({ campaigns, donations }) {
   return (
     <Panel title="Campanas" icon={CalendarDays}>
-      {!campaigns.length ? <EmptyState title="No hay campanas activas." text="Las campanas solidarias apareceran cuando esten disponibles." /> : (
+      {!campaigns.length ? <EmptyState title="No hay campañas activas." text="Las campañas solidarias aparecerán cuando están disponibles." /> : (
         <div className="grid gap-4 md:grid-cols-2">
           {campaigns.map((campaign) => {
             const goal = Number(campaign.economic_goal || campaign.goal_amount || 0);

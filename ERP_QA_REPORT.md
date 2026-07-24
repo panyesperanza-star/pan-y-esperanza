@@ -113,7 +113,7 @@ Conclusión: antes de cualquier revisión visual detallada, debe corregirse el c
   - `src/pages/Login.jsx`
   - `src/components/Layout.jsx`
   - `src/hooks/useAppData.js`
-- Evidencia: cadenas como `ConfiguraciÃ³n`, `GestiÃ³n`, `Cerrar sesiÃ³n`, `contraseÃ±a`.
+- Evidencia: cadenas como `Configuración`, `Gestión`, `Cerrar sesión`, `contraseña`.
 - Impacto: reduce percepción profesional y puede afectar a confianza del usuario.
 - Recomendación: normalizar codificación UTF-8 y revisar cadenas visibles antes de producción.
 

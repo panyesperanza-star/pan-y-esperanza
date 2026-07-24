@@ -106,14 +106,14 @@ export default async function handler(request, response) {
       return sendJson(response, 200, { ok: true, result: await executePortalAction(supabase, portal, subject, body) });
     }
 
-    return sendJson(response, 400, { ok: false, code: 'INVALID_OPERATION', error: 'Operacion no valida.' });
+    return sendJson(response, 400, { ok: false, code: 'INVALID_OPERATION', error: 'Operación no válida.' });
   } catch (error) {
     const status = error.status || 500;
     logPortalDebug(requestPortal, 'respuesta final', { ok: false, status, code: error.code || 'PORTAL_AUTH_FAILED' });
     return sendJson(response, status, {
       ok: false,
       code: error.code || 'PORTAL_AUTH_FAILED',
-      error: error.message || 'No se pudo completar la operacion del portal.'
+      error: error.message || 'No se pudo completar la operación del portal.'
     });
   }
 }
@@ -904,7 +904,7 @@ async function notifyDeliveryAttendance(supabase, beneficiary, delivery, status,
     `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha actualizado su asistencia: ${label}.`,
     delivery.delivered_at ? `Entrega: ${delivery.delivered_at}.` : '',
     reason ? `Motivo: ${reason}.` : '',
-    request?.id ? 'Se ha creado una solicitud asociada.' : ''
+    requestá.id ? 'Se ha creado una solicitud asociada.' : ''
   ].filter(Boolean);
   const { error } = await supabase.from('notificaciones').insert({
     tipo: status === 'needs_contact' ? 'urgent' : priority,
@@ -924,7 +924,7 @@ async function notifyDeliveryAttendance(supabase, beneficiary, delivery, status,
       delivery_id: delivery.id,
       attendance_status: status,
       attendance_source: 'portal',
-      request_id: request?.id || null
+      request_id: requestá.id || null
     },
     created_at: now,
     updated_at: now

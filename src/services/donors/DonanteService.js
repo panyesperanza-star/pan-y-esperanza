@@ -14,7 +14,7 @@ const DEFAULT_IMPACT = Object.freeze({
   deliveriesCompleted: 1250,
   campaignsSupported: 12
 });
-const DONOR_TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociacion', 'Institucion'];
+const DONOR_TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociación', 'Institución'];
 const DONOR_STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
 
 function cleanText(value) {

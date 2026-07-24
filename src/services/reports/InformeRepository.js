@@ -1,4 +1,4 @@
-﻿import { createRepositoryAdapter } from '../repositories/RepositoryProvider';
+import { createRepositoryAdapter } from '../repositories/RepositoryProvider';
 
 const REPORT_TABLES = [
   'beneficiaries',

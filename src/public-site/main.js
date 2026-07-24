@@ -984,8 +984,8 @@ const createCookieConsentBanner = () => {
   copy.className = "cookie-consent__copy";
   copy.innerHTML = `
     <p><strong>Cookies</strong></p>
-    <p>Utilizamos cookies tecnicas necesarias y, solo con tu consentimiento, cookies analiticas para mejorar la web.</p>
-    <p><a href="/cookies/">Consultar politica de cookies</a></p>
+    <p>Utilizamos cookies técnicas necesarias y, solo con tu consentimiento, cookies analíticas para mejorar la web.</p>
+    <p><a href="/cookies/">Consultar política de cookies</a></p>
   `;
 
   const actions = document.createElement("div");

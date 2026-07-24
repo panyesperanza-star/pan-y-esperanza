@@ -1,4 +1,4 @@
-import { getUserStatus, isSystemSuperadmin } from '../../lib/auth';
+import { getUserStatus, isPlatformOwner, isSystemSuperadmin } from '../../lib/auth';
 import {
   constrainRolePermissionMatrix,
   ROLE_PERMISSION_MATRIX,
@@ -47,7 +47,7 @@ export function createEmptyUser(currentUser) {
 }
 
 export function buildUsersViewModel(users = []) {
-  const associationUsers = users.filter((user) => !isSystemSuperadmin(user));
+  const associationUsers = users.filter((user) => !isSystemSuperadmin(user) && !isPlatformOwner(user));
   return {
     associationUsers,
     activeUsers: associationUsers.filter((user) => getUserStatus(user) === 'Activo'),
@@ -126,7 +126,7 @@ export class UsuarioService {
 
   async resetPassword(id, password) {
     await this.repository.resetPassword(id, password);
-    await this.audit('Restablecio contrasena de usuario');
+    await this.audit('Restableció contraseña de usuario');
   }
 
   async updateLastAccess(id) {

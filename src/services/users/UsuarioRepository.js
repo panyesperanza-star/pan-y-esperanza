@@ -91,7 +91,7 @@ export class UsuarioRepository {
         testMode: true,
         to: user.email,
         subject: 'Bienvenida a Pan y Esperanza',
-        message: `Hola ${user.first_name}, tu usuario se ha creado correctamente. Contrasena temporal: ${user.password}`,
+        message: `Hola ${user.first_name}, tu usuario se ha creado correctamente. Contraseña temporal: ${user.password}`,
         logoUrl,
         organization
       })
@@ -105,7 +105,7 @@ export class UsuarioRepository {
       body: JSON.stringify({ action, ...payload })
     });
     const result = await readApiJson(response);
-    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operacion de usuarios.'));
+    if (!response.ok) throw new Error(formatApiError(result, 'No se pudo completar la operación de usuarios.'));
     return result;
   }
 }

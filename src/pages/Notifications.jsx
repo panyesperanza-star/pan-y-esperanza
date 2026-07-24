@@ -75,7 +75,7 @@ export function Notifications({ data, actions, onNavigate }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-semibold text-slate-700">Modulo</span>
+            <span className="mb-1 block text-sm font-semibold text-slate-700">Módulo</span>
             <select
               className={inputClass}
               value={filters.moduleId}
@@ -161,7 +161,7 @@ function NotificationRow({ notification, onRead, onOpen }) {
         <div className="flex shrink-0 flex-wrap gap-2">
           {(notification.action_url || notification.metadata?.request_id || notification.entity_type === 'beneficiary_portal') && (
             <Button variant="secondary" onClick={onOpen}>
-              Abrir modulo
+              Abrir módulo
             </Button>
           )}
           {!read && (
