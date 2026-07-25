@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { exportExcel } from '../../lib/exporters';
 import { formatDate, normalize } from '../../lib/formatters';
+import { repairMojibakeDeep, repairMojibakeText } from '../../lib/textEncoding';
 const REPORTS = [
   { id: 'beneficiaries', title: 'Beneficiarios', icon: Users, description: 'Altas, estado del expediente y seguimiento de personas atendidas.' },
   { id: 'families', title: 'Familias', icon: Home, description: 'Unidades familiares, composición, ayudas y valor social recibido.' },
@@ -57,11 +58,11 @@ export class InformeService {
   }
 
   buildReports(data = this.data, filters = initialReportFilters) {
-    return buildReports(data, filters);
+    return repairMojibakeDeep(buildReports(data, filters));
   }
 
   buildResourcesReport(resources = this.data.recursos || []) {
-    return buildResourcesReport(resources);
+    return repairMojibakeDeep(buildResourcesReport(resources));
   }
 
   filterRows(rows, filters, report) {
@@ -81,17 +82,21 @@ export class InformeService {
   }
 
   formatCell(value, column, row = {}) {
-    return formatCell(value, column, row);
+    return repairMojibakeText(formatCell(value, column, row));
   }
 
   exportPdfReport(report, rows, filters) {
-    if (report.id === 'annual') exportAnnualActivityPdf(report, rows, filters);
-    else exportGenericReportPdf(report, rows, filters);
+    const safeReport = repairMojibakeDeep(report);
+    const safeRows = repairMojibakeDeep(rows);
+    if (safeReport.id === 'annual') exportAnnualActivityPdf(safeReport, safeRows, filters);
+    else exportGenericReportPdf(safeReport, safeRows, filters);
     void this.audit(`Informes: exporto PDF ${report.title || report.id || ''}`.trim());
   }
 
   exportExcelReport(report, rows, filters) {
-    exportExcel(reportFilename(report), excelSheetsForReport(report, rows, filters));
+    const safeReport = repairMojibakeDeep(report);
+    const safeRows = repairMojibakeDeep(rows);
+    exportExcel(reportFilename(safeReport), excelSheetsForReport(safeReport, safeRows, filters));
     void this.audit(`Informes: exporto Excel ${report.title || report.id || ''}`.trim());
   }
 
@@ -894,7 +899,7 @@ function exportAnnualActivityPdf(report, rows, filters) {
   doc.setFontSize(22);
   doc.text('MEMORIA ANUAL DE ACTIVIDAD', 105, 28, { align: 'center' });
   doc.setFontSize(13);
-  doc.text(`Asociación Pan y Esperanza · ${yearText}`, 105, 40, { align: 'center' });
+  doc.text(repairMojibakeText(`Asociación Pan y Esperanza · ${yearText}`), 105, 40, { align: 'center' });
   doc.setTextColor(23, 33, 27);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
@@ -932,7 +937,7 @@ function exportAnnualActivityPdf(report, rows, filters) {
   });
   doc.setFontSize(9);
   doc.setTextColor(96, 112, 100);
-  doc.text('Memoria generada desde la plataforma Pan y Esperanza. La información procede de los registros internos de la entidad.', 14, 286);
+  doc.text(repairMojibakeText('Memoria generada desde la plataforma Pan y Esperanza. La información procede de los registros internos de la entidad.'), 14, 286);
   doc.save(`${reportFilename(report)}-${yearText}.pdf`);
 }
 

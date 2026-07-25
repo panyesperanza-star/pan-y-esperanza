@@ -6,6 +6,13 @@ import { PageHeader } from '../components/PageHeader';
 import { InformeService, initialReportFilters } from '../services/reports/InformeService';
 import { normalize } from '../lib/formatters';
 
+const REPORT_COPY = {
+  pageDescription: 'Informes oficiales de la plataforma con filtros y exportaci\u00f3n PDF/Excel.',
+  mainDescription: 'Resume la actividad registrada por la asociaci\u00f3n sin duplicar datos ni solicitar informaci\u00f3n adicional.',
+  yearLabel: 'A\u00f1o',
+  annualPdfDescription: 'La exportaci\u00f3n PDF genera un documento redactado con portada, indicadores, actividad social, recursos movilizados y cierre institucional.'
+};
+
 export function Reports({ data, actions }) {
   const [activeReportId, setActiveReportId] = useState('annual');
   const [filters, setFilters] = useState(initialReportFilters);
@@ -56,7 +63,7 @@ export function Reports({ data, actions }) {
     <>
       <PageHeader
         title="Informes"
-        description="Informes oficiales de la plataforma con filtros y exportación PDF/Excel."
+        description={REPORT_COPY.pageDescription}
         actions={(
           <>
             <Button variant="secondary" onClick={exportCurrentExcel}><FileSpreadsheet size={18} /> Excel</Button>
@@ -72,7 +79,7 @@ export function Reports({ data, actions }) {
             <h3 className="mt-1 text-xl font-bold text-ink">Memoria anual de actividad</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Documento institucional para administraciones, subvenciones, Banco de Alimentos y entidades colaboradoras.
-              Resume la actividad registrada por la asociación sin duplicar datos ni solicitar información adicional.
+              {' '}{REPORT_COPY.mainDescription}
             </p>
           </div>
           <Button onClick={openAnnualMemory}><FileText size={18} /> Abrir memoria</Button>
@@ -114,7 +121,7 @@ export function Reports({ data, actions }) {
           </FormField>
           <FormField label="Desde"><input className={inputClass} type="date" value={filters.dateFrom} onChange={(event) => updateFilter('dateFrom', event.target.value)} /></FormField>
           <FormField label="Hasta"><input className={inputClass} type="date" value={filters.dateTo} onChange={(event) => updateFilter('dateTo', event.target.value)} /></FormField>
-          <FormField label="Año">
+          <FormField label={REPORT_COPY.yearLabel}>
             <select className={inputClass} value={filters.year} onChange={(event) => updateFilter('year', event.target.value)}>
               <option>Todos</option>
               {reportService.availableYears(data).map((year) => <option key={year}>{year}</option>)}
@@ -239,7 +246,7 @@ function AnnualPreview({ report, rows, filters }) {
         ))}
       </div>
       <p className="mt-4 text-sm text-slate-600">
-        La exportación PDF genera un documento redactado con portada, indicadores, actividad social, recursos movilizados y cierre institucional.
+        {REPORT_COPY.annualPdfDescription}
       </p>
     </section>
   );
