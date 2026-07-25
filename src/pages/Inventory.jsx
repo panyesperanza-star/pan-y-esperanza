@@ -35,6 +35,13 @@ import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 import {
+  formatInventoryQuantity,
+  formatInventoryStockLabel,
+  isValidInventoryUnit,
+  normalizeInventoryStockNumber,
+  normalizeInventoryUnit
+} from '../lib/inventoryDisplay';
+import {
   optimizeInventoryProductPhoto,
   removeInventoryProductPhoto,
   resolveInventoryProductPhotoUrl,
@@ -349,8 +356,8 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                     </td>
                     <td className="px-4 py-3">{item.lot || '-'}</td>
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-ink">{formatQuantity(item.stock)} {item.unit}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">Mínimo: {formatQuantity(item.low_stock_threshold)}</p>
+                      <p className="font-semibold text-ink">{formatInventoryStockLabel(item, { prefix: '' })}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">Mínimo: {formatInventoryQuantity(item.low_stock_threshold)} {normalizeInventoryUnit(item.unit)}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 text-slate-700"><MapPin size={14} className="text-slate-400" /> {item.location || '-'}</span>
@@ -806,6 +813,10 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
   async function submit(event) {
     event.preventDefault();
     setError('');
+    if (!isValidInventoryUnit(form.unit)) {
+      setError('La unidad de medida debe ser texto, por ejemplo: unidades, kg o litros.');
+      return;
+    }
     setSaving(true);
     try {
       await onSubmit({
@@ -855,9 +866,10 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
       <FormField label="Referencia"><input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} /></FormField>
       <DocumentFields form={form} update={update} />
       <FormField label="Ubicación"><input className={inputClass} value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
-      <FormField label="Unidad" required>
+      <FormField label="Unidad de medida" required>
         <input className={inputClass} list="inventory-units" required value={form.unit} onChange={(event) => update('unit', event.target.value)} />
         <datalist id="inventory-units">{unitSuggestions.map((item) => <option key={item} value={item} />)}</datalist>
+        <p className="mt-1 text-xs text-slate-500">Indica como se mide el producto. La cantidad disponible se gestiona con Nueva entrada o Nueva salida.</p>
       </FormField>
       <FormField label="Stock mínimo" required>
         <input className={inputClass} type="number" step="0.01" min="0" required value={form.low_stock_threshold} onChange={(event) => update('low_stock_threshold', Number(event.target.value))} />
@@ -902,7 +914,7 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
 
 function MovementForm({ items, movements, movementType, currentUser, onSubmit }) {
   const eligibleItems = useMemo(
-    () => items.filter((item) => movementType === 'Entrada' || Number(item.stock || 0) > 0),
+    () => items.filter((item) => movementType === 'Entrada' || normalizeInventoryStockNumber(item.stock) > 0),
     [items, movementType]
   );
   const responsible = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || '';
@@ -964,7 +976,7 @@ function MovementForm({ items, movements, movementType, currentUser, onSubmit })
       {error && <FormError message={error} />}
       <FormField label="Producto" required>
         <select className={inputClass} required value={form.item_id} onChange={(event) => update('item_id', event.target.value)}>
-          {eligibleItems.map((item) => <option key={item.id} value={item.id}>{item.name}{item.lot ? ` · ${item.lot}` : ''} · {formatQuantity(item.stock)} {item.unit}</option>)}
+          {eligibleItems.map((item) => <option key={item.id} value={item.id}>{item.name}{item.lot ? ` · ${item.lot}` : ''} · {formatInventoryStockLabel(item)}</option>)}
         </select>
       </FormField>
       <FormField label="Cantidad" required>
@@ -973,7 +985,7 @@ function MovementForm({ items, movements, movementType, currentUser, onSubmit })
           type="number"
           step="0.01"
           min="0.01"
-          max={movementType === 'Salida' ? Number(selectedItem?.stock || 0) : undefined}
+          max={movementType === 'Salida' ? normalizeInventoryStockNumber(selectedItem?.stock) : undefined}
           required
           value={form.quantity}
           onChange={(event) => update('quantity', Number(event.target.value))}
@@ -1106,16 +1118,11 @@ function getItemSignals(item) {
 }
 
 function getStockSignal(item) {
-  const stock = normalizeStockNumber(item.stock);
-  const minimum = Math.max(normalizeStockNumber(item.low_stock_threshold), 0);
+  const stock = normalizeInventoryStockNumber(item.stock);
+  const minimum = Math.max(normalizeInventoryStockNumber(item.low_stock_threshold), 0);
   if (stock === 0) return { label: 'Agotado', tone: 'red' };
   if (stock > 0 && stock <= minimum) return { label: 'Stock bajo', tone: 'orange' };
   return { label: 'Disponible', tone: 'green' };
-}
-
-function normalizeStockNumber(value) {
-  const normalized = Number(String(value ?? 0).replace(',', '.'));
-  return Number.isFinite(normalized) && normalized > 0 ? normalized : 0;
 }
 
 function calculateSummary(items) {
@@ -1138,10 +1145,10 @@ function buildInventoryCenter(data = {}) {
   const donations = data.donations || [];
   const campaigns = data.campanas || [];
   const productNames = new Set(items.map((item) => normalize(item.name)).filter(Boolean));
-  const outOfStock = items.filter((item) => normalizeStockNumber(item.stock) === 0);
+  const outOfStock = items.filter((item) => normalizeInventoryStockNumber(item.stock) === 0);
   const lowStock = items.filter((item) => {
-    const stock = normalizeStockNumber(item.stock);
-    return stock > 0 && stock <= normalizeStockNumber(item.low_stock_threshold);
+    const stock = normalizeInventoryStockNumber(item.stock);
+    return stock > 0 && stock <= normalizeInventoryStockNumber(item.low_stock_threshold);
   });
   const expiringSoon = items.filter((item) => {
     const days = daysUntil(item.expires_at);
@@ -1160,7 +1167,7 @@ function buildInventoryCenter(data = {}) {
   return {
     totalProducts: productNames.size || items.length,
     totalLots: items.length,
-    estimatedValue: items.reduce((total, item) => total + (Number(item.stock || 0) * inventoryUnitValue(item)), 0),
+    estimatedValue: items.reduce((total, item) => total + (normalizeInventoryStockNumber(item.stock) * inventoryUnitValue(item)), 0),
     criticalProducts: new Set([...outOfStock, ...lowStock, ...expired].map((item) => item.id)).size,
     expiringSoon: expiringSoon.length,
     lowStock: lowStock.length,
@@ -1324,7 +1331,7 @@ function buildInventoryRelationWarnings(item, data) {
   const socialEvents = (data.social_value_events || []).filter((event) => event.inventory_item_id === item.id);
   const donations = (data.donations || []).filter((donation) => donation.inventory_item_id === item.id);
 
-  if (Number(item.stock || 0) > 0) relations.push(`Stock actual: ${formatQuantity(item.stock)} ${item.unit || ''}`.trim());
+  if (normalizeInventoryStockNumber(item.stock) > 0) relations.push(`Stock actual: ${formatInventoryStockLabel(item, { prefix: '' })}`.trim());
   if (movements.length) relations.push(`Movimientos de inventario: ${movements.length}`);
   if (deliveries.length) relations.push(`Entregas vinculadas: ${deliveries.length}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);

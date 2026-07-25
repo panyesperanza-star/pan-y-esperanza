@@ -1,4 +1,5 @@
 import { nextReceiptNumber } from '../../lib/formatters';
+import { formatInventoryStockLabel } from '../../lib/inventoryDisplay';
 
 export function buildDeliveryTrackingNote(delivery, beneficiary, item, quantity, responsibleFallback) {
   const parts = [
@@ -238,7 +239,7 @@ export class EntregaService {
     }
 
     if (item && quantity > Number(item.stock || 0)) {
-      throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
+      throw new Error(`Stock insuficiente. Disponible: ${formatInventoryStockLabel(item, { prefix: '' })}.`);
     }
 
     return { beneficiary, family, item, quantity };

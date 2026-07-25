@@ -1,4 +1,5 @@
 import { normalize } from '../../lib/formatters';
+import { formatInventoryStockLabel, isValidInventoryUnit } from '../../lib/inventoryDisplay';
 
 export function sanitizeInventoryItemPayload(payload) {
   const { stock, ...editable } = payload || {};
@@ -17,6 +18,9 @@ export function sanitizeInventoryItemPayload(payload) {
   if (!item.name) throw new Error('El nombre del producto es obligatorio.');
   if (!item.category) throw new Error('La categoria del producto es obligatoria.');
   if (!item.unit) throw new Error('La unidad del producto es obligatoria.');
+  if (!isValidInventoryUnit(item.unit)) {
+    throw new Error('La unidad de medida debe ser texto, por ejemplo: unidades, kg o litros.');
+  }
   if (!Number.isFinite(item.low_stock_threshold) || item.low_stock_threshold < 0) {
     throw new Error('El stock minimo no puede ser negativo.');
   }
@@ -52,7 +56,7 @@ export function sanitizeInventoryMovement(payload, items = []) {
   if (!responsible) throw new Error('El responsable del movimiento es obligatorio.');
 
   if (movementType === 'Salida' && quantity > Number(item.stock || 0)) {
-    throw new Error(`Stock insuficiente. Disponible: ${item.stock} ${item.unit}.`);
+    throw new Error(`Stock insuficiente. Disponible: ${formatInventoryStockLabel(item, { prefix: '' })}.`);
   }
 
   return {

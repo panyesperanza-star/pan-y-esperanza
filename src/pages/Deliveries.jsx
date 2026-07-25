@@ -11,6 +11,7 @@ import { HELP_TYPES } from '../lib/constants';
 import { normalizeEmailError, sendEmailViaApi } from '../lib/emailClient';
 import { printDeliveryReceiptPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
+import { formatInventoryStockLabel } from '../lib/inventoryDisplay';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
@@ -436,7 +437,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
       </FormField>
       <FormField label="Producto de inventario">
         <select className={inputClass} value={form.inventory_item_id} onChange={(event) => update('inventory_item_id', event.target.value)}>
-          {inventoryItems.map((item) => <option key={item.id} value={item.id}>{item.name} - stock {item.stock} {item.unit}</option>)}
+          {inventoryItems.map((item) => <option key={item.id} value={item.id}>{formatDeliveryInventoryOption(item)}</option>)}
         </select>
       </FormField>
       <FormField label="Cantidad">
@@ -673,6 +674,12 @@ function isBeneficiaryFamilyArchived(beneficiary, families = []) {
   return String(family.notes || '')
     .split(/\r?\n/)
     .some((line) => line.startsWith(FAMILY_ARCHIVE_MARKER));
+}
+
+function formatDeliveryInventoryOption(item) {
+  const name = item?.name || 'Producto';
+  const lot = item?.lot ? ` · Lote ${item.lot}` : '';
+  return `${name}${lot} — ${formatInventoryStockLabel(item)}`;
 }
 
 function buildDeliveryRelationWarnings(delivery, data) {
