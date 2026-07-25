@@ -600,7 +600,7 @@ export function useAppData(enabled = true, currentUser = null) {
   }
 
   async function notifyDeletionRequestRejected(request, resolutionReason) {
-    if (!requestá.requester_email) return;
+    if (!request?.requester_email) return;
     await sendEmailViaApi({
       to: request.requester_email,
       subject: `Solicitud de eliminación rechazada - ${request.record_label || request.record_id}`,

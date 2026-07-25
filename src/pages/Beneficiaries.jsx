@@ -3275,7 +3275,7 @@ function buildDeliveryTrackingText(delivery) {
 
 function buildTrackingIndicators(beneficiary, diary, observations, objectives) {
   const latest = diary[0];
-  const days = latestá.date ? daysSince(latest.date) : null;
+  const days = latest?.date ? daysSince(latest.date) : null;
   return [
     { label: 'Intervenciones', value: diary.length, detail: latest ? `Última: ${formatDate(latest.date)}` : 'Sin intervenciones', tone: 'brand' },
     { label: 'Objetivos', value: objectives.length, detail: objectives.length ? 'Definidos en seguimiento' : 'Sin objetivos definidos', tone: 'blue' },
