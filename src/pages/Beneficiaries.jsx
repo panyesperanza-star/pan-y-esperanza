@@ -1436,13 +1436,14 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
   const [assistantAnswer, setAssistantAnswer] = useState('');
   const [previewAction, setPreviewAction] = useState(null);
   const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests, notices });
+  const mainRisk = summary.risks[0];
   const assistantPanels = [
-    { id: 'summary', label: '📋 Resumen' },
-    { id: 'risks', label: '⚠️ Riesgos' },
-    { id: 'recommendations', label: '💡 Recomendaciones' },
-    { id: 'sources', label: '📚 Fuentes' },
-    { id: 'chronology', label: '📅 Cronología' },
-    { id: 'nextSteps', label: '✅ Próximos pasos' }
+    { id: 'summary', label: 'Resumen' },
+    { id: 'risks', label: 'Riesgos' },
+    { id: 'recommendations', label: 'Recomendaciones' },
+    { id: 'sources', label: 'Fuentes' },
+    { id: 'chronology', label: 'Cronología' },
+    { id: 'nextSteps', label: 'Próximos pasos' }
   ];
   const quickActions = [
     { label: 'Resumir expediente', action: () => setActivePanel('summary') },
@@ -1452,8 +1453,10 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
     { label: 'Preparar Email', action: () => setPreviewAction(buildAssistantPreview('email', beneficiary, summary)) },
     { label: 'Crear seguimiento', action: () => setPreviewAction(buildAssistantPreview('tracking', beneficiary, summary)) },
     { label: 'Generar informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
-    { label: 'Más...', action: () => setShowQuestionBox((value) => !value) }
+    { label: 'Más opciones', action: () => setShowQuestionBox((value) => !value) }
   ];
+  const primaryActions = quickActions.slice(0, 4);
+  const secondaryActions = quickActions.slice(4);
 
   function submitQuestion(event) {
     event.preventDefault();
@@ -1461,29 +1464,53 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
   }
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-emerald-50 shadow-sm" aria-label="Asistente Pan y Esperanza">
-      <div className="border-b border-brand-100 bg-white/80 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="rounded-2xl bg-brand-700 p-3 text-white shadow-sm"><NotebookTabs size={22} /></span>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Calculado con datos del ERP</p>
-              <h3 className="mt-1 text-xl font-black text-ink">🤖 Asistente Pan y Esperanza</h3>
-              <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">Asistente operativo basado exclusivamente en datos reales del ERP.</p>
+    <section className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm" aria-label="Asistente Pan y Esperanza">
+      <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-emerald-50 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-700 text-white shadow-sm"><NotebookTabs size={20} /></span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Copiloto del expediente</p>
+              <h3 className="mt-0.5 truncate text-lg font-black text-ink sm:text-xl">Asistente Pan y Esperanza</h3>
+              <p className="mt-0.5 text-sm font-semibold text-slate-600">Basado exclusivamente en datos reales del ERP.</p>
             </div>
           </div>
-          <div className={`rounded-2xl border px-4 py-3 text-sm font-black shadow-sm ${summary.status.tone}`}>
+          <div className={`inline-flex w-fit items-center rounded-full border px-3 py-2 text-xs font-black shadow-sm ${summary.status.tone}`}>
             {summary.status.icon} {summary.status.label}
           </div>
         </div>
-        <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-800">
-          El Asistente Pan y Esperanza nunca toma decisiones automáticamente. Solo resume, organiza y recomienda utilizando datos reales del ERP.
-        </div>
       </div>
 
-      <div className="grid gap-0 xl:grid-cols-[minmax(0,1.45fr)_minmax(330px,0.75fr)]">
-        <div className="p-5">
-          <div className="flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Secciones del asistente Pan y Esperanza">
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4 p-4 sm:p-5">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]">
+            <article className="rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
+              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Resumen principal</p>
+              <p className="mt-2 line-clamp-4 text-base font-bold leading-relaxed text-ink">{summary.narrative}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {summary.highlights.slice(0, 3).map((item) => (
+                  <span key={item} className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">{item}</span>
+                ))}
+              </div>
+            </article>
+            <article className={`rounded-2xl border p-4 ${mainRisk ? mainRisk.cardTone : 'border-brand-100 bg-white'}`}>
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">Riesgo prioritario</p>
+              {mainRisk ? (
+                <>
+                  <h4 className="mt-2 text-base font-black text-ink">{mainRisk.levelIcon} {mainRisk.motive}</h4>
+                  <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-700">{mainRisk.evidence}</p>
+                  <button type="button" onClick={() => setActivePanel('risks')} className="focus-ring mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-100 transition hover:bg-slate-50">Ver riesgos</button>
+                </>
+              ) : (
+                <>
+                  <h4 className="mt-2 text-base font-black text-brand-800">Sin riesgos destacados</h4>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">No hay alertas objetivas con los datos actuales.</p>
+                </>
+              )}
+            </article>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Secciones del asistente Pan y Esperanza">
             {assistantPanels.map((panel) => {
               const active = activePanel === panel.id;
               return (
@@ -1493,7 +1520,7 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
                   role="tab"
                   aria-selected={active}
                   onClick={() => setActivePanel(panel.id)}
-                  className={`focus-ring shrink-0 rounded-2xl px-4 py-2.5 text-sm font-black transition ${
+                  className={`focus-ring shrink-0 rounded-xl px-3 py-2 text-xs font-black transition ${
                     active
                       ? 'bg-brand-700 text-white shadow-sm'
                       : 'bg-white text-slate-700 shadow-sm ring-1 ring-slate-100 hover:bg-brand-50 hover:text-brand-800'
@@ -1505,7 +1532,7 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
             })}
           </div>
 
-          <div className="mt-4 min-h-[360px]">
+          <div className="min-h-[240px]">
             {activePanel === 'summary' && <AssistantSummaryPanel summary={summary} />}
             {activePanel === 'risks' && <AssistantRisksPanel summary={summary} />}
             {activePanel === 'recommendations' && <AssistantRecommendationsPanel summary={summary} onPreview={setPreviewAction} beneficiary={beneficiary} />}
@@ -1517,25 +1544,31 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
           <AssistantMemoryPanel memory={summary.memory} />
         </div>
 
-        <aside className="border-t border-brand-100 bg-white/75 p-5 xl:border-l xl:border-t-0">
+        <aside className="border-t border-brand-100 bg-slate-50/60 p-4 sm:p-5 xl:border-l xl:border-t-0">
           <div className="sticky top-4 space-y-4">
-            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-wide text-brand-700">Copiloto del trabajador social</p>
-              <h4 className="mt-2 text-lg font-black text-ink">He analizado este expediente.</h4>
-              <p className="mt-2 text-sm font-semibold text-slate-600">Hoy te recomiendo revisar:</p>
+            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Copiloto del trabajador social</p>
+              <h4 className="mt-1 text-base font-black text-ink">He analizado este expediente.</h4>
+              <p className="mt-2 text-sm font-semibold text-slate-600">Hoy conviene revisar:</p>
               <div className="mt-3 grid gap-2">
                 {summary.focusItems.map((item) => (
-                  <div key={item} className="rounded-2xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">{item}</div>
+                  <div key={item} className="rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">{item}</div>
                 ))}
               </div>
-              <VerifiedSources sources={summary.verifiedSources} compact />
             </div>
 
-            <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-              <p className="px-1 text-xs font-black uppercase tracking-wide text-slate-500">Acciones rápidas</p>
-              <div className="mt-3 grid gap-2">
-                {quickActions.map((item) => (
-                  <button key={item.label} type="button" onClick={item.action} className="focus-ring rounded-2xl border border-slate-100 bg-white px-3 py-3 text-left text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
+            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <p className="px-1 text-[11px] font-black uppercase tracking-wide text-slate-500">Acciones rápidas</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {primaryActions.map((item) => (
+                  <button key={item.label} type="button" onClick={item.action} className="focus-ring min-h-[58px] rounded-xl border border-slate-100 bg-white px-3 py-2 text-left text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {secondaryActions.map((item) => (
+                  <button key={item.label} type="button" onClick={item.action} className="focus-ring rounded-full bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-brand-50 hover:text-brand-800">
                     {item.label}
                   </button>
                 ))}
@@ -1543,14 +1576,14 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
             </div>
 
             {showQuestionBox && (
-              <form onSubmit={submitQuestion} className="rounded-3xl border border-brand-100 bg-brand-50 p-4 shadow-sm">
+              <form onSubmit={submitQuestion} className="rounded-2xl border border-brand-100 bg-brand-50 p-4 shadow-sm">
                 <label className="text-xs font-black uppercase tracking-wide text-brand-700" htmlFor={`assistant-question-${beneficiary.id}`}>Pregunta al asistente</label>
                 <textarea
                   id={`assistant-question-${beneficiary.id}`}
-                  className="mt-2 min-h-28 w-full rounded-2xl border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                  className="mt-2 min-h-24 w-full rounded-2xl border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                   value={assistantQuestion}
                   onChange={(event) => setAssistantQuestion(event.target.value)}
-                  placeholder="Ejemplo: ¿qué debería revisar hoy?"
+                  placeholder="Ejemplo: qué debería revisar hoy"
                 />
                 <div className="mt-3 flex justify-end">
                   <Button type="submit" variant="secondary">Responder con datos del ERP</Button>
@@ -1567,6 +1600,10 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
             {previewAction && (
               <AssistantPreviewCard preview={previewAction} onChange={setPreviewAction} onCancel={() => setPreviewAction(null)} sources={summary.verifiedSources} />
             )}
+
+            <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 text-xs font-bold leading-relaxed text-brand-800">
+              El Asistente Pan y Esperanza nunca toma decisiones automáticamente. Solo resume, organiza y recomienda utilizando datos reales del ERP.
+            </div>
           </div>
         </aside>
       </div>
@@ -1576,19 +1613,19 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
 
 function AssistantSummaryPanel({ summary }) {
   return (
-    <div className="space-y-4">
-      <article className="rounded-3xl border border-white bg-white p-5 shadow-sm">
+    <div className="space-y-3">
+      <article className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <p className="text-xs font-black uppercase tracking-wide text-brand-700">Resumen redactado</p>
-        <p className="mt-3 text-lg font-bold leading-relaxed text-ink">{summary.narrative}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <p className="mt-2 line-clamp-3 text-sm font-bold leading-6 text-ink">{summary.narrative}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
           {summary.highlights.map((item) => (
-            <span key={item} className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-black text-brand-700">{item}</span>
+            <span key={item} className="rounded-full bg-brand-50 px-3 py-1 text-[11px] font-black text-brand-700">{item}</span>
           ))}
         </div>
       </article>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {summary.items.map((item) => (
-          <div key={item.label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div key={item.label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{item.label}</p>
             <p className="mt-1 text-sm font-bold text-ink">{item.value}</p>
           </div>
