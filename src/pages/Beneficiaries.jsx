@@ -1439,6 +1439,9 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
   const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests, notices });
   const mainRisk = summary.risks[0];
   const recommendedAction = summary.recommendations[0] || null;
+  const statusExplanation = summary.status.label === 'Expediente estable'
+    ? 'Sin alertas críticas con los datos actuales del expediente.'
+    : 'Revisión sugerida según los datos reales disponibles.';
   const assistantPanels = [
     { id: 'summary', label: 'Resumen' },
     { id: 'risks', label: 'Riesgos' },
@@ -1455,7 +1458,7 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
   ];
   const secondaryActions = [
     { label: 'Preparar Email', action: () => setPreviewAction(buildAssistantPreview('email', beneficiary, summary)) },
-    { label: 'Generar informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
+    { label: 'Generar borrador de informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
     { label: 'Próximos pasos', action: () => setActivePanel('nextSteps') },
     { label: 'Fuentes utilizadas', action: () => setActivePanel('sources') },
     { label: 'Cronología', action: () => setActivePanel('chronology') },
@@ -1496,7 +1499,7 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
                   <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Hoy debes revisar</p>
                   <p className="mt-1 line-clamp-2 text-base font-black leading-snug text-ink">{summary.focusItems[0] || 'Seguimiento ordinario del expediente'}</p>
                 </div>
-                <button type="button" onClick={runRecommendedAction} className="focus-ring rounded-xl bg-brand-700 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-brand-800">
+                <button type="button" onClick={runRecommendedAction} className="focus-ring rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-brand-700">
                   {recommendedAction?.button || 'Crear seguimiento'}
                 </button>
               </div>
@@ -1601,15 +1604,16 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
           </div>
         </div>
 
-        <aside className="border-t border-brand-100 bg-slate-950 p-4 text-white xl:border-l xl:border-t-0">
-          <div className="sticky top-4 space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm backdrop-blur">
+        <aside className="border-t border-brand-100 bg-slate-950 p-3 text-white xl:self-start xl:border-l xl:border-t-0">
+          <div className="sticky top-4 space-y-2">
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 shadow-sm backdrop-blur">
               <p className="text-[11px] font-black uppercase tracking-wide text-emerald-200">Estado general</p>
-              <p className="mt-2 text-xl font-black">{summary.status.icon} {summary.status.label}</p>
-              <div className="mt-3 h-px bg-white/10" />
-              <p className="mt-3 text-[11px] font-black uppercase tracking-wide text-emerald-200">Acción recomendada</p>
+              <p className="mt-1.5 text-lg font-black">{summary.status.icon} {summary.status.label}</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-white/70">{statusExplanation}</p>
+              <div className="mt-2 h-px bg-white/10" />
+              <p className="mt-2 text-[11px] font-black uppercase tracking-wide text-emerald-200">Acción recomendada</p>
               <p className="mt-1 text-sm font-bold text-white/85">{recommendedAction?.title || 'Mantener seguimiento ordinario'}</p>
-              <button type="button" onClick={runRecommendedAction} className="focus-ring mt-3 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-emerald-50">
+              <button type="button" onClick={runRecommendedAction} className="focus-ring mt-2.5 w-full rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-brand-700">
                 {recommendedAction?.button || 'Crear seguimiento'}
               </button>
             </div>
@@ -1790,11 +1794,11 @@ function AssistantMemoryPanel({ memory }) {
           </article>
         ))}
         {!items.length && (
-          <article className="relative">
-            <span className="absolute -left-[17px] top-1 h-2.5 w-2.5 rounded-full bg-slate-300 ring-4 ring-white" />
-            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Hoy</p>
-            <p className="mt-0.5 text-sm font-bold text-ink">Sin seguimientos anteriores.</p>
-            <p className="mt-0.5 text-xs font-semibold text-slate-600">Aquí aparecerán futuras recomendaciones confirmadas.</p>
+          <article className="relative rounded-xl border border-dashed border-brand-200 bg-brand-50/70 p-3">
+            <span className="absolute -left-[17px] top-4 h-2.5 w-2.5 rounded-full bg-brand-500 ring-4 ring-white" />
+            <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Hoy</p>
+            <p className="mt-1 text-sm font-black text-ink">Sin memoria registrada todavía.</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">Cuando el equipo confirme una recomendación, aparecerá aquí con fecha y resultado.</p>
           </article>
         )}
       </div>
@@ -1956,7 +1960,7 @@ function buildAssistantRecommendations({ beneficiary, documents = [], deliveries
       title: 'Mantener seguimiento ordinario',
       impact: 'Conserva la continuidad del acompañamiento.',
       reason: risks.length ? 'Hay riesgos menores revisables.' : 'No hay riesgos objetivos destacados.',
-      button: 'Generar borrador',
+      button: 'Generar borrador de informe social',
       previewType: 'report'
     });
   }
