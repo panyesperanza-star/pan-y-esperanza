@@ -904,7 +904,7 @@ async function notifyDeliveryAttendance(supabase, beneficiary, delivery, status,
     `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha actualizado su asistencia: ${label}.`,
     delivery.delivered_at ? `Entrega: ${delivery.delivered_at}.` : '',
     reason ? `Motivo: ${reason}.` : '',
-    requestá.id ? 'Se ha creado una solicitud asociada.' : ''
+    request?.id ? 'Se ha creado una solicitud asociada.' : ''
   ].filter(Boolean);
   const { error } = await supabase.from('notificaciones').insert({
     tipo: status === 'needs_contact' ? 'urgent' : priority,
@@ -924,7 +924,7 @@ async function notifyDeliveryAttendance(supabase, beneficiary, delivery, status,
       delivery_id: delivery.id,
       attendance_status: status,
       attendance_source: 'portal',
-      request_id: requestá.id || null
+      request_id: request?.id || null
     },
     created_at: now,
     updated_at: now

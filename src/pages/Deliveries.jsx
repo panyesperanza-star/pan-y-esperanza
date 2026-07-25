@@ -1,5 +1,5 @@
-import { Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
+import { Component, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
@@ -15,13 +15,66 @@ import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
 
-export function Deliveries({ data, actions, currentUser, navigationTarget }) {
+export function Deliveries(props) {
+  const resetKey = `${props.navigationTarget?.itemId || 'all'}-${props.data?.deliveries?.length || 0}`;
+  return (
+    <DeliveriesErrorBoundary resetKey={resetKey}>
+      <DeliveriesContent {...props} />
+    </DeliveriesErrorBoundary>
+  );
+}
+
+class DeliveriesErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[Entregas] Error al renderizar el modulo', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-md border border-red-100 bg-red-50 p-6 text-red-800 shadow-panel">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 shrink-0" size={22} />
+            <div>
+              <h2 className="text-lg font-bold">No hemos podido cargar Entregas.</h2>
+              <p className="mt-2 text-sm font-semibold">El módulo ha detenido la vista para evitar una pantalla en blanco. Inténtalo de nuevo o revisa los datos de la entrega.</p>
+              <Button type="button" variant="secondary" className="mt-4" onClick={() => this.setState({ hasError: false })}>
+                Volver a intentar
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(null);
   const [signatureTarget, setSignatureTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState('');
+  const deliveries = Array.isArray(data.deliveries) ? data.deliveries : [];
+  const beneficiaries = Array.isArray(data.beneficiaries) ? data.beneficiaries : [];
   const canCreate = canDo(currentUser, 'deliveries', 'create');
   const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
   const organization = data.organization_settings?.[0] || {};
@@ -167,8 +220,8 @@ export function Deliveries({ data, actions, currentUser, navigationTarget }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.deliveries.map((item) => {
-              const beneficiary = data.beneficiaries.find((entry) => entry.id === item.beneficiary_id);
+            {deliveries.map((item) => {
+              const beneficiary = beneficiaries.find((entry) => entry.id === item.beneficiary_id);
               const isCancelled = item.status === 'Anulada';
               return (
                 <tr key={item.id} className={`${isCancelled ? 'bg-slate-50/80 text-slate-600' : ''} ${highlightedDeliveryId === item.id ? 'bg-brand-50 ring-2 ring-inset ring-brand-200' : ''}`}>
@@ -288,23 +341,45 @@ function AttendanceStatusCell({ delivery }) {
 
 function CancellationForm({ delivery, onSubmit }) {
   const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      await onSubmit(reason.trim());
+    } catch (submitError) {
+      console.error('[Entregas] Error al anular entrega', submitError);
+      setError(submitError.message || 'No se pudo anular la entrega.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <form onSubmit={(event) => { event.preventDefault(); onSubmit(reason.trim()); }}>
+    <form onSubmit={submit}>
       <p className="mb-4 text-sm text-slate-600">La entrega {delivery.receipt_number || ''} se conservará en el historial y su salida de inventario será revertida.</p>
       <FormField label="Motivo de la anulación">
         <textarea className={inputClass} rows="4" required minLength="5" value={reason} onChange={(event) => setReason(event.target.value)} />
       </FormField>
-      <div className="mt-4 flex justify-end"><Button type="submit" variant="danger"><Ban size={16} /> Confirmar anulación</Button></div>
+      {error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+      <div className="mt-4 flex justify-end"><Button type="submit" variant="danger" disabled={saving}><Ban size={16} /> {saving ? 'Anulando...' : 'Confirmar anulación'}</Button></div>
     </form>
   );
 }
 
 export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signatureRequired = false }) {
-  const eligibleBeneficiaries = data.beneficiaries.filter((item) => item.is_active && !isBeneficiaryFamilyArchived(item, data.families));
+  const beneficiaries = Array.isArray(data.beneficiaries) ? data.beneficiaries : [];
+  const families = Array.isArray(data.families) ? data.families : [];
+  const inventoryItems = Array.isArray(data.inventory_items) ? data.inventory_items : [];
+  const eligibleBeneficiaries = beneficiaries.filter((item) => item.is_active && !isBeneficiaryFamilyArchived(item, families));
   const initialEligibleBeneficiaryId = eligibleBeneficiaries.some((item) => item.id === initialBeneficiaryId)
     ? initialBeneficiaryId
     : eligibleBeneficiaries[0]?.id || '';
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     beneficiary_id: initialEligibleBeneficiaryId,
     delivered_at: todayISO(),
@@ -312,7 +387,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
     delivered_time: new Date().toTimeString().slice(0, 5),
     help_type: 'Alimentos',
     quantity: 1,
-    inventory_item_id: data.inventory_items[0]?.id || '',
+    inventory_item_id: inventoryItems[0]?.id || '',
     receiver_name: '',
     receiver_document_id: '',
     reception_at: new Date().toISOString(),
@@ -323,8 +398,22 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
 
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      await onSubmit(form);
+    } catch (submitError) {
+      console.error('[Entregas] Error al guardar entrega', submitError);
+      setError(submitError.message || 'No se pudo guardar la entrega.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
       <FormField label="Beneficiario">
         <select className={inputClass} required value={form.beneficiary_id} onChange={(event) => update('beneficiary_id', event.target.value)}>
           {eligibleBeneficiaries.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.full_name}</option>)}
@@ -347,7 +436,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
       </FormField>
       <FormField label="Producto de inventario">
         <select className={inputClass} value={form.inventory_item_id} onChange={(event) => update('inventory_item_id', event.target.value)}>
-          {data.inventory_items.map((item) => <option key={item.id} value={item.id}>{item.name} - stock {item.stock} {item.unit}</option>)}
+          {inventoryItems.map((item) => <option key={item.id} value={item.id}>{item.name} - stock {item.stock} {item.unit}</option>)}
         </select>
       </FormField>
       <FormField label="Cantidad">
@@ -360,7 +449,7 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
         <input className={inputClass} value={form.receiver_document_id} onChange={(event) => update('receiver_document_id', event.target.value)} />
       </FormField>
       <FormField label="Fecha y hora de recepcion">
-        <input className={inputClass} type="datetime-local" value={toDateTimeLocal(form.reception_at)} onChange={(event) => update('reception_at', new Date(event.target.value).toISOString())} />
+        <input className={inputClass} type="datetime-local" value={toDateTimeLocal(form.reception_at)} onChange={(event) => update('reception_at', event.target.value ? new Date(event.target.value).toISOString() : '')} />
       </FormField>
       <div className="sm:col-span-2">
         <SignatureCaptureField
@@ -383,8 +472,9 @@ export function DeliveryForm({ data, onSubmit, initialBeneficiaryId = '', signat
           <textarea className={inputClass} rows="4" value={form.notes} onChange={(event) => update('notes', event.target.value)} />
         </FormField>
       </div>
+      {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
       <div className="flex justify-end sm:col-span-2">
-        <Button type="submit" disabled={!eligibleBeneficiaries.length || !data.inventory_items.length}>Guardar entrega</Button>
+        <Button type="submit" disabled={saving || !eligibleBeneficiaries.length || !inventoryItems.length}>{saving ? 'Guardando...' : 'Guardar entrega'}</Button>
       </div>
     </form>
   );
@@ -569,6 +659,7 @@ function SignatureCanvas({ value, onChange }) {
 
 function toDateTimeLocal(value) {
   const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
