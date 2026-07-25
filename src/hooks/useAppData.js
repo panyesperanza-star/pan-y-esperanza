@@ -104,6 +104,13 @@ const EMPTY_APP_DATA = Object.freeze({
   platform_maintenance_logs: EMPTY_TABLE,
   app_users: EMPTY_TABLE
 });
+const PLATFORM_OWNER_TABLES = new Set(['platform_maintenance_logs']);
+
+function appDataTablesForUser(user) {
+  const tables = Object.keys(EMPTY_APP_DATA);
+  if (isPlatformOwner(user)) return tables;
+  return tables.filter((table) => !PLATFORM_OWNER_TABLES.has(table));
+}
 
 export function useAppData(enabled = true, currentUser = null) {
   const [data, setData] = useState(null);
@@ -117,7 +124,7 @@ export function useAppData(enabled = true, currentUser = null) {
     try {
       const repository = createRepository();
       const loadedData = await withAppDataTimeout(
-        repository.loadAll(Object.keys(EMPTY_APP_DATA)),
+        repository.loadAll(appDataTablesForUser(currentUser)),
         APP_DATA_LOAD_TIMEOUT_MS
       );
       setData({
@@ -130,7 +137,7 @@ export function useAppData(enabled = true, currentUser = null) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (enabled) reload();
