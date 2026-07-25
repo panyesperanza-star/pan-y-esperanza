@@ -1377,7 +1377,7 @@ function SocialCaseSummaryCards({ beneficiary, family, deliveries, documents, in
 function ProfessionalTimeline({ entries }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <SectionHeading icon={CalendarDays} title="Cronologia del expediente" description="Alta, entregas, renovaciones, documentos, incidencias y notas sociales." />
+      <SectionHeading icon={CalendarDays} title="Cronología del expediente" description="Alta, entregas, renovaciones, documentos, incidencias y notas sociales." />
       <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
         {entries.slice(0, 8).map((item) => (
           <article key={item.key} className="relative flex gap-4">
@@ -1431,12 +1431,14 @@ function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocumen
 
 function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, requests = [], notices = [] }) {
   const [activePanel, setActivePanel] = useState('summary');
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [showQuestionBox, setShowQuestionBox] = useState(false);
   const [assistantQuestion, setAssistantQuestion] = useState('');
   const [assistantAnswer, setAssistantAnswer] = useState('');
   const [previewAction, setPreviewAction] = useState(null);
   const summary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries, history, requests, notices });
   const mainRisk = summary.risks[0];
+  const recommendedAction = summary.recommendations[0] || null;
   const assistantPanels = [
     { id: 'summary', label: 'Resumen' },
     { id: 'risks', label: 'Riesgos' },
@@ -1445,148 +1447,185 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
     { id: 'chronology', label: 'Cronología' },
     { id: 'nextSteps', label: 'Próximos pasos' }
   ];
-  const quickActions = [
-    { label: 'Resumir expediente', action: () => setActivePanel('summary') },
-    { label: 'Ver riesgos', action: () => setActivePanel('risks') },
-    { label: 'Próximos pasos', action: () => setActivePanel('nextSteps') },
-    { label: 'Preparar WhatsApp', action: () => setPreviewAction(buildAssistantPreview('whatsapp', beneficiary, summary)) },
-    { label: 'Preparar Email', action: () => setPreviewAction(buildAssistantPreview('email', beneficiary, summary)) },
-    { label: 'Crear seguimiento', action: () => setPreviewAction(buildAssistantPreview('tracking', beneficiary, summary)) },
-    { label: 'Generar informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
-    { label: 'Más opciones', action: () => setShowQuestionBox((value) => !value) }
+  const primaryActions = [
+    { label: 'Resumen', action: () => setActivePanel('summary') },
+    { label: 'Riesgos', action: () => setActivePanel('risks') },
+    { label: 'WhatsApp', action: () => setPreviewAction(buildAssistantPreview('whatsapp', beneficiary, summary)) },
+    { label: 'Seguimiento', action: () => setPreviewAction(buildAssistantPreview('tracking', beneficiary, summary)) }
   ];
-  const primaryActions = quickActions.slice(0, 4);
-  const secondaryActions = quickActions.slice(4);
+  const secondaryActions = [
+    { label: 'Preparar Email', action: () => setPreviewAction(buildAssistantPreview('email', beneficiary, summary)) },
+    { label: 'Generar informe social', action: () => setPreviewAction(buildAssistantPreview('report', beneficiary, summary)) },
+    { label: 'Próximos pasos', action: () => setActivePanel('nextSteps') },
+    { label: 'Fuentes utilizadas', action: () => setActivePanel('sources') },
+    { label: 'Cronología', action: () => setActivePanel('chronology') },
+    { label: 'Preguntar', action: () => setShowQuestionBox((value) => !value) }
+  ];
 
   function submitQuestion(event) {
     event.preventDefault();
     setAssistantAnswer(buildAssistantAnswer(assistantQuestion, summary));
   }
 
-  return (
-    <section className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm" aria-label="Asistente Pan y Esperanza">
-      <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-emerald-50 px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-700 text-white shadow-sm"><NotebookTabs size={20} /></span>
-            <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Copiloto del expediente</p>
-              <h3 className="mt-0.5 truncate text-lg font-black text-ink sm:text-xl">Asistente Pan y Esperanza</h3>
-              <p className="mt-0.5 text-sm font-semibold text-slate-600">Basado exclusivamente en datos reales del ERP.</p>
-            </div>
-          </div>
-          <div className={`inline-flex w-fit items-center rounded-full border px-3 py-2 text-xs font-black shadow-sm ${summary.status.tone}`}>
-            {summary.status.icon} {summary.status.label}
-          </div>
-        </div>
-      </div>
+  function runRecommendedAction() {
+    if (!recommendedAction) {
+      setActivePanel('nextSteps');
+      return;
+    }
+    setPreviewAction(buildAssistantPreview(recommendedAction.previewType || 'tracking', beneficiary, summary, recommendedAction));
+  }
 
-      <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-4 p-4 sm:p-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.75fr)]">
-            <article className="rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
-              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Resumen principal</p>
-              <p className="mt-2 line-clamp-4 text-base font-bold leading-relaxed text-ink">{summary.narrative}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {summary.highlights.slice(0, 3).map((item) => (
-                  <span key={item} className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">{item}</span>
-                ))}
+  return (
+    <section className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm" aria-label="Copiloto Althemon">
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="space-y-3 p-3 sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_0.7fr]">
+            <article className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-emerald-50 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-brand-700 text-white shadow-sm"><NotebookTabs size={19} /></span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Copiloto</p>
+                    <h3 className="mt-0.5 truncate text-lg font-black text-ink">Copiloto del Expediente</h3>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-black ${summary.status.tone}`}>{summary.status.icon} {summary.status.label}</span>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Hoy debes revisar</p>
+                  <p className="mt-1 line-clamp-2 text-base font-black leading-snug text-ink">{summary.focusItems[0] || 'Seguimiento ordinario del expediente'}</p>
+                </div>
+                <button type="button" onClick={runRecommendedAction} className="focus-ring rounded-xl bg-brand-700 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-brand-800">
+                  {recommendedAction?.button || 'Crear seguimiento'}
+                </button>
               </div>
             </article>
-            <article className={`rounded-2xl border p-4 ${mainRisk ? mainRisk.cardTone : 'border-brand-100 bg-white'}`}>
-              <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">Riesgo prioritario</p>
+
+            <article className={`rounded-2xl border p-4 shadow-sm ${mainRisk ? mainRisk.cardTone : 'border-brand-100 bg-white'}`}>
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">Riesgo principal</p>
               {mainRisk ? (
-                <>
-                  <h4 className="mt-2 text-base font-black text-ink">{mainRisk.levelIcon} {mainRisk.motive}</h4>
-                  <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-700">{mainRisk.evidence}</p>
-                  <button type="button" onClick={() => setActivePanel('risks')} className="focus-ring mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-100 transition hover:bg-slate-50">Ver riesgos</button>
-                </>
+                <div className="mt-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-ink">{mainRisk.levelIcon} {mainRisk.level}</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-bold text-slate-700">{mainRisk.motive}</p>
+                  </div>
+                  <button type="button" onClick={() => setActivePanel('risks')} className="focus-ring shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-100 transition hover:bg-slate-50">Ver riesgos</button>
+                </div>
               ) : (
-                <>
-                  <h4 className="mt-2 text-base font-black text-brand-800">Sin riesgos destacados</h4>
-                  <p className="mt-2 text-sm font-semibold text-slate-600">No hay alertas objetivas con los datos actuales.</p>
-                </>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-sm font-black text-brand-800">Sin riesgos destacados</p>
+                  <button type="button" onClick={() => setActivePanel('risks')} className="focus-ring rounded-xl bg-brand-50 px-3 py-2 text-xs font-black text-brand-700">Ver riesgos</button>
+                </div>
               )}
             </article>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Secciones del asistente Pan y Esperanza">
-            {assistantPanels.map((panel) => {
-              const active = activePanel === panel.id;
-              return (
-                <button
-                  key={panel.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setActivePanel(panel.id)}
-                  className={`focus-ring shrink-0 rounded-xl px-3 py-2 text-xs font-black transition ${
-                    active
-                      ? 'bg-brand-700 text-white shadow-sm'
-                      : 'bg-white text-slate-700 shadow-sm ring-1 ring-slate-100 hover:bg-brand-50 hover:text-brand-800'
-                  }`}
-                >
-                  {panel.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="min-h-[240px]">
-            {activePanel === 'summary' && <AssistantSummaryPanel summary={summary} />}
-            {activePanel === 'risks' && <AssistantRisksPanel summary={summary} />}
-            {activePanel === 'recommendations' && <AssistantRecommendationsPanel summary={summary} onPreview={setPreviewAction} beneficiary={beneficiary} />}
-            {activePanel === 'sources' && <AssistantSourcesPanel summary={summary} />}
-            {activePanel === 'chronology' && <AssistantChronologyPanel entries={summary.chronology} />}
-            {activePanel === 'nextSteps' && <AssistantNextStepsPanel steps={summary.nextSteps} />}
-          </div>
-
-          <AssistantMemoryPanel memory={summary.memory} />
-        </div>
-
-        <aside className="border-t border-brand-100 bg-slate-50/60 p-4 sm:p-5 xl:border-l xl:border-t-0">
-          <div className="sticky top-4 space-y-4">
-            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Copiloto del trabajador social</p>
-              <h4 className="mt-1 text-base font-black text-ink">He analizado este expediente.</h4>
-              <p className="mt-2 text-sm font-semibold text-slate-600">Hoy conviene revisar:</p>
-              <div className="mt-3 grid gap-2">
-                {summary.focusItems.map((item) => (
-                  <div key={item} className="rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">{item}</div>
+          <article className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Resumen</p>
+                <p className="mt-1 line-clamp-2 text-sm font-bold leading-6 text-ink">{summary.narrative}</p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-1.5">
+                {summary.highlights.slice(0, 2).map((item) => (
+                  <span key={item} className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">{item}</span>
                 ))}
               </div>
             </div>
+          </article>
 
-            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-              <p className="px-1 text-[11px] font-black uppercase tracking-wide text-slate-500">Acciones rápidas</p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {primaryActions.map((item) => (
-                  <button key={item.label} type="button" onClick={item.action} className="focus-ring min-h-[58px] rounded-xl border border-slate-100 bg-white px-3 py-2 text-left text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
-                    {item.label}
-                  </button>
-                ))}
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.48fr)]">
+            <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Vista detallada</p>
+                <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Secciones del copiloto">
+                  {assistantPanels.map((panel) => {
+                    const active = activePanel === panel.id;
+                    return (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setActivePanel(panel.id)}
+                        className={`focus-ring shrink-0 rounded-full px-3 py-1.5 text-[11px] font-black transition ${
+                          active
+                            ? 'bg-brand-700 text-white shadow-sm'
+                            : 'bg-slate-50 text-slate-600 hover:bg-brand-50 hover:text-brand-800'
+                        }`}
+                      >
+                        {panel.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {secondaryActions.map((item) => (
-                  <button key={item.label} type="button" onClick={item.action} className="focus-ring rounded-full bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-brand-50 hover:text-brand-800">
-                    {item.label}
-                  </button>
-                ))}
+
+              <div className="mt-3 max-h-[280px] overflow-auto pr-1">
+                {activePanel === 'summary' && <AssistantSummaryPanel summary={summary} />}
+                {activePanel === 'risks' && <AssistantRisksPanel summary={summary} />}
+                {activePanel === 'recommendations' && <AssistantRecommendationsPanel summary={summary} onPreview={setPreviewAction} beneficiary={beneficiary} />}
+                {activePanel === 'sources' && <AssistantSourcesPanel summary={summary} />}
+                {activePanel === 'chronology' && <AssistantChronologyPanel entries={summary.chronology} />}
+                {activePanel === 'nextSteps' && <AssistantNextStepsPanel steps={summary.nextSteps} />}
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Acciones rápidas</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {primaryActions.map((item) => (
+                    <button key={item.label} type="button" onClick={item.action} className="focus-ring min-h-[48px] rounded-xl border border-slate-100 bg-white px-3 py-2 text-left text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setShowMoreActions((value) => !value)} className="focus-ring mt-2 w-full rounded-xl bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-brand-50 hover:text-brand-800">
+                  Más acciones
+                </button>
+                {showMoreActions && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {secondaryActions.map((item) => (
+                      <button key={item.label} type="button" onClick={item.action} className="focus-ring rounded-full bg-white px-3 py-2 text-xs font-black text-slate-600 ring-1 ring-slate-100 transition hover:bg-brand-50 hover:text-brand-800">
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <AssistantMemoryPanel memory={summary.memory} />
+            </div>
+          </div>
+        </div>
+
+        <aside className="border-t border-brand-100 bg-slate-950 p-4 text-white xl:border-l xl:border-t-0">
+          <div className="sticky top-4 space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm backdrop-blur">
+              <p className="text-[11px] font-black uppercase tracking-wide text-emerald-200">Estado general</p>
+              <p className="mt-2 text-xl font-black">{summary.status.icon} {summary.status.label}</p>
+              <div className="mt-3 h-px bg-white/10" />
+              <p className="mt-3 text-[11px] font-black uppercase tracking-wide text-emerald-200">Acción recomendada</p>
+              <p className="mt-1 text-sm font-bold text-white/85">{recommendedAction?.title || 'Mantener seguimiento ordinario'}</p>
+              <button type="button" onClick={runRecommendedAction} className="focus-ring mt-3 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-emerald-50">
+                {recommendedAction?.button || 'Crear seguimiento'}
+              </button>
             </div>
 
             {showQuestionBox && (
-              <form onSubmit={submitQuestion} className="rounded-2xl border border-brand-100 bg-brand-50 p-4 shadow-sm">
-                <label className="text-xs font-black uppercase tracking-wide text-brand-700" htmlFor={`assistant-question-${beneficiary.id}`}>Pregunta al asistente</label>
+              <form onSubmit={submitQuestion} className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm">
+                <label className="text-xs font-black uppercase tracking-wide text-emerald-200" htmlFor={`assistant-question-${beneficiary.id}`}>Pregunta al asistente</label>
                 <textarea
                   id={`assistant-question-${beneficiary.id}`}
-                  className="mt-2 min-h-24 w-full rounded-2xl border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                  className="mt-2 min-h-24 w-full rounded-2xl border border-white/10 bg-white p-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
                   value={assistantQuestion}
                   onChange={(event) => setAssistantQuestion(event.target.value)}
                   placeholder="Ejemplo: qué debería revisar hoy"
                 />
                 <div className="mt-3 flex justify-end">
-                  <Button type="submit" variant="secondary">Responder con datos del ERP</Button>
+                  <Button type="submit" variant="secondary">Responder</Button>
                 </div>
                 {assistantAnswer && (
                   <div className="mt-3 rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700">
@@ -1601,8 +1640,8 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
               <AssistantPreviewCard preview={previewAction} onChange={setPreviewAction} onCancel={() => setPreviewAction(null)} sources={summary.verifiedSources} />
             )}
 
-            <div className="rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 text-xs font-bold leading-relaxed text-brand-800">
-              El Asistente Pan y Esperanza nunca toma decisiones automáticamente. Solo resume, organiza y recomienda utilizando datos reales del ERP.
+            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-xs font-bold leading-relaxed text-white/75">
+              El Copiloto nunca toma decisiones automáticamente. Solo resume, organiza y recomienda utilizando datos reales del ERP.
             </div>
           </div>
         </aside>
@@ -1722,7 +1761,7 @@ function AssistantNextStepsPanel({ steps }) {
             <div>
               <h4 className="font-black text-ink">{step.title}</h4>
               <p className="mt-1 text-sm font-semibold text-slate-600">{step.reason}</p>
-              <p className="mt-2 text-xs font-black uppercase tracking-wide text-slate-500">No modifica datos automaticamente.</p>
+              <p className="mt-2 text-xs font-black uppercase tracking-wide text-slate-500">No modifica datos automáticamente.</p>
             </div>
           </div>
         </article>
@@ -1732,22 +1771,32 @@ function AssistantNextStepsPanel({ steps }) {
 }
 
 function AssistantMemoryPanel({ memory }) {
+  const items = safeRows(memory).slice(0, 2);
   return (
-    <section className="mt-5 rounded-3xl border border-slate-100 bg-white/85 p-4 shadow-sm" aria-label="Memoria del caso">
+    <section className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm" aria-label="Memoria del caso">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-brand-700">🧠 Memoria del caso</p>
-          <h4 className="mt-1 font-black text-ink">Recomendaciones anteriores y resultado</h4>
+          <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Memoria del caso</p>
+          <h4 className="mt-0.5 text-sm font-black text-ink">Seguimiento compacto</h4>
         </div>
       </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {memory.map((item) => (
-          <article key={item.key} className="rounded-2xl bg-slate-50 p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">{item.when}</p>
-            <p className="mt-1 text-sm font-bold text-ink">{item.recommendation}</p>
-            <p className="mt-1 text-sm text-slate-600">Resultado: {item.result}</p>
+      <div className="mt-3 space-y-2 border-l-2 border-brand-100 pl-3">
+        {items.map((item) => (
+          <article key={item.key} className="relative">
+            <span className="absolute -left-[17px] top-1 h-2.5 w-2.5 rounded-full bg-brand-600 ring-4 ring-white" />
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{item.when}</p>
+            <p className="mt-0.5 line-clamp-1 text-sm font-bold text-ink">{item.recommendation}</p>
+            <p className="mt-0.5 line-clamp-2 text-xs font-semibold text-slate-600">{item.result}</p>
           </article>
         ))}
+        {!items.length && (
+          <article className="relative">
+            <span className="absolute -left-[17px] top-1 h-2.5 w-2.5 rounded-full bg-slate-300 ring-4 ring-white" />
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Hoy</p>
+            <p className="mt-0.5 text-sm font-bold text-ink">Sin seguimientos anteriores.</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-600">Aquí aparecerán futuras recomendaciones confirmadas.</p>
+          </article>
+        )}
       </div>
     </section>
   );
