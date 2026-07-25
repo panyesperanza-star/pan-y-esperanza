@@ -36,7 +36,7 @@ import {
   UserPlus,
   Users
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
@@ -88,6 +88,10 @@ const SOCIAL_ENTRY_TYPES = ['Seguimiento', 'Primera atención', 'Incidencia', 'D
 const OBSERVATION_ENTRY_TYPE = 'Observación';
 const OBJECTIVE_ENTRY_TYPE = 'Objetivo';
 const DELIVERY_TRACKING_ENTRY_TYPE = 'Entrega de ayuda';
+
+function safeRows(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
 
 export function Beneficiaries({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const [query, setQuery] = useState('');
@@ -333,23 +337,25 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
       )}
       {profile && (
         <Modal wide title={`Expediente · ${profile.code}`} onClose={() => setProfileId(null)}>
-          <BeneficiaryProfile
-            data={data}
-            actions={actions}
-            currentUser={currentUser}
-            beneficiary={profile}
-            deliveries={data.deliveries.filter((item) => item.beneficiary_id === profile.id)}
-            canEdit={canEdit}
-            canDelete={canDelete}
-            onEdit={() => { setProfileId(null); setEditing(profile); }}
-            onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
-            onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
-            onCreateCampaign={() => onNavigate?.({ moduleId: 'agenda', filter: 'campaigns', profileId: profile.id })}
-            onAddFamilyMember={(familyId) => {
-              setProfileId(null);
-              setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries), family_id: familyId });
-            }}
-          />
+          <BeneficiaryProfileErrorBoundary resetKey={profile.id} onBack={() => setProfileId(null)}>
+            <BeneficiaryProfile
+              data={data}
+              actions={actions}
+              currentUser={currentUser}
+              beneficiary={profile}
+              deliveries={safeRows(data.deliveries).filter((item) => item.beneficiary_id === profile.id)}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onEdit={() => { setProfileId(null); setEditing(profile); }}
+              onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
+              onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
+              onCreateCampaign={() => onNavigate?.({ moduleId: 'agenda', filter: 'campaigns', profileId: profile.id })}
+              onAddFamilyMember={(familyId) => {
+                setProfileId(null);
+                setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(safeRows(data.beneficiaries)), family_id: familyId });
+              }}
+            />
+          </BeneficiaryProfileErrorBoundary>
         </Modal>
       )}
       {deletionTarget && (
@@ -373,6 +379,44 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
       )}
     </>
   );
+}
+
+class BeneficiaryProfileErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[Beneficiarios] Error al renderizar expediente', error, info);
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <section className="rounded-2xl border border-red-100 bg-red-50 p-6 text-center shadow-sm" role="alert">
+        <FileText className="mx-auto text-red-500" size={34} />
+        <h3 className="mt-3 text-lg font-black text-red-800">No hemos podido abrir este expediente.</h3>
+        <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-red-700">
+          Se ha registrado el error en consola para revision tecnica. Puedes volver al listado y abrir otro expediente sin recargar la aplicacion.
+        </p>
+        <div className="mt-5">
+          <Button type="button" variant="secondary" onClick={this.props.onBack}>Volver a Beneficiarios</Button>
+        </div>
+      </section>
+    );
+  }
 }
 
 function SummaryCard({ icon: Icon, label, value, tone }) {
@@ -737,21 +781,36 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const quickDocumentInputRef = useRef(null);
-  const family = data.families.find((item) => item.id === beneficiary.family_id);
+  data = data || {};
+  beneficiary = beneficiary || {};
+  const families = safeRows(data?.families);
+  const beneficiaries = safeRows(data?.beneficiaries);
+  const allDeliveries = safeRows(data?.deliveries);
+  const profileDeliveries = safeRows(deliveries);
+  const inventoryItems = safeRows(data?.inventory_items);
+  const beneficiaryDocuments = safeRows(data?.beneficiary_documents);
+  const socialHistory = safeRows(data?.social_history);
+  const portalProfileUpdates = safeRows(data?.beneficiary_portal_profile_updates);
+  const portalPortalNotices = safeRows(data?.beneficiary_portal_notices);
+  const emailLogRows = safeRows(data?.email_logs);
+  const portalAccounts = safeRows(data?.beneficiary_portal_accounts);
+  const portalSessionRows = safeRows(data?.portal_sessions);
+  const portalOtpRows = safeRows(data?.beneficiary_portal_otps);
+  const family = families.find((item) => item.id === beneficiary.family_id);
   const familyArchived = isArchivedFamily(family);
-  const familyMembers = family ? data.beneficiaries.filter((item) => item.family_id === family.id) : [];
-  const documents = data.beneficiary_documents.filter((item) => item.beneficiary_id === beneficiary.id);
-  const history = data.social_history.filter((item) => item.beneficiary_id === beneficiary.id);
-  const portalRequests = (data.beneficiary_portal_profile_updates || []).filter((item) => item.beneficiary_id === beneficiary.id);
-  const portalNotices = (data.beneficiary_portal_notices || []).filter((item) => item.beneficiary_id === beneficiary.id);
-  const emailLogs = (data.email_logs || []).filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
+  const familyMembers = family ? beneficiaries.filter((item) => item.family_id === family.id) : [];
+  const documents = beneficiaryDocuments.filter((item) => item.beneficiary_id === beneficiary.id);
+  const history = socialHistory.filter((item) => item.beneficiary_id === beneficiary.id);
+  const portalRequests = portalProfileUpdates.filter((item) => item.beneficiary_id === beneficiary.id);
+  const portalNotices = portalPortalNotices.filter((item) => item.beneficiary_id === beneficiary.id);
+  const emailLogs = emailLogRows.filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
-  const activeDeliveries = deliveries.filter(isActiveDelivery);
-  const valuation = calculateDeliveriesValue(activeDeliveries, data.inventory_items);
+  const activeDeliveries = profileDeliveries.filter(isActiveDelivery);
+  const valuation = calculateDeliveriesValue(activeDeliveries, inventoryItems);
   const trackingCount = buildTrackingDiary(history, activeDeliveries).length;
-  const portalAccount = (data.beneficiary_portal_accounts || []).find((item) => item.beneficiary_id === beneficiary.id) || null;
-  const portalSessions = (data.portal_sessions || []).filter((item) => item.portal === 'beneficiary' && item.subject_id === beneficiary.id);
-  const portalOtps = (data.beneficiary_portal_otps || []).filter((item) => item.beneficiary_id === beneficiary.id);
+  const portalAccount = portalAccounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
+  const portalSessions = portalSessionRows.filter((item) => item.portal === 'beneficiary' && item.subject_id === beneficiary.id);
+  const portalOtps = portalOtpRows.filter((item) => item.beneficiary_id === beneficiary.id);
   const lastPortalAccess = [
     portalAccount?.last_login_at,
     portalAccount?.last_successful_access_at,
@@ -775,7 +834,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
     { id: 'overview', label: 'Resumen', icon: CircleUserRound },
     { id: 'personal', label: 'Datos personales', icon: ContactRound },
     { id: 'family', label: 'Familia', icon: Users, count: familyMembers.length || undefined },
-    { id: 'deliveries', label: 'Entregas', icon: PackageCheck, count: deliveries.length },
+    { id: 'deliveries', label: 'Entregas', icon: PackageCheck, count: profileDeliveries.length },
     { id: 'documents', label: 'Documentos', icon: Paperclip, count: documents.length },
     { id: 'emails', label: 'Comunicaciones', icon: Mail, count: emailLogs.length },
     { id: 'social', label: 'Seguimiento', icon: NotebookTabs, count: trackingCount }
@@ -970,7 +1029,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         onWhatsApp={openWhatsApp}
         onEmail={() => { setNotice(''); setEmailOpen(true); }}
         onNewAppointment={onNewAppointment}
-        onSummaryPdf={() => printBeneficiaryPdf(beneficiary, deliveries)}
+        onSummaryPdf={() => printBeneficiaryPdf(beneficiary, profileDeliveries)}
         onSocialReport={() => printSocialAttentionReportPdf({
           beneficiary,
           family,
@@ -1057,11 +1116,11 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
                 archived={familyArchived}
                 canAddMember={canCreateBeneficiary && !familyArchived}
                 canCreateFamily={canCreateFamily && canEdit}
-                onAddMember={() => onAddFamilyMember(family.id)}
+                onAddMember={family ? () => onAddFamilyMember(family.id) : undefined}
                 onCreateFamily={() => setFamilyOpen(true)}
               />
             )}
-            {tab === 'deliveries' && <DeliveriesPanel deliveries={deliveries} beneficiary={beneficiary} allDeliveries={data.deliveries} />}
+            {tab === 'deliveries' && <DeliveriesPanel deliveries={profileDeliveries} beneficiary={beneficiary} allDeliveries={allDeliveries} />}
             {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} onNotice={setNotice} />}
             {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
             {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
@@ -1073,7 +1132,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         <Modal title="Enviar email al beneficiario" onClose={() => setEmailOpen(false)}>
           <BeneficiaryEmailForm
             beneficiary={beneficiary}
-            deliveries={deliveries}
+            deliveries={profileDeliveries}
             organization={data.organization_settings?.[0]}
             actions={actions}
             currentUser={currentUser}
@@ -1692,6 +1751,12 @@ function VerifiedSources({ sources, compact = false }) {
 }
 
 function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliveries = [], history = [], requests = [], notices = [] }) {
+  beneficiary = beneficiary || {};
+  documents = safeRows(documents);
+  deliveries = safeRows(deliveries);
+  history = safeRows(history);
+  requests = safeRows(requests);
+  notices = safeRows(notices);
   const latestDelivery = getLatestPastDelivery(deliveries);
   const nextDelivery = getNextFutureDelivery(deliveries);
   const documentSummary = summarizeDocuments(documents);
@@ -1813,6 +1878,9 @@ function buildAssistantRecommendations({ beneficiary, documents = [], deliveries
 }
 
 function buildAssistantNextSteps({ documents = [], requests = [], nextDelivery, recommendations = [] }) {
+  documents = safeRows(documents);
+  requests = safeRows(requests);
+  recommendations = safeRows(recommendations);
   const steps = [];
   const hasPendingDocuments = documents.some((doc) => ['Pendiente', 'Caducado'].includes(documentStatus(doc)));
   if (nextDelivery) {
@@ -1837,6 +1905,11 @@ function buildAssistantNextSteps({ documents = [], requests = [], nextDelivery, 
 }
 
 function buildAssistantSources({ beneficiary, documents = [], deliveries = [], history = [], requests = [], notices = [], latestDelivery, nextDelivery, lastInteraction, observations }) {
+  beneficiary = beneficiary || {};
+  documents = safeRows(documents);
+  deliveries = safeRows(deliveries);
+  requests = safeRows(requests);
+  notices = safeRows(notices);
   return [
     {
       name: 'Expediente',
@@ -1872,6 +1945,12 @@ function buildAssistantSources({ beneficiary, documents = [], deliveries = [], h
 }
 
 function buildAssistantChronology({ beneficiary, deliveries = [], documents = [], history = [], requests = [], notices = [] }) {
+  beneficiary = beneficiary || {};
+  deliveries = safeRows(deliveries);
+  documents = safeRows(documents);
+  history = safeRows(history);
+  requests = safeRows(requests);
+  notices = safeRows(notices);
   const entries = [
     {
       key: `assistant-alta-${beneficiary.id}`,
@@ -1928,6 +2007,9 @@ function buildAssistantChronology({ beneficiary, deliveries = [], documents = []
 }
 
 function buildAssistantMemory({ history = [], documents = [], requests = [] }) {
+  history = safeRows(history);
+  documents = safeRows(documents);
+  requests = safeRows(requests);
   const memory = [];
   const latestDocument = [...documents].sort((a, b) => String(b.uploaded_at || b.created_at || '').localeCompare(String(a.uploaded_at || a.created_at || '')))[0];
   if (latestDocument) {
@@ -2029,6 +2111,7 @@ function associationAgeLabel(value) {
 }
 
 function getLatestPastDelivery(deliveries = []) {
+  deliveries = safeRows(deliveries);
   const now = Date.now();
   return [...deliveries]
     .filter((delivery) => deliveryDateValue(delivery) <= now)
@@ -2036,6 +2119,7 @@ function getLatestPastDelivery(deliveries = []) {
 }
 
 function getNextFutureDelivery(deliveries = []) {
+  deliveries = safeRows(deliveries);
   const now = Date.now();
   return [...deliveries]
     .filter((delivery) => deliveryDateValue(delivery) > now)
@@ -2053,6 +2137,7 @@ function deliveryDateValue(delivery) {
 }
 
 function deliverySummaryLabel(delivery) {
+  if (!delivery) return 'Sin datos de entrega.';
   return [
     formatDate(delivery.delivered_at || delivery.scheduled_at || delivery.created_at),
     delivery.delivered_time || delivery.delivery_time || delivery.time,
@@ -2064,6 +2149,7 @@ function deliverySummaryLabel(delivery) {
 }
 
 function summarizeDocuments(documents = []) {
+  documents = safeRows(documents);
   if (!documents.length) return 'Sin documentacion registrada.';
   const pending = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
   const expired = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
@@ -2076,6 +2162,7 @@ function summarizeDocuments(documents = []) {
 }
 
 function summarizeAttendance(deliveries = []) {
+  deliveries = safeRows(deliveries);
   const relevant = deliveries.filter((delivery) => delivery.attendance_status);
   if (!relevant.length) return 'Sin confirmaciones de asistencia registradas.';
   const nextDelivery = getNextFutureDelivery(deliveries);
@@ -2101,11 +2188,15 @@ function attendanceStatusLabel(value) {
 }
 
 function isOpenPortalRequest(request) {
-  const status = normalize(requestá.status);
+  const status = normalize(request?.status);
   return !['applied', 'resolved', 'resuelta', 'cancelled', 'canceled', 'cancelada'].includes(status);
 }
 
 function getLastInteraction({ deliveries = [], documents = [], history = [], requests = [] }) {
+  deliveries = safeRows(deliveries);
+  documents = safeRows(documents);
+  history = safeRows(history);
+  requests = safeRows(requests);
   const candidates = [
     ...history.map((item) => ({ type: item.entry_type || 'Seguimiento social', date: item.date || item.created_at })),
     ...requests.map((item) => ({ type: 'Solicitud del portal', date: item.updated_at || item.requested_at || item.created_at })),
@@ -2119,6 +2210,10 @@ function getLastInteraction({ deliveries = [], documents = [], history = [], req
 }
 
 function getRelevantObservations({ beneficiary, history = [], deliveries = [], requests = [] }) {
+  beneficiary = beneficiary || {};
+  history = safeRows(history);
+  deliveries = safeRows(deliveries);
+  requests = safeRows(requests);
   const latestIncident = [...history]
     .filter((item) => normalize(item.entry_type).includes('incidencia'))
     .sort((a, b) => String(b.date || b.created_at || '').localeCompare(String(a.date || a.created_at || '')))[0];
@@ -2129,8 +2224,8 @@ function getRelevantObservations({ beneficiary, history = [], deliveries = [], r
     .sort((a, b) => deliveryDateValue(b) - deliveryDateValue(a))[0];
 
   return latestIncident?.notes
-    || openRequestá.notes
-    || openRequestá.requested_changes?.message
+    || openRequest?.notes
+    || openRequest?.requested_changes?.message
     || attendanceIssue?.attendance_notes
     || attendanceIssue?.attendance_reason
     || beneficiary.notes
@@ -2138,6 +2233,7 @@ function getRelevantObservations({ beneficiary, history = [], deliveries = [], r
 }
 
 function getLastRequestLabel(requests = []) {
+  requests = safeRows(requests);
   const latest = [...requests]
     .sort((a, b) => String(b.updated_at || b.requested_at || b.created_at || '').localeCompare(String(a.updated_at || a.requested_at || a.created_at || '')))[0];
   if (!latest) return 'Sin solicitudes del portal';
@@ -2149,6 +2245,7 @@ function getLastRequestLabel(requests = []) {
 }
 
 function getLastNoticeLabel(notices = []) {
+  notices = safeRows(notices);
   const latest = [...notices]
     .sort((a, b) => String(b.created_at || b.published_at || '').localeCompare(String(a.created_at || a.published_at || '')))[0];
   if (!latest) return 'Sin avisos del portal';
@@ -2179,6 +2276,10 @@ function assistantHistoryIcon(item) {
 }
 
 function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveries = [], requests = [], latestDelivery, nextDelivery }) {
+  beneficiary = beneficiary || {};
+  documents = safeRows(documents);
+  deliveries = safeRows(deliveries);
+  requests = safeRows(requests);
   const risks = [];
   const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
   const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
