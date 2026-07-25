@@ -12,6 +12,7 @@ import {
   DollarSign,
   Filter,
   ImageIcon,
+  ImageOff,
   MapPin,
   Package,
   PackageCheck,
@@ -21,9 +22,10 @@ import {
   Sparkles,
   Tag,
   Truck,
-  Trash2
+  Trash2,
+  Upload
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
@@ -32,6 +34,12 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
+import {
+  optimizeInventoryProductPhoto,
+  removeInventoryProductPhoto,
+  resolveInventoryProductPhotoUrl,
+  uploadInventoryProductPhoto
+} from '../lib/inventoryProductPhotos';
 
 const categorySuggestions = ['Alimentos', 'Higiene', 'Ropa', 'Limpieza', 'Otros'];
 const unitSuggestions = ['unidades', 'kg', 'litros', 'paquetes', 'cajas'];
@@ -456,9 +464,39 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
           <ProductForm
             initial={productModal.item}
             inventoryData={data}
-            onSubmit={async (payload) => {
-              if (productModal.mode === 'edit') await actions.updateInventoryItem(productModal.item.id, payload);
-              else await actions.createInventoryItem(payload);
+            onSubmit={async (payload, imageChange = {}) => {
+              const previousPhotoUrl = productModal.item?.photo_url || '';
+              let uploaded = null;
+              if (productModal.mode === 'edit') {
+                const productId = productModal.item.id;
+                if (imageChange.photoDataUrl) uploaded = await uploadInventoryProductPhoto(productId, imageChange.photoDataUrl);
+                const updatePayload = {
+                  ...payload,
+                  ...(imageChange.removePhoto ? { photo_url: null, photo_data_url: null } : {}),
+                  ...(uploaded ? { photo_url: uploaded.photoUrl, photo_data_url: uploaded.photoDataUrl } : {})
+                };
+                try {
+                  await actions.updateInventoryItem(productId, updatePayload);
+                } catch (error) {
+                  if (uploaded?.photoUrl) {
+                    await removeInventoryProductPhoto(uploaded.photoUrl).catch((cleanupError) => console.warn('[InventoryProductPhoto] No se pudo limpiar la subida fallida', cleanupError));
+                  }
+                  throw error;
+                }
+                if ((imageChange.removePhoto || uploaded) && previousPhotoUrl && previousPhotoUrl !== uploaded?.photoUrl) {
+                  await removeInventoryProductPhoto(previousPhotoUrl).catch((cleanupError) => console.warn('[InventoryProductPhoto] No se pudo limpiar la imagen sustituida', cleanupError));
+                }
+              } else {
+                const created = await actions.createInventoryItem(payload);
+                if (imageChange.photoDataUrl && created?.id) {
+                  uploaded = await uploadInventoryProductPhoto(created.id, imageChange.photoDataUrl);
+                  await actions.updateInventoryItem(created.id, {
+                    ...payload,
+                    photo_url: uploaded.photoUrl,
+                    photo_data_url: uploaded.photoDataUrl
+                  });
+                }
+              }
               setProductModal(null);
             }}
           />
@@ -615,7 +653,19 @@ function QuickActionLink({ href, icon: Icon, children }) {
 }
 
 function InventoryProductImage({ item }) {
-  const src = item.photo_url || item.image_url || item.photo || item.image || item.picture_url || '';
+  const [src, setSrc] = useState(item.photo_data_url || item.image_url || item.photo || item.image || item.picture_url || '');
+
+  useEffect(() => {
+    let active = true;
+    resolveInventoryProductPhotoUrl(item)
+      .then((displayUrl) => { if (active) setSrc(displayUrl || ''); })
+      .catch((error) => {
+        console.warn('[InventoryProductPhoto] No se pudo recuperar la imagen', error);
+        if (active) setSrc('');
+      });
+    return () => { active = false; };
+  }, [item.id, item.photo_url, item.photo_data_url, item.image_url, item.photo, item.image, item.picture_url]);
+
   if (src) {
     return (
       <img
@@ -687,6 +737,7 @@ function InventoryActivityPanel({ timeline }) {
 
 function ProductForm({ initial, inventoryData, onSubmit }) {
   const parsedNotes = parseInventoryNotes(initial?.notes || '');
+  const hasInitialPhoto = Boolean(initial?.photo_url || initial?.photo_data_url || initial?.image_url || initial?.photo || initial?.image || initial?.picture_url);
   const [form, setForm] = useState(() => ({
     name: initial?.name || '',
     category: initial?.category || 'Alimentos',
@@ -707,9 +758,50 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
     low_stock_threshold: Number(initial?.low_stock_threshold || 0),
     notes: parsedNotes.visible
   }));
+  const [photoPreview, setPhotoPreview] = useState(initial?.photo_data_url || '');
+  const [photoDataUrl, setPhotoDataUrl] = useState('');
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const imageInputRef = useRef(null);
   const update = (field, value) => setForm((current) => (typeof field === 'object' ? { ...current, ...field } : { ...current, [field]: value }));
+
+  useEffect(() => {
+    let active = true;
+    setPhotoError('');
+    resolveInventoryProductPhotoUrl(initial || {})
+      .then((displayUrl) => { if (active && !photoDataUrl && !removePhoto) setPhotoPreview(displayUrl || ''); })
+      .catch((photoError) => {
+        console.warn('[InventoryProductPhoto] No se pudo preparar la vista previa', photoError);
+        if (active) setPhotoError(photoError.message || 'No se pudo cargar la imagen actual.');
+      });
+    return () => { active = false; };
+  }, [initial?.id, initial?.photo_url, initial?.photo_data_url, photoDataUrl, removePhoto]);
+
+  async function selectPhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPhotoError('');
+    try {
+      const optimized = await optimizeInventoryProductPhoto(file);
+      setPhotoDataUrl(optimized);
+      setPhotoPreview(optimized);
+      setRemovePhoto(false);
+    } catch (photoSelectionError) {
+      setPhotoError(photoSelectionError.message || 'No se pudo preparar la imagen.');
+    } finally {
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  }
+
+  function clearPhoto() {
+    setPhotoDataUrl('');
+    setPhotoPreview('');
+    setRemovePhoto(hasInitialPhoto);
+    setPhotoError('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -732,6 +824,9 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
           Referencia: form.reference,
           ...buildDocumentMeta(form)
         })
+      }, {
+        photoDataUrl,
+        removePhoto
       });
     } catch (submitError) {
       setError(normalizeInventoryError(submitError));
@@ -767,6 +862,38 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
       <FormField label="Stock mínimo" required>
         <input className={inputClass} type="number" step="0.01" min="0" required value={form.low_stock_threshold} onChange={(event) => update('low_stock_threshold', Number(event.target.value))} />
       </FormField>
+      <div className="sm:col-span-2">
+        <FormField label="Imagen del producto">
+          <div className="flex flex-col gap-4 rounded-md border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+            <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white text-slate-400">
+              {photoPreview ? (
+                <img src={photoPreview} alt="Vista previa del producto" className="h-full w-full object-cover" />
+              ) : (
+                <ImageIcon size={28} />
+              )}
+            </div>
+            <div className="flex-1 space-y-3">
+              <p className="text-sm text-slate-600">Sube una imagen clara del producto o del lote. Se guardará optimizada en Storage.</p>
+              <div className="flex flex-wrap gap-2">
+                <label className="focus-within:ring-2 focus-within:ring-brand-600 focus-within:ring-offset-2 inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700">
+                  <Upload size={16} /> {photoPreview ? 'Cambiar imagen' : 'Subir imagen'}
+                  <input ref={imageInputRef} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={selectPhoto} />
+                </label>
+                {photoPreview && (
+                  <button
+                    type="button"
+                    className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                    onClick={clearPhoto}
+                  >
+                    <ImageOff size={16} /> Eliminar imagen
+                  </button>
+                )}
+              </div>
+              {photoError && <p className="text-sm font-semibold text-red-700">{photoError}</p>}
+            </div>
+          </div>
+        </FormField>
+      </div>
       <div className="sm:col-span-2"><FormField label="Notas"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar producto'}</Button></div>
     </form>
@@ -867,7 +994,6 @@ function MovementForm({ items, movements, movementType, currentUser, onSubmit })
 
 function StatusBadges({ item }) {
   const signals = getItemSignals(item);
-  if (!signals.length) return <StatusBadge label="Correcto" tone="green" />;
   return <div className="flex max-w-[220px] flex-wrap gap-1">{signals.map((signal) => <StatusBadge key={signal.label} {...signal} />)}</div>;
 }
 
@@ -971,16 +1097,25 @@ function FormError({ message }) {
 }
 
 function getItemSignals(item) {
-  const stock = Number(item.stock || 0);
-  const minimum = Number(item.low_stock_threshold || 0);
   const expiryDays = daysUntil(item.expires_at);
-  const signals = [];
-  if (stock <= 0) signals.push({ label: 'Agotado', tone: 'red' });
-  else if (stock <= minimum) signals.push({ label: 'Stock bajo', tone: 'orange' });
+  const signals = [getStockSignal(item)];
   if (expiryDays !== null && expiryDays < 0) signals.push({ label: 'Caducado', tone: 'red' });
   else if (expiryDays === 0) signals.push({ label: 'Caduca hoy', tone: 'amber' });
   else if (expiryDays !== null && expiryDays <= 30) signals.push({ label: 'Caduca pronto', tone: 'amber' });
   return signals;
+}
+
+function getStockSignal(item) {
+  const stock = normalizeStockNumber(item.stock);
+  const minimum = Math.max(normalizeStockNumber(item.low_stock_threshold), 0);
+  if (stock === 0) return { label: 'Agotado', tone: 'red' };
+  if (stock > 0 && stock <= minimum) return { label: 'Stock bajo', tone: 'orange' };
+  return { label: 'Disponible', tone: 'green' };
+}
+
+function normalizeStockNumber(value) {
+  const normalized = Number(String(value ?? 0).replace(',', '.'));
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : 0;
 }
 
 function calculateSummary(items) {
@@ -992,7 +1127,7 @@ function calculateSummary(items) {
       total: summary.total + 1,
       stockAlerts: summary.stockAlerts + (hasStockAlert ? 1 : 0),
       expiring: summary.expiring + (hasExpiryAlert ? 1 : 0),
-      correct: summary.correct + (!signals.length ? 1 : 0)
+      correct: summary.correct + (!hasStockAlert && !hasExpiryAlert ? 1 : 0)
     };
   }, { total: 0, stockAlerts: 0, expiring: 0, correct: 0 });
 }
@@ -1003,8 +1138,11 @@ function buildInventoryCenter(data = {}) {
   const donations = data.donations || [];
   const campaigns = data.campanas || [];
   const productNames = new Set(items.map((item) => normalize(item.name)).filter(Boolean));
-  const outOfStock = items.filter((item) => Number(item.stock || 0) <= 0);
-  const lowStock = items.filter((item) => Number(item.stock || 0) > 0 && Number(item.stock || 0) <= Number(item.low_stock_threshold || 0));
+  const outOfStock = items.filter((item) => normalizeStockNumber(item.stock) === 0);
+  const lowStock = items.filter((item) => {
+    const stock = normalizeStockNumber(item.stock);
+    return stock > 0 && stock <= normalizeStockNumber(item.low_stock_threshold);
+  });
   const expiringSoon = items.filter((item) => {
     const days = daysUntil(item.expires_at);
     return days !== null && days >= 0 && days <= 30;
@@ -1013,7 +1151,10 @@ function buildInventoryCenter(data = {}) {
     const days = daysUntil(item.expires_at);
     return days !== null && days < 0;
   });
-  const stockCorrect = items.filter((item) => !getItemSignals(item).length);
+  const stockCorrect = items.filter((item) => {
+    const labels = getItemSignals(item).map((signal) => signal.label);
+    return labels.includes('Disponible') && !labels.includes('Caducado') && !labels.includes('Caduca hoy') && !labels.includes('Caduca pronto');
+  });
   const pendingDonations = inventoryDonationCandidates(donations);
 
   return {
@@ -1164,14 +1305,14 @@ function formatMovementShort(movement) {
 function matchesStatus(item, status) {
   if (status === 'Todos') return true;
   const labels = getItemSignals(item).map((signal) => signal.label);
-  if (status === 'Alertas') return labels.length > 0;
+  if (status === 'Alertas') return labels.some((label) => ['Agotado', 'Stock bajo', 'Caducado', 'Caduca hoy', 'Caduca pronto'].includes(label));
   if (status === 'Agotados') return labels.includes('Agotado');
   if (status === 'Stock critico') return labels.includes('Agotado') || labels.includes('Stock bajo');
   if (status === 'Stock bajo') return labels.includes('Stock bajo');
   if (status === 'Caducados') return labels.includes('Caducado');
   if (status === 'Caducidad proxima') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
   if (status === 'Caducidad próxima') return labels.includes('Caduca hoy') || labels.includes('Caduca pronto');
-  if (status === 'Correctos') return labels.length === 0;
+  if (status === 'Correctos') return labels.includes('Disponible') && !labels.includes('Caducado') && !labels.includes('Caduca hoy') && !labels.includes('Caduca pronto');
   return true;
 }
 
@@ -1195,7 +1336,7 @@ function compareInventoryItems(a, b) {
   const severity = (item) => {
     const labels = getItemSignals(item).map((signal) => signal.label);
     if (labels.includes('Agotado') || labels.includes('Caducado')) return 0;
-    if (labels.length) return 1;
+    if (labels.includes('Stock bajo') || labels.includes('Caduca hoy') || labels.includes('Caduca pronto')) return 1;
     return 2;
   };
   return severity(a) - severity(b)

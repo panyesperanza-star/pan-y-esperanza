@@ -2151,12 +2151,14 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createInventoryItem: async (payload) => {
-      await inventarioService.createItem(payload);
+      const created = await inventarioService.createItem(payload);
       await reload();
+      return created;
     },
     updateInventoryItem: async (id, payload) => {
-      await inventarioService.updateItem(id, payload);
+      const updated = await inventarioService.updateItem(id, payload);
       await reload();
+      return updated;
     },
     deleteInventoryItem: async (id) => {
       await inventarioService.removeItem(id);

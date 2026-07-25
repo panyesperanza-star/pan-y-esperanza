@@ -12,6 +12,13 @@ on conflict (id) do update set
   allowed_mime_types = excluded.allowed_mime_types;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('inventory-product-photos', 'inventory-product-photos', false, 524288, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('delivery-signatures', 'delivery-signatures', false, 1048576, array['image/png'])
 on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 create table public.beneficiary_sequence (
@@ -275,6 +282,8 @@ create table public.inventory_items (
   stock numeric(12,2) not null default 0 check (stock >= 0),
   low_stock_threshold numeric(12,2) not null default 0 check (low_stock_threshold >= 0),
   notes text,
+  photo_url text,
+  photo_data_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -1096,6 +1105,21 @@ create policy "beneficiary_photos_insert_by_permission" on storage.objects for i
 create policy "beneficiary_photos_delete_by_permission" on storage.objects for delete to authenticated using (
   bucket_id = 'beneficiary-photos'
   and (storage.foldername(name))[1] = 'beneficiaries'
+);
+
+create policy "inventory_product_photos_select_by_permission" on storage.objects for select to authenticated using (
+  bucket_id = 'inventory-product-photos'
+  and public.can_app_permission('inventory', 'view')
+);
+create policy "inventory_product_photos_insert_by_permission" on storage.objects for insert to authenticated with check (
+  bucket_id = 'inventory-product-photos'
+  and (storage.foldername(name))[1] = 'products'
+  and public.can_app_permission('inventory', 'edit')
+);
+create policy "inventory_product_photos_delete_by_permission" on storage.objects for delete to authenticated using (
+  bucket_id = 'inventory-product-photos'
+  and (storage.foldername(name))[1] = 'products'
+  and public.can_app_permission('inventory', 'edit')
 );
 
 create policy "delivery_signatures_select_by_permission" on storage.objects for select to authenticated using (
