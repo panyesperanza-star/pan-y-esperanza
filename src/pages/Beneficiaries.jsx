@@ -10,7 +10,6 @@ import {
   ContactRound,
   Download,
   Edit3,
-  Euro,
   FileText,
   HeartHandshake,
   Home,
@@ -1314,6 +1313,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const [portalNoticeOpen, setPortalNoticeOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [familyOpen, setFamilyOpen] = useState(false);
+  const [showFullCopilot, setShowFullCopilot] = useState(false);
   const [notice, setNotice] = useState('');
   const quickDocumentInputRef = useRef(null);
   const documentManagementRef = useRef(null);
@@ -1323,7 +1323,6 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const beneficiaries = safeRows(data?.beneficiaries);
   const allDeliveries = safeRows(data?.deliveries);
   const profileDeliveries = safeRows(deliveries);
-  const inventoryItems = safeRows(data?.inventory_items);
   const beneficiaryDocuments = safeRows(data?.beneficiary_documents);
   const socialHistory = safeRows(data?.social_history);
   const portalProfileUpdates = safeRows(data?.beneficiary_portal_profile_updates);
@@ -1342,7 +1341,6 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const emailLogs = emailLogRows.filter((log) => beneficiary.email && String(log.recipient || '').includes(beneficiary.email));
   const incidents = history.filter((item) => normalize(item.entry_type).includes('incidencia')).length;
   const activeDeliveries = profileDeliveries.filter(isActiveDelivery);
-  const valuation = calculateDeliveriesValue(activeDeliveries, inventoryItems);
   const trackingCount = buildTrackingDiary(history, activeDeliveries).length;
   const portalAccount = portalAccounts.find((item) => item.beneficiary_id === beneficiary.id) || null;
   const portalSessions = portalSessionRows.filter((item) => item.portal === 'beneficiary' && item.subject_id === beneficiary.id);
@@ -1360,8 +1358,9 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const canCreateFamily = canDo(currentUser, 'families', 'create');
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
   const timeline = buildProfessionalTimeline({ beneficiary, deliveries: activeDeliveries, documents, history });
-  const documentPreview = documents.slice(0, 4);
   const documentIssue = beneficiaryDocumentIssue(documents);
+  const intelligentSummary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries: activeDeliveries, history, requests: portalRequests, notices: portalNotices });
+  const documentIntelligenceSummary = buildDocumentIntelligenceSummary(documents);
 
   useEffect(() => {
     setTemporaryPortalPin('');
@@ -1586,11 +1585,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
         documentIssue={documentIssue}
         canEdit={canEdit}
         canDelete={canDelete}
-        canCreateDelivery={canCreateDelivery}
         onEdit={onEdit}
-        onWhatsApp={openWhatsApp}
-        onEmail={() => { setNotice(''); setEmailOpen(true); }}
-        onNewAppointment={onNewAppointment}
         onSummaryPdf={() => printBeneficiaryPdf(beneficiary, profileDeliveries)}
         onSocialReport={() => printSocialAttentionReportPdf({
           beneficiary,
@@ -1601,7 +1596,6 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           organization: data.organization_settings?.[0],
           currentUser
         })}
-        onDelivery={() => setDeliveryOpen(true)}
         onPhotoChange={handlePhotoChange}
       />
 
@@ -1612,26 +1606,18 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           canCreateDelivery={canCreateDelivery}
           canEdit={canEdit}
           onDelivery={() => setDeliveryOpen(true)}
+          onContact={openWhatsApp}
+          onManageDocuments={openDocumentManagement}
+          onUploadDocument={requestDocumentUpload}
           onNote={() => setTab('social')}
-          onDocument={requestDocumentUpload}
+          onEmail={() => { setNotice(''); setEmailOpen(true); }}
           onCreateCampaign={onCreateCampaign}
           onOpenAgenda={onOpenAgenda || onNewAppointment}
           onNotice={() => { setNotice(''); setPortalNoticeOpen(true); }}
         />
         <input ref={quickDocumentInputRef} className="hidden" type="file" onChange={uploadQuickDocument} />
 
-        <BeneficiaryPortalAdminBlock
-          account={portalAccount}
-          lastAccess={lastPortalAccess}
-          lastOtp={lastPortalOtp}
-          temporaryPin={temporaryPortalPin}
-          canEdit={canEdit}
-          onActivate={activatePortal}
-          onDeactivate={deactivatePortal}
-          onRegeneratePin={regeneratePortalPin}
-          onPrint={printPortalAccess}
-          onSend={sendPortalAccess}
-        />
+        <CasePriorityPanel summary={intelligentSummary} beneficiary={beneficiary} onPrimaryAction={() => setTab('social')} />
 
         <SocialCaseSummaryCards
           beneficiary={beneficiary}
@@ -1639,22 +1625,27 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           deliveries={activeDeliveries}
           documents={documents}
           incidents={incidents}
-          valuation={valuation}
           history={history}
+          requests={portalRequests}
         />
 
-        <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-          <ProfessionalTimeline entries={timeline} />
-          <div className="space-y-6">
-            <ProfessionalDocumentsPreview
-              documents={documentPreview}
-              total={documents.length}
-              canEdit={canEdit}
-              onOpenDocuments={openDocumentManagement}
-            />
-            <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} requests={portalRequests} notices={portalNotices} />
-          </div>
+        <section className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+          <CompactCopilotPreview summary={intelligentSummary} onShowFull={() => setShowFullCopilot((value) => !value)} expanded={showFullCopilot} />
+          <ProfessionalTimeline entries={timeline} onShowAll={() => setTab('social')} />
         </section>
+
+        {showFullCopilot && (
+          <IntelligentCaseBlock
+            beneficiary={beneficiary}
+            documents={documents}
+            deliveries={activeDeliveries}
+            history={history}
+            requests={portalRequests}
+            notices={portalNotices}
+          />
+        )}
+
+        <DocumentIntelligenceOverview summary={documentIntelligenceSummary} onShowDocuments={openDocumentManagement} />
 
         <section ref={documentManagementRef} className="scroll-mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <nav className="overflow-x-auto border-b border-slate-200 bg-white px-4 sm:px-6" aria-label="Secciones del expediente">
@@ -1688,6 +1679,19 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
             {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
           </div>
         </section>
+
+        <BeneficiaryPortalAdminBlock
+          account={portalAccount}
+          lastAccess={lastPortalAccess}
+          lastOtp={lastPortalOtp}
+          temporaryPin={temporaryPortalPin}
+          canEdit={canEdit}
+          onActivate={activatePortal}
+          onDeactivate={deactivatePortal}
+          onRegeneratePin={regeneratePortalPin}
+          onPrint={printPortalAccess}
+          onSend={sendPortalAccess}
+        />
       </main>
 
       {emailOpen && (
@@ -1746,7 +1750,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   );
 }
 
-function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
+function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const priority = socialPriorityLabel(beneficiary, history);
   const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
@@ -1793,10 +1797,6 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, docum
             {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
             <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
             <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
-            <Button variant="secondary" onClick={onWhatsApp}><MessageCircle size={17} /> WhatsApp</Button>
-            <Button variant="secondary" onClick={onEmail}><Mail size={17} /> Email</Button>
-            <Button variant="secondary" onClick={onNewAppointment}><CalendarPlus size={17} /> Nueva cita</Button>
-            {canCreateDelivery && <Button onClick={onDelivery}><PackagePlus size={17} /> Nueva entrega</Button>}
           </div>
         </div>
       </div>
@@ -1818,11 +1818,46 @@ function HeaderMetric({ icon: Icon, label, value }) {
   );
 }
 
-function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDocument, onCreateCampaign, onOpenAgenda, onNotice }) {
-  const actions = [
+function CasePriorityPanel({ summary, beneficiary, onPrimaryAction }) {
+  const mainRisk = summary.risks[0];
+  const recommendedAction = summary.recommendations[0];
+  return (
+    <section className="rounded-2xl border border-brand-100 bg-white p-4 shadow-sm" aria-label="Prioridad del expediente">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.45fr)] lg:items-stretch">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-brand-700">Prioridad del expediente</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-black ${summary.status.tone}`}>{summary.status.icon} {summary.status.label}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{beneficiary.is_active ? 'Expediente activo' : 'Expediente inactivo'}</span>
+          </div>
+          <h3 className="mt-3 text-xl font-black leading-tight text-ink">{mainRisk?.motive || 'No hay riesgos objetivos destacados.'}</h3>
+          <p className="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-slate-600">
+            {recommendedAction?.reason || 'El expediente no requiere una intervencion inmediata con los datos disponibles.'}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
+          <p className="mt-2 text-base font-black text-ink">{recommendedAction?.title || 'Mantener seguimiento ordinario'}</p>
+          <button type="button" onClick={onPrimaryAction} className="focus-ring mt-3 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-brand-700">
+            {recommendedAction?.button || 'Abrir seguimiento'}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, onManageDocuments, onUploadDocument, onNote, onEmail, onCreateCampaign, onOpenAgenda, onNotice }) {
+  const [showMore, setShowMore] = useState(false);
+  const primaryActions = [
     { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
+    { label: 'Gestionar documentacion', icon: Paperclip, onClick: onManageDocuments, enabled: Boolean(onManageDocuments) },
+    { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) }
+  ];
+  const secondaryActions = [
     { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },
-    { label: 'Subir documento', icon: Upload, onClick: onDocument, enabled: canEdit },
+    { label: 'Subir documento', icon: Upload, onClick: onUploadDocument, enabled: canEdit },
+    { label: 'Email', icon: Mail, onClick: onEmail, enabled: Boolean(onEmail) },
     { label: 'Crear campaña', icon: CalendarPlus, onClick: onCreateCampaign, enabled: Boolean(onCreateCampaign) },
     { label: 'Abrir Agenda', icon: CalendarDays, onClick: onOpenAgenda, enabled: Boolean(onOpenAgenda) },
     { label: 'Enviar aviso', icon: Mail, onClick: onNotice, enabled: true }
@@ -1832,16 +1867,28 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onNote, onDo
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h3 className="font-bold text-ink">Acciones rapidas</h3>
-          <p className="text-sm text-slate-500">Tareas frecuentes del expediente social.</p>
+          <p className="text-sm text-slate-500">Una accion principal y accesos frecuentes del expediente.</p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
-          {actions.map(({ label, icon: Icon, onClick, enabled, primary }) => (
+        <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-end">
+          {primaryActions.map(({ label, icon: Icon, onClick, enabled, primary }) => (
             <Button key={label} variant={primary ? 'primary' : 'secondary'} onClick={onClick} disabled={!enabled}>
               <Icon size={17} /> {label}
             </Button>
           ))}
+          <Button variant="secondary" onClick={() => setShowMore((value) => !value)}>
+            <ChevronRight size={17} /> Mas acciones
+          </Button>
         </div>
       </div>
+      {showMore && (
+        <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+          {secondaryActions.map(({ label, icon: Icon, onClick, enabled }) => (
+            <Button key={label} variant="secondary" onClick={onClick} disabled={!enabled}>
+              <Icon size={17} /> {label}
+            </Button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1904,16 +1951,19 @@ function PortalField({ label, value, mono = false }) {
   );
 }
 
-function SocialCaseSummaryCards({ beneficiary, family, deliveries, documents, incidents, valuation, history }) {
+function SocialCaseSummaryCards({ beneficiary, family, deliveries, documents, incidents, history, requests = [] }) {
+  const latestDelivery = getLatestDelivery(deliveries);
+  const nextDelivery = getNextFutureDelivery(deliveries);
+  const documentIssue = beneficiaryDocumentIssue(documents);
+  const openRequests = requests.filter(isOpenPortalRequest).length;
+  const priority = socialPriorityLabel(beneficiary, history);
   const summary = [
-    { label: 'Unidad familiar', value: family ? family.family_code : 'Sin unidad', detail: family?.responsible_name || '', icon: Users, tone: 'brand' },
-    { label: 'Hijos', value: beneficiary.minors_count || 0, detail: `${beneficiary.family_members || 1} miembro(s) registrados`, icon: UserPlus, tone: 'blue' },
-    { label: 'Situacion laboral', value: beneficiary.employment_status || 'No registrada', detail: beneficiary.marital_status || '', icon: ClipboardList, tone: 'slate' },
-    { label: 'Necesidades especiales', value: beneficiary.special_needs || specialNeedsLabel(beneficiary), detail: 'Seguimiento social', icon: HeartHandshake, tone: 'amber' },
-    { label: 'Alergias', value: beneficiary.allergies || allergyLabel(beneficiary), detail: 'Dato sanitario operativo', icon: CheckCircle2, tone: 'violet' },
-    { label: 'Riesgo social', value: socialPriorityLabel(beneficiary, history), detail: incidents ? `${incidents} incidencia(s)` : 'Sin incidencias abiertas', icon: ClipboardList, tone: socialPriorityLabel(beneficiary, history) === 'Alta' ? 'red' : 'brand' },
-    { label: 'Frecuencia de ayuda', value: helpFrequencyLabel(deliveries), detail: deliveries.length ? `${deliveries.length} entrega(s)` : 'Sin entregas', icon: Clock3, tone: 'blue' },
-    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'Valoracion parcial' : `${documents.length} documento(s)`, icon: Euro, tone: 'amber' }
+    { label: 'Prioridad', value: priority, detail: incidents ? `${incidents} incidencia(s)` : 'Sin incidencias abiertas', icon: ClipboardList, tone: priority === 'Alta' ? 'red' : priority === 'Media' ? 'amber' : 'brand' },
+    { label: 'Proxima entrega', value: nextDelivery ? deliverySummaryLabel(nextDelivery) : 'Sin entrega programada', detail: latestDelivery ? `Ultima: ${formatDate(latestDelivery.delivered_at)}` : 'Sin entregas anteriores', icon: CalendarDays, tone: 'blue' },
+    { label: 'Documentacion', value: documentIssue?.label || `${documents.length} documento(s)`, detail: documentIssue ? 'Requiere revision' : 'Sin alertas criticas', icon: Paperclip, tone: documentIssue?.tone?.includes('red') ? 'red' : documentIssue ? 'amber' : 'brand' },
+    { label: 'Unidad familiar', value: family ? family.family_code : 'Sin unidad', detail: family?.responsible_name || `${beneficiary.family_members || 1} miembro(s)`, icon: Users, tone: 'brand' },
+    { label: 'Solicitudes', value: openRequests || 'Sin abiertas', detail: openRequests ? 'Pendientes de seguimiento' : 'Portal sin solicitudes abiertas', icon: NotebookTabs, tone: openRequests ? 'amber' : 'slate' },
+    { label: 'Contacto', value: beneficiary.phone || beneficiary.email || 'Sin contacto', detail: beneficiary.address_full || 'Direccion no registrada', icon: Phone, tone: beneficiary.phone || beneficiary.email ? 'slate' : 'red' }
   ];
   const tones = {
     brand: 'bg-brand-50 text-brand-700',
@@ -1937,12 +1987,16 @@ function SocialCaseSummaryCards({ beneficiary, family, deliveries, documents, in
   );
 }
 
-function ProfessionalTimeline({ entries }) {
+function ProfessionalTimeline({ entries, onShowAll }) {
+  const previewEntries = entries.slice(0, 3);
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <SectionHeading icon={CalendarDays} title="Cronología del expediente" description="Alta, entregas, renovaciones, documentos, incidencias y notas sociales." />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeading icon={CalendarDays} title="Cronologia resumida" description="Ultimos tres eventos operativos del expediente." />
+        <Button variant="secondary" onClick={onShowAll}>Ver cronologia completa</Button>
+      </div>
       <div className="relative mt-5 space-y-4 before:absolute before:bottom-4 before:left-[19px] before:top-4 before:w-px before:bg-slate-200">
-        {entries.slice(0, 8).map((item) => (
+        {previewEntries.map((item) => (
           <article key={item.key} className="relative flex gap-4">
             <span className={`z-10 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-white ${item.tone}`}><item.icon size={17} /></span>
             <div className="flex-1 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1957,36 +2011,48 @@ function ProfessionalTimeline({ entries }) {
           </article>
         ))}
       </div>
-      {!entries.length && <div className="mt-4"><EmptyState icon={CalendarDays} title="Sin cronología" text="Todavía no hay eventos relevantes en el expediente." /></div>}
+      {!entries.length && <div className="mt-4"><EmptyState icon={CalendarDays} title="Sin cronologia" text="Todavia no hay eventos relevantes en el expediente." /></div>}
     </section>
   );
 }
 
-function ProfessionalDocumentsPreview({ documents, total, canEdit, onOpenDocuments }) {
+function CompactCopilotPreview({ summary, onShowFull, expanded }) {
+  const mainRisk = summary.risks[0];
+  const recommendedAction = summary.recommendations[0];
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <SectionHeading icon={Paperclip} title="Documentacion" description={`${total} documento(s) asociados al expediente.`} />
-        <Button variant="secondary" onClick={onOpenDocuments}>{canEdit ? 'Gestionar' : 'Ver'}</Button>
-      </div>
-      <div className="mt-4 grid gap-3">
-        {documents.map((doc) => {
-          const status = documentStatus(doc);
-          return (
-            <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-start gap-3">
-                <span className="rounded-lg bg-white p-2 text-brand-700 shadow-sm"><FileText size={18} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{doc.document_type || 'Documento'} · {formatDate(doc.uploaded_at)}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${documentStatusTone(status)}`}>{status}</span>
-              </div>
-              {doc.file_data_url && <DocumentDownloadButton doc={doc} />}
-            </article>
-          );
-        })}
-        {!documents.length && <EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación." />}
+    <section className="rounded-2xl border border-brand-100 bg-gradient-to-br from-white via-brand-50/60 to-white p-5 shadow-sm" aria-label="Copiloto compacto del expediente">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Copiloto</p>
+            <h3 className="mt-1 text-xl font-black text-ink">Copiloto del expediente</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-600">Lectura ejecutiva basada en datos reales del ERP.</p>
+          </div>
+          <span className={`w-fit rounded-full border px-3 py-1.5 text-xs font-black ${summary.status.tone}`}>{summary.status.icon} {summary.status.label}</span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-100 bg-white p-4">
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Estado general</p>
+            <p className="mt-1 text-sm font-black text-ink">{summary.status.label}</p>
+            <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-600">{summary.status.label === 'Expediente estable' ? 'Sin alertas criticas con los datos actuales.' : 'Requiere seguimiento segun reglas del ERP.'}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-white p-4">
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Riesgo principal</p>
+            <p className="mt-1 line-clamp-2 text-sm font-black text-ink">{mainRisk?.motive || 'Sin riesgos destacados'}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">{mainRisk?.level || 'Bajo'}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-100 bg-white p-4">
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
+            <p className="mt-1 line-clamp-2 text-sm font-black text-ink">{recommendedAction?.title || 'Mantener seguimiento ordinario'}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">{recommendedAction?.impact || 'Continuidad del acompanamiento.'}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="line-clamp-1 text-sm font-bold text-slate-600">{summary.focusItems[0] || 'Hoy no hay tareas criticas pendientes.'}</p>
+          <Button variant="secondary" onClick={onShowFull}>{expanded ? 'Ocultar analisis completo' : 'Ver analisis completo'}</Button>
+        </div>
       </div>
     </section>
   );
@@ -3181,27 +3247,6 @@ function BeneficiaryPhoto({ beneficiary, canEdit, canDelete, onChange }) {
   );
 }
 
-function ProfileSummaryCards({ beneficiary, deliveries, documents, incidents, valuation }) {
-  const latestDelivery = getLatestDelivery(deliveries);
-  const cards = [
-    { label: 'Beneficiario desde', value: formatDate(beneficiary.joined_at), icon: CalendarDays, tone: 'brand' },
-    { label: 'Última ayuda', value: latestDelivery ? formatDate(latestDelivery.delivered_at) : '-', detail: latestDelivery?.help_type || '', icon: Clock3, tone: 'blue' },
-    { label: 'Total entregas', value: deliveries.length, icon: PackageCheck, tone: 'brand' },
-    { label: 'Valor aproximado', value: valuation.valuedCount ? formatCurrency(valuation.total) : 'Sin valorar', detail: valuation.isPartial ? 'Valoración parcial' : '', icon: Euro, tone: 'amber' },
-    { label: 'Documentos', value: documents.length, icon: Paperclip, tone: 'violet' },
-    { label: 'Incidencias', value: incidents, icon: ClipboardList, tone: incidents ? 'red' : 'slate' }
-  ];
-  const tones = {
-    brand: 'bg-brand-50 text-brand-700', blue: 'bg-blue-50 text-blue-700', amber: 'bg-amber-50 text-amber-700',
-    violet: 'bg-violet-50 text-violet-700', red: 'bg-red-50 text-red-700', slate: 'bg-slate-100 text-slate-600'
-  };
-  return (
-    <section className="grid gap-3 bg-slate-50/70 px-5 pt-6 sm:grid-cols-2 sm:px-7 xl:grid-cols-6" aria-label="Resumen rápido del expediente">
-      {cards.map(({ label, value, detail, icon: Icon, tone }) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={`inline-flex rounded-lg p-2 ${tones[tone]}`}><Icon size={18} /></span><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-ink">{value}</p>{detail && <p className="mt-1 truncate text-xs font-medium text-slate-500">{detail}</p>}</div>)}
-    </section>
-  );
-}
-
 function OverviewPanel({ beneficiary, family, deliveries, history }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const latestHistory = [...history].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
@@ -3301,10 +3346,6 @@ function QuickFamilyForm({ beneficiary, onSubmit }) {
   );
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
-}
-
 function getLatestDelivery(deliveries) {
   return [...deliveries].sort((a, b) => {
     const aValue = `${a.delivered_at || ''}T${a.delivered_time || '00:00:00'}`;
@@ -3362,29 +3403,11 @@ function helpFrequencyLabel(deliveries = []) {
   return 'Sin entregas';
 }
 
-function specialNeedsLabel(beneficiary) {
-  const source = `${beneficiary.special_needs || ''} ${beneficiary.notes || ''}`;
-  if (normalize(source).includes('necesidad')) return 'Revisar notas';
-  return 'No registradas';
-}
-
-function allergyLabel(beneficiary) {
-  const source = `${beneficiary.allergies || ''} ${beneficiary.notes || ''}`;
-  if (normalize(source).includes('alerg')) return 'Revisar notas';
-  return 'No registradas';
-}
-
 function documentStatus(doc) {
   const notes = normalize(doc.notes);
   if (notes.includes('caduc')) return 'Caducado';
   if (notes.includes('pendiente') || !doc.file_data_url) return 'Pendiente';
   return 'Revisado';
-}
-
-function documentStatusTone(status) {
-  if (status === 'Caducado') return 'bg-red-50 text-red-700';
-  if (status === 'Pendiente') return 'bg-amber-50 text-amber-700';
-  return 'bg-brand-50 text-brand-700';
 }
 
 function buildProfessionalTimeline({ beneficiary, deliveries = [], documents = [], history = [] }) {
@@ -3435,35 +3458,6 @@ function timelineTitleForHistory(item) {
   if (notes.includes('donacion extraordinaria')) return 'Donacion extraordinaria';
   if (type.includes('observacion')) return 'Nota social';
   return item.entry_type || 'Seguimiento social';
-}
-
-function calculateDeliveriesValue(deliveries, inventoryItems = []) {
-  let total = 0;
-  let valuedCount = 0;
-  deliveries.forEach((delivery) => {
-    const explicitTotal = firstPositiveNumber(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
-    if (explicitTotal !== null) {
-      total += explicitTotal;
-      valuedCount += 1;
-      return;
-    }
-    const inventoryItem = inventoryItems.find((item) => item.id === delivery.inventory_item_id);
-    const unitValue = firstPositiveNumber(inventoryItem?.unit_value, inventoryItem?.estimated_unit_value, inventoryItem?.economic_value, inventoryItem?.price, inventoryItem?.cost);
-    if (unitValue !== null) {
-      total += unitValue * Number(delivery.quantity || 0);
-      valuedCount += 1;
-    }
-  });
-  return { total, valuedCount, isPartial: valuedCount > 0 && valuedCount < deliveries.length };
-}
-
-function firstPositiveNumber(...values) {
-  for (const value of values) {
-    if (value === null || value === undefined || value === '') continue;
-    const number = Number(value);
-    if (Number.isFinite(number) && number > 0) return number;
-  }
-  return null;
 }
 
 async function optimizeBeneficiaryPhoto(file) {
