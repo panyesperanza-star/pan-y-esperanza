@@ -2073,6 +2073,11 @@ export function useAppData(enabled = true, currentUser = null) {
       await beneficiarioService.createDocument(payload);
       await reload();
     },
+    updateBeneficiaryDocument: async (id, payload) => {
+      const updated = await beneficiarioService.updateDocument(id, payload);
+      await reload();
+      return updated;
+    },
     deleteBeneficiaryDocument: async (id) => {
       await beneficiarioService.removeDocument(id);
       await reload();

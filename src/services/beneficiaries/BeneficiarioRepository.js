@@ -25,6 +25,10 @@ export class BeneficiarioRepository {
     return this.repository.create('beneficiary_documents', payload);
   }
 
+  async updateDocument(id, payload) {
+    return this.repository.update('beneficiary_documents', id, payload);
+  }
+
   async removeDocument(id) {
     return this.repository.remove('beneficiary_documents', id);
   }

@@ -87,6 +87,13 @@ export class BeneficiarioService {
     return created;
   }
 
+  async updateDocument(id, payload) {
+    this.assertPermission('beneficiaries', 'edit');
+    const updated = await this.repository.updateDocument(id, payload);
+    await this.audit('Actualizo documentación de beneficiario');
+    return updated;
+  }
+
   async removeDocument(id) {
     this.assertPermission('beneficiaries', 'delete');
     return this.repository.removeDocument(id);

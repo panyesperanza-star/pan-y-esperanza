@@ -3424,13 +3424,14 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
   const [showClassicDocuments, setShowClassicDocuments] = useState(false);
   const [documentFilter, setDocumentFilter] = useState('all');
   const [selectedDocument, setSelectedDocument] = useState(null);
+  const [reviewingDocumentAction, setReviewingDocumentAction] = useState('');
   const inputRef = useRef(null);
   const intelligenceSummary = useMemo(() => buildDocumentIntelligenceSummary(documents), [documents]);
   const documentItems = useMemo(() => safeRows(documents).map((doc) => ({ doc, status: intelligentDocumentStatus(doc) })), [documents]);
   const filteredDocumentItems = useMemo(() => {
     const option = DOCUMENT_FILTER_OPTIONS.find((item) => item.id === documentFilter);
-    if (!option?.status) return documentItems;
-    return documentItems.filter((item) => item.status === option.status);
+    if (!option?.statuses?.length) return documentItems;
+    return documentItems.filter((item) => option.statuses.includes(item.status));
   }, [documentFilter, documentItems]);
 
   useEffect(() => {
@@ -3488,6 +3489,39 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
     }
   }
 
+  async function applyDocumentReview(doc, reviewAction) {
+    if (!canEdit) {
+      onNotice('No tienes permisos para revisar documentación.');
+      return;
+    }
+    if (!actions.updateBeneficiaryDocument) {
+      onNotice('La actualización documental no está disponible.');
+      return;
+    }
+    let observations = '';
+    if (reviewAction.requiresObservation) {
+      const response = window.prompt('Añade observaciones para esta revisión documental:');
+      if (response === null) return;
+      observations = response.trim();
+      if (!observations) {
+        onNotice('Añade observaciones para rechazar el documento.');
+        return;
+      }
+    }
+    setReviewingDocumentAction(`${doc.id}:${reviewAction.id}`);
+    try {
+      const meta = buildNextDocumentAutomationMeta(doc, reviewAction, observations);
+      await actions.updateBeneficiaryDocument(doc.id, {
+        notes: buildDocumentNotesWithAutomationMeta(doc, meta)
+      });
+      onNotice(reviewAction.successMessage);
+    } catch (error) {
+      onNotice(error.message || 'No se pudo actualizar el documento.');
+    } finally {
+      setReviewingDocumentAction('');
+    }
+  }
+
   return (
     <section className="space-y-5">
       <DocumentIntelligenceOverview summary={intelligenceSummary} onShowDocuments={() => setShowClassicDocuments(true)} />
@@ -3540,7 +3574,10 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
         <DocumentDetailPanel
           doc={selectedDocument}
           status={intelligentDocumentStatus(selectedDocument)}
+          canEdit={canEdit}
           canDelete={canDelete}
+          reviewingAction={reviewingDocumentAction}
+          onReview={applyDocumentReview}
           onDelete={removeDocument}
           onClose={() => setSelectedDocument(null)}
         />
@@ -3552,19 +3589,22 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
 const DOCUMENT_EXPIRY_WARNING_DAYS = 30;
 
 const DOCUMENT_FILTER_OPTIONS = [
-  { id: 'all', label: 'Todos', status: null },
-  { id: 'valid', label: 'Vigentes', status: 'Vigente' },
-  { id: 'pending', label: 'Pendientes', status: 'Pendiente de revisión' },
-  { id: 'expired', label: 'Caducados', status: 'Caducado' },
-  { id: 'expiring', label: 'Próximos a caducar', status: 'Próximo a caducar' },
-  { id: 'not-required', label: 'No requeridos', status: 'No requerido' }
+  { id: 'all', label: 'Todos', statuses: null },
+  { id: 'valid', label: 'Vigentes', statuses: ['Vigente'] },
+  { id: 'pending', label: 'Pendientes', statuses: ['Pendiente de revisión', 'Rechazado', 'Renovación solicitada'] },
+  { id: 'expired', label: 'Caducados', statuses: ['Caducado'] },
+  { id: 'expiring', label: 'Próximos a caducar', statuses: ['Próximo a caducar'] },
+  { id: 'not-required', label: 'No requeridos', statuses: ['No requerido'] }
 ];
 
+const DOCUMENT_AUTOMATION_META_START = '[ALTHEMON_DOCUMENT_META]';
+const DOCUMENT_AUTOMATION_META_END = '[/ALTHEMON_DOCUMENT_META]';
+
 const DOCUMENT_REVIEW_ACTIONS = [
-  { label: 'Aprobar', icon: '✔', tone: 'border-brand-200 bg-brand-50 text-brand-800' },
-  { label: 'Rechazar', icon: '✕', tone: 'border-red-200 bg-red-50 text-red-800' },
-  { label: 'Solicitar renovación', icon: '📩', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
-  { label: 'Marcar como no requerido', icon: '○', tone: 'border-slate-200 bg-slate-50 text-slate-700' }
+  { id: 'approve', label: 'Aprobar', icon: '✔', status: 'Vigente', historyTitle: 'Documento aprobado', successMessage: 'Documento aprobado correctamente.', tone: 'border-brand-200 bg-brand-50 text-brand-800' },
+  { id: 'reject', label: 'Rechazar', icon: '✕', status: 'Rechazado', historyTitle: 'Documento rechazado', successMessage: 'Documento rechazado correctamente.', requiresObservation: true, tone: 'border-red-200 bg-red-50 text-red-800' },
+  { id: 'request-renewal', label: 'Solicitar renovación', icon: '📩', status: 'Renovación solicitada', historyTitle: 'Renovación solicitada', successMessage: 'Renovación solicitada registrada.', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+  { id: 'not-required', label: 'Marcar como no requerido', icon: '○', status: 'No requerido', historyTitle: 'Documento marcado como no requerido', successMessage: 'Documento marcado como no requerido.', tone: 'border-slate-200 bg-slate-50 text-slate-700' }
 ];
 
 function DocumentIntelligenceOverview({ summary, onShowDocuments }) {
@@ -3663,7 +3703,7 @@ function DocumentReviewCard({ item, onOpen }) {
   );
 }
 
-function DocumentDetailPanel({ doc, status, canDelete, onDelete, onClose }) {
+function DocumentDetailPanel({ doc, status, canEdit, canDelete, reviewingAction, onReview, onDelete, onClose }) {
   const meta = documentStatusMeta(status);
   const history = buildDocumentReviewHistory(doc, status);
   return (
@@ -3699,7 +3739,7 @@ function DocumentDetailPanel({ doc, status, canDelete, onDelete, onClose }) {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
             <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Observaciones</h4>
-            <p className="mt-2 text-sm leading-6 text-slate-700">{doc.notes || doc.observations || 'Sin observaciones registradas.'}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{documentVisibleNotes(doc) || readDocumentAutomationMeta(doc).observations || doc.observations || 'Sin observaciones registradas.'}</p>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -3720,6 +3760,7 @@ function DocumentDetailPanel({ doc, status, canDelete, onDelete, onClose }) {
                   <div>
                     <p className="text-sm font-black text-ink">{item.title}</p>
                     <p className="text-xs text-slate-500">{item.date}</p>
+                    {item.observations && <p className="mt-1 text-xs font-semibold text-slate-600">{item.observations}</p>}
                   </div>
                 </div>
               ))}
@@ -3729,15 +3770,24 @@ function DocumentDetailPanel({ doc, status, canDelete, onDelete, onClose }) {
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Acciones</h4>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">Interfaz preparada</span>
+              <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700">Revisión documental</span>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {DOCUMENT_REVIEW_ACTIONS.map((action) => (
-                <button key={action.label} type="button" className={`cursor-not-allowed rounded-xl border px-3 py-3 text-left text-sm font-black opacity-75 ${action.tone}`} aria-disabled="true">
-                  <span className="mr-2" aria-hidden="true">{action.icon}</span>
-                  {action.label}
-                </button>
-              ))}
+              {DOCUMENT_REVIEW_ACTIONS.map((action) => {
+                const isBusy = reviewingAction === `${doc.id}:${action.id}`;
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className={`focus-ring rounded-xl border px-3 py-3 text-left text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${action.tone}`}
+                    disabled={!canEdit || Boolean(reviewingAction)}
+                    onClick={() => onReview(doc, action)}
+                  >
+                    <span className="mr-2" aria-hidden="true">{action.icon}</span>
+                    {isBusy ? 'Actualizando...' : action.label}
+                  </button>
+                );
+              })}
             </div>
             {canDelete && (
               <button className="focus-ring mt-3 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50" type="button" onClick={() => onDelete(doc)}>
@@ -3782,6 +3832,10 @@ function buildDocumentIntelligenceSummary(documents = []) {
     'No requerido': 0
   };
   items.forEach((item) => {
+    if (['Pendiente de revisión', 'Rechazado', 'Renovación solicitada'].includes(item.status)) {
+      counts['Pendiente de revisión'] += 1;
+      return;
+    }
     counts[item.status] = (counts[item.status] || 0) + 1;
   });
   const total = items.length;
@@ -3859,13 +3913,31 @@ function buildDocumentRecommendedActions(items, counts) {
     .filter((item) => item.status === 'Pendiente de revisión')
     .slice(0, 2)
     .forEach((item) => actions.push({ key: `review-${item.doc.id}`, title: 'Revisar documento', detail: documentDisplayName(item.doc) }));
+  items
+    .filter((item) => item.status === 'Rechazado')
+    .slice(0, 2)
+    .forEach((item) => actions.push({ key: `rejected-${item.doc.id}`, title: `Resolver ${documentDisplayName(item.doc)}`, detail: 'Documento rechazado. Revisar observaciones.' }));
+  items
+    .filter((item) => item.status === 'Renovación solicitada')
+    .slice(0, 2)
+    .forEach((item) => actions.push({ key: `renewal-${item.doc.id}`, title: `Seguimiento de ${documentDisplayName(item.doc)}`, detail: 'Renovación solicitada pendiente de recibir.' }));
   return actions.slice(0, 4);
 }
 
 function intelligentDocumentStatus(doc) {
+  const meta = readDocumentAutomationMeta(doc);
   const statusText = normalize([doc.status, doc.review_status, doc.portal_status, doc.notes].filter(Boolean).join(' '));
-  if (statusText.includes('no requerido') || statusText.includes('no aplica')) return 'No requerido';
   const daysUntilExpiry = daysUntilDocumentExpiry(doc);
+  if (meta.status === 'No requerido') return 'No requerido';
+  if (meta.status === 'Rechazado') return 'Rechazado';
+  if (meta.status === 'Renovación solicitada') return 'Renovación solicitada';
+  if (meta.status === 'Pendiente de revisión') return 'Pendiente de revisión';
+  if (meta.status === 'Vigente') {
+    if (daysUntilExpiry !== null && daysUntilExpiry < 0) return 'Caducado';
+    if (daysUntilExpiry !== null && daysUntilExpiry <= DOCUMENT_EXPIRY_WARNING_DAYS) return 'Próximo a caducar';
+    return 'Vigente';
+  }
+  if (statusText.includes('no requerido') || statusText.includes('no aplica')) return 'No requerido';
   if (daysUntilExpiry !== null && daysUntilExpiry < 0) return 'Caducado';
   if (statusText.includes('caduc')) return 'Caducado';
   if (!doc.file_data_url || statusText.includes('pendiente') || statusText.includes('revision')) return 'Pendiente de revisión';
@@ -3904,12 +3976,25 @@ function documentStatusMeta(status) {
       badge: 'border-slate-200 bg-white text-slate-600',
       panel: 'border-slate-200 bg-white',
       description: 'Documento marcado como no requerido para este expediente.'
+    },
+    Rechazado: {
+      icon: '🔴',
+      badge: 'border-red-200 bg-red-50 text-red-800',
+      panel: 'border-red-100 bg-red-50/70',
+      description: 'Documento rechazado. Revise las observaciones y solicite una nueva versión si procede.'
+    },
+    'Renovación solicitada': {
+      icon: '📩',
+      badge: 'border-amber-200 bg-amber-50 text-amber-800',
+      panel: 'border-amber-100 bg-amber-50/70',
+      description: 'Se ha solicitado la renovación de este documento.'
     }
   };
   return meta[status] || meta['Pendiente de revisión'];
 }
 
 function buildDocumentReviewHistory(doc, status) {
+  const meta = readDocumentAutomationMeta(doc);
   const entries = [];
   const uploadedAt = doc.uploaded_at || doc.created_at;
   if (uploadedAt) {
@@ -3917,6 +4002,7 @@ function buildDocumentReviewHistory(doc, status) {
       key: 'received',
       icon: '📄',
       title: 'Documento recibido',
+      rawDate: uploadedAt,
       date: formatDateTime(uploadedAt),
       tone: 'bg-blue-50 text-blue-700'
     });
@@ -3926,16 +4012,29 @@ function buildDocumentReviewHistory(doc, status) {
       key: 'reviewed',
       icon: status === 'Caducado' ? '⚠' : '✔',
       title: status === 'Caducado' ? 'Documento revisado con incidencias' : 'Documento revisado',
+      rawDate: doc.reviewed_at,
       date: formatDateTime(doc.reviewed_at),
       tone: status === 'Caducado' ? 'bg-red-50 text-red-700' : 'bg-brand-50 text-brand-700'
     });
   }
+  safeRows(meta.history).forEach((item, index) => {
+    entries.push({
+      key: item.id || `automation-${index}`,
+      icon: documentHistoryIcon(item.type),
+      title: item.title || 'Revisión documental',
+      rawDate: item.date,
+      date: formatDateTime(item.date),
+      observations: item.observations || '',
+      tone: documentHistoryTone(item.type)
+    });
+  });
   const updatedAt = documentUpdatedValue(doc);
   if (updatedAt && updatedAt !== uploadedAt && updatedAt !== doc.reviewed_at) {
     entries.push({
       key: 'updated',
       icon: '↻',
       title: 'Última actualización',
+      rawDate: updatedAt,
       date: formatDateTime(updatedAt),
       tone: 'bg-slate-100 text-slate-700'
     });
@@ -3945,11 +4044,77 @@ function buildDocumentReviewHistory(doc, status) {
       key: 'empty',
       icon: '📄',
       title: 'Sin historial registrado',
+      rawDate: '',
       date: 'El historial aparecerá cuando haya revisiones documentales.',
       tone: 'bg-slate-100 text-slate-600'
     });
   }
-  return entries;
+  return entries.sort((a, b) => String(b.rawDate || '').localeCompare(String(a.rawDate || '')));
+}
+
+function readDocumentAutomationMeta(doc) {
+  const notes = String(doc?.notes || '');
+  const start = notes.indexOf(DOCUMENT_AUTOMATION_META_START);
+  const end = notes.indexOf(DOCUMENT_AUTOMATION_META_END);
+  if (start === -1 || end === -1 || end <= start) return {};
+  const raw = notes.slice(start + DOCUMENT_AUTOMATION_META_START.length, end).trim();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function documentVisibleNotes(doc) {
+  const notes = String(doc?.notes || '');
+  const start = notes.indexOf(DOCUMENT_AUTOMATION_META_START);
+  const end = notes.indexOf(DOCUMENT_AUTOMATION_META_END);
+  if (start === -1 || end === -1 || end <= start) return notes.trim();
+  return `${notes.slice(0, start)}${notes.slice(end + DOCUMENT_AUTOMATION_META_END.length)}`.trim();
+}
+
+function buildNextDocumentAutomationMeta(doc, action, observations = '') {
+  const current = readDocumentAutomationMeta(doc);
+  const now = new Date().toISOString();
+  const entry = {
+    id: `${action.id}-${now}`,
+    type: action.id,
+    title: action.historyTitle,
+    date: now,
+    observations
+  };
+  return {
+    ...current,
+    version: 1,
+    status: action.status,
+    updatedAt: now,
+    lastAction: action.id,
+    observations: observations || current.observations || '',
+    history: [entry, ...safeRows(current.history)].slice(0, 30)
+  };
+}
+
+function buildDocumentNotesWithAutomationMeta(doc, meta) {
+  const visibleNotes = documentVisibleNotes(doc);
+  const metaBlock = `${DOCUMENT_AUTOMATION_META_START}${JSON.stringify(meta)}${DOCUMENT_AUTOMATION_META_END}`;
+  return [visibleNotes, metaBlock].filter(Boolean).join('\n\n');
+}
+
+function documentHistoryIcon(type) {
+  if (type === 'approve') return '✔';
+  if (type === 'reject') return '✕';
+  if (type === 'request-renewal') return '📩';
+  if (type === 'not-required') return '○';
+  return '📄';
+}
+
+function documentHistoryTone(type) {
+  if (type === 'approve') return 'bg-brand-50 text-brand-700';
+  if (type === 'reject') return 'bg-red-50 text-red-700';
+  if (type === 'request-renewal') return 'bg-amber-50 text-amber-700';
+  if (type === 'not-required') return 'bg-slate-100 text-slate-700';
+  return 'bg-blue-50 text-blue-700';
 }
 
 function documentDisplayName(doc) {
@@ -3977,7 +4142,8 @@ function documentExpiryValue(doc) {
 }
 
 function documentUpdatedValue(doc) {
-  return doc.updated_at || doc.reviewed_at || doc.uploaded_at || doc.created_at || '';
+  const meta = readDocumentAutomationMeta(doc);
+  return meta.updatedAt || doc.updated_at || doc.reviewed_at || doc.uploaded_at || doc.created_at || '';
 }
 
 function DocumentDownloadButton({ doc, iconOnly = false }) {
