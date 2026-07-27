@@ -1316,6 +1316,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const [familyOpen, setFamilyOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const quickDocumentInputRef = useRef(null);
+  const documentManagementRef = useRef(null);
   data = data || {};
   beneficiary = beneficiary || {};
   const families = safeRows(data?.families);
@@ -1369,8 +1370,14 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   useEffect(() => {
     if (navigationTarget?.moduleId !== 'beneficiaries') return;
     if (navigationTarget.profileId && navigationTarget.profileId !== beneficiary.id) return;
-    if (navigationTarget.tab) setTab(navigationTarget.tab);
-    if (navigationTarget.documentId) setTab('documents');
+    if (navigationTarget.tab) {
+      setTab(navigationTarget.tab);
+      if (navigationTarget.tab === 'documents') scrollToDocumentManagement();
+    }
+    if (navigationTarget.documentId) {
+      setTab('documents');
+      scrollToDocumentManagement();
+    }
   }, [beneficiary.id, navigationTarget]);
 
   const tabs = [
@@ -1416,8 +1423,19 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
     }
   }
 
-  function requestDocumentUpload() {
+  function scrollToDocumentManagement() {
+    window.setTimeout(() => {
+      documentManagementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }
+
+  function openDocumentManagement() {
     setTab('documents');
+    scrollToDocumentManagement();
+  }
+
+  function requestDocumentUpload() {
+    openDocumentManagement();
     quickDocumentInputRef.current?.click();
   }
 
@@ -1632,13 +1650,13 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
               documents={documentPreview}
               total={documents.length}
               canEdit={canEdit}
-              onOpenDocuments={() => setTab('documents')}
+              onOpenDocuments={openDocumentManagement}
             />
             <IntelligentCaseBlock beneficiary={beneficiary} documents={documents} deliveries={activeDeliveries} history={history} requests={portalRequests} notices={portalNotices} />
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section ref={documentManagementRef} className="scroll-mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <nav className="overflow-x-auto border-b border-slate-200 bg-white px-4 sm:px-6" aria-label="Secciones del expediente">
             <div className="flex min-w-max gap-1">
               {tabs.map(({ id, label, icon: Icon, count }) => (
