@@ -72,6 +72,14 @@ export function sanitizeInventoryMovement(payload, items = []) {
   };
 }
 
+export function sanitizeInitialInventoryQuantity(value) {
+  const quantity = Number(value || 0);
+  if (!Number.isFinite(quantity) || quantity < 0) {
+    throw new Error('La cantidad inicial no puede ser negativa.');
+  }
+  return quantity;
+}
+
 export class InventarioService {
   constructor({
     repository,
@@ -101,6 +109,36 @@ export class InventarioService {
     await this.audit(`Creo producto de inventario ${item.name}`.trim());
     await this.notifyInventoryChanged('item_created', { item: created });
     return created;
+  }
+
+  async createItemWithInitialStock(payload, options = {}) {
+    this.assertPermission('inventory', 'edit');
+    const initialQuantity = sanitizeInitialInventoryQuantity(options.initialQuantity);
+    const item = sanitizeInventoryItemPayload(payload);
+    assertUniqueInventoryItem(this.inventoryItems, item);
+
+    const created = await this.repository.createItem({
+      ...item,
+      ...(!this.hasSupabaseConfig ? { stock: 0 } : {})
+    });
+    await this.audit(`Creo producto de inventario ${item.name}`.trim());
+    await this.notifyInventoryChanged('item_created', { item: created });
+
+    if (initialQuantity <= 0) return created;
+
+    const { movement } = sanitizeInventoryMovement({
+      item_id: created.id,
+      movement_type: 'Entrada',
+      quantity: initialQuantity,
+      moved_at: options.moved_at || new Date().toISOString().slice(0, 10),
+      responsible: options.responsible || 'Sistema',
+      notes: options.notes || 'Entrada inicial al crear producto'
+    }, [...this.inventoryItems, created]);
+
+    const createdMovement = await this.repository.registerMovement(created, movement);
+    await this.audit(`Registro entrada inicial de inventario ${item.name}`.trim());
+    await this.notifyInventoryChanged('movement_created', { item: { ...created, stock: initialQuantity }, movement: createdMovement });
+    return { ...created, stock: initialQuantity };
   }
 
   async updateItem(id, payload) {

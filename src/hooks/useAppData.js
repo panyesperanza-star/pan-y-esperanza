@@ -2150,8 +2150,15 @@ export function useAppData(enabled = true, currentUser = null) {
       await audit('Elimino definitivamente una cita de agenda');
       await reload();
     },
-    createInventoryItem: async (payload) => {
-      const created = await inventarioService.createItem(payload);
+    createInventoryItem: async (payload, options = {}) => {
+      const created = Number(options.initialQuantity || 0) > 0
+        ? await inventarioService.createItemWithInitialStock(payload, {
+          initialQuantity: options.initialQuantity,
+          moved_at: options.moved_at,
+          responsible: cleanText(options.responsible) || currentUserName(),
+          notes: options.notes
+        })
+        : await inventarioService.createItem(payload);
       await reload();
       return created;
     },

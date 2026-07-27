@@ -1330,6 +1330,8 @@ as $$
   )
 $$;
 
+drop function if exists public.register_inventory_movement(uuid, date, text, text, numeric, text);
+
 create or replace function public.register_inventory_movement(
   p_item_id uuid,
   p_movement_type text,
@@ -1538,6 +1540,8 @@ grant execute on function public.can_app_permission(text, text) to authenticated
 grant execute on function public.can_beneficiary_portal_action(text) to authenticated;
 grant execute on function public.can_inventory_action(text) to authenticated;
 grant execute on function public.register_inventory_movement(uuid, text, numeric, date, text, text) to authenticated;
+
+notify pgrst, 'reload schema';
 
 grant select, insert, update on public.beneficiary_portal_accounts to authenticated;
 grant select, insert, update on public.beneficiary_portal_otps to authenticated;

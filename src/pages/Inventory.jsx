@@ -494,7 +494,21 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
                   await removeInventoryProductPhoto(previousPhotoUrl).catch((cleanupError) => console.warn('[InventoryProductPhoto] No se pudo limpiar la imagen sustituida', cleanupError));
                 }
               } else {
-                const created = await actions.createInventoryItem(payload);
+                const initialQuantity = Number(imageChange.initialQuantity || 0);
+                const responsible = `${currentUser?.first_name || ''} ${currentUser?.last_name || ''}`.trim() || currentUser?.email || 'Sistema';
+                const created = await actions.createInventoryItem(payload, {
+                  initialQuantity,
+                  moved_at: todayISO(),
+                  responsible,
+                  notes: initialQuantity > 0
+                    ? buildInventoryNotes('', {
+                      Referencia: nextInventoryReference('ENT', data),
+                      'Quién entrega': payload.donor || 'Alta de producto',
+                      'Quién recibe': responsible,
+                      Motivo: 'Cantidad inicial al crear producto'
+                    })
+                    : ''
+                });
                 if (imageChange.photoDataUrl && created?.id) {
                   uploaded = await uploadInventoryProductPhoto(created.id, imageChange.photoDataUrl);
                   await actions.updateInventoryItem(created.id, {
@@ -744,6 +758,7 @@ function InventoryActivityPanel({ timeline }) {
 
 function ProductForm({ initial, inventoryData, onSubmit }) {
   const parsedNotes = parseInventoryNotes(initial?.notes || '');
+  const isEditing = Boolean(initial?.id);
   const hasInitialPhoto = Boolean(initial?.photo_url || initial?.photo_data_url || initial?.image_url || initial?.photo || initial?.image || initial?.picture_url);
   const [form, setForm] = useState(() => ({
     name: initial?.name || '',
@@ -761,6 +776,7 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
     internal_document_number: parsedNotes.meta['Número interno'] || nextInventoryReference('INT', inventoryData),
     reference: parsedNotes.meta.Referencia || nextInventoryReference('INV', inventoryData),
     location: initial?.location || '',
+    initial_quantity: 0,
     unit: initial?.unit || 'unidades',
     low_stock_threshold: Number(initial?.low_stock_threshold || 0),
     notes: parsedNotes.visible
@@ -817,6 +833,11 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
       setError('La unidad de medida debe ser texto, por ejemplo: unidades, kg o litros.');
       return;
     }
+    const initialQuantity = Number(form.initial_quantity || 0);
+    if (!isEditing && (!Number.isFinite(initialQuantity) || initialQuantity < 0)) {
+      setError('La cantidad inicial no puede ser negativa.');
+      return;
+    }
     setSaving(true);
     try {
       await onSubmit({
@@ -837,7 +858,8 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
         })
       }, {
         photoDataUrl,
-        removePhoto
+        removePhoto,
+        initialQuantity: isEditing ? 0 : initialQuantity
       });
     } catch (submitError) {
       setError(normalizeInventoryError(submitError));
@@ -866,6 +888,17 @@ function ProductForm({ initial, inventoryData, onSubmit }) {
       <FormField label="Referencia"><input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} /></FormField>
       <DocumentFields form={form} update={update} />
       <FormField label="Ubicación"><input className={inputClass} value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
+      {isEditing ? (
+        <FormField label="Stock actual">
+          <input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={formatInventoryStockLabel(initial, { prefix: '' })} />
+          <p className="mt-1 text-xs text-slate-500">Para cambiar esta cantidad utiliza Nueva entrada, Nueva salida o Regularización.</p>
+        </FormField>
+      ) : (
+        <FormField label="Cantidad inicial" required>
+          <input className={inputClass} type="number" step="0.01" min="0" required value={form.initial_quantity} onChange={(event) => update('initial_quantity', Number(event.target.value))} />
+          <p className="mt-1 text-xs text-slate-500">Se registrará automáticamente como entrada inicial de inventario.</p>
+        </FormField>
+      )}
       <FormField label="Unidad de medida" required>
         <input className={inputClass} list="inventory-units" required value={form.unit} onChange={(event) => update('unit', event.target.value)} />
         <datalist id="inventory-units">{unitSuggestions.map((item) => <option key={item} value={item} />)}</datalist>

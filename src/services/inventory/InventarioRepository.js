@@ -28,7 +28,7 @@ export class InventarioRepository {
         p_item_id: movement.item_id,
         p_movement_type: movement.movement_type,
         p_quantity: movement.quantity,
-        p_moved_at: movement.moved_at,
+        p_moved_at: String(movement.moved_at || new Date().toISOString()).slice(0, 10),
         p_responsible: movement.responsible,
         p_notes: movement.notes
       });
