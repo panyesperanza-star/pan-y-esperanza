@@ -204,10 +204,14 @@ export class SupabaseRepository {
   }
 
   async remove(table, id) {
-    const { error } = await this.supabase
-      .from(table)
-      .delete()
-      .eq('id', id);
+    const { error } = await withSupabaseQueryTimeout(
+      this.supabase
+        .from(table)
+        .delete()
+        .eq('id', id),
+      table,
+      'remove'
+    );
     if (!error) return true;
     if (this.fallbackStore) return this.fallbackStore.remove(table, id);
     registerSupabaseRepositoryError('remove', table, error);

@@ -169,7 +169,9 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
       });
       setDeletionTarget(null);
     } catch (error) {
-      setPageError(normalizeInventoryError(error));
+      const normalizedError = normalizeInventoryError(error);
+      setPageError(normalizedError);
+      throw new Error(normalizedError);
     } finally {
       setDeletingId('');
     }
@@ -179,10 +181,25 @@ export function Inventory({ data, actions, currentUser, navigationTarget }) {
     setPageError('');
     setDeletingId(item.id);
     try {
+      const blockers = buildInventoryDeletionBlockers(item, data);
+      if (blockers.length > 0) {
+        throw new Error(`No puede eliminarse porque ${formatDeletionBlockers(blockers)}.`);
+      }
       await actions.deleteInventoryItem(item.id);
+      const photoUrl = getInventoryProductPhotoUrl(item);
+      if (photoUrl) {
+        await withInventoryOperationTimeout(
+          removeInventoryProductPhoto(photoUrl),
+          'La imagen del producto no se pudo eliminar de Storage a tiempo.'
+        ).catch((storageError) => {
+          console.warn('[InventoryProductPhoto] No se pudo limpiar la imagen del producto eliminado', storageError);
+        });
+      }
       setDeletionTarget(null);
     } catch (error) {
-      setPageError(normalizeInventoryError(error));
+      const normalizedError = normalizeInventoryError(error);
+      setPageError(normalizedError);
+      throw new Error(normalizedError);
     } finally {
       setDeletingId('');
     }
@@ -1372,6 +1389,70 @@ function buildInventoryRelationWarnings(item, data) {
   return relations;
 }
 
+function buildInventoryDeletionBlockers(item, data) {
+  if (!item) return [];
+  const id = item.id;
+  const blockers = [
+    {
+      count: (data.inventory_movements || []).filter((movement) => movement.item_id === id).length,
+      singular: 'movimiento asociado',
+      plural: 'movimientos asociados'
+    },
+    {
+      count: (data.deliveries || []).filter((delivery) => delivery.inventory_item_id === id).length,
+      singular: 'entrega vinculada',
+      plural: 'entregas vinculadas'
+    },
+    {
+      count: (data.social_value_events || []).filter((event) => event.inventory_item_id === id).length,
+      singular: 'evento de valor social',
+      plural: 'eventos de valor social'
+    },
+    {
+      count: (data.donations || []).filter((donation) => donation.inventory_item_id === id).length,
+      singular: 'donación vinculada',
+      plural: 'donaciones vinculadas'
+    },
+    {
+      count: (data.campana_productos || []).filter((relation) => relation.product_id === id).length,
+      singular: 'campaña vinculada',
+      plural: 'campañas vinculadas'
+    },
+    {
+      count: (data.agenda_operativa || []).filter((event) => event.product_id === id || (Array.isArray(event.product_ids) && event.product_ids.includes(id))).length,
+      singular: 'evento de agenda vinculado',
+      plural: 'eventos de agenda vinculados'
+    }
+  ];
+
+  return blockers.filter((blocker) => blocker.count > 0);
+}
+
+function formatDeletionBlockers(blockers = []) {
+  return blockers
+    .map((blocker) => `${blocker.count === 1 ? 'existe' : 'existen'} ${blocker.count} ${blocker.count === 1 ? blocker.singular : blocker.plural}`)
+    .join(', ');
+}
+
+function getInventoryProductPhotoUrl(item) {
+  return item?.photo_url || item?.image_url || item?.photo || item?.image || item?.picture_url || '';
+}
+
+function withInventoryOperationTimeout(promise, message, timeoutMs = 12000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => {
+      const error = new Error(message || 'La operación de inventario ha superado el tiempo de espera.');
+      error.code = 'INVENTORY_OPERATION_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    globalThis.clearTimeout(timeoutId);
+  });
+}
+
 function compareInventoryItems(a, b) {
   const severity = (item) => {
     const labels = getItemSignals(item).map((signal) => signal.label);
@@ -1474,6 +1555,10 @@ function formatQuantity(value) {
 function normalizeInventoryError(error) {
   const message = error?.message || '';
   if (message.includes('Stock insuficiente')) return message;
+  if (message.startsWith('No puede eliminarse porque')) return message;
+  if (error?.code === 'SUPABASE_QUERY_TIMEOUT' || error?.code === 'INVENTORY_OPERATION_TIMEOUT') {
+    return 'La operación ha tardado demasiado. No se ha podido confirmar la eliminación; inténtalo de nuevo.';
+  }
   if (message.includes('movimientos registrados') || error?.code === '23503') {
     return 'No se puede eliminar un producto con movimientos registrados.';
   }

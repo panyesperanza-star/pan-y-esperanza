@@ -18,6 +18,7 @@ export function DirectDeletionForm({ recordLabel, relations = [], onCancel, onCo
       await onConfirm();
     } catch (submitError) {
       setError(submitError.message || 'No se pudo eliminar definitivamente el registro.');
+    } finally {
       setSaving(false);
     }
   }

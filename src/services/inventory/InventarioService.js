@@ -158,7 +158,7 @@ export class InventarioService {
       await this.repository.removeItem(id);
     } catch (error) {
       if (error?.code === '23503') {
-        throw new Error('No se puede eliminar un producto con movimientos registrados.');
+        throw new Error('No puede eliminarse porque existen registros relacionados con este producto.');
       }
       throw error;
     }
