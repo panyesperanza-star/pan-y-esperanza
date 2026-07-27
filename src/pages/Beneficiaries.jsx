@@ -531,6 +531,14 @@ function normalizePhoneValue(value) {
   return digits.length >= 6 ? digits : '';
 }
 
+function phonesMatch(a, b) {
+  const left = normalizePhoneValue(a);
+  const right = normalizePhoneValue(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.length >= 9 && right.length >= 9 && left.slice(-9) === right.slice(-9);
+}
+
 function normalizeEmailValue(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -600,35 +608,57 @@ function withExistingFamilyMode(form, familyId) {
 function buildBeneficiaryFamilyAnalysis({ form, initial, families = [], beneficiaries = [] }) {
   const currentId = form.id || '';
   const activeFamilies = safeRows(families).filter((family) => !isArchivedFamily(family));
+  const beneficiaryRows = safeRows(beneficiaries);
   const cleanAddress = normalizeAddress(form.address_full);
   const initialAddress = normalizeAddress(initial?.address_full);
   const addressChanged = Boolean(form.id && cleanAddress && cleanAddress !== initialAddress);
-  const familyMembers = (familyId) => beneficiaries.filter((item) => item.id !== currentId && item.family_id === familyId);
+  const addressBeneficiaryMatches = cleanAddress
+    ? beneficiaryRows.filter((item) => item.id !== currentId && normalizeAddress(item.address_full) === cleanAddress)
+    : [];
+  const addressFamilyIds = new Set(addressBeneficiaryMatches.map((item) => item.family_id).filter(Boolean));
+  const familyMembers = (familyId) => beneficiaryRows.filter((item) => item.id !== currentId && item.family_id === familyId);
   const withMembers = (family) => ({
     ...family,
     members: familyMembers(family.id)
   });
-  const addressMatches = cleanAddress
-    ? activeFamilies.filter((family) => normalizeAddress(family.address) === cleanAddress).map(withMembers)
+  const directAddressMatches = cleanAddress
+    ? activeFamilies.filter((family) => normalizeAddress(family.address) === cleanAddress)
     : [];
+  const linkedAddressMatches = activeFamilies.filter((family) => addressFamilyIds.has(family.id));
+  const addressMatches = [...new Map([...directAddressMatches, ...linkedAddressMatches].map((family) => [family.id, family])).values()].map(withMembers);
   const addressMatchOutsideSelection = addressMatches.filter((family) => family.id !== form.family_id);
   const selectedMatchesAddress = Boolean(form.family_id && addressMatches.some((family) => family.id === form.family_id));
-  const shouldAskAddressDecision = Boolean(cleanAddress && addressMatchOutsideSelection.length && !selectedMatchesAddress);
+  const addressMembersWithKnownFamily = new Set(addressMatches.flatMap((family) => family.members.map((member) => member.id)));
+  const unlinkedAddressMembers = addressBeneficiaryMatches.filter((item) => !addressMembersWithKnownFamily.has(item.id));
+  const standaloneAddressMatch = unlinkedAddressMembers.length
+    ? {
+      id: `address:${cleanAddress}`,
+      family_code: 'Unidad familiar no creada',
+      responsible_name: unlinkedAddressMembers[0]?.full_name || 'Coincidencia por dirección',
+      address: form.address_full,
+      members: unlinkedAddressMembers,
+      isAddressOnlyMatch: true
+    }
+    : null;
+  const familyUnitMatches = standaloneAddressMatch ? [...addressMatchOutsideSelection, standaloneAddressMatch] : addressMatchOutsideSelection;
+  const shouldAskAddressDecision = Boolean(cleanAddress && familyUnitMatches.length && !selectedMatchesAddress);
   const cleanPhone = normalizePhoneValue(form.phone);
   const cleanEmail = normalizeEmailValue(form.email);
   const phoneMatches = cleanPhone
-    ? beneficiaries.filter((item) => item.id !== currentId && normalizePhoneValue(item.phone) === cleanPhone)
+    ? beneficiaryRows.filter((item) => item.id !== currentId && phonesMatch(item.phone, form.phone))
     : [];
   const emailMatches = cleanEmail
-    ? beneficiaries.filter((item) => item.id !== currentId && normalizeEmailValue(item.email) === cleanEmail)
+    ? beneficiaryRows.filter((item) => item.id !== currentId && normalizeEmailValue(item.email) === cleanEmail)
     : [];
   const nameMatches = form.full_name
-    ? beneficiaries.filter((item) => item.id !== currentId && isNameVerySimilar(item.full_name, form.full_name))
+    ? beneficiaryRows.filter((item) => item.id !== currentId && isNameVerySimilar(item.full_name, form.full_name))
     : [];
 
   return {
     addressMatches,
     addressMatchOutsideSelection,
+    addressBeneficiaryMatches,
+    familyUnitMatches,
     addressChanged,
     shouldAskAddressDecision,
     phoneMatches,
@@ -671,12 +701,12 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
     () => buildBeneficiaryFamilyAnalysis({ form, initial, families, beneficiaries }),
     [form, initial, families, beneficiaries]
   );
-  const familyMatchIds = familyAnalysis.addressMatchOutsideSelection.map((family) => family.id).join('|');
+  const familyMatchIds = familyAnalysis.familyUnitMatches.map((family) => family.id).join('|');
   const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
   const duplicateDocumentKey = duplicateDocument ? `${duplicateDocument.id}:${normalizeDocument(form.document_id)}` : '';
 
   useEffect(() => {
-    const matches = familyAnalysis.addressMatchOutsideSelection;
+    const matches = familyAnalysis.familyUnitMatches;
     if (!matches.length) {
       setFamilyAssociationChoice('');
       setSelectedFamilyMatchId('');
@@ -685,7 +715,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
     setSelectedFamilyMatchId((current) => (
       matches.some((family) => family.id === current) ? current : matches[0]?.id || ''
     ));
-    setFamilyAssociationChoice((current) => current || 'associate');
+    setFamilyAssociationChoice((current) => current || (matches[0]?.isAddressOnlyMatch ? '' : 'associate'));
   }, [familyMatchIds]);
 
   const update = (field, value) => {
@@ -801,8 +831,14 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
 
     const analysis = buildBeneficiaryFamilyAnalysis({ form: prepared, initial, families, beneficiaries });
     if (analysis.shouldAskAddressDecision) {
-      const selectedFamily = analysis.addressMatchOutsideSelection.find((family) => family.id === selectedFamilyMatchId) || analysis.addressMatchOutsideSelection[0];
-      if (familyAssociationChoice === 'associate') return withExistingFamilyMode(prepared, selectedFamily?.id);
+      const selectedFamily = analysis.familyUnitMatches.find((family) => family.id === selectedFamilyMatchId) || analysis.familyUnitMatches[0];
+      if (familyAssociationChoice === 'associate') {
+        if (selectedFamily?.isAddressOnlyMatch) {
+          setFormError('La dirección coincide con expedientes existentes, pero no hay una familia creada para asociar. Elige crear una nueva unidad familiar o no asociar por el momento.');
+          return { invalid: true };
+        }
+        return withExistingFamilyMode(prepared, selectedFamily?.id);
+      }
       if (familyAssociationChoice === 'new') return withNewFamilyMode(prepared, families);
       if (familyAssociationChoice === 'none') return withExistingFamilyMode(prepared, '');
       setFormError('Indica si quieres asociar esta persona a la unidad familiar detectada, crear una nueva o no asociarla por el momento.');
@@ -1041,14 +1077,15 @@ function FieldError({ children }) {
 }
 
 function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice, onSelectFamily, onOpenFamily }) {
-  if (!analysis?.addressMatchOutsideSelection?.length) return null;
-  const matches = analysis.addressMatchOutsideSelection;
+  if (!analysis?.familyUnitMatches?.length) return null;
+  const matches = analysis.familyUnitMatches;
   const selectedFamily = matches.find((family) => family.id === selectedFamilyId) || matches[0];
   const members = safeRows(selectedFamily?.members);
   const existingRecords = members
     .map((member) => [member.code, member.full_name].filter(Boolean).join(' - '))
     .filter(Boolean);
-  const selectedChoice = choice || 'associate';
+  const canAssociate = Boolean(selectedFamily && !selectedFamily.isAddressOnlyMatch);
+  const selectedChoice = choice || (canAssociate ? 'associate' : '');
 
   return (
     <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-4 text-sm text-slate-800 shadow-sm" role="status">
@@ -1069,8 +1106,9 @@ function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice
             className={inputClass}
             value={selectedFamily?.id || ''}
             onChange={(event) => {
+              const nextFamily = matches.find((family) => family.id === event.target.value);
               onSelectFamily(event.target.value);
-              onChoice('associate');
+              onChoice(nextFamily?.isAddressOnlyMatch ? '' : 'associate');
             }}
           >
             {matches.map((family) => (
@@ -1082,6 +1120,12 @@ function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice
         </div>
       )}
 
+      {selectedFamily?.isAddressOnlyMatch && (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-900">
+          Hay expedientes en la misma dirección, pero todavía no existe una unidad familiar creada para asociar.
+        </p>
+      )}
+
       <div className="mt-4 grid gap-3 rounded-lg border border-white/70 bg-white/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
         <FamilyMatchDetail label="Familia encontrada" value={`${selectedFamily?.family_code || '-'} · ${selectedFamily?.responsible_name || 'Sin responsable'}`} />
         <FamilyMatchDetail label="Dirección" value={selectedFamily?.address || 'Dirección no registrada'} />
@@ -1091,17 +1135,18 @@ function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice
 
       <div className="mt-4 grid gap-2">
         {[
-          ['associate', 'Asociar automáticamente a la familia existente'],
+          ['associate', 'Asociar automáticamente a la familia existente', !canAssociate],
           ['new', 'Crear una nueva unidad familiar'],
           ['none', 'No asociar por el momento']
-        ].map(([value, label]) => (
-          <label key={value} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 font-semibold transition ${selectedChoice === value ? 'border-brand-400 bg-white text-brand-900 shadow-sm' : 'border-white/70 bg-white/50 text-slate-700 hover:border-brand-200'}`}>
+        ].map(([value, label, disabled]) => (
+          <label key={value} className={`flex items-center gap-3 rounded-lg border px-3 py-2 font-semibold transition ${disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400' : selectedChoice === value ? 'cursor-pointer border-brand-400 bg-white text-brand-900 shadow-sm' : 'cursor-pointer border-white/70 bg-white/50 text-slate-700 hover:border-brand-200'}`}>
             <input
               type="radio"
               name="family-address-decision"
               className="h-4 w-4 accent-brand-700"
+              disabled={disabled}
               checked={selectedChoice === value}
-              onChange={() => onChoice(value)}
+              onChange={() => !disabled && onChoice(value)}
             />
             <span>{label}</span>
           </label>
@@ -1126,15 +1171,15 @@ function FamilyIntelligenceAlerts({ analysis }) {
   if (analysis.phoneMatches.length) {
     alerts.push({
       key: 'phone',
-      title: 'Teléfono ya utilizado',
-      text: `${analysis.phoneMatches.length} expediente(s) comparten este teléfono. No bloquea el guardado.`
+      title: '📞 Este número de teléfono ya está registrado.',
+      text: `Beneficiario: ${analysis.phoneMatches.slice(0, 3).map(formatBeneficiaryMatch).join(' / ')}. No bloquea el guardado.`
     });
   }
   if (analysis.emailMatches.length) {
     alerts.push({
       key: 'email',
       title: 'Correo ya utilizado',
-      text: `${analysis.emailMatches.length} expediente(s) comparten este correo. No bloquea el guardado.`
+      text: `Beneficiario: ${analysis.emailMatches.slice(0, 3).map(formatBeneficiaryMatch).join(' / ')}. No bloquea el guardado.`
     });
   }
   if (analysis.nameMatches.length) {
@@ -1159,6 +1204,10 @@ function FamilyIntelligenceAlerts({ analysis }) {
       </div>
     </div>
   );
+}
+
+function formatBeneficiaryMatch(item) {
+  return [item.code, item.full_name].filter(Boolean).join(' - ') || item.id || 'Expediente sin identificar';
 }
 
 function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
