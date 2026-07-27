@@ -332,7 +332,22 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
 
       {editing && (
         <Modal wide title={editing.id ? 'Editar beneficiario' : 'Nuevo beneficiario'} onClose={() => setEditing(null)}>
-          <BeneficiaryForm families={data.families} beneficiaries={data.beneficiaries} initial={editing} onSubmit={save} onCancel={() => setEditing(null)} canOverrideDuplicateDocument={canEdit} />
+          <BeneficiaryForm
+            families={data.families}
+            beneficiaries={data.beneficiaries}
+            initial={editing}
+            onSubmit={save}
+            onCancel={() => setEditing(null)}
+            canOverrideDuplicateDocument={canEdit}
+            onOpenFamily={(family) => {
+              setEditing(null);
+              onNavigate?.({
+                moduleId: 'beneficiaries',
+                familyId: family.id,
+                label: `Unidad familiar ${family.family_code || family.responsible_name || ''}`.trim()
+              });
+            }}
+          />
         </Modal>
       )}
       {profile && (
@@ -588,13 +603,17 @@ function buildBeneficiaryFamilyAnalysis({ form, initial, families = [], benefici
   const cleanAddress = normalizeAddress(form.address_full);
   const initialAddress = normalizeAddress(initial?.address_full);
   const addressChanged = Boolean(form.id && cleanAddress && cleanAddress !== initialAddress);
+  const familyMembers = (familyId) => beneficiaries.filter((item) => item.id !== currentId && item.family_id === familyId);
+  const withMembers = (family) => ({
+    ...family,
+    members: familyMembers(family.id)
+  });
   const addressMatches = cleanAddress
-    ? activeFamilies.filter((family) => normalizeAddress(family.address) === cleanAddress)
+    ? activeFamilies.filter((family) => normalizeAddress(family.address) === cleanAddress).map(withMembers)
     : [];
   const addressMatchOutsideSelection = addressMatches.filter((family) => family.id !== form.family_id);
   const selectedMatchesAddress = Boolean(form.family_id && addressMatches.some((family) => family.id === form.family_id));
   const shouldAskAddressDecision = Boolean(cleanAddress && addressMatchOutsideSelection.length && !selectedMatchesAddress);
-  const shouldCreateAutomaticFamily = Boolean(cleanAddress && !addressMatches.length && (!form.family_id || addressChanged || form.__family_mode === 'none'));
   const cleanPhone = normalizePhoneValue(form.phone);
   const cleanEmail = normalizeEmailValue(form.email);
   const phoneMatches = cleanPhone
@@ -612,14 +631,13 @@ function buildBeneficiaryFamilyAnalysis({ form, initial, families = [], benefici
     addressMatchOutsideSelection,
     addressChanged,
     shouldAskAddressDecision,
-    shouldCreateAutomaticFamily,
     phoneMatches,
     emailMatches,
     nameMatches
   };
 }
 
-function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel, canOverrideDuplicateDocument = false }) {
+function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel, canOverrideDuplicateDocument = false, onOpenFamily = null }) {
   const [form, setForm] = useState(() => ({
     ...emptyBeneficiary,
     ...initial,
@@ -640,7 +658,8 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
   const [saving, setSaving] = useState(false);
   const [documentConflict, setDocumentConflict] = useState(null);
   const [documentOverrideKey, setDocumentOverrideKey] = useState('');
-  const [pendingFamilyDecision, setPendingFamilyDecision] = useState(null);
+  const [familyAssociationChoice, setFamilyAssociationChoice] = useState('');
+  const [selectedFamilyMatchId, setSelectedFamilyMatchId] = useState('');
   const documentInputRef = useRef(null);
   const codeInputRef = useRef(null);
   const activeFamilies = safeRows(families).filter((family) => !isArchivedFamily(family));
@@ -652,8 +671,22 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
     () => buildBeneficiaryFamilyAnalysis({ form, initial, families, beneficiaries }),
     [form, initial, families, beneficiaries]
   );
+  const familyMatchIds = familyAnalysis.addressMatchOutsideSelection.map((family) => family.id).join('|');
   const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
   const duplicateDocumentKey = duplicateDocument ? `${duplicateDocument.id}:${normalizeDocument(form.document_id)}` : '';
+
+  useEffect(() => {
+    const matches = familyAnalysis.addressMatchOutsideSelection;
+    if (!matches.length) {
+      setFamilyAssociationChoice('');
+      setSelectedFamilyMatchId('');
+      return;
+    }
+    setSelectedFamilyMatchId((current) => (
+      matches.some((family) => family.id === current) ? current : matches[0]?.id || ''
+    ));
+    setFamilyAssociationChoice((current) => current || 'associate');
+  }, [familyMatchIds]);
 
   const update = (field, value) => {
     setFormError('');
@@ -768,9 +801,13 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
 
     const analysis = buildBeneficiaryFamilyAnalysis({ form: prepared, initial, families, beneficiaries });
     if (analysis.shouldAskAddressDecision) {
-      return { pendingDecision: { form: prepared, matches: analysis.addressMatchOutsideSelection } };
+      const selectedFamily = analysis.addressMatchOutsideSelection.find((family) => family.id === selectedFamilyMatchId) || analysis.addressMatchOutsideSelection[0];
+      if (familyAssociationChoice === 'associate') return withExistingFamilyMode(prepared, selectedFamily?.id);
+      if (familyAssociationChoice === 'new') return withNewFamilyMode(prepared, families);
+      if (familyAssociationChoice === 'none') return withExistingFamilyMode(prepared, '');
+      setFormError('Indica si quieres asociar esta persona a la unidad familiar detectada, crear una nueva o no asociarla por el momento.');
+      return { invalid: true };
     }
-    if (analysis.shouldCreateAutomaticFamily) prepared = withNewFamilyMode(prepared, families);
     return prepared;
   }
 
@@ -819,28 +856,11 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
     setFormError('');
     if (!validateUniqueFields()) return;
     const preparedForm = buildPreparedForm();
-    if (preparedForm?.pendingDecision) {
-      setPendingFamilyDecision(preparedForm.pendingDecision);
-      return;
-    }
+    if (preparedForm?.invalid) return;
     await submitPreparedForm(preparedForm);
   }
 
-  async function resolveFamilyDecision(decision) {
-    if (!pendingFamilyDecision) return;
-    const snapshot = pendingFamilyDecision.form;
-    const match = pendingFamilyDecision.matches[0];
-    setPendingFamilyDecision(null);
-    const preparedForm = decision === 'associate'
-      ? withExistingFamilyMode(snapshot, match?.id)
-      : decision === 'new'
-        ? withNewFamilyMode(snapshot, families)
-        : withExistingFamilyMode(snapshot, '');
-    await submitPreparedForm(buildPreparedForm(preparedForm, { skipFamilyDetection: true }));
-  }
-
   return (
-    <>
     <form className="space-y-5" onSubmit={submit}>
       {formError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">{formError}</div>}
       {documentConflict && (
@@ -867,6 +887,14 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
           )}
         </div>
       )}
+      <FamilyUnitDetectionBlock
+        analysis={familyAnalysis}
+        choice={familyAssociationChoice}
+        selectedFamilyId={selectedFamilyMatchId}
+        onChoice={setFamilyAssociationChoice}
+        onSelectFamily={setSelectedFamilyMatchId}
+        onOpenFamily={onOpenFamily}
+      />
       <FamilyIntelligenceAlerts analysis={familyAnalysis} />
 
       <FormSection icon={CircleUserRound} title="Identificación" description="Datos básicos de la persona atendida.">
@@ -992,30 +1020,6 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
         <Button type="submit" disabled={saving}>{saving ? 'Guardando…' : form.id ? 'Guardar cambios' : 'Crear beneficiario'}</Button>
       </div>
     </form>
-    {pendingFamilyDecision && (
-      <Modal title="Se ha detectado una posible unidad familiar." onClose={() => setPendingFamilyDecision(null)}>
-        <div className="space-y-4">
-          <p className="text-sm leading-6 text-slate-600">
-            Existe otra familia registrada con la misma dirección. Revisa la coincidencia antes de guardar el expediente.
-          </p>
-          <div className="space-y-2">
-            {pendingFamilyDecision.matches.map((family) => (
-              <div key={family.id} className="rounded-lg border border-brand-100 bg-brand-50/50 p-3">
-                <p className="font-bold text-ink">{family.family_code} · {family.responsible_name || 'Sin responsable'}</p>
-                <p className="mt-1 text-sm text-slate-600">{family.address || 'Dirección no registrada'}</p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">{[family.phone, family.email].filter(Boolean).join(' · ') || 'Sin contacto familiar'}</p>
-              </div>
-            ))}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Button type="button" onClick={() => resolveFamilyDecision('associate')}>Asociar a la familia existente</Button>
-            <Button type="button" variant="secondary" onClick={() => resolveFamilyDecision('new')}>Crear nueva familia</Button>
-            <Button type="button" variant="secondary" onClick={() => resolveFamilyDecision('none')}>No asociar</Button>
-          </div>
-        </div>
-      </Modal>
-    )}
-    </>
   );
 }
 
@@ -1034,6 +1038,86 @@ function FormSection({ icon: Icon, title, description, children }) {
 
 function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
+}
+
+function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice, onSelectFamily, onOpenFamily }) {
+  if (!analysis?.addressMatchOutsideSelection?.length) return null;
+  const matches = analysis.addressMatchOutsideSelection;
+  const selectedFamily = matches.find((family) => family.id === selectedFamilyId) || matches[0];
+  const members = safeRows(selectedFamily?.members);
+  const existingRecords = members
+    .map((member) => [member.code, member.full_name].filter(Boolean).join(' - '))
+    .filter(Boolean);
+  const selectedChoice = choice || 'associate';
+
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-4 text-sm text-slate-800 shadow-sm" role="status">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-base font-black text-ink">🏠 Posible unidad familiar detectada</p>
+          <p className="mt-1 text-slate-600">La dirección coincide con una unidad familiar existente. Decide cómo debe quedar vinculado este expediente antes de guardar.</p>
+        </div>
+        <Button type="button" variant="secondary" onClick={() => selectedFamily && onOpenFamily?.(selectedFamily)} disabled={!selectedFamily || !onOpenFamily}>
+          Ver expediente familiar
+        </Button>
+      </div>
+
+      {matches.length > 1 && (
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-black uppercase tracking-wide text-brand-800">Elegir familia compatible</label>
+          <select
+            className={inputClass}
+            value={selectedFamily?.id || ''}
+            onChange={(event) => {
+              onSelectFamily(event.target.value);
+              onChoice('associate');
+            }}
+          >
+            {matches.map((family) => (
+              <option key={family.id} value={family.id}>
+                {family.family_code || 'Familia sin código'} - {family.responsible_name || 'Sin responsable'}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 rounded-lg border border-white/70 bg-white/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <FamilyMatchDetail label="Familia encontrada" value={`${selectedFamily?.family_code || '-'} · ${selectedFamily?.responsible_name || 'Sin responsable'}`} />
+        <FamilyMatchDetail label="Dirección" value={selectedFamily?.address || 'Dirección no registrada'} />
+        <FamilyMatchDetail label="Número de miembros" value={`${members.length} expediente${members.length === 1 ? '' : 's'}`} />
+        <FamilyMatchDetail label="Expedientes existentes" value={existingRecords.length ? existingRecords.join(' / ') : 'Sin expedientes vinculados'} />
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {[
+          ['associate', 'Asociar automáticamente a la familia existente'],
+          ['new', 'Crear una nueva unidad familiar'],
+          ['none', 'No asociar por el momento']
+        ].map(([value, label]) => (
+          <label key={value} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 font-semibold transition ${selectedChoice === value ? 'border-brand-400 bg-white text-brand-900 shadow-sm' : 'border-white/70 bg-white/50 text-slate-700 hover:border-brand-200'}`}>
+            <input
+              type="radio"
+              name="family-address-decision"
+              className="h-4 w-4 accent-brand-700"
+              checked={selectedChoice === value}
+              onChange={() => onChoice(value)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FamilyMatchDetail({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-semibold text-ink">{value}</p>
+    </div>
+  );
 }
 
 function FamilyIntelligenceAlerts({ analysis }) {
