@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion, isPlatformOwner, isSystemSuperadmin, verifyCurrentUserPassword } from '../lib/auth';
 import { dataStore } from '../lib/dataStore';
+import { buildDocumentNotesWithAutomationMeta, readDocumentAutomationMeta } from '../lib/documentAutomation';
 import { sendEmailViaApi } from '../lib/emailClient';
 import { normalize } from '../lib/formatters';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
@@ -1876,6 +1877,28 @@ export function useAppData(enabled = true, currentUser = null) {
         updatedRequest = await repositoryUpdate('beneficiary_portal_profile_updates', reference.request_id, updatePayload);
       }
 
+      if (reference.document_id) {
+        const document = (appData.beneficiary_documents || []).find((item) => item.id === reference.document_id);
+        if (!document) throw new Error('El documento vinculado al caso no existe.');
+        const currentMeta = readDocumentAutomationMeta(document);
+        const nextMeta = {
+          ...currentMeta,
+          version: 1,
+          updatedAt: now,
+          socialCare: {
+            ...(currentMeta.socialCare || {}),
+            status: status || 'pending',
+            notes,
+            updatedAt: now,
+            reviewedBy: currentUser?.id || null,
+            ...(isResolved ? { resolvedAt: now } : {})
+          }
+        };
+        await beneficiarioService.updateDocument(reference.document_id, {
+          notes: buildDocumentNotesWithAutomationMeta(document, nextMeta)
+        });
+      }
+
       const relatedNotifications = (appData.notificaciones || []).filter((notification) => isRelatedSocialCareNotification(notification, reference));
       for (const notification of relatedNotifications) {
         const metadata = {
@@ -1912,7 +1935,7 @@ export function useAppData(enabled = true, currentUser = null) {
         });
       }
 
-      await audit(`Centro de Atencion Social: actualizo caso ${reference.request_id || reference.delivery_id || reference.notification_id || ''}`.trim());
+      await audit(`Centro de Atencion Social: actualizo caso ${reference.request_id || reference.delivery_id || reference.document_id || reference.notification_id || ''}`.trim());
       await reload();
       return updatedRequest;
     },
@@ -2687,5 +2710,7 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
     || (reference.request_id && metadata.request_id === reference.request_id)
     || (reference.delivery_id && metadata.delivery_id === reference.delivery_id)
     || (reference.delivery_id && notification.entity_type === 'delivery' && notification.entity_id === reference.delivery_id)
+    || (reference.document_id && metadata.document_id === reference.document_id)
+    || (reference.document_id && notification.entity_type === 'beneficiary_document' && notification.entity_id === reference.document_id)
   );
 }

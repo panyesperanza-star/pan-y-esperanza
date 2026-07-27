@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { documentAttentionItems, documentDisplayName, documentVisibleNotes, readDocumentAutomationMeta } from '../lib/documentAutomation';
 import { inputClass } from '../components/FormField';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
@@ -30,6 +31,7 @@ const ORIGIN_OPTIONS = [
   { value: '', label: 'Todos los origenes' },
   { value: 'beneficiary_portal', label: 'Portal del Beneficiario' },
   { value: 'attendance', label: 'Asistencia a entregas' },
+  { value: 'documentation', label: 'Documentacion' },
   { value: 'assistant', label: 'Asistente' },
   { value: 'future', label: 'Futuros portales' }
 ];
@@ -59,8 +61,8 @@ export function SocialCareCenter({ data, actions, currentUser, navigationTarget,
   useEffect(() => {
     if (navigationTarget?.moduleId !== 'social-care') return;
     const targetId = navigationTarget.caseId || navigationTarget.requestId || navigationTarget.itemId;
-    if (targetId && cases.some((item) => item.id === targetId || item.requestId === targetId || item.deliveryId === targetId)) {
-      const match = cases.find((item) => item.id === targetId || item.requestId === targetId || item.deliveryId === targetId);
+    if (targetId && cases.some((item) => item.id === targetId || item.requestId === targetId || item.deliveryId === targetId || item.documentId === targetId)) {
+      const match = cases.find((item) => item.id === targetId || item.requestId === targetId || item.deliveryId === targetId || item.documentId === targetId);
       setSelectedId(match.id);
     }
   }, [cases, navigationTarget]);
@@ -87,6 +89,11 @@ export function SocialCareCenter({ data, actions, currentUser, navigationTarget,
   function openDelivery(caseItem) {
     if (!caseItem?.deliveryId) return;
     onNavigate?.({ moduleId: 'deliveries', itemId: caseItem.deliveryId });
+  }
+
+  function openDocument(caseItem) {
+    if (!caseItem?.beneficiaryId || !caseItem?.documentId) return;
+    onNavigate?.({ moduleId: 'beneficiaries', profileId: caseItem.beneficiaryId, tab: 'documents', documentId: caseItem.documentId });
   }
 
   return (
@@ -183,6 +190,7 @@ export function SocialCareCenter({ data, actions, currentUser, navigationTarget,
             busy={busy}
             onOpenBeneficiary={openBeneficiary}
             onOpenDelivery={openDelivery}
+            onOpenDocument={openDocument}
             onUpdate={updateCase}
           />
         </aside>
@@ -237,7 +245,7 @@ function CaseCard({ caseItem, selected, onSelect }) {
   );
 }
 
-function CarePanel({ caseItem, canEdit, busy, onOpenBeneficiary, onOpenDelivery, onUpdate }) {
+function CarePanel({ caseItem, canEdit, busy, onOpenBeneficiary, onOpenDelivery, onOpenDocument, onUpdate }) {
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('pending');
   const [notifyUser, setNotifyUser] = useState(false);
@@ -300,6 +308,11 @@ function CarePanel({ caseItem, canEdit, busy, onOpenBeneficiary, onOpenDelivery,
               <PackageCheck size={16} /> Abrir entrega
             </Button>
           </div>
+          {caseItem.documentId && (
+            <Button variant="secondary" onClick={() => onOpenDocument(caseItem)}>
+              <FileText size={16} /> Abrir documento
+            </Button>
+          )}
           <div className="grid gap-2 sm:grid-cols-3">
             <Button variant="secondary" className="w-full" onClick={() => tel && window.open(tel, '_self')} disabled={!tel}>
               <Phone size={16} /> Llamar
@@ -446,13 +459,75 @@ function buildCases(data) {
       };
     });
 
-  return [...requestCases, ...attendanceCases]
+  const documentCases = documentAttentionItems(data)
+    .map(({ document, status, meta, daysUntilExpiry }) => {
+      const beneficiary = beneficiariesById.get(document.beneficiary_id) || null;
+      const socialCare = meta.socialCare || {};
+      const caseStatus = normalizeRequestStatus(socialCare.status || 'pending');
+      return {
+        id: `document-${document.id}`,
+        requestId: '',
+        deliveryId: '',
+        documentId: document.id,
+        beneficiaryId: document.beneficiary_id,
+        beneficiaryName: beneficiary?.full_name || 'Beneficiario',
+        phone: beneficiary?.phone || '',
+        email: beneficiary?.email || '',
+        origin: 'documentation',
+        originLabel: 'Documentacion',
+        title: documentCaseTitle(status),
+        message: documentCaseMessage(document, status, daysUntilExpiry),
+        notes: socialCare.notes || documentVisibleNotes(document) || '',
+        requestedAt: meta.updatedAt || documentUpdatedAt(document),
+        resolvedAt: socialCare.resolvedAt || null,
+        status: caseStatus,
+        priority: documentCasePriority(status, caseStatus),
+        deliveryLabel: documentDisplayName(document),
+        summary: buildCaseSummary({ data, beneficiary, delivery: null, request: null, notification: null }),
+        reference: {
+          kind: 'document',
+          document_id: document.id,
+          beneficiary_id: document.beneficiary_id
+        }
+      };
+    });
+
+  return [...requestCases, ...attendanceCases, ...documentCases]
     .sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || '')));
 }
 
 function isAttentionRequest(request) {
   const changes = request?.requested_changes || {};
   return Boolean(changes.request_type || changes.message || request?.notes);
+}
+
+function documentCaseTitle(status) {
+  if (status === 'Caducado') return 'Documento caducado';
+  if (status === 'Rechazado') return 'Documento rechazado';
+  if (status === 'Renovación solicitada') return 'Renovación solicitada';
+  if (status === 'Próximo a caducar') return 'Documento próximo a caducar';
+  return 'Seguimiento documental';
+}
+
+function documentCaseMessage(document, status, daysUntilExpiry) {
+  const name = documentDisplayName(document);
+  if (status === 'Caducado') return `${name} está caducado y requiere revisión del equipo.`;
+  if (status === 'Rechazado') return `${name} fue rechazado. Revise observaciones y siguiente paso.`;
+  if (status === 'Renovación solicitada') return `Se ha solicitado la renovación de ${name}.`;
+  if (status === 'Próximo a caducar') return `${name} caduca${Number.isFinite(daysUntilExpiry) ? ` en ${daysUntilExpiry} días` : ' pronto'}.`;
+  return `${name} requiere seguimiento documental.`;
+}
+
+function documentCasePriority(status, caseStatus) {
+  if (caseStatus === 'applied' || caseStatus === 'cancelled') return 'normal';
+  if (['Caducado', 'Rechazado'].includes(status)) return 'urgent';
+  if (['Renovación solicitada', 'Próximo a caducar'].includes(status)) return 'warning';
+  return 'normal';
+}
+
+function documentUpdatedAt(document) {
+  const meta = readDocumentAutomationMeta(document);
+  return meta.updatedAt || document.updated_at || document.reviewed_at || document.uploaded_at || document.created_at;
 }
 
 function filterCases(cases, filters) {
@@ -481,7 +556,7 @@ function matchesQuickFilter(item, quick) {
   if (quick === 'today') return isToday(item.requestedAt);
   if (quick === 'pending') return item.status === 'pending';
   if (quick === 'assistant') return item.origin === 'assistant';
-  if (quick === 'beneficiaries') return ['beneficiary_portal', 'attendance', 'assistant'].includes(item.origin);
+  if (quick === 'beneficiaries') return ['beneficiary_portal', 'attendance', 'assistant', 'documentation'].includes(item.origin);
   if (quick === 'collaborators') return item.origin === 'collaborator';
   if (quick === 'donors') return item.origin === 'donor';
   if (quick === 'volunteers') return item.origin === 'volunteer';
@@ -554,6 +629,7 @@ function originForRequest(changes) {
 function originLabel(origin) {
   if (origin === 'assistant') return 'Asistente';
   if (origin === 'attendance') return 'Asistencia a entregas';
+  if (origin === 'documentation') return 'Documentacion';
   if (origin === 'future') return 'Futuros portales';
   return 'Portal del Beneficiario';
 }

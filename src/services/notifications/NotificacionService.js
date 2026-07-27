@@ -280,6 +280,10 @@ export class NotificacionService {
       mensaje: `Se ha registrado documentacion en el expediente del beneficiario.`,
       entity_type: 'beneficiary_document',
       entity_id: target.id || '',
+      metadata: {
+        document_id: target.id || '',
+        beneficiary_id: target.beneficiary_id || payload?.beneficiary_id || ''
+      },
       action_url: '/beneficiaries',
       dedupe_key: target.id ? `beneficiary-document-${type || 'updated'}-${target.id}` : ''
     });

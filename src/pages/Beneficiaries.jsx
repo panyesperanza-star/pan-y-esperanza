@@ -357,6 +357,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
               data={data}
               actions={actions}
               currentUser={currentUser}
+              navigationTarget={navigationTarget}
               beneficiary={profile}
               deliveries={safeRows(data.deliveries).filter((item) => item.beneficiary_id === profile.id)}
               canEdit={canEdit}
@@ -1306,7 +1307,7 @@ function formatBeneficiaryMatch(item) {
   return [item.code, item.full_name].filter(Boolean).join(' - ') || item.id || 'Expediente sin identificar';
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
+function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
@@ -1359,10 +1360,18 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   const canCreateBeneficiary = canDo(currentUser, 'beneficiaries', 'create');
   const timeline = buildProfessionalTimeline({ beneficiary, deliveries: activeDeliveries, documents, history });
   const documentPreview = documents.slice(0, 4);
+  const documentIssue = beneficiaryDocumentIssue(documents);
 
   useEffect(() => {
     setTemporaryPortalPin('');
   }, [beneficiary.id]);
+
+  useEffect(() => {
+    if (navigationTarget?.moduleId !== 'beneficiaries') return;
+    if (navigationTarget.profileId && navigationTarget.profileId !== beneficiary.id) return;
+    if (navigationTarget.tab) setTab(navigationTarget.tab);
+    if (navigationTarget.documentId) setTab('documents');
+  }, [beneficiary.id, navigationTarget]);
 
   const tabs = [
     { id: 'overview', label: 'Resumen', icon: CircleUserRound },
@@ -1556,6 +1565,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
         family={family}
         deliveries={activeDeliveries}
         history={history}
+        documentIssue={documentIssue}
         canEdit={canEdit}
         canDelete={canDelete}
         canCreateDelivery={canCreateDelivery}
@@ -1655,7 +1665,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
               />
             )}
             {tab === 'deliveries' && <DeliveriesPanel deliveries={profileDeliveries} beneficiary={beneficiary} allDeliveries={allDeliveries} />}
-            {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} onNotice={setNotice} />}
+            {tab === 'documents' && <DocumentsPanel documents={documents} beneficiary={beneficiary} actions={actions} canEdit={canEdit} canDelete={canDelete} initialDocumentId={navigationTarget?.documentId || ''} onNotice={setNotice} />}
             {tab === 'emails' && <EmailsPanel emailLogs={emailLogs} />}
             {tab === 'social' && <SocialHistory history={history} deliveries={activeDeliveries} beneficiary={beneficiary} actions={actions} currentUser={currentUser} canEdit={canEdit} />}
           </div>
@@ -1718,7 +1728,7 @@ function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliverie
   );
 }
 
-function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
+function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canCreateDelivery, onEdit, onWhatsApp, onEmail, onNewAppointment, onSummaryPdf, onSocialReport, onDelivery, onPhotoChange }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const priority = socialPriorityLabel(beneficiary, history);
   const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
@@ -1736,6 +1746,7 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, canEd
                 <StatusBadge active={beneficiary.is_active} />
                 <SocialSituationBadge value={beneficiary.situation} />
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${priorityBadgeTone(priority)}`}>Prioridad {priority}</span>
+                {documentIssue && <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${documentIssue.tone}`}>{documentIssue.label}</span>}
               </div>
               <h2 className="mt-2 break-words text-2xl font-bold tracking-tight text-ink sm:text-3xl">{beneficiary.full_name}</h2>
               <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
@@ -2072,6 +2083,8 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
             </div>
           </article>
 
+          <AssistantDocumentationBlock insights={summary.documentInsights} onOpenRecommendations={() => setActivePanel('recommendations')} />
+
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.48fr)]">
             <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
               <div className="flex items-center justify-between gap-3">
@@ -2185,6 +2198,36 @@ function IntelligentCaseBlock({ beneficiary, documents, deliveries, history, req
         </aside>
       </div>
     </section>
+  );
+}
+
+function AssistantDocumentationBlock({ insights, onOpenRecommendations }) {
+  const items = safeRows(insights?.items).slice(0, 3);
+  const hasItems = items.length > 0;
+  return (
+    <article className={`rounded-2xl border p-3 shadow-sm ${hasItems ? 'border-amber-100 bg-amber-50/80' : 'border-brand-100 bg-brand-50/70'}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black uppercase tracking-wide text-brand-700">Documentacion</p>
+          <h4 className="mt-1 text-sm font-black text-ink">{insights?.headline || 'Sin incidencias documentales destacadas.'}</h4>
+          <div className="mt-2 grid gap-1.5">
+            {items.map((item) => (
+              <p key={item.key} className="line-clamp-1 text-xs font-bold text-slate-700">• {item.text}</p>
+            ))}
+            {!items.length && <p className="text-xs font-bold text-slate-600">No hay documentos caducados, rechazados o con renovacion pendiente.</p>}
+          </div>
+        </div>
+        <div className="shrink-0 rounded-xl bg-white px-3 py-2 text-left ring-1 ring-slate-100 lg:min-w-52">
+          <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
+          <p className="mt-1 text-xs font-black text-ink">{insights?.action || 'Mantener revision ordinaria'}</p>
+          {hasItems && (
+            <button type="button" onClick={onOpenRecommendations} className="focus-ring mt-2 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">
+              Ver recomendaciones
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -2384,6 +2427,7 @@ function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliv
   const latestDelivery = getLatestPastDelivery(deliveries);
   const nextDelivery = getNextFutureDelivery(deliveries);
   const documentSummary = summarizeDocuments(documents);
+  const documentInsights = buildAssistantDocumentInsights(documents);
   const attendanceSummary = summarizeAttendance(deliveries);
   const openRequests = requests.filter(isOpenPortalRequest);
   const lastInteraction = getLastInteraction({ deliveries, documents, history, requests });
@@ -2423,6 +2467,7 @@ function buildBeneficiaryIntelligentSummary({ beneficiary, documents = [], deliv
     nextSteps,
     memory,
     status,
+    documentInsights,
     focusItems,
     verifiedSources
   };
@@ -2447,10 +2492,70 @@ function buildAssistantNarrative({ beneficiary, latestDelivery, nextDelivery, do
   return `${activeLabel}; ${joined}. ${latestLabel} ${nextLabel} Estado documental: ${documentSummary}. ${requestLabel} Estado general calculado: ${status.label}. Observaciones relevantes: ${observations}`;
 }
 
+function buildAssistantDocumentInsights(documents = []) {
+  const items = safeRows(documents)
+    .map((doc) => {
+      const status = intelligentDocumentStatus(doc);
+      const days = daysUntilDocumentExpiry(doc);
+      return { doc, status, days };
+    })
+    .filter((item) => ['Caducado', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar', 'Pendiente de revisión'].includes(item.status));
+
+  const recommendations = items.map((item) => {
+    const name = documentDisplayName(item.doc);
+    if (item.status === 'Próximo a caducar') {
+      return {
+        key: `doc-expiring-${item.doc.id}`,
+        text: `${name} caduca${Number.isFinite(item.days) ? ` en ${item.days} días` : ' pronto'}.`,
+        action: 'Solicitar renovación.'
+      };
+    }
+    if (item.status === 'Caducado') {
+      return {
+        key: `doc-expired-${item.doc.id}`,
+        text: `${name} está caducado.`,
+        action: 'Solicitar renovación.'
+      };
+    }
+    if (item.status === 'Rechazado') {
+      return {
+        key: `doc-rejected-${item.doc.id}`,
+        text: `${name} fue rechazado.`,
+        action: 'Revisar observaciones y solicitar nueva versión.'
+      };
+    }
+    if (item.status === 'Renovación solicitada') {
+      return {
+        key: `doc-renewal-${item.doc.id}`,
+        text: `${name} tiene una renovación solicitada pendiente.`,
+        action: 'Hacer seguimiento de la renovación.'
+      };
+    }
+    return {
+      key: `doc-review-${item.doc.id}`,
+      text: `${name} está pendiente de revisión.`,
+      action: 'Revisar documento.'
+    };
+  });
+
+  const critical = items.filter((item) => ['Caducado', 'Rechazado'].includes(item.status)).length;
+  const pending = items.length;
+  return {
+    items: recommendations,
+    headline: critical
+      ? `${critical} incidencia(s) documental(es) crítica(s).`
+      : pending
+        ? `${pending} documento(s) requieren seguimiento.`
+        : 'Documentación sin alertas prioritarias.',
+    action: recommendations[0]?.action || 'Mantener revisión ordinaria.'
+  };
+}
+
 function buildAssistantRecommendations({ beneficiary, documents = [], deliveries = [], requests = [], risks = [], nextDelivery }) {
   const recommendations = [];
-  const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
-  const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
+  const documentStatuses = documents.map((doc) => intelligentDocumentStatus(doc));
+  const pendingDocuments = documentStatuses.filter((status) => ['Pendiente de revisión', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar'].includes(status)).length;
+  const expiredDocuments = documentStatuses.filter((status) => status === 'Caducado').length;
   const openRequests = requests.filter(isOpenPortalRequest).length;
   const nextAttendance = normalize(nextDelivery?.attendance_status);
   if (pendingDocuments || expiredDocuments) {
@@ -2506,7 +2611,7 @@ function buildAssistantNextSteps({ documents = [], requests = [], nextDelivery, 
   requests = safeRows(requests);
   recommendations = safeRows(recommendations);
   const steps = [];
-  const hasPendingDocuments = documents.some((doc) => ['Pendiente', 'Caducado'].includes(documentStatus(doc)));
+  const hasPendingDocuments = documents.some((doc) => ['Pendiente de revisión', 'Caducado', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar'].includes(intelligentDocumentStatus(doc)));
   if (nextDelivery) {
     steps.push({
       title: 'Confirmar asistencia',
@@ -2596,9 +2701,9 @@ function buildAssistantChronology({ beneficiary, deliveries = [], documents = []
       key: `assistant-document-${doc.id}`,
       date: doc.uploaded_at || doc.created_at,
       title: 'Documento',
-      detail: [doc.document_type || 'Documento', documentStatus(doc), doc.file_name].filter(Boolean).join(' · '),
+      detail: [doc.document_type || 'Documento', intelligentDocumentStatus(doc), doc.file_name].filter(Boolean).join(' · '),
       icon: '📄',
-      tone: documentStatus(doc) === 'Pendiente' ? 'bg-amber-50 text-amber-700' : 'bg-violet-50 text-violet-700'
+      tone: ['Pendiente de revisión', 'Caducado', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar'].includes(intelligentDocumentStatus(doc)) ? 'bg-amber-50 text-amber-700' : 'bg-violet-50 text-violet-700'
     })),
     ...history.map((item) => ({
       key: `assistant-history-${item.id}`,
@@ -2641,7 +2746,7 @@ function buildAssistantMemory({ history = [], documents = [], requests = [] }) {
       key: `memory-doc-${latestDocument.id}`,
       when: latestDocument.uploaded_at || latestDocument.created_at ? formatDate(latestDocument.uploaded_at || latestDocument.created_at) : 'Sin fecha',
       recommendation: 'Se recomendó revisar documentación.',
-      result: `Estado actual: ${documentStatus(latestDocument)}.`
+      result: `Estado actual: ${intelligentDocumentStatus(latestDocument)}.`
     });
   }
   const latestRequest = [...requests].sort((a, b) => String(b.updated_at || b.requested_at || b.created_at || '').localeCompare(String(a.updated_at || a.requested_at || a.created_at || '')))[0];
@@ -2775,13 +2880,16 @@ function deliverySummaryLabel(delivery) {
 function summarizeDocuments(documents = []) {
   documents = safeRows(documents);
   if (!documents.length) return 'Sin documentacion registrada.';
-  const pending = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
-  const expired = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
-  const reviewed = documents.filter((doc) => documentStatus(doc) === 'Revisado').length;
+  const statuses = documents.map((doc) => intelligentDocumentStatus(doc));
+  const pending = statuses.filter((status) => ['Pendiente de revisión', 'Rechazado', 'Renovación solicitada'].includes(status)).length;
+  const expired = statuses.filter((status) => status === 'Caducado').length;
+  const expiring = statuses.filter((status) => status === 'Próximo a caducar').length;
+  const reviewed = statuses.filter((status) => ['Vigente', 'No requerido'].includes(status)).length;
   const parts = [];
   if (reviewed) parts.push(`${reviewed} revisado(s)`);
   if (pending) parts.push(`${pending} pendiente(s)`);
   if (expired) parts.push(`${expired} caducado(s)`);
+  if (expiring) parts.push(`${expiring} próximo(s) a caducar`);
   return parts.join(' · ') || `${documents.length} documento(s) registrados.`;
 }
 
@@ -2905,8 +3013,9 @@ function detectBeneficiaryObjectiveRisks({ beneficiary, documents = [], deliveri
   deliveries = safeRows(deliveries);
   requests = safeRows(requests);
   const risks = [];
-  const pendingDocuments = documents.filter((doc) => documentStatus(doc) === 'Pendiente').length;
-  const expiredDocuments = documents.filter((doc) => documentStatus(doc) === 'Caducado').length;
+  const documentStatuses = documents.map((doc) => intelligentDocumentStatus(doc));
+  const pendingDocuments = documentStatuses.filter((status) => ['Pendiente de revisión', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar'].includes(status)).length;
+  const expiredDocuments = documentStatuses.filter((status) => status === 'Caducado').length;
   const unavailableCount = deliveries.filter((delivery) => normalize(delivery.attendance_status) === 'unavailable').length;
   const needsContactCount = deliveries.filter((delivery) => normalize(delivery.attendance_status) === 'needs_contact').length;
   const openRequests = requests.filter(isOpenPortalRequest).length;
@@ -3418,7 +3527,7 @@ function DeliveriesPanel({ deliveries, beneficiary, allDeliveries }) {
   );
 }
 
-function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, uploadTrigger = 0, onNotice = () => {} }) {
+function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, uploadTrigger = 0, initialDocumentId = '', onNotice = () => {} }) {
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0]);
   const [uploading, setUploading] = useState(false);
   const [showClassicDocuments, setShowClassicDocuments] = useState(false);
@@ -3449,6 +3558,14 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
       setSelectedDocument(null);
     }
   }, [documents, selectedDocument]);
+
+  useEffect(() => {
+    if (!initialDocumentId) return;
+    const targetDocument = safeRows(documents).find((doc) => doc.id === initialDocumentId);
+    if (!targetDocument) return;
+    setShowClassicDocuments(true);
+    setSelectedDocument(targetDocument);
+  }, [documents, initialDocumentId]);
 
   async function uploadDocument(event) {
     const file = event.target.files?.[0];
@@ -3896,6 +4013,23 @@ function documentHealthText({ total, counts, health }) {
   return `Salud documental ${health}%. No hay acciones urgentes.`;
 }
 
+function beneficiaryDocumentIssue(documents = []) {
+  const statuses = safeRows(documents).map((doc) => intelligentDocumentStatus(doc));
+  if (statuses.some((status) => ['Caducado', 'Rechazado'].includes(status))) {
+    return {
+      label: '🔴 Documentación crítica',
+      tone: 'bg-red-50 text-red-800 ring-red-100'
+    };
+  }
+  if (statuses.some((status) => ['Pendiente de revisión', 'Renovación solicitada', 'Próximo a caducar'].includes(status))) {
+    return {
+      label: '🟡 Documentación pendiente',
+      tone: 'bg-amber-50 text-amber-800 ring-amber-100'
+    };
+  }
+  return null;
+}
+
 function buildDocumentRecommendedActions(items, counts) {
   if (!items.length) {
     return [{ key: 'request-documents', title: 'Solicitar documentación', detail: 'El expediente no tiene documentos registrados.' }];
@@ -3926,13 +4060,14 @@ function buildDocumentRecommendedActions(items, counts) {
 
 function intelligentDocumentStatus(doc) {
   const meta = readDocumentAutomationMeta(doc);
+  const metaStatus = normalize(meta.status);
   const statusText = normalize([doc.status, doc.review_status, doc.portal_status, doc.notes].filter(Boolean).join(' '));
   const daysUntilExpiry = daysUntilDocumentExpiry(doc);
-  if (meta.status === 'No requerido') return 'No requerido';
-  if (meta.status === 'Rechazado') return 'Rechazado';
-  if (meta.status === 'Renovación solicitada') return 'Renovación solicitada';
-  if (meta.status === 'Pendiente de revisión') return 'Pendiente de revisión';
-  if (meta.status === 'Vigente') {
+  if (metaStatus === 'no requerido') return 'No requerido';
+  if (metaStatus === 'rechazado') return 'Rechazado';
+  if (metaStatus === 'renovacion solicitada') return 'Renovación solicitada';
+  if (metaStatus === 'pendiente de revision') return 'Pendiente de revisión';
+  if (metaStatus === 'vigente') {
     if (daysUntilExpiry !== null && daysUntilExpiry < 0) return 'Caducado';
     if (daysUntilExpiry !== null && daysUntilExpiry <= DOCUMENT_EXPIRY_WARNING_DAYS) return 'Próximo a caducar';
     return 'Vigente';

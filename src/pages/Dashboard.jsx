@@ -143,7 +143,7 @@ function IntelligentOperationsCenter({
   canSeeInventory,
   onOpen
 }) {
-  const summaryIcons = [CalendarClock, PackageCheck, Bell, Megaphone, Boxes, HandHeart, Users];
+  const summaryIcons = [CalendarClock, PackageCheck, Bell, Megaphone, Boxes, HandHeart, FileText, Users];
   const summaryItems = (operations.daySummary || []).map((item, index) => ({
     ...item,
     icon: summaryIcons[index] || Activity
@@ -185,6 +185,14 @@ function IntelligentOperationsCenter({
       icon: Megaphone,
       tone: campaigns.length ? 'blue' : 'slate',
       destination: canAccess(currentUser, 'agenda') ? { moduleId: 'agenda', filter: 'campaigns' } : null
+    },
+    {
+      title: 'Documentacion',
+      value: uniqueDocumentIssueCount(operations),
+      detail: 'Pendientes, caducados y renovaciones',
+      icon: FileText,
+      tone: operations.expiredDocuments?.length ? 'red' : uniqueDocumentIssueCount(operations) ? 'orange' : 'green',
+      destination: canAccess(currentUser, 'beneficiaries') ? buildDocumentDestination(operations.documentAttention, operations.pendingDocuments) : null
     }
   ];
 
@@ -1056,6 +1064,40 @@ function buildFamilyDetailDestination(family, moduleId) {
   return { moduleId, filter: 'family-detail', familyId: family?.familyId, label: family?.name };
 }
 
+function uniqueDocumentIssueCount(operations) {
+  const ids = new Set();
+  [
+    ...(operations.pendingDocuments || []),
+    ...(operations.expiredDocuments || []),
+    ...(operations.renewalDocuments || []),
+    ...(operations.expiringDocuments || []),
+    ...(operations.documentAttention || [])
+  ].forEach((item) => {
+    const document = item?.document || item;
+    if (document?.id) ids.add(document.id);
+  });
+  return ids.size;
+}
+
+function buildDocumentDestination(items = [], fallbackItems = []) {
+  const item = [...items, ...fallbackItems].find((candidate) => {
+    const document = candidate?.document || candidate;
+    return document?.id;
+  });
+  const document = item?.document || item;
+  if (!document?.id) {
+    return { moduleId: 'beneficiaries', tab: 'documents', filter: 'documentation' };
+  }
+  return {
+    moduleId: 'beneficiaries',
+    profileId: document.beneficiary_id,
+    tab: 'documents',
+    documentId: document.id,
+    filter: 'documentation',
+    label: document.document_type || document.file_name || 'Documento'
+  };
+}
+
 function buildPriorityCards(operations, currentUser, familyModule) {
   return [
     familyModule && {
@@ -1080,6 +1122,42 @@ function buildPriorityCards(operations, currentUser, familyModule) {
         label: `Sin ayuda +${STALE_HELP_DAYS} dias`
       },
       tone: 'orange'
+    },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: 'Documentos pendientes',
+      value: operations.pendingDocuments.length,
+      detail: 'Pendientes de revision o respuesta',
+      icon: FileText,
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.pendingDocuments, operations.documentAttention),
+      tone: operations.pendingDocuments.length ? 'orange' : 'green'
+    },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: 'Documentos caducados',
+      value: operations.expiredDocuments.length,
+      detail: 'Requieren actualizacion documental',
+      icon: AlertTriangle,
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.expiredDocuments, operations.documentAttention),
+      tone: operations.expiredDocuments.length ? 'red' : 'green'
+    },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: 'Renovaciones pendientes',
+      value: operations.renewalDocuments.length,
+      detail: 'Solicitudes de renovacion abiertas',
+      icon: FileText,
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.renewalDocuments, operations.documentAttention),
+      tone: operations.renewalDocuments.length ? 'orange' : 'green'
+    },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: 'Proximos a caducar',
+      value: operations.expiringDocuments.length,
+      detail: 'Documentos dentro del plazo de aviso',
+      icon: CalendarClock,
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.expiringDocuments, operations.documentAttention),
+      tone: operations.expiringDocuments.length ? 'orange' : 'green'
     },
     canAccess(currentUser, 'inventory') && {
       title: 'Stock critico',
@@ -1179,6 +1257,14 @@ function buildQuickItems(operations, currentUser, familyModule) {
       },
       tone: operations.pendingReceipts.length ? 'orange' : 'green'
     },
+    canAccess(currentUser, 'beneficiaries') && {
+      title: 'Documentacion pendiente',
+      value: uniqueDocumentIssueCount(operations),
+      icon: FileText,
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.documentAttention, operations.pendingDocuments),
+      tone: uniqueDocumentIssueCount(operations) ? 'orange' : 'green'
+    },
     canAccess(currentUser, 'accounting') && {
       title: 'Deudas vencidas',
       value: operations.overdueDebts.length,
@@ -1226,6 +1312,22 @@ function buildTasks(operations, currentUser, familyModule) {
       priority: 'Alta',
       action: 'Ir a entregas',
       moduleId: 'deliveries'
+    },
+    canAccess(currentUser, 'beneficiaries') && operations.expiredDocuments.length > 0 && {
+      title: 'Resolver documentacion caducada',
+      detail: pluralSummary(operations.expiredDocuments.length, 'documento caducado requiere revision', 'documentos caducados requieren revision'),
+      priority: 'Critica',
+      action: 'Abrir documento',
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination(operations.expiredDocuments, operations.documentAttention)
+    },
+    canAccess(currentUser, 'beneficiaries') && (operations.pendingDocuments.length + operations.renewalDocuments.length + operations.expiringDocuments.length) > 0 && {
+      title: 'Revisar seguimiento documental',
+      detail: pluralSummary(operations.pendingDocuments.length + operations.renewalDocuments.length + operations.expiringDocuments.length, 'documento necesita accion', 'documentos necesitan accion'),
+      priority: operations.expiringDocuments.length ? 'Alta' : 'Media',
+      action: 'Abrir documentacion',
+      moduleId: 'beneficiaries',
+      destination: buildDocumentDestination([...operations.pendingDocuments, ...operations.renewalDocuments, ...operations.expiringDocuments], operations.documentAttention)
     },
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && {
       title: 'Revisar stock bajo',
@@ -1297,6 +1399,7 @@ function buildAssistantState(operations, currentUser, familyModule) {
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && pluralLabel(operations.criticalStock.length, 'producto critico', 'productos criticos'),
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
+    canAccess(currentUser, 'beneficiaries') && uniqueDocumentIssueCount(operations) > 0 && pluralLabel(uniqueDocumentIssueCount(operations), 'documento pendiente', 'documentos pendientes'),
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
     canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
     canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'préstamo pendiente', 'préstamos pendientes'),
@@ -1345,6 +1448,12 @@ function getPrimaryAction(operations, currentUser, familyModule) {
         receiptIds: operations.pendingReceipts.map((item) => item.id)
       },
       recommendation: 'Cierra los justificantes pendientes para mantener la documentacion al dia.'
+    };
+  }
+  if (canAccess(currentUser, 'beneficiaries') && uniqueDocumentIssueCount(operations) > 0) {
+    return {
+      destination: buildDocumentDestination(operations.documentAttention, operations.pendingDocuments),
+      recommendation: 'Revisa los documentos pendientes, caducados o con renovacion solicitada.'
     };
   }
   if (canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0) {

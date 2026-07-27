@@ -1,4 +1,5 @@
 import { getUserStatus } from '../../lib/auth';
+import { documentAttentionItems, documentExpiryWarningDays, intelligentDocumentStatus } from '../../lib/documentAutomation';
 import { formatDate, normalize, todayISO } from '../../lib/formatters';
 import { PriorityEngineService } from '../priorities/PriorityEngineService';
 
@@ -172,6 +173,14 @@ function buildOperations(data, today, pendingPasswordResets) {
     return debt.due_at && Number.isFinite(days) && days >= 0 && days <= 14;
   });
   const pendingBeneficiaries = buildPendingBeneficiaries(data, staleBeneficiaries, newBeneficiaries, latestDeliveryByBeneficiary);
+  const documentWarningDays = documentExpiryWarningDays(data);
+  const documentAttention = documentAttentionItems(data);
+  const pendingDocuments = (data.beneficiary_documents || [])
+    .map((document) => ({ document, status: intelligentDocumentStatus(document, documentWarningDays) }))
+    .filter((item) => ['Pendiente de revisión', 'Rechazado', 'Renovación solicitada'].includes(item.status));
+  const expiredDocuments = documentAttention.filter((item) => item.status === 'Caducado');
+  const renewalDocuments = documentAttention.filter((item) => item.status === 'Renovación solicitada');
+  const expiringDocuments = documentAttention.filter((item) => item.status === 'Próximo a caducar');
   const recentDonations = sortByRecent(data.donations || [], ['donated_at', 'created_at']).slice(0, 6);
   const availableVolunteers = (data.volunteers || [])
     .filter((volunteer) => isActiveVolunteer(volunteer) && String(volunteer.availability || '').trim())
@@ -211,6 +220,11 @@ function buildOperations(data, today, pendingPasswordResets) {
     todayDeliveries,
     newBeneficiaries,
     pendingBeneficiaries,
+    pendingDocuments,
+    expiredDocuments,
+    renewalDocuments,
+    expiringDocuments,
+    documentAttention,
     pendingDonations,
     recentDonations,
     availableVolunteers,
@@ -254,8 +268,24 @@ function buildDaySummary(operations) {
     { label: 'Campanas activas', value: operations.activeCampaigns.length },
     { label: 'Productos criticos', value: operations.criticalProducts.length },
     { label: 'Beneficiarios pendientes', value: operations.pendingBeneficiaries.length },
+    { label: 'Documentos pendientes', value: countUniqueDocumentIssues(operations) },
     { label: 'Voluntarios disponibles', value: operations.availableVolunteers.length }
   ];
+}
+
+function countUniqueDocumentIssues(operations) {
+  const ids = new Set();
+  [
+    ...(operations.pendingDocuments || []),
+    ...(operations.expiredDocuments || []),
+    ...(operations.renewalDocuments || []),
+    ...(operations.expiringDocuments || []),
+    ...(operations.documentAttention || [])
+  ].forEach((item) => {
+    const document = item?.document || item;
+    if (document?.id) ids.add(document.id);
+  });
+  return ids.size;
 }
 
 function buildTodayAgenda(data, today, todayDeliveries) {
@@ -282,8 +312,9 @@ function buildTodayAgenda(data, today, todayDeliveries) {
 
 function buildPendingBeneficiaries(data, staleBeneficiaries, newBeneficiaries, latestDeliveryByBeneficiary) {
   const documents = data.beneficiary_documents || [];
+  const warningDays = documentExpiryWarningDays(data);
   const pendingDocsByBeneficiary = new Set(documents
-    .filter((doc) => !doc.file_data_url || normalize(doc.notes).includes('pendiente'))
+    .filter((doc) => ['Pendiente de revisión', 'Caducado', 'Rechazado', 'Renovación solicitada', 'Próximo a caducar'].includes(intelligentDocumentStatus(doc, warningDays)))
     .map((doc) => doc.beneficiary_id)
     .filter(Boolean));
   const byId = new Map();

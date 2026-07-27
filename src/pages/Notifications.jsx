@@ -159,7 +159,7 @@ function NotificationRow({ notification, onRead, onOpen }) {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {(notification.action_url || notification.metadata?.request_id || notification.entity_type === 'beneficiary_portal') && (
+          {(notification.action_url || notification.metadata?.request_id || notification.entity_type === 'beneficiary_portal' || notification.entity_type === 'beneficiary_document' || notification.metadata?.document_id) && (
             <Button variant="secondary" onClick={onOpen}>
               Abrir módulo
             </Button>
@@ -179,6 +179,16 @@ function openNotification(notification, onNavigate) {
   const requestId = notification.metadata?.request_id;
   if (requestId && onNavigate) {
     onNavigate({ moduleId: 'social-care', requestId });
+    return;
+  }
+  const documentId = notification.metadata?.document_id || (notification.entity_type === 'beneficiary_document' ? notification.entity_id : '');
+  const beneficiaryId = notification.metadata?.beneficiary_id;
+  if (documentId && beneficiaryId && onNavigate) {
+    onNavigate({ moduleId: 'beneficiaries', profileId: beneficiaryId, tab: 'documents', documentId });
+    return;
+  }
+  if (documentId && onNavigate) {
+    onNavigate({ moduleId: 'social-care', itemId: documentId, documentId });
     return;
   }
   if (notification.entity_type === 'beneficiary_portal' && notification.entity_id && onNavigate) {
