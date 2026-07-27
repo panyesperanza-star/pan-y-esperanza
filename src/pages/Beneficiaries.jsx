@@ -49,7 +49,7 @@ import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPh
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
-import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, todayISO } from '../lib/formatters';
+import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 import { DeliveryForm } from './Deliveries';
@@ -332,7 +332,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
 
       {editing && (
         <Modal wide title={editing.id ? 'Editar beneficiario' : 'Nuevo beneficiario'} onClose={() => setEditing(null)}>
-          <BeneficiaryForm families={data.families} beneficiaries={data.beneficiaries} initial={editing} onSubmit={save} onCancel={() => setEditing(null)} />
+          <BeneficiaryForm families={data.families} beneficiaries={data.beneficiaries} initial={editing} onSubmit={save} onCancel={() => setEditing(null)} canOverrideDuplicateDocument={canEdit} />
         </Modal>
       )}
       {profile && (
@@ -503,7 +503,123 @@ function nextFamilyCode(families = []) {
   return `FAM-${String(last + 1).padStart(4, '0')}`;
 }
 
-function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel }) {
+function normalizeAddress(value) {
+  return normalize(value)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\b(calle|c|avenida|avda|av|paseo|plaza|psje|pasaje|numero|num|n)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizePhoneValue(value) {
+  const digits = String(value || '').replace(/\D+/g, '');
+  return digits.length >= 6 ? digits : '';
+}
+
+function normalizeEmailValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function nameSimilarityScore(a, b) {
+  const left = normalizeNameTokens(a);
+  const right = normalizeNameTokens(b);
+  if (!left.length || !right.length) return 0;
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  const shared = left.filter((token) => rightSet.has(token)).length;
+  const union = new Set([...leftSet, ...rightSet]).size;
+  const containment = shared / Math.min(leftSet.size, rightSet.size);
+  const jaccard = shared / union;
+  return Math.max(containment, jaccard);
+}
+
+function normalizeNameTokens(value) {
+  return normalize(value)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+}
+
+function isNameVerySimilar(a, b) {
+  const left = normalize(a);
+  const right = normalize(b);
+  if (!left || !right || left === right) return false;
+  if (left.includes(right) || right.includes(left)) return true;
+  return nameSimilarityScore(a, b) >= 0.75;
+}
+
+function buildFamilyDraft(form, families = []) {
+  return {
+    family_code: form.__new_family?.family_code || nextFamilyCode(families),
+    responsible_name: form.full_name || '',
+    address: form.address_full || form.__new_family?.address || '',
+    phone: form.phone || form.__new_family?.phone || '',
+    email: form.email || form.__new_family?.email || '',
+    dependents_count: Number(form.__new_family?.dependents_count ?? form.minors_count ?? 0),
+    notes: form.__new_family?.notes || ''
+  };
+}
+
+function withNewFamilyMode(form, families = []) {
+  return {
+    ...form,
+    family_id: '',
+    family_relationship: form.family_relationship || 'Responsable',
+    __family_mode: 'new',
+    __new_family: {
+      ...buildFamilyDraft(form, families),
+      family_code: form.__new_family?.family_code || nextFamilyCode(families)
+    }
+  };
+}
+
+function withExistingFamilyMode(form, familyId) {
+  return {
+    ...form,
+    family_id: familyId || '',
+    family_relationship: form.family_relationship || 'Responsable',
+    __family_mode: familyId ? 'existing' : 'none'
+  };
+}
+
+function buildBeneficiaryFamilyAnalysis({ form, initial, families = [], beneficiaries = [] }) {
+  const currentId = form.id || '';
+  const activeFamilies = safeRows(families).filter((family) => !isArchivedFamily(family));
+  const cleanAddress = normalizeAddress(form.address_full);
+  const initialAddress = normalizeAddress(initial?.address_full);
+  const addressChanged = Boolean(form.id && cleanAddress && cleanAddress !== initialAddress);
+  const addressMatches = cleanAddress
+    ? activeFamilies.filter((family) => normalizeAddress(family.address) === cleanAddress)
+    : [];
+  const addressMatchOutsideSelection = addressMatches.filter((family) => family.id !== form.family_id);
+  const selectedMatchesAddress = Boolean(form.family_id && addressMatches.some((family) => family.id === form.family_id));
+  const shouldAskAddressDecision = Boolean(cleanAddress && addressMatchOutsideSelection.length && !selectedMatchesAddress);
+  const shouldCreateAutomaticFamily = Boolean(cleanAddress && !addressMatches.length && (!form.family_id || addressChanged || form.__family_mode === 'none'));
+  const cleanPhone = normalizePhoneValue(form.phone);
+  const cleanEmail = normalizeEmailValue(form.email);
+  const phoneMatches = cleanPhone
+    ? beneficiaries.filter((item) => item.id !== currentId && normalizePhoneValue(item.phone) === cleanPhone)
+    : [];
+  const emailMatches = cleanEmail
+    ? beneficiaries.filter((item) => item.id !== currentId && normalizeEmailValue(item.email) === cleanEmail)
+    : [];
+  const nameMatches = form.full_name
+    ? beneficiaries.filter((item) => item.id !== currentId && isNameVerySimilar(item.full_name, form.full_name))
+    : [];
+
+  return {
+    addressMatches,
+    addressMatchOutsideSelection,
+    addressChanged,
+    shouldAskAddressDecision,
+    shouldCreateAutomaticFamily,
+    phoneMatches,
+    emailMatches,
+    nameMatches
+  };
+}
+
+function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel, canOverrideDuplicateDocument = false }) {
   const [form, setForm] = useState(() => ({
     ...emptyBeneficiary,
     ...initial,
@@ -522,16 +638,29 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [documentConflict, setDocumentConflict] = useState(null);
+  const [documentOverrideKey, setDocumentOverrideKey] = useState('');
+  const [pendingFamilyDecision, setPendingFamilyDecision] = useState(null);
   const documentInputRef = useRef(null);
   const codeInputRef = useRef(null);
-  const activeFamilies = families.filter((family) => !isArchivedFamily(family));
+  const activeFamilies = safeRows(families).filter((family) => !isArchivedFamily(family));
   const selectedArchivedFamily = form.family_id ? families.find((family) => family.id === form.family_id && isArchivedFamily(family)) : null;
   const selectableFamilies = selectedArchivedFamily
     ? [selectedArchivedFamily, ...activeFamilies.filter((family) => family.id !== selectedArchivedFamily.id)]
     : activeFamilies;
+  const familyAnalysis = useMemo(
+    () => buildBeneficiaryFamilyAnalysis({ form, initial, families, beneficiaries }),
+    [form, initial, families, beneficiaries]
+  );
+  const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
+  const duplicateDocumentKey = duplicateDocument ? `${duplicateDocument.id}:${normalizeDocument(form.document_id)}` : '';
 
   const update = (field, value) => {
     setFormError('');
+    if (field === 'document_id') {
+      setDocumentConflict(null);
+      setDocumentOverrideKey('');
+    }
     setForm((current) => ({ ...current, [field]: value }));
     setFieldErrors((current) => {
       if (!current[field]) return current;
@@ -572,11 +701,13 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
   }
 
   function validateUniqueFields() {
-    const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
     if (duplicateDocument) {
-      setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese documento.' });
-      documentInputRef.current?.focus();
-      return false;
+      setDocumentConflict(duplicateDocument);
+      if (!canOverrideDuplicateDocument || documentOverrideKey !== duplicateDocumentKey) {
+        setFieldErrors({ document_id: `Ya existe este documento en el expediente ${duplicateDocument.code || duplicateDocument.full_name || duplicateDocument.id}.` });
+        documentInputRef.current?.focus();
+        return false;
+      }
     }
     const duplicateCode = findDuplicateBeneficiaryCode(beneficiaries, form, form.id);
     if (duplicateCode) {
@@ -587,7 +718,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     return true;
   }
 
-  async function submit(event) {
+  async function submitLegacy(event) {
     event.preventDefault();
     setFormError('');
     if (!validateUniqueFields()) return;
@@ -625,9 +756,118 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
     }
   }
 
+  function buildPreparedForm(baseForm = form, options = {}) {
+    let prepared = { ...baseForm };
+    if (duplicateDocument && documentOverrideKey === duplicateDocumentKey) {
+      prepared.__allow_duplicate_document = true;
+    } else {
+      delete prepared.__allow_duplicate_document;
+    }
+
+    if (options.skipFamilyDetection) return prepared;
+
+    const analysis = buildBeneficiaryFamilyAnalysis({ form: prepared, initial, families, beneficiaries });
+    if (analysis.shouldAskAddressDecision) {
+      return { pendingDecision: { form: prepared, matches: analysis.addressMatchOutsideSelection } };
+    }
+    if (analysis.shouldCreateAutomaticFamily) prepared = withNewFamilyMode(prepared, families);
+    return prepared;
+  }
+
+  function validateFamilySelection(preparedForm) {
+    if (preparedForm.__family_mode === 'existing' && !preparedForm.family_id) {
+      setFormError('Selecciona una familia existente o cambia a crear una nueva.');
+      return false;
+    }
+    if (preparedForm.__family_mode === 'existing' && isArchivedFamily(families.find((family) => family.id === preparedForm.family_id)) && initial.family_id !== preparedForm.family_id) {
+      setFormError('No se pueden añadir nuevos miembros a una familia archivada.');
+      return false;
+    }
+    if (preparedForm.__family_mode === 'new') {
+      const duplicateFamily = families.find((family) => normalize(family.family_code) === normalize(preparedForm.__new_family?.family_code));
+      if (duplicateFamily) {
+        setFormError('Ya existe una familia con ese código.');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async function submitPreparedForm(preparedForm) {
+    if (!validateFamilySelection(preparedForm)) return;
+    setSaving(true);
+    try {
+      await onSubmit(preparedForm);
+    } catch (error) {
+      const message = error.message || '';
+      if (message.includes('DNI/NIE') || message.includes('document_id')) {
+        setFieldErrors({ document_id: 'Ya existe un beneficiario registrado con ese documento.' });
+        documentInputRef.current?.focus();
+      } else if (message.includes('code') || message.includes('codigo')) {
+        setFieldErrors({ code: 'Ya existe un beneficiario registrado con ese código.' });
+        codeInputRef.current?.focus();
+      } else {
+        setFormError(message || 'No se pudo guardar el beneficiario. Revisa los datos e inténtalo de nuevo.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setFormError('');
+    if (!validateUniqueFields()) return;
+    const preparedForm = buildPreparedForm();
+    if (preparedForm?.pendingDecision) {
+      setPendingFamilyDecision(preparedForm.pendingDecision);
+      return;
+    }
+    await submitPreparedForm(preparedForm);
+  }
+
+  async function resolveFamilyDecision(decision) {
+    if (!pendingFamilyDecision) return;
+    const snapshot = pendingFamilyDecision.form;
+    const match = pendingFamilyDecision.matches[0];
+    setPendingFamilyDecision(null);
+    const preparedForm = decision === 'associate'
+      ? withExistingFamilyMode(snapshot, match?.id)
+      : decision === 'new'
+        ? withNewFamilyMode(snapshot, families)
+        : withExistingFamilyMode(snapshot, '');
+    await submitPreparedForm(buildPreparedForm(preparedForm, { skipFamilyDetection: true }));
+  }
+
   return (
+    <>
     <form className="space-y-5" onSubmit={submit}>
       {formError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">{formError}</div>}
+      {documentConflict && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          <p className="font-black">DNI/NIE/Pasaporte ya registrado.</p>
+          <p className="mt-1">Expediente existente: <strong>{documentConflict.code || '-'}</strong> · {documentConflict.full_name || 'Sin nombre'} · {normalizeDocument(documentConflict.document_id)}</p>
+          {canOverrideDuplicateDocument ? (
+            documentOverrideKey === duplicateDocumentKey ? (
+              <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-bold text-red-700">Confirmación registrada. Pulsa Guardar de nuevo para continuar.</p>
+            ) : (
+              <Button type="button" variant="secondary" className="mt-3" onClick={() => {
+                setDocumentOverrideKey(duplicateDocumentKey);
+                setFieldErrors((current) => {
+                  const next = { ...current };
+                  delete next.document_id;
+                  return next;
+                });
+              }}>
+                Confirmo que tengo permiso para continuar
+              </Button>
+            )
+          ) : (
+            <p className="mt-2 font-semibold">No tienes permisos suficientes para continuar con un documento duplicado.</p>
+          )}
+        </div>
+      )}
+      <FamilyIntelligenceAlerts analysis={familyAnalysis} />
 
       <FormSection icon={CircleUserRound} title="Identificación" description="Datos básicos de la persona atendida.">
         <FormField label="Código de beneficiario">
@@ -752,6 +992,30 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel 
         <Button type="submit" disabled={saving}>{saving ? 'Guardando…' : form.id ? 'Guardar cambios' : 'Crear beneficiario'}</Button>
       </div>
     </form>
+    {pendingFamilyDecision && (
+      <Modal title="Se ha detectado una posible unidad familiar." onClose={() => setPendingFamilyDecision(null)}>
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-slate-600">
+            Existe otra familia registrada con la misma dirección. Revisa la coincidencia antes de guardar el expediente.
+          </p>
+          <div className="space-y-2">
+            {pendingFamilyDecision.matches.map((family) => (
+              <div key={family.id} className="rounded-lg border border-brand-100 bg-brand-50/50 p-3">
+                <p className="font-bold text-ink">{family.family_code} · {family.responsible_name || 'Sin responsable'}</p>
+                <p className="mt-1 text-sm text-slate-600">{family.address || 'Dirección no registrada'}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{[family.phone, family.email].filter(Boolean).join(' · ') || 'Sin contacto familiar'}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button type="button" onClick={() => resolveFamilyDecision('associate')}>Asociar a la familia existente</Button>
+            <Button type="button" variant="secondary" onClick={() => resolveFamilyDecision('new')}>Crear nueva familia</Button>
+            <Button type="button" variant="secondary" onClick={() => resolveFamilyDecision('none')}>No asociar</Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -770,6 +1034,47 @@ function FormSection({ icon: Icon, title, description, children }) {
 
 function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
+}
+
+function FamilyIntelligenceAlerts({ analysis }) {
+  if (!analysis) return null;
+  const alerts = [];
+  if (analysis.phoneMatches.length) {
+    alerts.push({
+      key: 'phone',
+      title: 'Teléfono ya utilizado',
+      text: `${analysis.phoneMatches.length} expediente(s) comparten este teléfono. No bloquea el guardado.`
+    });
+  }
+  if (analysis.emailMatches.length) {
+    alerts.push({
+      key: 'email',
+      title: 'Correo ya utilizado',
+      text: `${analysis.emailMatches.length} expediente(s) comparten este correo. No bloquea el guardado.`
+    });
+  }
+  if (analysis.nameMatches.length) {
+    alerts.push({
+      key: 'name',
+      title: 'Nombre similar detectado',
+      text: `Posible coincidencia: ${analysis.nameMatches.slice(0, 2).map((item) => `${item.code || '-'} · ${item.full_name}`).join(' / ')}.`
+    });
+  }
+  if (!alerts.length) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+      <p className="font-black">Revisión inteligente del expediente</p>
+      <div className="mt-2 grid gap-2">
+        {alerts.map((alert) => (
+          <div key={alert.key}>
+            <p className="font-bold">{alert.title}</p>
+            <p>{alert.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function BeneficiaryProfile({ data, actions, currentUser, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {

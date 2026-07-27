@@ -5,6 +5,7 @@ export function sanitizeBeneficiaryPayload(payload) {
     __family_mode,
     __new_family,
     __new_family_enabled,
+    __allow_duplicate_document,
     ...beneficiaryPayload
   } = payload || {};
 
@@ -27,9 +28,9 @@ export function findDuplicateBeneficiaryCode(beneficiaries = [], payload = {}, c
   return beneficiaries.find((item) => normalize(item.code) === code && item.id !== currentId) || null;
 }
 
-export function assertUniqueBeneficiary(beneficiaries = [], payload = {}, currentId) {
+export function assertUniqueBeneficiary(beneficiaries = [], payload = {}, currentId, options = {}) {
   const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, payload, currentId);
-  if (duplicateDocument) {
+  if (duplicateDocument && !options.allowDuplicateDocument) {
     throw new Error(`Ya existe un beneficiario con DNI/NIE / NIE O PASAPORTE ${normalizeDocument(payload.document_id)}: ${duplicateDocument.full_name}.`);
   }
 
@@ -50,7 +51,9 @@ export class BeneficiarioService {
   }
 
   async create(payload) {
-    assertUniqueBeneficiary(this.beneficiaries, payload);
+    const allowDuplicateDocument = payload?.__allow_duplicate_document === true;
+    if (allowDuplicateDocument) this.assertPermission('beneficiaries', 'edit');
+    assertUniqueBeneficiary(this.beneficiaries, payload, undefined, { allowDuplicateDocument });
     const cleanPayload = {
       ...sanitizeBeneficiaryPayload(payload),
       code: payload.code || nextBeneficiaryCode(this.beneficiaries)
@@ -62,7 +65,9 @@ export class BeneficiarioService {
   }
 
   async update(id, payload) {
-    assertUniqueBeneficiary(this.beneficiaries, payload, id);
+    const allowDuplicateDocument = payload?.__allow_duplicate_document === true;
+    if (allowDuplicateDocument) this.assertPermission('beneficiaries', 'edit');
+    assertUniqueBeneficiary(this.beneficiaries, payload, id, { allowDuplicateDocument });
     const cleanPayload = sanitizeBeneficiaryPayload(payload);
     const updated = await this.repository.update(id, cleanPayload);
     await this.audit(`Edito beneficiario ${payload.full_name || ''}`.trim());
