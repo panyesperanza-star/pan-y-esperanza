@@ -3422,14 +3422,32 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0]);
   const [uploading, setUploading] = useState(false);
   const [showClassicDocuments, setShowClassicDocuments] = useState(false);
+  const [documentFilter, setDocumentFilter] = useState('all');
+  const [selectedDocument, setSelectedDocument] = useState(null);
   const inputRef = useRef(null);
   const intelligenceSummary = useMemo(() => buildDocumentIntelligenceSummary(documents), [documents]);
+  const documentItems = useMemo(() => safeRows(documents).map((doc) => ({ doc, status: intelligentDocumentStatus(doc) })), [documents]);
+  const filteredDocumentItems = useMemo(() => {
+    const option = DOCUMENT_FILTER_OPTIONS.find((item) => item.id === documentFilter);
+    if (!option?.status) return documentItems;
+    return documentItems.filter((item) => item.status === option.status);
+  }, [documentFilter, documentItems]);
 
   useEffect(() => {
     if (!uploadTrigger || !canEdit || uploading) return;
     setShowClassicDocuments(true);
     window.requestAnimationFrame(() => inputRef.current?.click());
   }, [uploadTrigger, canEdit, uploading]);
+
+  useEffect(() => {
+    if (!selectedDocument) return;
+    const updated = safeRows(documents).find((doc) => doc.id === selectedDocument.id);
+    if (updated) {
+      setSelectedDocument(updated);
+    } else {
+      setSelectedDocument(null);
+    }
+  }, [documents, selectedDocument]);
 
   async function uploadDocument(event) {
     const file = event.target.files?.[0];
@@ -3463,6 +3481,7 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
     try {
       await actions.deleteBeneficiaryDocument(doc.id);
       await removeBeneficiaryDocumentFile(doc.file_data_url).catch((cleanupError) => console.warn('[BeneficiaryDocument] No se pudo eliminar el archivo de Storage', cleanupError));
+      setSelectedDocument(null);
       onNotice('Documento eliminado correctamente.');
     } catch (error) {
       onNotice(error.message || 'No se pudo eliminar el documento.');
@@ -3474,29 +3493,79 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
       <DocumentIntelligenceOverview summary={intelligenceSummary} onShowDocuments={() => setShowClassicDocuments(true)} />
 
       {showClassicDocuments && (
-        <div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <SectionHeading icon={Paperclip} title="Documentación" description="Archivos asociados al expediente." />
-        {canEdit && <div className="flex flex-col gap-2 sm:flex-row"><select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select><label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"><Upload size={17} /> {uploading ? 'Subiendo...' : 'Subir documento'}<input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} /></label></div>}
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {documents.map((doc) => (
-          <article key={doc.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <span className="rounded-lg bg-brand-50 p-2.5 text-brand-700"><FileText size={20} /></span>
-            <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-ink">{doc.file_name || 'Documento sin nombre'}</p><p className="mt-0.5 text-xs text-slate-500">{doc.document_type} · {formatDate(doc.uploaded_at)}</p></div>
-            {doc.file_data_url && <DocumentDownloadButton doc={doc} iconOnly />}
-            {canDelete && <button className="focus-ring rounded-lg p-2 text-red-600 hover:bg-red-50" onClick={() => removeDocument(doc)} aria-label={`Eliminar ${doc.file_name}`} title="Eliminar"><Trash2 size={18} /></button>}
-          </article>
-        ))}
-      </div>
-      {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación a este expediente." /></div>}
-        </div>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <SectionHeading icon={Paperclip} title="Documentación" description="Vista de revisión documental basada en tarjetas." />
+            {canEdit && (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)} aria-label="Tipo de documento">
+                  {DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                  <Upload size={17} /> {uploading ? 'Subiendo...' : 'Subir documento'}
+                  <input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} />
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2" role="list" aria-label="Filtros de documentación">
+            {DOCUMENT_FILTER_OPTIONS.map((option) => {
+              const active = documentFilter === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`focus-ring rounded-full border px-3 py-1.5 text-sm font-bold transition ${active ? 'border-brand-600 bg-brand-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700'}`}
+                  onClick={() => setDocumentFilter(option.id)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredDocumentItems.map((item) => (
+              <DocumentReviewCard key={item.doc.id} item={item} onOpen={() => setSelectedDocument(item.doc)} />
+            ))}
+          </div>
+
+          {!documentItems.length && <div className="mt-5"><EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación a este expediente." /></div>}
+          {documentItems.length > 0 && !filteredDocumentItems.length && <div className="mt-5"><EmptyState icon={Search} title="Sin resultados" text="No hay documentos con el filtro seleccionado." /></div>}
+        </section>
+      )}
+
+      {selectedDocument && (
+        <DocumentDetailPanel
+          doc={selectedDocument}
+          status={intelligentDocumentStatus(selectedDocument)}
+          canDelete={canDelete}
+          onDelete={removeDocument}
+          onClose={() => setSelectedDocument(null)}
+        />
       )}
     </section>
   );
 }
 
 const DOCUMENT_EXPIRY_WARNING_DAYS = 30;
+
+const DOCUMENT_FILTER_OPTIONS = [
+  { id: 'all', label: 'Todos', status: null },
+  { id: 'valid', label: 'Vigentes', status: 'Vigente' },
+  { id: 'pending', label: 'Pendientes', status: 'Pendiente de revisión' },
+  { id: 'expired', label: 'Caducados', status: 'Caducado' },
+  { id: 'expiring', label: 'Próximos a caducar', status: 'Próximo a caducar' },
+  { id: 'not-required', label: 'No requeridos', status: 'No requerido' }
+];
+
+const DOCUMENT_REVIEW_ACTIONS = [
+  { label: 'Aprobar', icon: '✔', tone: 'border-brand-200 bg-brand-50 text-brand-800' },
+  { label: 'Rechazar', icon: '✕', tone: 'border-red-200 bg-red-50 text-red-800' },
+  { label: 'Solicitar renovación', icon: '📩', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+  { label: 'Marcar como no requerido', icon: '○', tone: 'border-slate-200 bg-slate-50 text-slate-700' }
+];
 
 function DocumentIntelligenceOverview({ summary, onShowDocuments }) {
   const state = summary.state;
@@ -3558,6 +3627,144 @@ function DocumentHealthCard({ summary }) {
         <div className={`h-full rounded-full ${summary.healthTone}`} style={{ width: `${summary.health}%` }} />
       </div>
       <p className="mt-3 text-sm font-semibold leading-5 text-slate-700">{summary.healthText}</p>
+    </div>
+  );
+}
+
+function DocumentReviewCard({ item, onOpen }) {
+  const { doc, status } = item;
+  const meta = documentStatusMeta(status);
+  return (
+    <button
+      type="button"
+      className="focus-ring group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md"
+      onClick={onOpen}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="rounded-xl bg-brand-50 p-3 text-brand-700"><FileText size={22} /></span>
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-black ${meta.badge}`}>
+          <span aria-hidden="true">{meta.icon}</span>
+          {status}
+        </span>
+      </div>
+      <div className="mt-4 min-w-0">
+        <h4 className="line-clamp-2 text-base font-black text-ink">{documentDisplayName(doc)}</h4>
+        <p className="mt-1 truncate text-sm text-slate-500">{doc.file_name || 'Sin archivo asociado'}</p>
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm text-slate-600">
+        <DocumentMetaLine label="Subida" value={formatDate(doc.uploaded_at || doc.created_at)} />
+        <DocumentMetaLine label="Caducidad" value={documentExpiryLabel(doc) || 'No aplica'} />
+        <DocumentMetaLine label="Actualizado" value={formatDate(documentUpdatedValue(doc))} />
+      </dl>
+      <span className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-brand-700 group-hover:text-brand-800">
+        Revisar detalle <ChevronRight size={16} />
+      </span>
+    </button>
+  );
+}
+
+function DocumentDetailPanel({ doc, status, canDelete, onDelete, onClose }) {
+  const meta = documentStatusMeta(status);
+  const history = buildDocumentReviewHistory(doc, status);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 sm:items-stretch sm:justify-end" role="dialog" aria-modal="true" aria-label="Detalle documental">
+      <aside className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-panel sm:h-full sm:max-h-none sm:max-w-xl sm:rounded-none">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-700">Detalle documental</p>
+              <h3 className="mt-1 text-xl font-black text-ink">{documentDisplayName(doc)}</h3>
+            </div>
+            <button className="focus-ring rounded-md p-2 text-slate-500 hover:bg-slate-100" type="button" onClick={onClose} aria-label="Cerrar detalle">
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-5 p-5">
+          <div className={`rounded-2xl border p-4 ${meta.panel}`}>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-black ${meta.badge}`}>
+              <span aria-hidden="true">{meta.icon}</span>
+              {status}
+            </span>
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">{meta.description}</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DocumentInfoBox label="Fecha de subida" value={formatDate(doc.uploaded_at || doc.created_at)} />
+            <DocumentInfoBox label="Fecha de caducidad" value={documentExpiryLabel(doc) || 'No aplica'} />
+            <DocumentInfoBox label="Última actualización" value={formatDate(documentUpdatedValue(doc))} />
+            <DocumentInfoBox label="Quién lo revisó" value={doc.reviewed_by_name || doc.reviewed_by || 'Pendiente'} />
+          </div>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Observaciones</h4>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{doc.notes || doc.observations || 'Sin observaciones registradas.'}</p>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Documento</h4>
+            <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="truncate text-sm font-black text-ink">{doc.file_name || 'Sin archivo asociado'}</p>
+              <p className="mt-1 text-xs text-slate-500">{doc.file_data_url ? 'Archivo disponible para revisión interna.' : 'No hay archivo adjunto.'}</p>
+              {doc.file_data_url && <DocumentDownloadButton doc={doc} />}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Historial</h4>
+            <div className="mt-4 space-y-3">
+              {history.map((item) => (
+                <div key={item.key} className="flex gap-3">
+                  <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm ${item.tone}`}>{item.icon}</span>
+                  <div>
+                    <p className="text-sm font-black text-ink">{item.title}</p>
+                    <p className="text-xs text-slate-500">{item.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black uppercase tracking-wide text-slate-500">Acciones</h4>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">Interfaz preparada</span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {DOCUMENT_REVIEW_ACTIONS.map((action) => (
+                <button key={action.label} type="button" className={`cursor-not-allowed rounded-xl border px-3 py-3 text-left text-sm font-black opacity-75 ${action.tone}`} aria-disabled="true">
+                  <span className="mr-2" aria-hidden="true">{action.icon}</span>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            {canDelete && (
+              <button className="focus-ring mt-3 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50" type="button" onClick={() => onDelete(doc)}>
+                <Trash2 size={17} /> Eliminar documento
+              </button>
+            )}
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DocumentMetaLine({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
+      <dt className="font-semibold text-slate-500">{label}</dt>
+      <dd className="text-right font-bold text-ink">{value || '-'}</dd>
+    </div>
+  );
+}
+
+function DocumentInfoBox({ label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-bold text-ink">{value || '-'}</p>
     </div>
   );
 }
@@ -3666,6 +3873,85 @@ function intelligentDocumentStatus(doc) {
   return 'Vigente';
 }
 
+function documentStatusMeta(status) {
+  const meta = {
+    Vigente: {
+      icon: '🟢',
+      badge: 'border-brand-200 bg-brand-50 text-brand-800',
+      panel: 'border-brand-100 bg-brand-50/70',
+      description: 'Documento vigente. No requiere intervención inmediata.'
+    },
+    'Próximo a caducar': {
+      icon: '🟡',
+      badge: 'border-amber-200 bg-amber-50 text-amber-800',
+      panel: 'border-amber-100 bg-amber-50/70',
+      description: 'Documento próximo a caducar. Conviene preparar su renovación.'
+    },
+    Caducado: {
+      icon: '🔴',
+      badge: 'border-red-200 bg-red-50 text-red-800',
+      panel: 'border-red-100 bg-red-50/70',
+      description: 'Documento caducado. Requiere revisión del equipo.'
+    },
+    'Pendiente de revisión': {
+      icon: '⚫',
+      badge: 'border-slate-300 bg-slate-100 text-slate-800',
+      panel: 'border-slate-200 bg-slate-50',
+      description: 'Documento pendiente de revisión por el equipo.'
+    },
+    'No requerido': {
+      icon: '⚪',
+      badge: 'border-slate-200 bg-white text-slate-600',
+      panel: 'border-slate-200 bg-white',
+      description: 'Documento marcado como no requerido para este expediente.'
+    }
+  };
+  return meta[status] || meta['Pendiente de revisión'];
+}
+
+function buildDocumentReviewHistory(doc, status) {
+  const entries = [];
+  const uploadedAt = doc.uploaded_at || doc.created_at;
+  if (uploadedAt) {
+    entries.push({
+      key: 'received',
+      icon: '📄',
+      title: 'Documento recibido',
+      date: formatDateTime(uploadedAt),
+      tone: 'bg-blue-50 text-blue-700'
+    });
+  }
+  if (doc.reviewed_at) {
+    entries.push({
+      key: 'reviewed',
+      icon: status === 'Caducado' ? '⚠' : '✔',
+      title: status === 'Caducado' ? 'Documento revisado con incidencias' : 'Documento revisado',
+      date: formatDateTime(doc.reviewed_at),
+      tone: status === 'Caducado' ? 'bg-red-50 text-red-700' : 'bg-brand-50 text-brand-700'
+    });
+  }
+  const updatedAt = documentUpdatedValue(doc);
+  if (updatedAt && updatedAt !== uploadedAt && updatedAt !== doc.reviewed_at) {
+    entries.push({
+      key: 'updated',
+      icon: '↻',
+      title: 'Última actualización',
+      date: formatDateTime(updatedAt),
+      tone: 'bg-slate-100 text-slate-700'
+    });
+  }
+  if (!entries.length) {
+    entries.push({
+      key: 'empty',
+      icon: '📄',
+      title: 'Sin historial registrado',
+      date: 'El historial aparecerá cuando haya revisiones documentales.',
+      tone: 'bg-slate-100 text-slate-600'
+    });
+  }
+  return entries;
+}
+
 function documentDisplayName(doc) {
   return doc.document_type || doc.file_name || 'documento';
 }
@@ -3688,6 +3974,10 @@ function daysUntilDocumentExpiry(doc) {
 
 function documentExpiryValue(doc) {
   return doc.expires_at || doc.expiration_date || doc.expiry_date || doc.expires_on || doc.valid_until || doc.valid_to || '';
+}
+
+function documentUpdatedValue(doc) {
+  return doc.updated_at || doc.reviewed_at || doc.uploaded_at || doc.created_at || '';
 }
 
 function DocumentDownloadButton({ doc, iconOnly = false }) {
