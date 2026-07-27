@@ -690,8 +690,12 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
   const [documentOverrideKey, setDocumentOverrideKey] = useState('');
   const [familyAssociationChoice, setFamilyAssociationChoice] = useState('');
   const [selectedFamilyMatchId, setSelectedFamilyMatchId] = useState('');
+  const [warningConfirmationOpen, setWarningConfirmationOpen] = useState(false);
+  const [confirmedWarningKey, setConfirmedWarningKey] = useState('');
+  const [highlightWarnings, setHighlightWarnings] = useState(false);
   const documentInputRef = useRef(null);
   const codeInputRef = useRef(null);
+  const warningsRef = useRef(null);
   const activeFamilies = safeRows(families).filter((family) => !isArchivedFamily(family));
   const selectedArchivedFamily = form.family_id ? families.find((family) => family.id === form.family_id && isArchivedFamily(family)) : null;
   const selectableFamilies = selectedArchivedFamily
@@ -704,6 +708,8 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
   const familyMatchIds = familyAnalysis.familyUnitMatches.map((family) => family.id).join('|');
   const duplicateDocument = findDuplicateBeneficiaryDocument(beneficiaries, form, form.id);
   const duplicateDocumentKey = duplicateDocument ? `${duplicateDocument.id}:${normalizeDocument(form.document_id)}` : '';
+  const activeWarnings = useMemo(() => buildBeneficiaryWarningSummaries(familyAnalysis), [familyAnalysis]);
+  const activeWarningKey = activeWarnings.map((warning) => warning.key).join('|');
 
   useEffect(() => {
     const matches = familyAnalysis.familyUnitMatches;
@@ -720,6 +726,7 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
 
   const update = (field, value) => {
     setFormError('');
+    setConfirmedWarningKey('');
     if (field === 'document_id') {
       setDocumentConflict(null);
       setDocumentOverrideKey('');
@@ -887,16 +894,40 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
     }
   }
 
+  function shouldConfirmWarnings() {
+    return activeWarnings.length > 0 && confirmedWarningKey !== activeWarningKey;
+  }
+
+  function reviewActiveWarnings() {
+    setWarningConfirmationOpen(false);
+    warningsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setHighlightWarnings(true);
+    window.setTimeout(() => setHighlightWarnings(false), 2200);
+  }
+
+  async function continueAfterWarningConfirmation() {
+    setWarningConfirmationOpen(false);
+    setConfirmedWarningKey(activeWarningKey);
+    const preparedForm = buildPreparedForm();
+    if (preparedForm?.invalid) return;
+    await submitPreparedForm(preparedForm);
+  }
+
   async function submit(event) {
     event.preventDefault();
     setFormError('');
     if (!validateUniqueFields()) return;
     const preparedForm = buildPreparedForm();
     if (preparedForm?.invalid) return;
+    if (shouldConfirmWarnings()) {
+      setWarningConfirmationOpen(true);
+      return;
+    }
     await submitPreparedForm(preparedForm);
   }
 
   return (
+    <>
     <form className="space-y-5" onSubmit={submit}>
       {formError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">{formError}</div>}
       {documentConflict && (
@@ -923,15 +954,22 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
           )}
         </div>
       )}
-      <FamilyUnitDetectionBlock
-        analysis={familyAnalysis}
-        choice={familyAssociationChoice}
-        selectedFamilyId={selectedFamilyMatchId}
-        onChoice={setFamilyAssociationChoice}
-        onSelectFamily={setSelectedFamilyMatchId}
-        onOpenFamily={onOpenFamily}
-      />
-      <FamilyIntelligenceAlerts analysis={familyAnalysis} />
+      {activeWarnings.length > 0 && (
+        <div
+          ref={warningsRef}
+          className={`space-y-3 rounded-xl transition-all duration-300 ${highlightWarnings ? 'bg-amber-50/70 p-2 ring-4 ring-amber-300 ring-offset-2' : ''}`}
+        >
+          <FamilyUnitDetectionBlock
+            analysis={familyAnalysis}
+            choice={familyAssociationChoice}
+            selectedFamilyId={selectedFamilyMatchId}
+            onChoice={setFamilyAssociationChoice}
+            onSelectFamily={setSelectedFamilyMatchId}
+            onOpenFamily={onOpenFamily}
+          />
+          <FamilyIntelligenceAlerts analysis={familyAnalysis} />
+        </div>
+      )}
 
       <FormSection icon={CircleUserRound} title="Identificación" description="Datos básicos de la persona atendida.">
         <FormField label="Código de beneficiario">
@@ -1056,6 +1094,30 @@ function BeneficiaryForm({ families, beneficiaries, initial, onSubmit, onCancel,
         <Button type="submit" disabled={saving}>{saving ? 'Guardando…' : form.id ? 'Guardar cambios' : 'Crear beneficiario'}</Button>
       </div>
     </form>
+    {warningConfirmationOpen && (
+      <Modal title="⚠ Se han detectado coincidencias en este expediente." onClose={() => setWarningConfirmationOpen(false)}>
+        <div className="space-y-5">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-black">Revise estas coincidencias antes de continuar.</p>
+            <ul className="mt-3 space-y-2">
+              {activeWarnings.map((warning) => (
+                <li key={warning.key} className="flex gap-2">
+                  <span aria-hidden="true">{warning.icon}</span>
+                  <span>{warning.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-sm font-semibold text-slate-700">¿Qué desea hacer?</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button type="button" variant="secondary" onClick={reviewActiveWarnings}>Revisar coincidencias</Button>
+            <Button type="button" onClick={continueAfterWarningConfirmation}>Continuar de todos modos</Button>
+            <Button type="button" variant="secondary" onClick={() => setWarningConfirmationOpen(false)}>Cancelar</Button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -1074,6 +1136,40 @@ function FormSection({ icon: Icon, title, description, children }) {
 
 function FieldError({ children }) {
   return <p className="mt-1 text-sm font-medium text-red-600" role="alert">{children}</p>;
+}
+
+function buildBeneficiaryWarningSummaries(analysis) {
+  if (!analysis) return [];
+  const warnings = [];
+  if (analysis.phoneMatches?.length) {
+    warnings.push({
+      key: `phone:${analysis.phoneMatches.map((item) => item.id).join(',')}`,
+      icon: '📞',
+      text: `El teléfono ya está registrado: ${analysis.phoneMatches.slice(0, 2).map(formatBeneficiaryMatch).join(' / ')}.`
+    });
+  }
+  if (analysis.familyUnitMatches?.length) {
+    warnings.push({
+      key: `address:${analysis.familyUnitMatches.map((item) => item.id).join(',')}`,
+      icon: '🏠',
+      text: 'Existe otra persona en la misma dirección o una posible unidad familiar.'
+    });
+  }
+  if (analysis.emailMatches?.length) {
+    warnings.push({
+      key: `email:${analysis.emailMatches.map((item) => item.id).join(',')}`,
+      icon: '✉️',
+      text: `El email ya está registrado: ${analysis.emailMatches.slice(0, 2).map(formatBeneficiaryMatch).join(' / ')}.`
+    });
+  }
+  if (analysis.nameMatches?.length) {
+    warnings.push({
+      key: `name:${analysis.nameMatches.map((item) => item.id).join(',')}`,
+      icon: '👤',
+      text: `Hay nombres similares: ${analysis.nameMatches.slice(0, 2).map(formatBeneficiaryMatch).join(' / ')}.`
+    });
+  }
+  return warnings;
 }
 
 function FamilyUnitDetectionBlock({ analysis, choice, selectedFamilyId, onChoice, onSelectFamily, onOpenFamily }) {
