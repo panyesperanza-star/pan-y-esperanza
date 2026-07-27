@@ -3325,11 +3325,14 @@ function DeliveriesPanel({ deliveries, beneficiary, allDeliveries }) {
 function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, uploadTrigger = 0, onNotice = () => {} }) {
   const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0]);
   const [uploading, setUploading] = useState(false);
+  const [showClassicDocuments, setShowClassicDocuments] = useState(false);
   const inputRef = useRef(null);
+  const intelligenceSummary = useMemo(() => buildDocumentIntelligenceSummary(documents), [documents]);
 
   useEffect(() => {
     if (!uploadTrigger || !canEdit || uploading) return;
-    inputRef.current?.click();
+    setShowClassicDocuments(true);
+    window.requestAnimationFrame(() => inputRef.current?.click());
   }, [uploadTrigger, canEdit, uploading]);
 
   async function uploadDocument(event) {
@@ -3371,8 +3374,12 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
   }
 
   return (
-    <section>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="space-y-5">
+      <DocumentIntelligenceOverview summary={intelligenceSummary} onShowDocuments={() => setShowClassicDocuments(true)} />
+
+      {showClassicDocuments && (
+        <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <SectionHeading icon={Paperclip} title="Documentación" description="Archivos asociados al expediente." />
         {canEdit && <div className="flex flex-col gap-2 sm:flex-row"><select className={inputClass} value={documentType} onChange={(event) => setDocumentType(event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select><label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"><Upload size={17} /> {uploading ? 'Subiendo...' : 'Subir documento'}<input ref={inputRef} className="hidden" type="file" disabled={uploading} onChange={uploadDocument} /></label></div>}
       </div>
@@ -3387,8 +3394,204 @@ function DocumentsPanel({ documents, beneficiary, actions, canEdit, canDelete, u
         ))}
       </div>
       {!documents.length && <div className="mt-4"><EmptyState icon={Paperclip} title="Sin documentos" text="Todavía no se ha adjuntado documentación a este expediente." /></div>}
+        </div>
+      )}
     </section>
   );
+}
+
+const DOCUMENT_EXPIRY_WARNING_DAYS = 30;
+
+function DocumentIntelligenceOverview({ summary, onShowDocuments }) {
+  const state = summary.state;
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-700">📄 Gestión Documental</p>
+          <h3 className="mt-1 text-2xl font-black text-ink">Estado documental del expediente</h3>
+          <div className={`mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm font-black ${state.tone}`}>
+            <span className="mr-1.5">{state.icon}</span>
+            <span>Estado del expediente: {state.label}</span>
+          </div>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">{state.description}</p>
+        </div>
+        <Button type="button" variant="secondary" onClick={onShowDocuments}><FileText size={17} /> Ver documentos</Button>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.4fr]">
+        <DocumentHealthCard summary={summary} />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {summary.counters.map((counter) => (
+            <div key={counter.label} className={`rounded-xl border p-4 ${counter.tone}`}>
+              <p className="text-2xl font-black">{counter.value}</p>
+              <p className="mt-1 text-xs font-black uppercase tracking-wide">{counter.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {summary.actions.length > 0 && (
+        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-black text-amber-900">Acciones recomendadas</p>
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            {summary.actions.map((action) => (
+              <div key={action.key} className="rounded-lg border border-white/80 bg-white px-3 py-2 text-sm shadow-sm">
+                <p className="font-black text-ink">{action.title}</p>
+                <p className="mt-1 text-slate-600">{action.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DocumentHealthCard({ summary }) {
+  return (
+    <div className="rounded-xl border border-brand-100 bg-brand-50/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-brand-800">Salud documental</p>
+          <p className="mt-1 text-3xl font-black text-ink">{summary.health}%</p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-black ${summary.state.tone}`}>{summary.state.icon} {summary.state.shortLabel}</span>
+      </div>
+      <div className="mt-4 h-3 overflow-hidden rounded-full bg-white">
+        <div className={`h-full rounded-full ${summary.healthTone}`} style={{ width: `${summary.health}%` }} />
+      </div>
+      <p className="mt-3 text-sm font-semibold leading-5 text-slate-700">{summary.healthText}</p>
+    </div>
+  );
+}
+
+function buildDocumentIntelligenceSummary(documents = []) {
+  const items = safeRows(documents).map((doc) => ({
+    doc,
+    status: intelligentDocumentStatus(doc)
+  }));
+  const counts = {
+    Vigente: 0,
+    'Próximo a caducar': 0,
+    Caducado: 0,
+    'Pendiente de revisión': 0,
+    'No requerido': 0
+  };
+  items.forEach((item) => {
+    counts[item.status] = (counts[item.status] || 0) + 1;
+  });
+  const total = items.length;
+  const healthy = counts.Vigente + counts['No requerido'];
+  const health = total ? Math.round((healthy / total) * 100) : 0;
+  const state = buildDocumentFileState({ total, counts });
+  return {
+    total,
+    counts,
+    state,
+    health,
+    healthTone: health >= 80 ? 'bg-brand-600' : health >= 45 ? 'bg-amber-500' : 'bg-red-500',
+    healthText: documentHealthText({ total, counts, health }),
+    counters: [
+      { label: 'Vigentes', value: counts.Vigente, tone: 'border-brand-100 bg-brand-50 text-brand-800' },
+      { label: 'Próximos a caducar', value: counts['Próximo a caducar'], tone: 'border-amber-100 bg-amber-50 text-amber-800' },
+      { label: 'Caducados', value: counts.Caducado, tone: 'border-red-100 bg-red-50 text-red-800' },
+      { label: 'Pendientes de revisión', value: counts['Pendiente de revisión'], tone: 'border-slate-200 bg-slate-50 text-slate-800' },
+      { label: 'No requeridos', value: counts['No requerido'], tone: 'border-slate-200 bg-white text-slate-600' }
+    ],
+    actions: buildDocumentRecommendedActions(items, counts)
+  };
+}
+
+function buildDocumentFileState({ total, counts }) {
+  if (counts.Caducado > 0) {
+    return {
+      icon: '🔴',
+      label: 'Documentación crítica pendiente',
+      shortLabel: 'Crítico',
+      tone: 'border-red-200 bg-red-50 text-red-800',
+      description: 'Hay documentación caducada que requiere intervención del equipo.'
+    };
+  }
+  if (!total || counts['Pendiente de revisión'] > 0 || counts['Próximo a caducar'] > 0) {
+    return {
+      icon: '🟡',
+      label: 'Requiere actualización',
+      shortLabel: 'Revisar',
+      tone: 'border-amber-200 bg-amber-50 text-amber-800',
+      description: total ? 'El expediente tiene documentación pendiente o próxima a necesitar actualización.' : 'No hay documentación registrada en el expediente.'
+    };
+  }
+  return {
+    icon: '🟢',
+    label: 'Completo',
+    shortLabel: 'Completo',
+    tone: 'border-brand-200 bg-brand-50 text-brand-800',
+    description: 'La documentación registrada no requiere acciones inmediatas.'
+  };
+}
+
+function documentHealthText({ total, counts, health }) {
+  if (!total) return 'Sin documentación registrada. Conviene solicitar la documentación básica del expediente.';
+  if (counts.Caducado) return `${counts.Caducado} documento(s) caducado(s). Prioriza la renovación.`;
+  if (counts['Pendiente de revisión']) return `${counts['Pendiente de revisión']} documento(s) pendiente(s) de revisión.`;
+  if (counts['Próximo a caducar']) return `${counts['Próximo a caducar']} documento(s) próximo(s) a caducar.`;
+  return `Salud documental ${health}%. No hay acciones urgentes.`;
+}
+
+function buildDocumentRecommendedActions(items, counts) {
+  if (!items.length) {
+    return [{ key: 'request-documents', title: 'Solicitar documentación', detail: 'El expediente no tiene documentos registrados.' }];
+  }
+  const actions = [];
+  items
+    .filter((item) => item.status === 'Caducado')
+    .slice(0, 2)
+    .forEach((item) => actions.push({ key: `expired-${item.doc.id}`, title: `Renovar ${documentDisplayName(item.doc)}`, detail: 'Documento caducado.' }));
+  items
+    .filter((item) => item.status === 'Próximo a caducar')
+    .slice(0, 2)
+    .forEach((item) => actions.push({ key: `expiring-${item.doc.id}`, title: `Renovar ${documentDisplayName(item.doc)}`, detail: `Caduca pronto${documentExpiryLabel(item.doc) ? `: ${documentExpiryLabel(item.doc)}` : '.'}` }));
+  items
+    .filter((item) => item.status === 'Pendiente de revisión')
+    .slice(0, 2)
+    .forEach((item) => actions.push({ key: `review-${item.doc.id}`, title: 'Revisar documento', detail: documentDisplayName(item.doc) }));
+  return actions.slice(0, 4);
+}
+
+function intelligentDocumentStatus(doc) {
+  const statusText = normalize([doc.status, doc.review_status, doc.portal_status, doc.notes].filter(Boolean).join(' '));
+  if (statusText.includes('no requerido') || statusText.includes('no aplica')) return 'No requerido';
+  const daysUntilExpiry = daysUntilDocumentExpiry(doc);
+  if (daysUntilExpiry !== null && daysUntilExpiry < 0) return 'Caducado';
+  if (statusText.includes('caduc')) return 'Caducado';
+  if (!doc.file_data_url || statusText.includes('pendiente') || statusText.includes('revision')) return 'Pendiente de revisión';
+  if (daysUntilExpiry !== null && daysUntilExpiry <= DOCUMENT_EXPIRY_WARNING_DAYS) return 'Próximo a caducar';
+  return 'Vigente';
+}
+
+function documentDisplayName(doc) {
+  return doc.document_type || doc.file_name || 'documento';
+}
+
+function documentExpiryLabel(doc) {
+  const value = documentExpiryValue(doc);
+  return value ? formatDate(value) : '';
+}
+
+function daysUntilDocumentExpiry(doc) {
+  const value = documentExpiryValue(doc);
+  if (!value) return null;
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  expiry.setHours(0, 0, 0, 0);
+  return Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+}
+
+function documentExpiryValue(doc) {
+  return doc.expires_at || doc.expiration_date || doc.expiry_date || doc.expires_on || doc.valid_until || doc.valid_to || '';
 }
 
 function DocumentDownloadButton({ doc, iconOnly = false }) {
