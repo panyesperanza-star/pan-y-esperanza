@@ -189,7 +189,7 @@ export async function createOfficialCredentialPdf(credential = {}) {
   const issuedAt = new Date().toISOString();
   const status = credential.status || 'Activo';
   const qr = await QRCode.toDataURL(buildOfficialCredentialQrPayload({ ...credential, issuedAt }), { margin: 0, width: 360 });
-  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'cover' }) : null;
+  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'contain' }) : null;
   const statusTone = officialCredentialStatusTone(status);
   const logo = await getOfficialLogo();
   const element = createOfficialCredentialHtmlElement({
@@ -1659,8 +1659,8 @@ function createOfficialCredentialHtmlElement(credential = {}) {
     <div style="position:absolute;right:3.9mm;top:5.35mm;width:19.5mm;color:#ffffff;font-size:${typeSize}pt;font-weight:800;text-align:right;letter-spacing:0.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(typeLabel)}</div>
     ${renderCredentialPhotoArea(credential, photoSrc)}
     <div style="position:absolute;left:24.8mm;top:12.4mm;width:60.8mm;height:34.8mm;background:#ffffff;"></div>
-    <div style="position:absolute;left:27.7mm;top:17.3mm;width:0.25mm;height:5.2mm;background:#e2e8e2;"></div>
-    <div style="position:absolute;left:28.6mm;top:17.3mm;width:0.25mm;height:5.2mm;background:#c1782a;"></div>
+    <div style="position:absolute;left:27.7mm;top:17.15mm;width:0.16mm;height:5.5mm;background:#e2e8e2;"></div>
+    <div style="position:absolute;left:28.6mm;top:17.15mm;width:0.16mm;height:5.5mm;background:#c1782a;"></div>
     <div style="position:absolute;left:31.2mm;top:17.15mm;width:24.6mm;color:#141c20;font-size:${nameSize}pt;font-weight:800;line-height:1.04;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(displayName)}</div>
     <div style="position:absolute;left:31.2mm;top:26mm;width:23.6mm;color:#141c20;font-size:${codeSize}pt;font-weight:800;letter-spacing:0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(code)}</div>
     <div style="position:absolute;left:31.2mm;top:31.15mm;width:23.8mm;color:#526058;font-size:4.2pt;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Emisión: ${escapeHtml(formatDate(credential.issuedAt))}</div>
@@ -1676,7 +1676,7 @@ function createOfficialCredentialHtmlElement(credential = {}) {
 
 function renderCredentialPhotoArea(credential = {}, photoSrc = '') {
   if (credential.showPhoto && photoSrc) {
-    return `<img alt="" src="${escapeAttribute(photoSrc)}" style="position:absolute;left:0;top:12.4mm;width:24.8mm;height:34.8mm;object-fit:cover;object-position:center center;" />`;
+    return `<img alt="" src="${escapeAttribute(photoSrc)}" style="position:absolute;left:0;top:12.4mm;width:24.8mm;height:34.8mm;background:#f7faf8;object-fit:contain;object-position:center center;" />`;
   }
   if (credential.photoRequired) {
     return `
