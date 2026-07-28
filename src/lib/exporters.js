@@ -61,8 +61,16 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   doc.save(`Resumen-expediente-${beneficiary.code}.pdf`);
 }
 
+export async function printBeneficiaryCredentialPdf(beneficiary = {}, organization = {}) {
+  const { doc, filename } = await createBeneficiaryCredentialPdf(beneficiary, organization);
+  return openOfficialCredentialPdf(doc, filename);
+}
+
 export async function printBeneficiaryCardPdf(beneficiary = {}, organization = {}) {
-  const { doc, filename } = await createBeneficiaryCardPdf(beneficiary, organization);
+  return printBeneficiaryCredentialPdf(beneficiary, organization);
+}
+
+function openOfficialCredentialPdf(doc, filename) {
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
   const opened = window.open(url, '_blank', 'noopener,noreferrer');
@@ -75,75 +83,167 @@ export async function printBeneficiaryCardPdf(beneficiary = {}, organization = {
   return { doc, filename, opened: true };
 }
 
+export async function createBeneficiaryCredentialPdf(beneficiary = {}, organization = {}) {
+  return createOfficialCredentialPdf({
+    kind: 'beneficiary',
+    typeLabel: 'BENEFICIARIO',
+    title: 'Credencial oficial del beneficiario',
+    displayName: beneficiary.full_name || 'Beneficiario',
+    code: beneficiary.code || '-',
+    status: beneficiaryCardStatus(beneficiary),
+    dateLabel: 'Emisión',
+    dateValue: new Date().toISOString(),
+    organization,
+    subjectId: beneficiary.id || beneficiary.code || null,
+    showPhoto: false
+  });
+}
+
 export async function createBeneficiaryCardPdf(beneficiary = {}, organization = {}) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [86, 54] });
+  return createBeneficiaryCredentialPdf(beneficiary, organization);
+}
+
+export async function printDonorCredentialPdf(donor = {}, organization = {}) {
+  const { doc, filename } = await createOfficialCredentialPdf({
+    kind: 'donor',
+    typeLabel: 'DONANTE',
+    title: 'Credencial oficial del donante',
+    displayName: donor.name || donor.company_name || donor.full_name || donor.email || 'Donante',
+    code: donor.code || donor.donor_code || '-',
+    status: officialCredentialStatus(donor),
+    dateLabel: 'Alta',
+    dateValue: donor.joined_at || donor.created_at || donor.first_donation_at || new Date().toISOString(),
+    organization,
+    subjectId: donor.id || donor.code || null,
+    showPhoto: false
+  });
+  return openOfficialCredentialPdf(doc, filename);
+}
+
+export async function printCollaboratorCredentialPdf(collaborator = {}, organization = {}) {
+  const { doc, filename } = await createOfficialCredentialPdf({
+    kind: 'collaborator',
+    typeLabel: 'COLABORADOR',
+    title: 'Credencial oficial del colaborador',
+    displayName: collaborator.name || collaborator.business_name || collaborator.company_name || collaborator.contact_name || 'Colaborador',
+    role: collaborator.role || collaborator.position || collaborator.type || 'Colaborador acreditado',
+    code: collaborator.code || collaborator.collaborator_code || '-',
+    status: officialCredentialStatus(collaborator),
+    dateLabel: 'Alta',
+    dateValue: collaborator.joined_at || collaborator.created_at || new Date().toISOString(),
+    organization,
+    subjectId: collaborator.id || collaborator.code || null,
+    showPhoto: true,
+    photoSources: [
+      collaborator.photo_data_url,
+      collaborator.photo_url,
+      collaborator.logo_data_url,
+      collaborator.logo_url,
+      collaborator.avatar_url
+    ]
+  });
+  return openOfficialCredentialPdf(doc, filename);
+}
+
+export async function printVolunteerCredentialPdf(volunteer = {}, organization = {}) {
+  const { doc, filename } = await createOfficialCredentialPdf({
+    kind: 'volunteer',
+    typeLabel: 'VOLUNTARIO',
+    title: 'Credencial oficial del voluntario',
+    displayName: volunteer.full_name || volunteer.name || 'Voluntario',
+    role: 'Voluntario acreditado',
+    code: volunteer.code || volunteer.volunteer_code || '-',
+    status: officialCredentialStatus(volunteer),
+    dateLabel: 'Alta',
+    dateValue: volunteer.joined_at || volunteer.created_at || new Date().toISOString(),
+    organization,
+    subjectId: volunteer.id || volunteer.code || null,
+    showPhoto: true,
+    photoSources: [volunteer.photo_data_url, volunteer.photo_url, volunteer.avatar_url]
+  });
+  return openOfficialCredentialPdf(doc, filename);
+}
+
+export async function createOfficialCredentialPdf(credential = {}) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [85, 54] });
   const issuedAt = new Date().toISOString();
+  const organization = credential.organization || {};
   const orgName = organization.name || 'Asociación Pan y Esperanza';
-  const status = beneficiaryCardStatus(beneficiary);
-  const qr = await QRCode.toDataURL(beneficiaryCardQrPayload({ beneficiary, organization, issuedAt, status }), { margin: 1, width: 180 });
-  const photo = await getBeneficiaryReportPhoto(beneficiary);
+  const status = credential.status || 'Activo';
+  const qr = await QRCode.toDataURL(officialCredentialQrPayload({ ...credential, issuedAt, status, organization }), { margin: 1, width: 220 });
+  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources) : null;
 
   doc.setFillColor(247, 250, 246);
-  doc.roundedRect(0, 0, 86, 54, 3, 3, 'F');
+  doc.roundedRect(0, 0, 85, 54, 3, 3, 'F');
   doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 86, 12, 'F');
+  doc.rect(0, 0, 85, 12, 'F');
   await addOfficialLogo(doc, 4, 2.2, 13, 8);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.8);
   doc.setTextColor(255, 255, 255);
-  doc.text(orgName, 19, 6.4);
+  doc.text(doc.splitTextToSize(orgName, 50), 19, 6.4);
   doc.setFontSize(4.9);
   doc.setFont('helvetica', 'normal');
-  doc.text('Carné oficial del beneficiario', 19, 9.2);
+  doc.text(credential.title || 'Credencial oficial', 19, 9.2);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(4.8);
+  doc.text(credential.typeLabel || 'CREDENCIAL', 80.5, 6.8, { align: 'right' });
 
-  const photoX = 5;
-  const photoY = 16;
-  const photoW = 18;
-  const photoH = 22;
-  if (photo?.dataUrl) {
-    doc.addImage(photo.dataUrl, photo.format || 'JPEG', photoX, photoY, photoW, photoH);
-  } else {
+  const mediaX = 5;
+  const mediaY = 16;
+  const mediaW = 18;
+  const mediaH = 21;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2, 2, 'F');
+  doc.setDrawColor(219, 229, 220);
+  doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2, 2, 'S');
+  if (credential.showPhoto && photo?.dataUrl) {
+    doc.addImage(photo.dataUrl, photo.format || 'JPEG', mediaX + 1, mediaY + 1, mediaW - 2, mediaH - 2);
+  } else if (credential.showPhoto) {
     doc.setFillColor(219, 236, 226);
-    doc.roundedRect(photoX, photoY, photoW, photoH, 2, 2, 'F');
+    doc.roundedRect(mediaX + 1, mediaY + 1, mediaW - 2, mediaH - 2, 2, 2, 'F');
     doc.setTextColor(36, 126, 80);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.text(reportInitials(beneficiary.full_name), photoX + photoW / 2, photoY + 12.5, { align: 'center' });
+    doc.text(reportInitials(credential.displayName), mediaX + mediaW / 2, mediaY + 12, { align: 'center' });
+  } else {
+    await addOfficialLogo(doc, mediaX + 2.2, mediaY + 5.2, mediaW - 4.4, 10);
   }
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(23, 33, 27);
-  doc.setFontSize(9.4);
-  doc.text(doc.splitTextToSize(beneficiary.full_name || 'Beneficiario', 38), 27, 18);
-  doc.setFontSize(6.5);
+  doc.setFontSize(8.6);
+  doc.text(doc.splitTextToSize(credential.displayName || '-', 34), 27, 18);
+  doc.setFontSize(5.9);
   doc.setTextColor(36, 126, 80);
-  doc.text(`Código: ${beneficiary.code || '-'}`, 27, 27);
+  doc.text(`Código: ${credential.code || '-'}`, 27, 26);
   doc.setTextColor(23, 33, 27);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Emisión: ${formatDate(issuedAt)}`, 27, 32);
-  doc.text(`Estado: ${status}`, 27, 37);
+  if (credential.role) doc.text(credential.role, 27, 30.5);
+  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 27, credential.role ? 35 : 31);
+  doc.text(`Estado: ${status}`, 27, credential.role ? 39.5 : 36);
 
-  const statusTone = beneficiaryCardStatusTone(status);
+  const statusTone = officialCredentialStatusTone(status);
   doc.setFillColor(...statusTone.fill);
   doc.setTextColor(...statusTone.text);
-  doc.roundedRect(27, 40, 25, 6, 2, 2, 'F');
+  doc.roundedRect(27, 42, 24, 5.8, 2, 2, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.4);
-  doc.text(status.toUpperCase(), 39.5, 44, { align: 'center' });
+  doc.setFontSize(5.1);
+  doc.text(String(status).toUpperCase(), 39, 45.8, { align: 'center' });
 
-  doc.addImage(qr, 'PNG', 66, 18, 16, 16);
+  doc.addImage(qr, 'PNG', 62.5, 16, 19.5, 19.5);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(4.7);
+  doc.setFontSize(4.6);
   doc.setTextColor(96, 112, 100);
-  doc.text('QR preparado para validación interna y futuras integraciones de Entregas.', 66, 37, { maxWidth: 16 });
+  doc.text('QR preparado para entregas, control de acceso, validación rápida y app móvil.', 62.5, 38.5, { maxWidth: 19.5 });
   doc.setDrawColor(219, 229, 220);
-  doc.line(5, 47, 81, 47);
-  doc.setFontSize(4.9);
-  doc.text('Documento personal e intransferible. Uso interno de Pan y Esperanza.', 5, 50);
+  doc.line(5, 49, 80, 49);
+  doc.setFontSize(4.8);
+  doc.text('Documento personal e intransferible. Uso interno de Pan y Esperanza.', 5, 52);
 
   return {
     doc,
-    filename: `Carne-beneficiario-${safePdfFilename(beneficiary.code || beneficiary.full_name || 'beneficiario')}.pdf`
+    filename: `Credencial-${safePdfFilename(credential.kind || 'persona')}-${safePdfFilename(credential.code || credential.displayName || 'althemon')}.pdf`
   };
 }
 
@@ -1517,23 +1617,44 @@ function beneficiaryCardStatus(beneficiary = {}) {
   return 'Activo';
 }
 
-function beneficiaryCardStatusTone(status) {
-  if (status === 'Caducado') return { fill: [254, 226, 226], text: [185, 28, 28] };
-  if (status === 'Suspendido') return { fill: [254, 243, 199], text: [146, 64, 14] };
+function officialCredentialStatus(record = {}) {
+  const raw = String(record.status || record.portal_status || '').trim();
+  const normalized = normalizeTextForReport(raw);
+  if (record.is_active === false || record.active === false || normalized.includes('inactivo') || normalized.includes('suspend') || normalized.includes('bloque')) return 'Suspendido';
+  if (normalized.includes('caduc')) return 'Caducado';
+  return raw || 'Activo';
+}
+
+function officialCredentialStatusTone(status) {
+  const normalized = normalizeTextForReport(status);
+  if (normalized.includes('caduc')) return { fill: [254, 226, 226], text: [185, 28, 28] };
+  if (normalized.includes('suspend') || normalized.includes('inactivo') || normalized.includes('bloque')) return { fill: [254, 243, 199], text: [146, 64, 14] };
   return { fill: [220, 242, 229], text: [36, 126, 80] };
 }
 
-function beneficiaryCardQrPayload({ beneficiary = {}, organization = {}, issuedAt, status }) {
+function officialCredentialQrPayload({ kind, subjectId, code, displayName, organization = {}, issuedAt, status }) {
   return JSON.stringify({
-    type: 'beneficiary-card',
+    type: 'official-credential',
     version: 1,
-    beneficiary_id: beneficiary.id || null,
-    beneficiary_code: beneficiary.code || null,
+    credential_kind: kind || 'person',
+    subject_id: subjectId || null,
+    code: code || null,
+    display_name: displayName || null,
     organization: organization.name || 'Pan y Esperanza',
     issued_at: issuedAt,
     status,
-    integrations: ['deliveries']
+    integrations: ['deliveries', 'access-control', 'quick-validation', 'mobile-app']
   });
+}
+
+async function resolveOfficialCredentialPhoto(sources = []) {
+  const candidates = Array.isArray(sources) ? sources : [sources];
+  for (const source of candidates) {
+    if (!source) continue;
+    const photo = await prepareReportImage(source, 420, 520, 0.82).catch(() => null);
+    if (photo?.dataUrl) return photo;
+  }
+  return null;
 }
 
 function reportResponsible(user) {

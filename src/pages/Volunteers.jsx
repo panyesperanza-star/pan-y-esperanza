@@ -26,6 +26,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { canDo } from '../lib/auth';
+import { printVolunteerCredentialPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
@@ -223,7 +224,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => printVolunteerCardPdf(volunteer, data.organization_settings?.[0])}><Printer size={16} /> Carné PDF</Button>
+            <Button type="button" variant="secondary" onClick={() => printVolunteerCredentialPdf(volunteer, data.organization_settings?.[0])}><Printer size={16} /> Generar credencial</Button>
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
@@ -290,7 +291,7 @@ function VolunteerCardPreview({ volunteer, organization }) {
 
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="font-bold text-ink">Carné identificativo</h3>
+      <h3 className="font-bold text-ink">Credencial oficial</h3>
       <div className="mt-3 rounded-lg border border-brand-100 bg-gradient-to-br from-white to-brand-50 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1008,45 +1009,6 @@ function volunteerDocumentLine(item) {
 
 function volunteerCommunicationLine(item) {
   return `${formatDateTime(item.sent_at)} · ${item.subject || 'Comunicación'} · ${item.recipient || '-'} · ${item.status || 'Registrada'}${item.result ? ` · ${item.result}` : ''}`;
-}
-
-async function printVolunteerCardPdf(volunteer, organization = {}) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [86, 54] });
-  const logo = await imageUrlToDataUrl(officialLogoUrl);
-  const qr = await QRCode.toDataURL(volunteerQrPayload(volunteer, organization), { margin: 1, width: 140 });
-  doc.setFillColor(247, 250, 246);
-  doc.roundedRect(0, 0, 86, 54, 3, 3, 'F');
-  doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 86, 10, 'F');
-  doc.addImage(logo, 'PNG', 4, 2, 11, 7);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text(organization.name || 'Asociación Pan y Esperanza', 18, 6.5);
-  doc.setTextColor(23, 33, 27);
-  if (volunteer.photo_data_url) doc.addImage(volunteer.photo_data_url, imageFormat(volunteer.photo_data_url), 5, 15, 20, 24);
-  else {
-    doc.setFillColor(219, 236, 226);
-    doc.roundedRect(5, 15, 20, 24, 2, 2, 'F');
-    doc.setFontSize(11);
-    doc.text(initials(volunteer.full_name), 15, 28, { align: 'center' });
-  }
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text(volunteer.full_name || '-', 30, 18);
-  doc.setFontSize(8);
-  doc.setTextColor(36, 126, 80);
-  doc.text('Voluntario acreditado', 30, 24);
-  doc.setTextColor(23, 33, 27);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Código: ${volunteer.code}`, 30, 30);
-  doc.text(`Alta: ${formatDate(volunteer.joined_at)}`, 30, 35);
-  doc.text(`Estado: ${volunteer.status}`, 30, 40);
-  doc.addImage(qr, 'PNG', 69, 35, 13, 13);
-  doc.setFontSize(5.5);
-  doc.setTextColor(96, 112, 100);
-  doc.text('Este carné identifica a la persona como voluntaria acreditada de la asociación.', 5, 50);
-  doc.save(`Carne-voluntario-${safeFilename(volunteer.code)}.pdf`);
 }
 
 function downloadVolunteerCertificate(volunteer, history, organization = {}) {

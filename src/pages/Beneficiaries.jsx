@@ -48,7 +48,7 @@ import { removeBeneficiaryDocumentFile, resolveBeneficiaryDocumentUrl, uploadBen
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printBeneficiaryCardPdf, printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
+import { printBeneficiaryCredentialPdf, printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
@@ -1578,13 +1578,13 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
 
   async function generateBeneficiaryCard() {
     try {
-      const result = await printBeneficiaryCardPdf(beneficiary, data.organization_settings?.[0] || {});
+      const result = await printBeneficiaryCredentialPdf(beneficiary, data.organization_settings?.[0] || {});
       setNotice(result.opened
-        ? 'Carné generado correctamente. Se ha abierto el PDF para visualizar, descargar o imprimir.'
-        : 'Carné generado correctamente. El navegador ha descargado el PDF.');
+        ? 'Credencial generada correctamente. Se ha abierto el PDF para visualizar, descargar o imprimir.'
+        : 'Credencial generada correctamente. El navegador ha descargado el PDF.');
     } catch (error) {
-      console.error('[BeneficiaryCard] No se pudo generar el carné', error);
-      setNotice(error.message || 'No se pudo generar el carné del beneficiario.');
+      console.error('[BeneficiaryCredential] No se pudo generar la credencial', error);
+      setNotice(error.message || 'No se pudo generar la credencial del beneficiario.');
     }
   }
 
@@ -1867,7 +1867,7 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, o
     { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
     { label: 'Gestionar documentacion', icon: Paperclip, onClick: onManageDocuments, enabled: Boolean(onManageDocuments) },
     { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) },
-    { label: 'Generar carné', icon: IdCard, onClick: onGenerateCard, enabled: Boolean(onGenerateCard) }
+    { label: 'Generar credencial', icon: IdCard, onClick: onGenerateCard, enabled: Boolean(onGenerateCard) }
   ];
   const secondaryActions = [
     { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },
