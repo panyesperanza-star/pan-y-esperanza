@@ -1,6 +1,7 @@
-import { isRoleActionAllowed, LEGACY_ROLE_PERMISSIONS, MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
+import { isRoleActionAllowed, LEGACY_ROLE_PERMISSIONS, MODULES, PERMISSION_ACTIONS, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS } from './constants';
 import { hasSupabaseConfig, supabase } from './supabase';
 
+const PERMISSION_ACTION_IDS = new Set(PERMISSION_ACTIONS.map((action) => action.id));
 const SESSION_KEY = 'pye-current-user';
 const JUST_SIGNED_IN_KEY = 'pye-just-signed-in';
 export const SYSTEM_SUPERADMIN_ROLE = 'Superadministrador del sistema';
@@ -167,16 +168,17 @@ export function canDo(user, moduleId, action = 'view') {
   if (moduleId === 'provider') return isSystemSuperadmin(user);
   if (isSystemSuperadmin(user)) return false;
   if (user.role === 'Superadministrador') return true;
-  if (!isRoleActionAllowed(user.role, moduleId, action)) return false;
+  const permissionAction = PERMISSION_ACTION_IDS.has(action) ? action : 'view';
+  if (!isRoleActionAllowed(user.role, moduleId, permissionAction)) return false;
   if (hasPermissionMatrix(user)) {
     if (hasModulePermissionEntry(user, moduleId)) {
       const modulePermissions = user.permission_matrix?.[moduleId] || {};
-      if (Object.prototype.hasOwnProperty.call(modulePermissions, action)) return Boolean(modulePermissions[action]);
-      return roleCanDo(user, moduleId, action);
+      if (Object.prototype.hasOwnProperty.call(modulePermissions, permissionAction)) return Boolean(modulePermissions[permissionAction]);
+      return roleCanDo(user, moduleId, permissionAction);
     }
-    return roleCanDo(user, moduleId, action);
+    return roleCanDo(user, moduleId, permissionAction);
   }
-  return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
+  return permissionAction === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);
 }
 
 export function canRequestDefinitiveDeletion(user, moduleId, organization = null) {

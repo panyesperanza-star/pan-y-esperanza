@@ -23,40 +23,14 @@ const PERMISSION_MODULES = [
   'reports',
   'users',
   'settings',
-  'backup',
-  'provider',
-  'platform-tools'
+  'backup'
 ];
 
 const PERMISSION_ACTIONS = [
   'view',
   'create',
   'edit',
-  'delete',
-  'activate',
-  'archive',
-  'assign',
-  'contact',
-  'send',
-  'resolve',
-  'confirm',
-  'sign',
-  'generate-receipt',
-  'generate-credential',
-  'manage-documents',
-  'register-movement',
-  'scan',
-  'manual-identify',
-  'register-delivery',
-  'print',
-  'export',
-  'reset-password',
-  'manage-permissions',
-  'test',
-  'restore',
-  'approve',
-  'reject',
-  'execute'
+  'delete'
 ];
 
 export function sendJson(response, status, payload) {
