@@ -2,6 +2,7 @@ import { Download, IdCard, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier } from '../lib/credentials';
 import { formatDate } from '../lib/formatters';
 import { Button } from './Button';
@@ -155,14 +156,65 @@ function CredentialFront({ credential, qrDataUrl }) {
 }
 
 function CredentialPhoto({ credential }) {
-  if (credential.photoUrl) {
-    return <img className="official-credential-photo" src={credential.photoUrl} alt={`Foto de ${credential.name}`} crossOrigin="anonymous" />;
+  const photoUrl = useCredentialPhotoUrl(credential);
+  const [failedUrl, setFailedUrl] = useState('');
+
+  useEffect(() => {
+    setFailedUrl('');
+  }, [photoUrl]);
+
+  if (photoUrl && photoUrl !== failedUrl) {
+    return (
+      <img
+        key={photoUrl}
+        className="official-credential-photo"
+        src={photoUrl}
+        alt={`Foto de ${credential.name}`}
+        onError={() => {
+          console.error('[OfficialCredential] No se pudo cargar la foto del expediente', {
+            kind: credential.kind,
+            subjectId: credential.subjectId,
+            photoSource: credential.photoSource
+          });
+          setFailedUrl(photoUrl);
+        }}
+      />
+    );
   }
   return (
     <div className="official-credential-photo official-credential-photo--empty" aria-label="Sin fotografia">
       <span>{initials(credential.name)}</span>
     </div>
   );
+}
+
+function useCredentialPhotoUrl(credential) {
+  const [photoUrl, setPhotoUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function resolvePhoto() {
+      setPhotoUrl('');
+      try {
+        const source = credential.photoSource || {};
+        const resolved = credential.kind === 'beneficiary'
+          ? await resolveBeneficiaryPhotoUrl(source)
+          : credentialPhotoUrl(source);
+        if (active) setPhotoUrl(cacheProofPhotoUrl(resolved, credential.photoVersion));
+      } catch (error) {
+        console.error('[OfficialCredential] No se pudo resolver la foto vigente del expediente', error);
+        if (active) setPhotoUrl('');
+      }
+    }
+
+    resolvePhoto();
+    return () => {
+      active = false;
+    };
+  }, [credential.kind, credential.photoKey, credential.photoVersion]);
+
+  return photoUrl;
 }
 
 function CredentialDetail({ icon, label, value, accent = false }) {
@@ -237,7 +289,9 @@ function buildOfficialCredential(kind, subject = {}) {
     credentialId: buildCredentialSecureIdentifier({ kind: normalizedKind, subjectId, code }),
     issuedAt: subject.joined_at || subject.created_at || subject.registered_at || subject.start_date || new Date().toISOString(),
     status: statusLabel(subject),
-    photoUrl: credentialPhotoUrl(subject)
+    photoSource: credentialPhotoSource(subject),
+    photoKey: credentialPhotoKey(subject),
+    photoVersion: cleanText(subject.updated_at || subject.photo_updated_at || subject.created_at || subject.id || code)
   };
 }
 
@@ -250,6 +304,35 @@ function credentialPhotoUrl(subject = {}) {
     subject.logo_url ||
     ''
   );
+}
+
+function credentialPhotoSource(subject = {}) {
+  return {
+    photo_data_url: subject.photo_data_url,
+    photo_url: subject.photo_url,
+    photo: subject.photo,
+    avatar_url: subject.avatar_url,
+    logo_data_url: subject.logo_data_url,
+    logo_url: subject.logo_url
+  };
+}
+
+function credentialPhotoKey(subject = {}) {
+  return [
+    subject.photo_url,
+    subject.photo,
+    subject.avatar_url,
+    subject.photo_data_url,
+    subject.logo_data_url,
+    subject.logo_url
+  ].map(cleanText).join('|');
+}
+
+function cacheProofPhotoUrl(url, version) {
+  const cleanUrl = cleanText(url);
+  if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) return cleanUrl;
+  const separator = cleanUrl.includes('?') ? '&' : '?';
+  return `${cleanUrl}${separator}v=${encodeURIComponent(cleanText(version) || Date.now().toString())}`;
 }
 
 function statusLabel(subject = {}) {
@@ -342,7 +425,7 @@ async function inlineImages(source, target) {
 }
 
 async function imageToDataUrl(url) {
-  const response = await fetch(url, { mode: 'cors' });
+  const response = await fetch(url, { mode: 'cors', cache: 'no-store' });
   const blob = await response.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

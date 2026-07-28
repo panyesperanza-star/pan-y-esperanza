@@ -55,21 +55,23 @@ export async function uploadBeneficiaryPhoto(beneficiaryId, dataUrl) {
 }
 
 export async function resolveBeneficiaryPhotoUrl(beneficiary) {
-  if (beneficiary?.photo_data_url) return beneficiary.photo_data_url;
   const photoUrl = beneficiary?.photo_url || beneficiary?.photo || beneficiary?.avatar_url;
-  if (!photoUrl) return null;
-  const storageReference = parseBeneficiaryPhotoUrl(photoUrl);
-  if (!storageReference) return photoUrl;
-  if (!hasSupabaseConfig) return null;
+  if (photoUrl) {
+    const storageReference = parseBeneficiaryPhotoUrl(photoUrl);
+    if (!storageReference) return photoUrl;
+    if (!hasSupabaseConfig) return null;
 
-  try {
-    const displayUrl = await createDisplayUrl(storageReference.bucket, storageReference.path);
-    log('URL firmada recuperada', { path: storageReference.path });
-    return displayUrl;
-  } catch (error) {
-    console.error('[BeneficiaryPhoto] Error al recuperar la fotografia', error);
-    throw error;
+    try {
+      const displayUrl = await createDisplayUrl(storageReference.bucket, storageReference.path);
+      log('URL firmada recuperada', { path: storageReference.path });
+      return displayUrl;
+    } catch (error) {
+      console.error('[BeneficiaryPhoto] Error al recuperar la fotografia', error);
+      throw error;
+    }
   }
+  if (beneficiary?.photo_data_url) return beneficiary.photo_data_url;
+  return null;
 }
 
 export async function removeBeneficiaryPhoto(photoUrl) {
