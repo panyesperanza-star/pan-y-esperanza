@@ -55,6 +55,23 @@ function nextCollaboratorCode(collaborators = []) {
   return `COL-${String(max + 1).padStart(6, '0')}`;
 }
 
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function impactWithCredentialPhoto(payload = {}, current = {}) {
+  const impact = {
+    ...objectValue(current.impact),
+    ...objectValue(payload.impact)
+  };
+  if (Object.prototype.hasOwnProperty.call(payload, 'photo_data_url')) {
+    const photo = cleanText(payload.photo_data_url);
+    if (photo) impact.credential_photo_data_url = photo;
+    else delete impact.credential_photo_data_url;
+  }
+  return impact;
+}
+
 function collaboratorPayloadFromForm(payload = {}, current = {}, collaborators = []) {
   const name = cleanText(payload.name || current.name);
   const email = cleanText(payload.email || payload.access_email || current.email || current.access_email).toLowerCase();
@@ -79,7 +96,7 @@ function collaboratorPayloadFromForm(payload = {}, current = {}, collaborators =
     status: normalizeStatus(payload.status || current.status),
     is_active: isPortalActive,
     portal_status: normalizePortalStatus(payload.portal_status || current.portal_status, isPortalActive),
-    impact: payload.impact || current.impact || {},
+    impact: impactWithCredentialPhoto(payload, current),
     notes: cleanText(payload.notes || current.notes),
     updated_at: now
   };

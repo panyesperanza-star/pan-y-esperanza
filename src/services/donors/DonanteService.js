@@ -55,6 +55,23 @@ function nextDonorCode(donors = []) {
   return `DON-${String(max + 1).padStart(6, '0')}`;
 }
 
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function impactWithCredentialPhoto(payload = {}, current = {}) {
+  const impact = {
+    ...objectValue(current.impact),
+    ...objectValue(payload.impact)
+  };
+  if (Object.prototype.hasOwnProperty.call(payload, 'photo_data_url')) {
+    const photo = cleanText(payload.photo_data_url);
+    if (photo) impact.credential_photo_data_url = photo;
+    else delete impact.credential_photo_data_url;
+  }
+  return impact;
+}
+
 function donorPayloadFromForm(payload = {}, current = {}, donors = []) {
   const name = cleanText(payload.name || current.name);
   const email = cleanText(payload.email || payload.access_email || current.email || current.access_email).toLowerCase();
@@ -78,7 +95,7 @@ function donorPayloadFromForm(payload = {}, current = {}, donors = []) {
     is_active: active,
     portal_status: active ? 'Activo' : 'Inactivo',
     collaborator_id: payload.collaborator_id || current.collaborator_id || null,
-    impact: payload.impact || current.impact || {},
+    impact: impactWithCredentialPhoto(payload, current),
     notes: cleanText(payload.notes || current.notes),
     updated_at: safeNow()
   };

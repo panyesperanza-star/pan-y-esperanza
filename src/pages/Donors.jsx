@@ -1,6 +1,7 @@
 import { CalendarDays, Edit3, Eye, FileText, Heart, Mail, MapPin, Phone, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { CredentialPhotoPicker, CredentialPhotoPreview } from '../components/CredentialPhotoPicker';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { OfficialCredentialButton } from '../components/OfficialCredential';
@@ -122,9 +123,15 @@ export function Donors({ data, actions, currentUser }) {
                 <tr key={donor.id} className="align-top">
                   <td className="px-4 py-4">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-                        <Heart size={18} />
-                      </div>
+                      <CredentialPhotoPreview
+                        value={donor.photo_data_url}
+                        label={`Foto de ${donor.name}`}
+                        fallback={(
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
+                            <Heart size={18} />
+                          </div>
+                        )}
+                      />
                       <div>
                         <p className="font-bold text-ink">{donor.name}</p>
                         <p className="mt-1 text-xs font-semibold text-brand-700">{donor.code || '-'}</p>
@@ -207,6 +214,7 @@ function DonorForm({ initial = null, onSubmit }) {
     address: initial?.address || '',
     type: initial?.type || 'Particular',
     status: initial?.status || 'Activo',
+    photo_data_url: initial?.photo_data_url || initial?.impact?.credential_photo_data_url || '',
     notes: initial?.notes || ''
   });
   const [saving, setSaving] = useState(false);
@@ -250,6 +258,11 @@ function DonorForm({ initial = null, onSubmit }) {
       <FormField label="Direccion">
         <input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} />
       </FormField>
+      <CredentialPhotoPicker
+        value={form.photo_data_url}
+        onChange={(value) => update('photo_data_url', value)}
+        description="Esta foto se utilizará en la credencial oficial del donante."
+      />
       <FormField label="Observaciones">
         <textarea className={`${inputClass} min-h-28`} value={form.notes} onChange={(event) => update('notes', event.target.value)} />
       </FormField>
@@ -269,6 +282,9 @@ function DonorDetail({ donor, onPrint }) {
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-2">
         <InfoCard icon={Heart} title="Datos del donante">
+          {donor.photo_data_url && (
+            <img src={donor.photo_data_url} alt={`Foto de ${donor.name}`} className="mb-3 h-24 w-24 rounded-md object-cover" />
+          )}
           <InfoLine icon={FileText} label="Codigo" value={donor.code} />
           <InfoLine icon={Mail} label="Email" value={donor.email} />
           <InfoLine icon={Phone} label="Telefono" value={donor.phone} />
@@ -385,6 +401,7 @@ function enrichDonors(donors, data) {
       ].filter(Boolean).sort().at(-1);
       return {
         ...donor,
+        photo_data_url: donor.photo_data_url || donor.impact?.credential_photo_data_url || '',
         portalActive: donor.is_active !== false,
         lastAccess,
         lastOtp,

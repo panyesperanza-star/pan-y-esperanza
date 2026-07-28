@@ -349,7 +349,7 @@ function CredentialPersonPhoto({ kind, record }) {
   useEffect(() => {
     let cancelled = false;
     async function resolvePhoto() {
-      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.logo_data_url || record.logo_url || '';
+      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.logo_data_url || record.logo_url || record.impact?.credential_photo_data_url || '';
       if (direct) {
         if (!cancelled) setSrc(direct);
         return;

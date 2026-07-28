@@ -1,6 +1,7 @@
 import { Building2, Edit3, KeyRound, Mail, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
+import { CredentialPhotoPicker, CredentialPhotoPreview } from '../components/CredentialPhotoPicker';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { OfficialCredentialButton } from '../components/OfficialCredential';
@@ -122,9 +123,15 @@ export function Collaborators({ data, actions, currentUser }) {
                 <tr key={collaborator.id} className="align-top">
                   <td className="px-4 py-4">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-                        <Building2 size={18} />
-                      </div>
+                      <CredentialPhotoPreview
+                        value={collaborator.photo_data_url}
+                        label={`Foto de ${collaborator.name}`}
+                        fallback={(
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700">
+                            <Building2 size={18} />
+                          </div>
+                        )}
+                      />
                       <div>
                         <p className="font-bold text-ink">{collaborator.name}</p>
                         <p className="mt-1 text-xs font-semibold text-brand-700">{collaborator.code || '-'}</p>
@@ -210,6 +217,7 @@ function CollaboratorForm({ initial = null, onSubmit }) {
     phone: initial?.phone || '',
     address: initial?.address || '',
     status: initial?.status || 'Activo',
+    photo_data_url: initial?.photo_data_url || initial?.impact?.credential_photo_data_url || '',
     notes: initial?.notes || ''
   });
   const [saving, setSaving] = useState(false);
@@ -268,6 +276,12 @@ function CollaboratorForm({ initial = null, onSubmit }) {
         <input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} />
       </FormField>
 
+      <CredentialPhotoPicker
+        value={form.photo_data_url}
+        onChange={(value) => update('photo_data_url', value)}
+        description="Esta foto se utilizará en la credencial oficial del colaborador."
+      />
+
       <FormField label="Observaciones">
         <textarea className={`${inputClass} min-h-28`} value={form.notes} onChange={(event) => update('notes', event.target.value)} />
       </FormField>
@@ -322,6 +336,7 @@ function enrichCollaborators(collaborators, data) {
       ].filter(Boolean).sort().at(-1);
       return {
         ...collaborator,
+        photo_data_url: collaborator.photo_data_url || collaborator.impact?.credential_photo_data_url || '',
         portalActive: collaborator.is_active !== false,
         lastAccess,
         lastOtp

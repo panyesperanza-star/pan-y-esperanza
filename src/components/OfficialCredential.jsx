@@ -237,8 +237,20 @@ function buildOfficialCredential(kind, subject = {}) {
     credentialId: buildCredentialSecureIdentifier({ kind: normalizedKind, subjectId, code }),
     issuedAt: subject.joined_at || subject.created_at || subject.registered_at || subject.start_date || new Date().toISOString(),
     status: statusLabel(subject),
-    photoUrl: subject.photo_data_url || subject.photo_url || subject.avatar_url || subject.logo_data_url || subject.logo_url || ''
+    photoUrl: credentialPhotoUrl(subject)
   };
+}
+
+function credentialPhotoUrl(subject = {}) {
+  return (
+    subject.photo_data_url ||
+    subject.photo_url ||
+    subject.avatar_url ||
+    subject.logo_data_url ||
+    subject.logo_url ||
+    subject.impact?.credential_photo_data_url ||
+    ''
+  );
 }
 
 function statusLabel(subject = {}) {
