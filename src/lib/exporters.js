@@ -84,6 +84,7 @@ function openOfficialCredentialPdf(doc, filename) {
 }
 
 export async function createBeneficiaryCredentialPdf(beneficiary = {}, organization = {}) {
+  const photoSource = await resolveBeneficiaryPhotoUrl(beneficiary).catch(() => null);
   return createOfficialCredentialPdf({
     kind: 'beneficiary',
     typeLabel: 'BENEFICIARIO',
@@ -95,7 +96,14 @@ export async function createBeneficiaryCredentialPdf(beneficiary = {}, organizat
     dateValue: new Date().toISOString(),
     organization,
     subjectId: beneficiary.id || beneficiary.code || null,
-    showPhoto: false
+    showPhoto: true,
+    photoOptional: true,
+    photoSources: [
+      beneficiary.photo_data_url,
+      beneficiary.photo_url,
+      beneficiary.avatar_url,
+      photoSource
+    ]
   });
 }
 
@@ -134,6 +142,7 @@ export async function printCollaboratorCredentialPdf(collaborator = {}, organiza
     organization,
     subjectId: collaborator.id || collaborator.code || null,
     showPhoto: true,
+    photoRequired: true,
     photoSources: [
       collaborator.photo_data_url,
       collaborator.photo_url,
@@ -159,6 +168,7 @@ export async function printVolunteerCredentialPdf(volunteer = {}, organization =
     organization,
     subjectId: volunteer.id || volunteer.code || null,
     showPhoto: true,
+    photoRequired: true,
     photoSources: [volunteer.photo_data_url, volunteer.photo_url, volunteer.avatar_url]
   });
   return openOfficialCredentialPdf(doc, filename);
@@ -170,76 +180,95 @@ export async function createOfficialCredentialPdf(credential = {}) {
   const organization = credential.organization || {};
   const orgName = organization.name || 'Asociación Pan y Esperanza';
   const status = credential.status || 'Activo';
-  const qr = await QRCode.toDataURL(officialCredentialQrPayload({ ...credential, issuedAt, status, organization }), { margin: 1, width: 220 });
+  const qr = await QRCode.toDataURL(officialCredentialQrPayload({ ...credential, issuedAt, status, organization }), { margin: 0, width: 260 });
   const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources) : null;
+  const statusTone = officialCredentialStatusTone(status);
+  const role = credential.role || '';
 
-  doc.setFillColor(247, 250, 246);
+  doc.setFillColor(255, 255, 255);
   doc.roundedRect(0, 0, 85, 54, 3, 3, 'F');
+  doc.setDrawColor(204, 222, 211);
+  doc.setLineWidth(0.35);
+  doc.roundedRect(0.4, 0.4, 84.2, 53.2, 3, 3, 'S');
+
   doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 85, 12, 'F');
-  await addOfficialLogo(doc, 4, 2.2, 13, 8);
+  doc.rect(0, 0, 85, 11, 'F');
+  await addOfficialLogo(doc, 4.3, 2.2, 12, 6.7);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
   doc.setTextColor(255, 255, 255);
-  doc.text(doc.splitTextToSize(orgName, 50), 19, 6.4);
+  doc.setFontSize(6.2);
+  drawCredentialFitText(doc, orgName, 18, 5.2, 42, { fontSize: 6.2, minFontSize: 4.6 });
   doc.setFontSize(4.9);
   doc.setFont('helvetica', 'normal');
-  doc.text(credential.title || 'Credencial oficial', 19, 9.2);
+  doc.text('Credencial oficial', 18, 8.5);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(4.8);
-  doc.text(credential.typeLabel || 'CREDENCIAL', 80.5, 6.8, { align: 'right' });
+  doc.setFontSize(5.3);
+  doc.text(credential.typeLabel || 'CREDENCIAL', 80.5, 7.1, { align: 'right' });
 
-  const mediaX = 5;
-  const mediaY = 16;
-  const mediaW = 18;
-  const mediaH = 21;
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2, 2, 'F');
-  doc.setDrawColor(219, 229, 220);
-  doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2, 2, 'S');
+  const mediaX = 4.5;
+  const mediaY = 14.2;
+  const mediaW = 22;
+  const mediaH = 28;
   if (credential.showPhoto && photo?.dataUrl) {
-    doc.addImage(photo.dataUrl, photo.format || 'JPEG', mediaX + 1, mediaY + 1, mediaW - 2, mediaH - 2);
-  } else if (credential.showPhoto) {
-    doc.setFillColor(219, 236, 226);
-    doc.roundedRect(mediaX + 1, mediaY + 1, mediaW - 2, mediaH - 2, 2, 2, 'F');
-    doc.setTextColor(36, 126, 80);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(reportInitials(credential.displayName), mediaX + mediaW / 2, mediaY + 12, { align: 'center' });
+    doc.setFillColor(244, 248, 245);
+    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.2, 2.2, 'F');
+    doc.addImage(photo.dataUrl, photo.format || 'JPEG', mediaX, mediaY, mediaW, mediaH);
+    doc.setDrawColor(188, 211, 197);
+    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.2, 2.2, 'S');
+  } else if (credential.photoRequired) {
+    drawCredentialPhotoRequired(doc, mediaX, mediaY, mediaW, mediaH);
   } else {
-    await addOfficialLogo(doc, mediaX + 2.2, mediaY + 5.2, mediaW - 4.4, 10);
+    drawCredentialInstitutionalMark(doc, mediaX, mediaY, mediaW, mediaH, credential);
   }
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(23, 33, 27);
-  doc.setFontSize(8.6);
-  doc.text(doc.splitTextToSize(credential.displayName || '-', 34), 27, 18);
-  doc.setFontSize(5.9);
-  doc.setTextColor(36, 126, 80);
-  doc.text(`Código: ${credential.code || '-'}`, 27, 26);
-  doc.setTextColor(23, 33, 27);
-  doc.setFont('helvetica', 'normal');
-  if (credential.role) doc.text(credential.role, 27, 30.5);
-  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 27, credential.role ? 35 : 31);
-  doc.text(`Estado: ${status}`, 27, credential.role ? 39.5 : 36);
+  drawCredentialFitText(doc, credential.displayName || '-', 29.5, 18.5, 29.5, { fontSize: 8.9, minFontSize: 6.1 });
 
-  const statusTone = officialCredentialStatusTone(status);
-  doc.setFillColor(...statusTone.fill);
-  doc.setTextColor(...statusTone.text);
-  doc.roundedRect(27, 42, 24, 5.8, 2, 2, 'F');
+  if (role) {
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 94, 86);
+    drawCredentialFitText(doc, role, 29.5, 23.3, 29.5, { fontSize: 5.2, minFontSize: 4.2 });
+  }
+
+  doc.setFillColor(36, 126, 80);
+  doc.roundedRect(29.5, 27.4, 28.8, 8.2, 1.8, 1.8, 'F');
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.1);
-  doc.text(String(status).toUpperCase(), 39, 45.8, { align: 'center' });
+  doc.setFontSize(3.9);
+  doc.text('CÓDIGO', 31.1, 30.3);
+  drawCredentialFitText(doc, credential.code || '-', 31.1, 34, 25.5, { fontSize: 8.2, minFontSize: 5.3 });
 
-  doc.addImage(qr, 'PNG', 62.5, 16, 19.5, 19.5);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(4.6);
-  doc.setTextColor(96, 112, 100);
-  doc.text('QR preparado para entregas, control de acceso, validación rápida y app móvil.', 62.5, 38.5, { maxWidth: 19.5 });
+  doc.setTextColor(87, 103, 93);
+  doc.setFontSize(4.9);
+  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 29.5, 40.5);
+
+  doc.setFillColor(...statusTone.fill);
+  doc.roundedRect(29.5, 43.1, 28.8, 5.5, 1.8, 1.8, 'F');
+  doc.setTextColor(...statusTone.text);
+  doc.setFont('helvetica', 'bold');
+  drawCredentialFitText(doc, String(status).toUpperCase(), 31, 46.8, 25.8, { fontSize: 5.2, minFontSize: 4.2, align: 'center' });
+
+  const qrX = 61;
+  const qrY = 15.2;
+  const qrSize = 21.8;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(qrX - 1.4, qrY - 1.4, qrSize + 2.8, qrSize + 2.8, 2, 2, 'F');
+  doc.setDrawColor(214, 225, 217);
+  doc.roundedRect(qrX - 1.4, qrY - 1.4, qrSize + 2.8, qrSize + 2.8, 2, 2, 'S');
+  doc.addImage(qr, 'PNG', qrX, qrY, qrSize, qrSize);
+
   doc.setDrawColor(219, 229, 220);
-  doc.line(5, 49, 80, 49);
-  doc.setFontSize(4.8);
-  doc.text('Documento personal e intransferible. Uso interno de Pan y Esperanza.', 5, 52);
+  doc.line(4.5, 48.4, 80.5, 48.4);
+  doc.setTextColor(36, 126, 80);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5);
+  doc.text('Generado por ALTHEMON v1.0', 4.8, 51.7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(98, 112, 104);
+  doc.setFontSize(4.4);
+  doc.text('Uso interno oficial', 80.3, 51.7, { align: 'right' });
 
   return {
     doc,
@@ -1651,10 +1680,101 @@ async function resolveOfficialCredentialPhoto(sources = []) {
   const candidates = Array.isArray(sources) ? sources : [sources];
   for (const source of candidates) {
     if (!source) continue;
-    const photo = await prepareReportImage(source, 420, 520, 0.82).catch(() => null);
+    const photo = await prepareCredentialPhoto(source).catch(() => null);
     if (photo?.dataUrl) return photo;
   }
   return null;
+}
+
+function drawCredentialFitText(doc, value, x, y, maxWidth, options = {}) {
+  const text = String(value || '-').replace(/\s+/g, ' ').trim();
+  const fontSize = options.fontSize || 8;
+  const minFontSize = options.minFontSize || 4.6;
+  const align = options.align || 'left';
+  let size = fontSize;
+  doc.setFontSize(size);
+  while (size > minFontSize && doc.getTextWidth(text) > maxWidth) {
+    size -= 0.25;
+    doc.setFontSize(size);
+  }
+
+  let output = text;
+  if (doc.getTextWidth(output) > maxWidth) {
+    while (output.length > 4 && doc.getTextWidth(`${output.slice(0, -4)}...`) > maxWidth) {
+      output = output.slice(0, -1);
+    }
+    output = `${output.slice(0, Math.max(1, output.length - 4)).trim()}...`;
+  }
+
+  const textX = align === 'center' ? x + maxWidth / 2 : align === 'right' ? x + maxWidth : x;
+  doc.text(output, textX, y, { align });
+}
+
+function drawCredentialPhotoRequired(doc, x, y, width, height) {
+  doc.setFillColor(255, 251, 235);
+  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'F');
+  doc.setDrawColor(217, 119, 6);
+  doc.setLineWidth(0.35);
+  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'S');
+  doc.setTextColor(146, 64, 14);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6);
+  doc.text('FOTO', x + width / 2, y + height / 2 - 1.5, { align: 'center' });
+  doc.text('REQUERIDA', x + width / 2, y + height / 2 + 4.2, { align: 'center' });
+}
+
+function drawCredentialInstitutionalMark(doc, x, y, width, height, credential = {}) {
+  doc.setFillColor(235, 246, 240);
+  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'F');
+  doc.setDrawColor(188, 211, 197);
+  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'S');
+  doc.setFillColor(36, 126, 80);
+  doc.circle(x + width / 2, y + height / 2 - 2.2, 7.4, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.text('PYE', x + width / 2, y + height / 2 + 0.2, { align: 'center' });
+  doc.setTextColor(36, 126, 80);
+  doc.setFontSize(4.2);
+  drawCredentialFitText(doc, credential.typeLabel || 'CREDENCIAL', x + 2, y + height - 4.2, width - 4, { fontSize: 4.2, minFontSize: 3.5, align: 'center' });
+}
+
+function prepareCredentialPhoto(source) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const targetWidth = 440;
+        const targetHeight = 560;
+        const targetRatio = targetWidth / targetHeight;
+        const sourceRatio = image.naturalWidth / image.naturalHeight;
+        let sx = 0;
+        let sy = 0;
+        let sw = image.naturalWidth;
+        let sh = image.naturalHeight;
+        if (sourceRatio > targetRatio) {
+          sw = image.naturalHeight * targetRatio;
+          sx = (image.naturalWidth - sw) / 2;
+        } else {
+          sh = image.naturalWidth / targetRatio;
+          sy = (image.naturalHeight - sh) / 2;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, targetWidth, targetHeight);
+        context.drawImage(image, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+        resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.84), format: 'JPEG' });
+      } catch {
+        resolve(null);
+      }
+    };
+    image.onerror = () => resolve(null);
+    image.src = source;
+  });
 }
 
 function reportResponsible(user) {
