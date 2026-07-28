@@ -13,12 +13,10 @@ import {
   MessageCircle,
   NotebookPen,
   Plus,
-  Printer,
   Trash2,
   UserRoundCheck
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -26,7 +24,6 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { canDo } from '../lib/auth';
-import { printVolunteerCredentialPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
 
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
@@ -96,7 +93,7 @@ export function Volunteers({ data, actions, currentUser }) {
     <>
       <PageHeader
         title="Voluntarios"
-        description="Expedientes, carnés, documentación e historial de colaboración."
+        description="Expedientes, documentación e historial de colaboración."
         actions={canManage && <Button onClick={() => setModal({ type: 'create' })}><Plus size={18} /> Nuevo voluntario</Button>}
       />
 
@@ -224,7 +221,6 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => printVolunteerCredentialPdf(volunteer, data.organization_settings?.[0])}><Printer size={16} /> Generar credencial</Button>
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
@@ -247,7 +243,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
       </nav>
 
       <section className="mt-4">
-        {tab === 'summary' && <VolunteerSummary volunteer={volunteer} history={history} stats={stats} organization={data.organization_settings?.[0]} />}
+        {tab === 'summary' && <VolunteerSummary volunteer={volunteer} history={history} stats={stats} />}
         {tab === 'personal' && <PersonalDetails volunteer={volunteer} />}
         {tab === 'participations' && <ParticipationPanel history={history} canManage={canManage} onAdd={onAddHistory} />}
         {tab === 'training' && <TrainingPanel history={history} volunteer={volunteer} canManage={canManage} onAdd={onAddHistory} />}
@@ -260,9 +256,9 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
   );
 }
 
-function VolunteerSummary({ volunteer, history, stats, organization }) {
+function VolunteerSummary({ volunteer, history, stats }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+    <div className="grid gap-4">
       <section className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Participaciones" value={stats.total} detail="Colaboraciones registradas" />
         <MetricCard label="Días colaborados" value={stats.days} detail="Fechas distintas" />
@@ -271,8 +267,7 @@ function VolunteerSummary({ volunteer, history, stats, organization }) {
         <InfoCard title="Tareas habituales" value={volunteer.tasks || '-'} />
         <InfoCard title="Formación" value={volunteer.training || '-'} />
       </section>
-      <VolunteerCardPreview volunteer={volunteer} organization={organization} />
-      <section className="rounded-md border border-slate-200 bg-white p-4 lg:col-span-2">
+      <section className="rounded-md border border-slate-200 bg-white p-4">
         <h3 className="font-bold text-ink">Últimas participaciones</h3>
         <div className="mt-3 space-y-2">
           {participationRows(history).slice(0, 5).map((item) => <HistoryRow key={item.id} item={item} />)}
@@ -280,37 +275,6 @@ function VolunteerSummary({ volunteer, history, stats, organization }) {
         </div>
       </section>
     </div>
-  );
-}
-
-function VolunteerCardPreview({ volunteer, organization }) {
-  const [qr, setQr] = useState('');
-  useEffect(() => {
-    QRCode.toDataURL(volunteerQrPayload(volunteer, organization), { margin: 1, width: 120 }).then(setQr).catch(() => setQr(''));
-  }, [organization, volunteer]);
-
-  return (
-    <section className="rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="font-bold text-ink">Credencial oficial</h3>
-      <div className="mt-3 rounded-lg border border-brand-100 bg-gradient-to-br from-white to-brand-50 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">{organization?.name || 'Asociación Pan y Esperanza'}</p>
-            <p className="mt-1 text-lg font-bold text-ink">Voluntario acreditado</p>
-          </div>
-          {qr && <img src={qr} alt="Código QR del voluntario" className="h-16 w-16 rounded bg-white p-1" />}
-        </div>
-        <div className="mt-4 flex items-center gap-3">
-          <VolunteerPhoto volunteer={volunteer} size="lg" />
-          <div>
-            <p className="font-bold text-ink">{volunteer.full_name}</p>
-            <p className="text-sm font-semibold text-brand-700">{volunteer.code}</p>
-            <p className="text-sm text-slate-600">Alta: {formatDate(volunteer.joined_at)}</p>
-            <StatusBadge status={volunteer.status} />
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -468,7 +432,7 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
       <FormField label="Formación"><input className={inputClass} value={form.training} onChange={(event) => update('training', event.target.value)} /></FormField>
       <FormField label="Documentación"><input className={inputClass} value={form.documentation} onChange={(event) => update('documentation', event.target.value)} /></FormField>
       <FormField label="Foto"><input className={inputClass} type="file" accept="image/png,image/jpeg" onChange={loadPhoto} /></FormField>
-      <div className="flex items-center gap-3">{form.photo_data_url && <img src={form.photo_data_url} alt="Foto del voluntario" className="h-16 w-16 rounded-md object-cover" />}<span className="text-sm text-slate-500">La foto se utilizará en el expediente y el carné.</span></div>
+      <div className="flex items-center gap-3">{form.photo_data_url && <img src={form.photo_data_url} alt="Foto del voluntario" className="h-16 w-16 rounded-md object-cover" />}<span className="text-sm text-slate-500">La foto se utilizará en el expediente del voluntario.</span></div>
       <div className="sm:col-span-2"><FormField label="Observaciones generales"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar voluntario</Button></div>
     </form>
@@ -835,17 +799,6 @@ function fileToDataUrl(file) {
 
 function currentUserName(user) {
   return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email || 'Usuario';
-}
-
-function volunteerQrPayload(volunteer, organization) {
-  return [
-    'Voluntario acreditado',
-    organization?.name || 'Asociación Pan y Esperanza',
-    `Nombre: ${volunteer.full_name}`,
-    `Código: ${volunteer.code}`,
-    `Estado: ${volunteer.status}`,
-    `Alta: ${formatDate(volunteer.joined_at)}`
-  ].join('\n');
 }
 
 async function printVolunteerProfilePdf(volunteer, history = [], communications = [], organization = {}) {

@@ -5,17 +5,6 @@ export function buildCredentialSecureIdentifier({ kind = 'person', subjectId = '
   return `althemon-${normalizedKind}-${hashCredentialSubject(`${normalizedKind}|${subject}`)}`;
 }
 
-export function buildOfficialCredentialQrPayload({ kind, subjectId, code, issuedAt }) {
-  return JSON.stringify({
-    type: 'official-credential',
-    version: 2,
-    credential_kind: kind || 'person',
-    credential_id: buildCredentialSecureIdentifier({ kind, subjectId, code }),
-    issued_at: issuedAt,
-    integrations: ['deliveries', 'volunteer-control', 'access-control', 'events', 'inventory', 'mobile-app']
-  });
-}
-
 export function parseOfficialCredentialQr(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;

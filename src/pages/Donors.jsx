@@ -1,11 +1,11 @@
-import { CalendarDays, Edit3, Eye, FileText, Heart, IdCard, Mail, MapPin, Phone, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
+import { CalendarDays, Edit3, Eye, FileText, Heart, Mail, MapPin, Phone, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { printDonorCredentialPdf, printPortalAccessPdf } from '../lib/exporters';
+import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociación', 'Institución'];
@@ -54,18 +54,6 @@ export function Donors({ data, actions, currentUser }) {
       organization: data.organization_settings?.[0] || {}
     });
     setNotice(`Documento de acceso generado para ${donor.name}.`);
-  }
-
-  async function printCredential(donor) {
-    try {
-      const result = await printDonorCredentialPdf(donor, data.organization_settings?.[0] || {});
-      setNotice(result.opened
-        ? `Credencial generada para ${donor.name}. Se ha abierto el PDF para visualizar, descargar o imprimir.`
-        : `Credencial generada para ${donor.name}. El navegador ha descargado el PDF.`);
-    } catch (error) {
-      console.error('[DonorCredential] No se pudo generar la credencial', error);
-      setNotice(error.message || 'No se pudo generar la credencial del donante.');
-    }
   }
 
   return (
@@ -168,7 +156,6 @@ export function Donors({ data, actions, currentUser }) {
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => setModal({ type: 'detail', donor })}><Eye size={16} /> Ficha</Button>
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', donor })}><Edit3 size={16} /> Editar</Button>}
-                      <Button variant="secondary" onClick={() => printCredential(donor)}><IdCard size={16} /> Generar credencial</Button>
                       <Button variant="secondary" onClick={() => printAccess(donor)}><Printer size={16} /> Imprimir acceso</Button>
                       {canEdit && donor.portalActive && <Button variant="secondary" onClick={() => resendAccess(donor)}><Mail size={16} /> Reenviar acceso</Button>}
                       {canEdit && donor.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(donor)}><PowerOff size={16} /> Desactivar</Button>}
@@ -203,7 +190,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'detail' && (
         <Modal title={`Ficha del donante - ${modal.donor.code || modal.donor.name}`} onClose={() => setModal(null)} wide>
-          <DonorDetail donor={modal.donor} onPrint={() => printAccess(modal.donor)} onCredential={() => printCredential(modal.donor)} />
+          <DonorDetail donor={modal.donor} onPrint={() => printAccess(modal.donor)} />
         </Modal>
       )}
     </>
@@ -275,7 +262,7 @@ function DonorForm({ initial = null, onSubmit }) {
   );
 }
 
-function DonorDetail({ donor, onPrint, onCredential }) {
+function DonorDetail({ donor, onPrint }) {
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-2">
@@ -291,7 +278,6 @@ function DonorDetail({ donor, onPrint, onCredential }) {
           <InfoLine icon={CalendarDays} label="Ultimo acceso" value={donor.lastAccess ? formatDateTime(donor.lastAccess) : '-'} />
           <InfoLine icon={FileText} label="Certificados" value={donor.certificates.length} />
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={onCredential}><IdCard size={16} /> Generar credencial</Button>
             <Button variant="secondary" onClick={onPrint}><Printer size={16} /> Imprimir acceso</Button>
           </div>
         </InfoCard>

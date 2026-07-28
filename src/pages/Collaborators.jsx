@@ -1,11 +1,11 @@
-import { Building2, Edit3, IdCard, KeyRound, Mail, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
+import { Building2, Edit3, KeyRound, Mail, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { printCollaboratorCredentialPdf, printPortalAccessPdf } from '../lib/exporters';
+import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDateTime, normalize } from '../lib/formatters';
 
 const TYPES = ['Empresa', 'Comercio', 'Asociación', 'Particular', 'Institución'];
@@ -54,18 +54,6 @@ export function Collaborators({ data, actions, currentUser }) {
       organization: data.organization_settings?.[0] || {}
     });
     setNotice(`Documento de acceso generado para ${collaborator.name}.`);
-  }
-
-  async function printCredential(collaborator) {
-    try {
-      const result = await printCollaboratorCredentialPdf(collaborator, data.organization_settings?.[0] || {});
-      setNotice(result.opened
-        ? `Credencial generada para ${collaborator.name}. Se ha abierto el PDF para visualizar, descargar o imprimir.`
-        : `Credencial generada para ${collaborator.name}. El navegador ha descargado el PDF.`);
-    } catch (error) {
-      console.error('[CollaboratorCredential] No se pudo generar la credencial', error);
-      setNotice(error.message || 'No se pudo generar la credencial del colaborador.');
-    }
   }
 
   return (
@@ -166,7 +154,6 @@ export function Collaborators({ data, actions, currentUser }) {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', collaborator })}><Edit3 size={16} /> Editar</Button>}
-                      <Button variant="secondary" onClick={() => printCredential(collaborator)}><IdCard size={16} /> Generar credencial</Button>
                       <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>
                       {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}
                       {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(collaborator)}><PowerOff size={16} /> Desactivar portal</Button>}
