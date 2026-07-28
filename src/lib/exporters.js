@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
@@ -190,79 +191,34 @@ export async function createOfficialCredentialPdf(credential = {}) {
   const qr = await QRCode.toDataURL(buildOfficialCredentialQrPayload({ ...credential, issuedAt }), { margin: 0, width: 360 });
   const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'cover' }) : null;
   const statusTone = officialCredentialStatusTone(status);
-  const displayName = credential.displayName || '-';
-  const credentialTitle = credential.title || 'Credencial oficial';
-  const typeLabel = credential.typeLabel || 'CREDENCIAL';
-  const cardWidth = 85.6;
-  const cardHeight = 53.98;
+  const logo = await getOfficialLogo();
+  const element = createOfficialCredentialHtmlElement({
+    ...credential,
+    issuedAt,
+    status,
+    qr,
+    photo,
+    logo,
+    statusTone
+  });
 
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, cardWidth, cardHeight, 'F');
-
-  doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, cardWidth, 12.4, 'F');
-  await addOfficialLogo(doc, 4.2, 2.2, 8.8, 8.1);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, 'Pan y Esperanza', 15, 5.3, 34, { fontSize: 6.4, minFontSize: 4.8 });
-  doc.setFont('helvetica', 'normal');
-  drawCredentialFitText(doc, credentialTitle, 15, 9.1, 42, { fontSize: 4.2, minFontSize: 3.5 });
-  doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, typeLabel, 62, 7.5, 19.5, { fontSize: 5.1, minFontSize: 3.9, align: 'right' });
-
-  const photoX = 0;
-  const photoY = 12.4;
-  const photoW = 24.8;
-  const photoH = 34.8;
-  if (credential.showPhoto && photo?.dataUrl) {
-    doc.addImage(photo.dataUrl, photo.format || 'JPEG', photoX, photoY, photoW, photoH);
-  } else if (credential.photoRequired) {
-    drawCredentialPhotoRequired(doc, 4.2, 17.2, 16.6, 21.8);
-  } else {
-    drawCredentialInstitutionalMark(doc, 4.2, 17.2, 16.6, 21.8, credential);
+  document.body.appendChild(element);
+  try {
+    await waitForCredentialImages(element);
+    const canvas = await html2canvas(element, {
+      backgroundColor: '#ffffff',
+      scale: 4,
+      useCORS: true,
+      logging: false,
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+      windowWidth: element.offsetWidth,
+      windowHeight: element.offsetHeight
+    });
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 85.6, 53.98);
+  } finally {
+    element.remove();
   }
-
-  doc.setFillColor(255, 255, 255);
-  doc.rect(24.8, 12.4, 60.8, 34.8, 'F');
-  doc.setDrawColor(226, 232, 226);
-  doc.setLineWidth(0.25);
-  doc.line(27.7, 17.3, 27.7, 22.5);
-  doc.setDrawColor(193, 120, 42);
-  doc.line(28.6, 17.3, 28.6, 22.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(20, 28, 32);
-  drawCredentialFitText(doc, displayName, 31.2, 21.1, 49.5, { fontSize: 10.9, minFontSize: 6.2 });
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(20, 28, 32);
-  drawCredentialFitText(doc, credential.code || '-', 31.2, 28.1, 23.6, { fontSize: 6.3, minFontSize: 4.7 });
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(82, 96, 88);
-  drawCredentialFitText(doc, `Emisión: ${formatDate(issuedAt)}`, 31.2, 32.3, 23.8, { fontSize: 4.2, minFontSize: 3.5 });
-
-  doc.setFillColor(...statusTone.dot);
-  doc.circle(32.3, 37.4, 1.25, 'F');
-  doc.setTextColor(...statusTone.text);
-  doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, status, 35, 38.6, 19.5, { fontSize: 5, minFontSize: 3.9 });
-
-  const qrSize = 26.4;
-  const qrX = 58.1;
-  const qrY = 19.7;
-  doc.addImage(qr, 'PNG', qrX, qrY, qrSize, qrSize);
-
-  doc.setFillColor(247, 250, 248);
-  doc.rect(0, 47.2, cardWidth, 6.78, 'F');
-  doc.setDrawColor(221, 231, 224);
-  doc.setLineWidth(0.2);
-  doc.line(0, 47.2, cardWidth, 47.2);
-  doc.setTextColor(48, 68, 56);
-  doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, 'Credencial oficial de Pan y Esperanza', 4.2, 50, 45, { fontSize: 4.2, minFontSize: 3.4 });
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(103, 116, 108);
-  drawCredentialFitText(doc, 'Generado por ALTHEMON v1.0', 49.8, 50, 31, { fontSize: 3.9, minFontSize: 3.2, align: 'right' });
 
   return {
     doc,
@@ -1662,6 +1618,124 @@ async function resolveOfficialCredentialPhoto(sources = [], options = {}) {
     if (photo?.dataUrl) return photo;
   }
   return null;
+}
+
+function createOfficialCredentialHtmlElement(credential = {}) {
+  const displayName = String(credential.displayName || '-').replace(/\s+/g, ' ').trim();
+  const credentialTitle = credential.title || 'Credencial oficial';
+  const typeLabel = credential.typeLabel || 'CREDENCIAL';
+  const status = credential.status || 'Activo';
+  const code = credential.code || '-';
+  const statusTone = credential.statusTone || officialCredentialStatusTone(status);
+  const logoSrc = credential.logo?.dataUrl || officialLogoUrl;
+  const photoSrc = credential.photo?.dataUrl || '';
+  const nameSize = fitCredentialFontSize(displayName, 24.6, 10.9, 6.2, 800);
+  const codeSize = fitCredentialFontSize(code, 23.6, 6.3, 4.7, 800);
+  const titleSize = fitCredentialFontSize(credentialTitle, 42, 4.2, 3.5, 500);
+  const typeSize = fitCredentialFontSize(typeLabel, 19.5, 5.1, 3.9, 800);
+
+  const element = document.createElement('div');
+  element.setAttribute('data-althemon-credential', credential.kind || 'official');
+  Object.assign(element.style, {
+    position: 'fixed',
+    left: '-10000px',
+    top: '0',
+    width: '85.6mm',
+    height: '53.98mm',
+    overflow: 'hidden',
+    background: '#ffffff',
+    color: '#141c20',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    boxSizing: 'border-box',
+    lineHeight: '1'
+  });
+
+  element.innerHTML = `
+    <div style="position:absolute;inset:0;background:#ffffff;"></div>
+    <div style="position:absolute;left:0;top:0;width:85.6mm;height:12.4mm;background:#247e50;"></div>
+    <img alt="" src="${escapeAttribute(logoSrc)}" style="position:absolute;left:4.2mm;top:2.2mm;width:8.8mm;height:8.1mm;object-fit:contain;" />
+    <div style="position:absolute;left:15mm;top:3.35mm;width:34mm;color:#ffffff;font-size:6.4pt;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Pan y Esperanza</div>
+    <div style="position:absolute;left:15mm;top:8mm;width:42mm;color:#ffffff;font-size:${titleSize}pt;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(credentialTitle)}</div>
+    <div style="position:absolute;right:3.9mm;top:5.35mm;width:19.5mm;color:#ffffff;font-size:${typeSize}pt;font-weight:800;text-align:right;letter-spacing:0.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(typeLabel)}</div>
+    ${renderCredentialPhotoArea(credential, photoSrc)}
+    <div style="position:absolute;left:24.8mm;top:12.4mm;width:60.8mm;height:34.8mm;background:#ffffff;"></div>
+    <div style="position:absolute;left:27.7mm;top:17.3mm;width:0.25mm;height:5.2mm;background:#e2e8e2;"></div>
+    <div style="position:absolute;left:28.6mm;top:17.3mm;width:0.25mm;height:5.2mm;background:#c1782a;"></div>
+    <div style="position:absolute;left:31.2mm;top:17.15mm;width:24.6mm;color:#141c20;font-size:${nameSize}pt;font-weight:800;line-height:1.04;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(displayName)}</div>
+    <div style="position:absolute;left:31.2mm;top:26mm;width:23.6mm;color:#141c20;font-size:${codeSize}pt;font-weight:800;letter-spacing:0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(code)}</div>
+    <div style="position:absolute;left:31.2mm;top:31.15mm;width:23.8mm;color:#526058;font-size:4.2pt;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Emisión: ${escapeHtml(formatDate(credential.issuedAt))}</div>
+    <div style="position:absolute;left:31.05mm;top:36.15mm;width:2.5mm;height:2.5mm;border-radius:999px;background:${rgbToCss(statusTone.dot)};"></div>
+    <div style="position:absolute;left:35mm;top:36.2mm;width:19.5mm;color:${rgbToCss(statusTone.text)};font-size:5pt;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(status)}</div>
+    <img alt="" src="${escapeAttribute(credential.qr)}" style="position:absolute;left:58.1mm;top:19.7mm;width:26.4mm;height:26.4mm;object-fit:contain;" />
+    <div style="position:absolute;left:0;top:47.2mm;width:85.6mm;height:6.78mm;background:#f7faf8;border-top:0.2mm solid #dde7e0;box-sizing:border-box;"></div>
+    <div style="position:absolute;left:4.2mm;top:49.05mm;width:45mm;color:#304438;font-size:4.2pt;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Credencial oficial de Pan y Esperanza</div>
+    <div style="position:absolute;right:4.8mm;top:49.15mm;width:31mm;color:#67746c;font-size:3.9pt;font-weight:400;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Generado por ALTHEMON v1.0</div>
+  `;
+  return element;
+}
+
+function renderCredentialPhotoArea(credential = {}, photoSrc = '') {
+  if (credential.showPhoto && photoSrc) {
+    return `<img alt="" src="${escapeAttribute(photoSrc)}" style="position:absolute;left:0;top:12.4mm;width:24.8mm;height:34.8mm;object-fit:cover;object-position:center center;" />`;
+  }
+  if (credential.photoRequired) {
+    return `
+      <div style="position:absolute;left:0;top:12.4mm;width:24.8mm;height:34.8mm;background:#fff7e8;"></div>
+      <div style="position:absolute;left:6mm;top:25.4mm;width:13mm;color:#92400e;font-size:4.8pt;font-weight:800;text-align:center;line-height:1.25;">FOTO<br/>REQUERIDA</div>
+    `;
+  }
+  return `
+    <div style="position:absolute;left:0;top:12.4mm;width:24.8mm;height:34.8mm;background:#f7faf8;"></div>
+    <div style="position:absolute;left:6.2mm;top:23.3mm;width:12.4mm;height:12.4mm;border-radius:999px;background:#247e50;color:#ffffff;font-size:7pt;font-weight:800;text-align:center;line-height:12.4mm;">PYE</div>
+  `;
+}
+
+function waitForCredentialImages(element) {
+  const images = Array.from(element.querySelectorAll('img'));
+  return Promise.all(images.map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise((resolve) => {
+      image.onload = resolve;
+      image.onerror = resolve;
+    });
+  }));
+}
+
+function fitCredentialFontSize(text, maxWidthMm, fontSizePt, minFontSizePt, fontWeight = 700) {
+  if (typeof document === 'undefined') return fontSizePt;
+  const canvas = fitCredentialFontSize.canvas || document.createElement('canvas');
+  fitCredentialFontSize.canvas = canvas;
+  const context = canvas.getContext('2d');
+  let size = fontSizePt;
+  const maxWidthPx = mmToPx(maxWidthMm);
+  while (size > minFontSizePt) {
+    context.font = `${fontWeight} ${size}pt Inter, Arial, sans-serif`;
+    if (context.measureText(String(text || '-')).width <= maxWidthPx) break;
+    size -= 0.25;
+  }
+  return Math.max(minFontSizePt, Number(size.toFixed(2)));
+}
+
+function mmToPx(value) {
+  return Number(value || 0) * 96 / 25.4;
+}
+
+function rgbToCss(value = [36, 126, 80]) {
+  return `rgb(${value[0]}, ${value[1]}, ${value[2]})`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
 function drawCredentialFitText(doc, value, x, y, maxWidth, options = {}) {
