@@ -1,4 +1,5 @@
-import { AlertTriangle, BadgeCheck, BriefcaseBusiness, Camera, CheckCircle2, Heart, IdCard, PackageCheck, ScanLine, ShieldCheck, UserRound, UserRoundCheck, XCircle } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { AlertTriangle, BriefcaseBusiness, Camera, CheckCircle2, Heart, IdCard, Keyboard, PackageCheck, RefreshCw, ScanLine, ShieldCheck, UserRound, UserRoundCheck, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
@@ -14,21 +15,22 @@ const KIND_META = {
 };
 
 export function CredentialScanner({ data, onNavigate }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const frameRef = useRef(null);
-  const detectorRef = useRef(null);
-  const scanningRef = useRef(false);
+  const scannerRegionId = useRef(`credential-qr-reader-${Math.random().toString(36).slice(2)}`).current;
+  const scannerRef = useRef(null);
+  const scanLockedRef = useRef(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
   const [cameraError, setCameraError] = useState('');
   const [scanStatus, setScanStatus] = useState('Esperando lectura de credencial.');
   const [result, setResult] = useState(null);
   const [scanError, setScanError] = useState('');
+  const [manualCode, setManualCode] = useState('');
   const directory = useMemo(() => buildCredentialDirectory(data || {}), [data]);
 
   useEffect(() => () => stopCamera(), []);
 
-  async function startCamera() {
+  async function startCamera(cameraId = selectedCameraId) {
     setScanError('');
     setCameraError('');
     setScanStatus('Activando camara...');
@@ -37,59 +39,61 @@ export function CredentialScanner({ data, onNavigate }) {
       setScanStatus('Camara no disponible.');
       return;
     }
-    if (!('BarcodeDetector' in window)) {
-      setCameraError('Este navegador no incluye lector QR nativo. Prueba con Chrome, Edge, Safari actualizado o un dispositivo movil moderno.');
-      setScanStatus('Lector QR no disponible.');
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      setCameraError('El navegador solo permite usar la camara en una conexion segura HTTPS.');
+      setScanStatus('Camara bloqueada por seguridad.');
       return;
     }
 
     try {
-      detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      await stopCamera({ silent: true });
+      scanLockedRef.current = false;
+      const cameras = await Html5Qrcode.getCameras();
+      setCameraDevices(cameras || []);
+      const targetCamera = pickCamera(cameras || [], cameraId);
+      if (!targetCamera) throw new Error('No se ha encontrado ninguna camara disponible.');
+      setSelectedCameraId(targetCamera.id);
+      const scanner = new Html5Qrcode(scannerRegionId, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false
       });
-      streamRef.current = stream;
+      scannerRef.current = scanner;
+      await scanner.start(
+        targetCamera.id,
+        { fps: 12, qrbox: qrboxForViewport },
+        async (decodedText) => {
+          if (scanLockedRef.current) return;
+          scanLockedRef.current = true;
+          setScanStatus('QR leido. Identificando credencial...');
+          await stopCamera({ silent: true });
+          handleCredential(decodedText);
+        },
+        () => {}
+      );
       setIsCameraActive(true);
       setScanStatus('Enfoca el QR de la credencial.');
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      scanningRef.current = true;
-      detectFrame();
     } catch (error) {
       console.error('[CredentialScanner] No se pudo abrir la camara', error);
-      setCameraError(error?.message || 'No se ha podido abrir la camara.');
+      setCameraError(cameraErrorMessage(error));
       setScanStatus('Camara no disponible.');
-      stopCamera();
+      await stopCamera({ silent: true });
     }
   }
 
-  function stopCamera() {
-    scanningRef.current = false;
-    if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    frameRef.current = null;
-    streamRef.current?.getTracks?.().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setIsCameraActive(false);
-  }
-
-  async function detectFrame() {
-    if (!scanningRef.current || !detectorRef.current || !videoRef.current) return;
-    try {
-      const codes = await detectorRef.current.detect(videoRef.current);
-      const rawValue = codes?.[0]?.rawValue;
-      if (rawValue) {
-        stopCamera();
-        handleCredential(rawValue);
-        return;
+  async function stopCamera(options = {}) {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    scanLockedRef.current = false;
+    if (scanner) {
+      try {
+        if (scanner.isScanning) await scanner.stop();
+        await scanner.clear();
+      } catch (error) {
+        console.warn('[CredentialScanner] No se pudo cerrar el lector QR limpiamente', error);
       }
-    } catch (error) {
-      console.warn('[CredentialScanner] Error leyendo QR', error);
     }
-    frameRef.current = requestAnimationFrame(detectFrame);
+    setIsCameraActive(false);
+    if (!options.silent) setScanStatus('Camara cerrada.');
   }
 
   function handleCredential(rawValue) {
@@ -112,12 +116,27 @@ export function CredentialScanner({ data, onNavigate }) {
     setScanStatus('Credencial identificada correctamente.');
   }
 
+  function identifyManualCode(event) {
+    event.preventDefault();
+    setScanError('');
+    setCameraError('');
+    const match = findManualCredentialMatch(manualCode, directory);
+    if (!match) {
+      setResult(null);
+      setScanError('No se ha encontrado ninguna credencial con ese codigo.');
+      setScanStatus('Codigo no localizado.');
+      return;
+    }
+    setResult(match);
+    setScanStatus('Persona identificada mediante codigo manual.');
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Escanear credencial"
         description="Lector QR integrado en ALTHEMON para identificar credenciales oficiales sin exponer datos personales en el QR."
-        actions={<Button onClick={isCameraActive ? stopCamera : startCamera}>{isCameraActive ? <XCircle size={16} /> : <Camera size={16} />} {isCameraActive ? 'Cerrar camara' : 'Abrir camara'}</Button>}
+        actions={<Button onClick={isCameraActive ? () => stopCamera() : () => startCamera()}>{isCameraActive ? <XCircle size={16} /> : <Camera size={16} />} {isCameraActive ? 'Cerrar camara' : 'Escanear credencial'}</Button>}
       />
 
       <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -132,23 +151,56 @@ export function CredentialScanner({ data, onNavigate }) {
             </span>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
-            {isCameraActive ? (
-              <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
-            ) : (
-              <div className="flex aspect-video flex-col items-center justify-center gap-3 bg-slate-950 px-6 text-center text-white">
+          <div className="relative mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+            <div
+              id={scannerRegionId}
+              className="aspect-video w-full overflow-hidden bg-slate-950 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+            />
+            {!isCameraActive && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 px-6 text-center text-white">
                 <ScanLine size={46} />
-                <p className="text-lg font-black">Pulsa "Abrir camara" y enfoca el QR.</p>
+                <p className="text-lg font-black">Pulsa "Escanear credencial" y enfoca el QR.</p>
                 <p className="max-w-md text-sm text-slate-300">El escaneo se realiza en este navegador. No se instala ninguna aplicacion externa.</p>
               </div>
             )}
           </div>
 
+          {cameraDevices.length > 1 && (
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Camara
+              <select
+                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                value={selectedCameraId}
+                onChange={(event) => {
+                  setSelectedCameraId(event.target.value);
+                  if (isCameraActive) startCamera(event.target.value);
+                }}
+              >
+                {cameraDevices.map((camera) => <option key={camera.id} value={camera.id}>{camera.label || 'Camara disponible'}</option>)}
+              </select>
+            </label>
+          )}
+
           <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm font-semibold text-brand-800">
             <p>{scanStatus}</p>
           </div>
-          {cameraError && <AlertBox tone="amber" text={cameraError} />}
+          {cameraError && <AlertBox tone="amber" text={cameraError} action={<Button variant="secondary" onClick={() => startCamera()}><RefreshCw size={16} /> Reintentar</Button>} />}
           {scanError && <AlertBox tone="red" text={scanError} />}
+
+          <form onSubmit={identifyManualCode} className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wide text-slate-500">
+              <Keyboard size={16} /> Identificacion manual
+            </div>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+              <input
+                className="min-h-11 flex-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-ink outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                value={manualCode}
+                onChange={(event) => setManualCode(event.target.value)}
+                placeholder="PYE-00001"
+              />
+              <Button type="submit">Identificar persona</Button>
+            </div>
+          </form>
         </article>
 
         <CredentialResult result={result} data={data || {}} onNavigate={onNavigate} />
@@ -330,11 +382,15 @@ function InfoRow({ label, value }) {
   );
 }
 
-function AlertBox({ tone, text }) {
+function AlertBox({ tone, text, action = null }) {
   const classes = tone === 'red' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800';
   return (
-    <div className={`mt-4 flex gap-2 rounded-xl border p-4 text-sm font-semibold ${classes}`} role="alert">
-      <AlertTriangle size={18} /> {text}
+    <div className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${classes}`} role="alert">
+      <div className="flex gap-2">
+        <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+        <p>{text}</p>
+      </div>
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }
@@ -363,6 +419,53 @@ function findCredentialMatch(payload, directory) {
     payload.code ? buildCredentialSecureIdentifier({ kind, subjectId: payload.code, code: payload.code }) : ''
   ].filter(Boolean));
   return directory.find((entry) => entry.kind === kind && (candidateIds.has(entry.credentialId) || payload.subject_id === entry.subjectId || payload.code === entry.legacyCode)) || null;
+}
+
+function findManualCredentialMatch(value, directory = []) {
+  const code = normalizeCredentialCode(value);
+  if (!code) return null;
+  return directory.find((entry) => normalizeCredentialCode(entry.code || entry.legacyCode) === code) || null;
+}
+
+function normalizeCredentialCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function pickCamera(cameras = [], preferredId = '') {
+  if (preferredId) {
+    const preferred = cameras.find((camera) => camera.id === preferredId);
+    if (preferred) return preferred;
+  }
+  const rearCamera = cameras.find((camera) => /back|rear|environment|trasera|posterior|atr/i.test(camera.label || ''));
+  if (rearCamera) return rearCamera;
+  return cameras[cameras.length - 1] || cameras[0] || null;
+}
+
+function qrboxForViewport(viewfinderWidth, viewfinderHeight) {
+  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+  const size = Math.floor(Math.max(180, Math.min(minEdge * 0.72, 320)));
+  return { width: size, height: size };
+}
+
+function cameraErrorMessage(error) {
+  const name = String(error?.name || '').toLowerCase();
+  const message = String(error?.message || error || '').toLowerCase();
+  if (name.includes('notallowed') || name.includes('permission') || message.includes('permission')) {
+    return 'Permiso de camara denegado. Activa el permiso de camara en el navegador y pulsa Reintentar.';
+  }
+  if (name.includes('notfound') || message.includes('requested device not found')) {
+    return 'No se ha encontrado ninguna camara disponible en este dispositivo.';
+  }
+  if (name.includes('notreadable') || name.includes('trackstarterror')) {
+    return 'La camara esta ocupada por otra aplicacion o el sistema no permite iniciarla.';
+  }
+  if (name.includes('overconstrained') || message.includes('constraint')) {
+    return 'La camara seleccionada no cumple los requisitos. Prueba con otra camara disponible.';
+  }
+  if (message.includes('secure') || message.includes('https')) {
+    return 'El navegador solo permite usar la camara en HTTPS.';
+  }
+  return error?.message || 'No se ha podido iniciar la camara. Revisa permisos y vuelve a intentarlo.';
 }
 
 function latestByDate(items = [], field) {
