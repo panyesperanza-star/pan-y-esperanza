@@ -61,6 +61,92 @@ export async function printBeneficiaryPdf(beneficiary, deliveries) {
   doc.save(`Resumen-expediente-${beneficiary.code}.pdf`);
 }
 
+export async function printBeneficiaryCardPdf(beneficiary = {}, organization = {}) {
+  const { doc, filename } = await createBeneficiaryCardPdf(beneficiary, organization);
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    doc.save(filename);
+    return { doc, filename, opened: false };
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+  return { doc, filename, opened: true };
+}
+
+export async function createBeneficiaryCardPdf(beneficiary = {}, organization = {}) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [86, 54] });
+  const issuedAt = new Date().toISOString();
+  const orgName = organization.name || 'Asociación Pan y Esperanza';
+  const status = beneficiaryCardStatus(beneficiary);
+  const qr = await QRCode.toDataURL(beneficiaryCardQrPayload({ beneficiary, organization, issuedAt, status }), { margin: 1, width: 180 });
+  const photo = await getBeneficiaryReportPhoto(beneficiary);
+
+  doc.setFillColor(247, 250, 246);
+  doc.roundedRect(0, 0, 86, 54, 3, 3, 'F');
+  doc.setFillColor(36, 126, 80);
+  doc.rect(0, 0, 86, 12, 'F');
+  await addOfficialLogo(doc, 4, 2.2, 13, 8);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(orgName, 19, 6.4);
+  doc.setFontSize(4.9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Carné oficial del beneficiario', 19, 9.2);
+
+  const photoX = 5;
+  const photoY = 16;
+  const photoW = 18;
+  const photoH = 22;
+  if (photo?.dataUrl) {
+    doc.addImage(photo.dataUrl, photo.format || 'JPEG', photoX, photoY, photoW, photoH);
+  } else {
+    doc.setFillColor(219, 236, 226);
+    doc.roundedRect(photoX, photoY, photoW, photoH, 2, 2, 'F');
+    doc.setTextColor(36, 126, 80);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(reportInitials(beneficiary.full_name), photoX + photoW / 2, photoY + 12.5, { align: 'center' });
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(23, 33, 27);
+  doc.setFontSize(9.4);
+  doc.text(doc.splitTextToSize(beneficiary.full_name || 'Beneficiario', 38), 27, 18);
+  doc.setFontSize(6.5);
+  doc.setTextColor(36, 126, 80);
+  doc.text(`Código: ${beneficiary.code || '-'}`, 27, 27);
+  doc.setTextColor(23, 33, 27);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Emisión: ${formatDate(issuedAt)}`, 27, 32);
+  doc.text(`Estado: ${status}`, 27, 37);
+
+  const statusTone = beneficiaryCardStatusTone(status);
+  doc.setFillColor(...statusTone.fill);
+  doc.setTextColor(...statusTone.text);
+  doc.roundedRect(27, 40, 25, 6, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5.4);
+  doc.text(status.toUpperCase(), 39.5, 44, { align: 'center' });
+
+  doc.addImage(qr, 'PNG', 66, 18, 16, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(4.7);
+  doc.setTextColor(96, 112, 100);
+  doc.text('QR preparado para validación interna y futuras integraciones de Entregas.', 66, 37, { maxWidth: 16 });
+  doc.setDrawColor(219, 229, 220);
+  doc.line(5, 47, 81, 47);
+  doc.setFontSize(4.9);
+  doc.text('Documento personal e intransferible. Uso interno de Pan y Esperanza.', 5, 50);
+
+  return {
+    doc,
+    filename: `Carne-beneficiario-${safePdfFilename(beneficiary.code || beneficiary.full_name || 'beneficiario')}.pdf`
+  };
+}
+
 export async function printSocialAttentionReportPdf({
   beneficiary,
   family = null,
@@ -1422,6 +1508,32 @@ function ageFromDate(value) {
 
 function currentUserNameForReport(user) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.email || '';
+}
+
+function beneficiaryCardStatus(beneficiary = {}) {
+  const situation = normalizeTextForReport(`${beneficiary.situation || ''} ${beneficiary.status || ''}`);
+  if (situation.includes('caduc')) return 'Caducado';
+  if (beneficiary.is_active === false || situation.includes('suspend') || situation.includes('bloque')) return 'Suspendido';
+  return 'Activo';
+}
+
+function beneficiaryCardStatusTone(status) {
+  if (status === 'Caducado') return { fill: [254, 226, 226], text: [185, 28, 28] };
+  if (status === 'Suspendido') return { fill: [254, 243, 199], text: [146, 64, 14] };
+  return { fill: [220, 242, 229], text: [36, 126, 80] };
+}
+
+function beneficiaryCardQrPayload({ beneficiary = {}, organization = {}, issuedAt, status }) {
+  return JSON.stringify({
+    type: 'beneficiary-card',
+    version: 1,
+    beneficiary_id: beneficiary.id || null,
+    beneficiary_code: beneficiary.code || null,
+    organization: organization.name || 'Pan y Esperanza',
+    issued_at: issuedAt,
+    status,
+    integrations: ['deliveries']
+  });
 }
 
 function reportResponsible(user) {

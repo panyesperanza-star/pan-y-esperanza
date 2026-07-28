@@ -13,6 +13,7 @@ import {
   FileText,
   HeartHandshake,
   Home,
+  IdCard,
   ImageOff,
   KeyRound,
   Loader2,
@@ -47,7 +48,7 @@ import { removeBeneficiaryDocumentFile, resolveBeneficiaryDocumentUrl, uploadBen
 import { removeBeneficiaryPhoto, resolveBeneficiaryPhotoUrl, uploadBeneficiaryPhoto } from '../lib/beneficiaryPhotos';
 import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/constants';
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
-import { printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
+import { printBeneficiaryCardPdf, printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
@@ -1575,6 +1576,18 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
     }
   }
 
+  async function generateBeneficiaryCard() {
+    try {
+      const result = await printBeneficiaryCardPdf(beneficiary, data.organization_settings?.[0] || {});
+      setNotice(result.opened
+        ? 'Carné generado correctamente. Se ha abierto el PDF para visualizar, descargar o imprimir.'
+        : 'Carné generado correctamente. El navegador ha descargado el PDF.');
+    } catch (error) {
+      console.error('[BeneficiaryCard] No se pudo generar el carné', error);
+      setNotice(error.message || 'No se pudo generar el carné del beneficiario.');
+    }
+  }
+
   return (
     <div className="-m-5 bg-slate-50">
       <ProfessionalCrmHeader
@@ -1609,6 +1622,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           onContact={openWhatsApp}
           onManageDocuments={openDocumentManagement}
           onUploadDocument={requestDocumentUpload}
+          onGenerateCard={generateBeneficiaryCard}
           onNote={() => setTab('social')}
           onEmail={() => { setNotice(''); setEmailOpen(true); }}
           onCreateCampaign={onCreateCampaign}
@@ -1847,12 +1861,13 @@ function CasePriorityPanel({ summary, beneficiary, onPrimaryAction }) {
   );
 }
 
-function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, onManageDocuments, onUploadDocument, onNote, onEmail, onCreateCampaign, onOpenAgenda, onNotice }) {
+function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, onManageDocuments, onUploadDocument, onGenerateCard, onNote, onEmail, onCreateCampaign, onOpenAgenda, onNotice }) {
   const [showMore, setShowMore] = useState(false);
   const primaryActions = [
     { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
     { label: 'Gestionar documentacion', icon: Paperclip, onClick: onManageDocuments, enabled: Boolean(onManageDocuments) },
-    { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) }
+    { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) },
+    { label: 'Generar carné', icon: IdCard, onClick: onGenerateCard, enabled: Boolean(onGenerateCard) }
   ];
   const secondaryActions = [
     { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },
