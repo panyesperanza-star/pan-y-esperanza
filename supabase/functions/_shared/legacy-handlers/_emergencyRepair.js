@@ -4,21 +4,60 @@ import { cleanJwtCredential, getServerConfig } from './_adminAuth.js';
 export const ELIZABETH_EMAIL = 'elizabeth@panyesperanza.org';
 
 const PERMISSION_MODULES = [
+  'dashboard',
+  'notifications',
+  'social-care',
+  'agenda',
   'beneficiaries',
   'communications',
   'families',
   'deliveries',
+  'credential-scanner',
   'receipts',
   'inventory',
   'donations',
-  'treasury',
+  'donors',
+  'accounting',
+  'volunteers',
+  'collaborators',
   'reports',
   'users',
   'settings',
-  'backup'
+  'backup',
+  'provider',
+  'platform-tools'
 ];
 
-const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'];
+const PERMISSION_ACTIONS = [
+  'view',
+  'create',
+  'edit',
+  'delete',
+  'activate',
+  'archive',
+  'assign',
+  'contact',
+  'send',
+  'resolve',
+  'confirm',
+  'sign',
+  'generate-receipt',
+  'generate-credential',
+  'manage-documents',
+  'register-movement',
+  'scan',
+  'manual-identify',
+  'register-delivery',
+  'print',
+  'export',
+  'reset-password',
+  'manage-permissions',
+  'test',
+  'restore',
+  'approve',
+  'reject',
+  'execute'
+];
 
 export function sendJson(response, status, payload) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');

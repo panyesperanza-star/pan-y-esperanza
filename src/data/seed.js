@@ -414,7 +414,7 @@ export const seedData = {
     { id: 'president', name: 'Presidenta', modules: ['*'] },
     { id: 'treasurer', name: 'Tesorera', modules: ['agenda', 'donations', 'donors', 'accounting', 'collaborators', 'reports', 'receipts'] },
     { id: 'secretary', name: 'Secretaria', modules: ['agenda', 'beneficiaries', 'families', 'receipts', 'reports', 'users', 'settings'] },
-    { id: 'volunteer', name: 'Voluntario', modules: ['agenda', 'beneficiaries', 'deliveries', 'inventory', 'accounting'] },
+    { id: 'volunteer', name: 'Voluntario', modules: ['agenda', 'beneficiaries', 'deliveries', 'credential-scanner', 'inventory', 'accounting'] },
     { id: 'viewer', name: 'Consulta', modules: ['agenda', 'dashboard', 'reports'] },
     { id: 'platform-owner', name: 'Platform Owner', modules: ['platform-tools'] }
   ],

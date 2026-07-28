@@ -38,34 +38,63 @@ export function getModulePath(moduleId) {
 export const DOCUMENT_TYPES = ['DNI/NIE / NIE O PASAPORTE', 'Empadronamiento', 'Familia numerosa', 'Discapacidad', 'Otros documentos'];
 export const ROLES = ['Superadministrador', 'Presidenta', 'Secretaria', 'Tesorera', 'Coordinadora', 'Voluntario'];
 
+const READ_ONLY = ['view'];
+const CRUD = ['view', 'create', 'edit', 'delete'];
+
 export const PERMISSION_MODULES = [
-  { id: 'dashboard', label: 'Ver Centro de operaciones', actions: ['view'] },
-  { id: 'notifications', label: 'Centro de Notificaciones', actions: ['view', 'edit'] },
-  { id: 'social-care', label: 'Centro de Atencion Social', actions: ['view', 'edit'] },
-  { id: 'agenda', label: 'Agenda Operativa' },
-  { id: 'beneficiaries', label: 'Beneficiarios' },
-  { id: 'communications', label: 'Comunicaciones' },
-  { id: 'families', label: 'Familias' },
-  { id: 'deliveries', label: 'Entregas' },
-  { id: 'credential-scanner', label: 'Escanear credencial', actions: ['view'] },
-  { id: 'receipts', label: 'Justificantes' },
-  { id: 'inventory', label: 'Inventario' },
-  { id: 'donations', label: 'Donaciones' },
-  { id: 'donors', label: 'Donantes' },
-  { id: 'accounting', label: 'Contabilidad' },
-  { id: 'volunteers', label: 'Voluntarios' },
-  { id: 'collaborators', label: 'Colaboradores' },
-  { id: 'reports', label: 'Informes' },
-  { id: 'users', label: 'Usuarios' },
-  { id: 'settings', label: 'Configuración' },
-  { id: 'backup', label: 'Copias de seguridad' }
+  { id: 'dashboard', label: 'Ver Centro de operaciones', actions: READ_ONLY },
+  { id: 'notifications', label: 'Centro de Notificaciones', actions: ['view', 'edit', 'send', 'resolve'] },
+  { id: 'social-care', label: 'Centro de Atencion Social', actions: ['view', 'edit', 'assign', 'contact', 'send', 'resolve'] },
+  { id: 'agenda', label: 'Agenda Operativa', actions: CRUD },
+  { id: 'beneficiaries', label: 'Beneficiarios', actions: [...CRUD, 'activate', 'contact', 'manage-documents', 'generate-credential', 'print', 'send', 'export'] },
+  { id: 'communications', label: 'Comunicaciones', actions: ['view', 'create', 'edit', 'send', 'export'] },
+  { id: 'families', label: 'Familias', actions: [...CRUD, 'archive'] },
+  { id: 'deliveries', label: 'Entregas', actions: [...CRUD, 'confirm', 'sign', 'generate-receipt', 'print', 'export'] },
+  { id: 'credential-scanner', label: 'Escanear credencial', actions: ['view', 'scan', 'manual-identify', 'register-delivery'] },
+  { id: 'receipts', label: 'Justificantes', actions: ['view', 'print', 'send', 'export'] },
+  { id: 'inventory', label: 'Inventario', actions: [...CRUD, 'register-movement', 'export'] },
+  { id: 'donations', label: 'Donaciones', actions: [...CRUD, 'export'] },
+  { id: 'donors', label: 'Donantes', actions: [...CRUD, 'activate', 'generate-credential', 'print', 'send', 'export'] },
+  { id: 'accounting', label: 'Contabilidad', actions: [...CRUD, 'print', 'export'] },
+  { id: 'volunteers', label: 'Voluntarios', actions: [...CRUD, 'archive', 'generate-credential', 'print', 'export'] },
+  { id: 'collaborators', label: 'Colaboradores', actions: [...CRUD, 'activate', 'generate-credential', 'print', 'send', 'export'] },
+  { id: 'reports', label: 'Informes', actions: ['view', 'print', 'export'] },
+  { id: 'users', label: 'Usuarios', actions: [...CRUD, 'reset-password', 'manage-permissions'] },
+  { id: 'settings', label: 'Configuración', actions: ['view', 'edit', 'test', 'send'] },
+  { id: 'backup', label: 'Copias de seguridad', actions: ['view', 'export', 'restore'] },
+  { id: 'provider', label: 'Panel del proveedor', actions: ['view', 'approve', 'reject'] },
+  { id: 'platform-tools', label: 'Herramientas de Plataforma', actions: ['view', 'execute'] }
 ];
 
 export const PERMISSION_ACTIONS = [
   { id: 'view', label: 'Ver' },
   { id: 'create', label: 'Crear' },
   { id: 'edit', label: 'Editar' },
-  { id: 'delete', label: 'Eliminar' }
+  { id: 'delete', label: 'Eliminar' },
+  { id: 'activate', label: 'Activar' },
+  { id: 'archive', label: 'Archivar' },
+  { id: 'assign', label: 'Asignar' },
+  { id: 'contact', label: 'Contactar' },
+  { id: 'send', label: 'Enviar' },
+  { id: 'resolve', label: 'Resolver' },
+  { id: 'confirm', label: 'Confirmar' },
+  { id: 'sign', label: 'Firmar' },
+  { id: 'generate-receipt', label: 'Justificante' },
+  { id: 'generate-credential', label: 'Credencial' },
+  { id: 'manage-documents', label: 'Documentos' },
+  { id: 'register-movement', label: 'Movimiento' },
+  { id: 'scan', label: 'Escanear' },
+  { id: 'manual-identify', label: 'Identificar' },
+  { id: 'register-delivery', label: 'Registrar entrega' },
+  { id: 'print', label: 'Imprimir' },
+  { id: 'export', label: 'Exportar' },
+  { id: 'reset-password', label: 'Contraseña' },
+  { id: 'manage-permissions', label: 'Permisos' },
+  { id: 'test', label: 'Probar' },
+  { id: 'restore', label: 'Restaurar' },
+  { id: 'approve', label: 'Aprobar' },
+  { id: 'reject', label: 'Rechazar' },
+  { id: 'execute', label: 'Ejecutar' }
 ];
 
 export function buildPermissionMatrix(modules = [], actions = ['view']) {
@@ -137,30 +166,34 @@ export const LEGACY_ROLE_PERMISSIONS = {
 export const ROLE_PERMISSION_MATRIX = {
   Superadministrador: buildPermissionMatrix(['*'], ['*']),
   Presidenta: withModulePermissions(
-    buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['view', 'create', 'edit', 'delete']),
+    buildPermissionMatrix(ROLE_PERMISSIONS.Presidenta, ['*']),
     'inventory',
     { delete: false }
   ),
-  Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit']),
-  Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['view', 'create', 'edit', 'delete']),
+  Secretaria: buildPermissionMatrix(ROLE_PERMISSIONS.Secretaria, ['view', 'create', 'edit', 'print', 'send', 'export', 'manage-documents', 'generate-credential', 'reset-password', 'manage-permissions']),
+  Tesorera: buildPermissionMatrix(ROLE_PERMISSIONS.Tesorera, ['*']),
   Coordinadora: withModulePermissions(
     withModulePermissions(
-      buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit']),
+      buildPermissionMatrix(ROLE_PERMISSIONS.Coordinadora, ['view', 'create', 'edit', 'activate', 'archive', 'assign', 'contact', 'send', 'resolve', 'confirm', 'sign', 'generate-receipt', 'generate-credential', 'manage-documents', 'register-movement', 'scan', 'manual-identify', 'register-delivery', 'print', 'export']),
       'accounting',
       { create: false, edit: false, delete: false }
     ),
     'inventory',
     { edit: false, delete: false }
   ),
-  Voluntario: buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view']),
+  Voluntario: withModulePermissions(
+    buildPermissionMatrix(ROLE_PERMISSIONS.Voluntario, ['view']),
+    'credential-scanner',
+    { scan: true, 'manual-identify': true }
+  ),
   Administrador: withModulePermissions(
-    buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Administrador, ['view', 'create', 'edit', 'delete']),
+    buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Administrador, ['*']),
     'inventory',
     { delete: false }
   ),
   Coordinador: withModulePermissions(
     withModulePermissions(
-      buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Coordinador, ['view', 'create', 'edit']),
+      buildPermissionMatrix(LEGACY_ROLE_PERMISSIONS.Coordinador, ['view', 'create', 'edit', 'activate', 'archive', 'assign', 'contact', 'send', 'resolve', 'confirm', 'sign', 'generate-receipt', 'generate-credential', 'manage-documents', 'register-movement', 'scan', 'manual-identify', 'register-delivery', 'print', 'export']),
       'accounting',
       { create: false, edit: false, delete: false }
     ),

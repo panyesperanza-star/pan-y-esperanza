@@ -107,6 +107,10 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
   const canCreate = canDo(currentUser, 'beneficiaries', 'create');
   const canEdit = canDo(currentUser, 'beneficiaries', 'edit');
   const canDelete = canDo(currentUser, 'beneficiaries', 'delete');
+  const canActivate = canDo(currentUser, 'beneficiaries', 'activate');
+  const canGenerateCredential = canDo(currentUser, 'beneficiaries', 'generate-credential');
+  const canPrint = canDo(currentUser, 'beneficiaries', 'print');
+  const canSend = canDo(currentUser, 'beneficiaries', 'send');
   const organization = data.organization_settings?.[0] || {};
   const canDeleteDirectly = canDeleteDefinitively(currentUser, 'beneficiaries', organization);
   const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'beneficiaries', organization);
@@ -221,7 +225,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
         description="Gestión de personas atendidas y acceso a su expediente."
         actions={(
           <div className="flex flex-wrap gap-2">
-            {canEdit && <Button variant="secondary" onClick={activatePendingPortals}><KeyRound size={18} /> Activar portales pendientes</Button>}
+            {canActivate && <Button variant="secondary" onClick={activatePendingPortals}><KeyRound size={18} /> Activar portales pendientes</Button>}
             {canCreate && <Button onClick={() => setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(data.beneficiaries) })}><Plus size={18} /> Nuevo beneficiario</Button>}
           </div>
         )}
@@ -362,6 +366,10 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
               deliveries={safeRows(data.deliveries).filter((item) => item.beneficiary_id === profile.id)}
               canEdit={canEdit}
               canDelete={canDelete}
+              canActivate={canActivate}
+              canGenerateCredential={canGenerateCredential}
+              canPrint={canPrint}
+              canSend={canSend}
               onEdit={() => { setProfileId(null); setEditing(profile); }}
               onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
               onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
@@ -1307,7 +1315,7 @@ function formatBeneficiaryMatch(item) {
   return [item.code, item.full_name].filter(Boolean).join(' - ') || item.id || 'Expediente sin identificar';
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, beneficiary, deliveries, canEdit, canDelete, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
+function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, beneficiary, deliveries, canEdit, canDelete, canActivate, canGenerateCredential, canPrint, canSend, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
@@ -1586,6 +1594,8 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
         documentIssue={documentIssue}
         canEdit={canEdit}
         canDelete={canDelete}
+        canGenerateCredential={canGenerateCredential}
+        canPrint={canPrint}
         onEdit={onEdit}
         onSummaryPdf={() => printBeneficiaryPdf(beneficiary, profileDeliveries)}
         onSocialReport={() => printSocialAttentionReportPdf({
@@ -1687,6 +1697,9 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           lastOtp={lastPortalOtp}
           temporaryPin={temporaryPortalPin}
           canEdit={canEdit}
+          canActivate={canActivate}
+          canPrint={canPrint}
+          canSend={canSend}
           onActivate={activatePortal}
           onDeactivate={deactivatePortal}
           onRegeneratePin={regeneratePortalPin}
@@ -1751,7 +1764,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   );
 }
 
-function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
+function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canGenerateCredential, canPrint, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const priority = socialPriorityLabel(beneficiary, history);
   const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
@@ -1796,9 +1809,9 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, docum
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
             {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
-            <OfficialCredentialButton kind="beneficiary" subject={beneficiary} />
-            <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
-            <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
+            {canGenerateCredential && <OfficialCredentialButton kind="beneficiary" subject={beneficiary} />}
+            {canPrint && <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>}
+            {canPrint && <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>}
           </div>
         </div>
       </div>
@@ -1895,7 +1908,7 @@ function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, o
   );
 }
 
-function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPin, canEdit, onActivate, onDeactivate, onRegeneratePin, onPrint, onSend }) {
+function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPin, canEdit, canActivate, canPrint, canSend, onActivate, onDeactivate, onRegeneratePin, onPrint, onSend }) {
   const active = account?.status === 'active';
   const pending = !account || !account.pin_hash;
   const pinLabel = getPortalPinLabel(account, temporaryPin);
@@ -1912,11 +1925,11 @@ function BeneficiaryPortalAdminBlock({ account, lastAccess, lastOtp, temporaryPi
           <p className="mt-2 text-sm text-slate-500">Gestion de credenciales privadas y acceso seguro al portal.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canEdit && !active && <Button variant="secondary" onClick={onActivate}><Power size={17} /> Activar portal</Button>}
-          {canEdit && active && <Button variant="secondary" onClick={onDeactivate}><PowerOff size={17} /> Desactivar portal</Button>}
+          {canActivate && !active && <Button variant="secondary" onClick={onActivate}><Power size={17} /> Activar portal</Button>}
+          {canActivate && active && <Button variant="secondary" onClick={onDeactivate}><PowerOff size={17} /> Desactivar portal</Button>}
           {canEdit && <Button variant="secondary" onClick={onRegeneratePin}><KeyRound size={17} /> Regenerar PIN</Button>}
-          <Button variant="secondary" onClick={onPrint}><Printer size={17} /> Imprimir acceso</Button>
-          {canEdit && <Button variant="secondary" onClick={onSend}><Mail size={17} /> Enviar acceso</Button>}
+          {canPrint && <Button variant="secondary" onClick={onPrint}><Printer size={17} /> Imprimir acceso</Button>}
+          {canSend && <Button variant="secondary" onClick={onSend}><Mail size={17} /> Enviar acceso</Button>}
         </div>
       </div>
 

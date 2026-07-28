@@ -366,11 +366,17 @@ function UserForm({ initial, organization, onSubmit }) {
 }
 
 function PermissionEditor({ value, role, onChange }) {
+  function isChecked(moduleId, actionId) {
+    const modulePermissions = value[moduleId] || {};
+    if (Object.prototype.hasOwnProperty.call(modulePermissions, actionId)) return Boolean(modulePermissions[actionId]);
+    return Boolean(ROLE_PERMISSION_MATRIX[role]?.[moduleId]?.[actionId]);
+  }
+
   function toggle(moduleId, actionId) {
     if (!isRoleActionAllowed(role, moduleId, actionId)) return;
-    onChange({ ...value, [moduleId]: { ...(value[moduleId] || {}), [actionId]: !value[moduleId]?.[actionId] } });
+    onChange({ ...value, [moduleId]: { ...(value[moduleId] || {}), [actionId]: !isChecked(moduleId, actionId) } });
   }
-  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por módulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[620px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Módulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => { const supported = (!module.actions || module.actions.includes(action.id)) && isRoleActionAllowed(role, module.id, action.id); return <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" aria-label={`${module.label}: ${action.label}`} checked={supported && Boolean(value[module.id]?.[action.id])} disabled={!supported} onChange={() => toggle(module.id, action.id)} /></td>; })}</tr>)}</tbody></table></div></div>;
+  return <div><p className="mb-2 text-sm font-medium text-slate-700">Permisos por módulo</p><div className="overflow-x-auto rounded-md border border-slate-200"><table className="w-full min-w-[1800px] text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Módulo</th>{PERMISSION_ACTIONS.map((action) => <th key={action.id} className="px-3 py-2">{action.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{PERMISSION_MODULES.map((module) => <tr key={module.id}><td className="px-3 py-2 font-medium">{module.label}</td>{PERMISSION_ACTIONS.map((action) => { const supported = (!module.actions || module.actions.includes(action.id)) && isRoleActionAllowed(role, module.id, action.id); return <td key={action.id} className="px-3 py-2 text-center"><input type="checkbox" aria-label={`${module.label}: ${action.label}`} checked={supported && isChecked(module.id, action.id)} disabled={!supported} onChange={() => toggle(module.id, action.id)} /></td>; })}</tr>)}</tbody></table></div></div>;
 }
 
 function PermissionsMatrix({ users, actions, setMessage }) {

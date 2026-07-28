@@ -50,6 +50,7 @@ export function Volunteers({ data, actions, currentUser }) {
   const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
   const canDelete = currentUser?.role === 'Superadministrador';
+  const canGenerateCredential = canDo(currentUser, 'volunteers', 'generate-credential');
 
   async function saveVolunteer(form, current = null) {
     const payload = volunteerPayloadFromForm(form, volunteers, current);
@@ -158,6 +159,7 @@ export function Volunteers({ data, actions, currentUser }) {
             currentUser={currentUser}
             canManage={canManage}
             canDelete={canDelete}
+            canGenerateCredential={canGenerateCredential}
             onEdit={() => setModal({ type: 'edit', volunteer: refreshVolunteer(modal.volunteer, data.volunteers || []) })}
             onArchive={() => archiveVolunteer(refreshVolunteer(modal.volunteer, data.volunteers || []))}
             onDelete={() => deleteVolunteer(refreshVolunteer(modal.volunteer, data.volunteers || []))}
@@ -200,7 +202,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, onOpen, onEdit,
   );
 }
 
-function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, onEdit, onArchive, onDelete, onAddHistory }) {
+function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, canGenerateCredential, onEdit, onArchive, onDelete, onAddHistory }) {
   const [tab, setTab] = useState('summary');
   const history = volunteerHistoryFor(data, volunteer.id);
   const stats = volunteerStats(volunteer, history);
@@ -222,7 +224,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <OfficialCredentialButton kind="volunteer" subject={volunteer} />
+            {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} />}
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}

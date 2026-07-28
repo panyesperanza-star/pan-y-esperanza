@@ -3,6 +3,7 @@ import { AlertTriangle, BriefcaseBusiness, Camera, CheckCircle2, Heart, IdCard, 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
+import { canDo } from '../lib/auth';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
@@ -14,7 +15,7 @@ const KIND_META = {
   donor: { label: 'Donante', icon: Heart, tone: 'rose' }
 };
 
-export function CredentialScanner({ data, onNavigate }) {
+export function CredentialScanner({ data, currentUser, onNavigate }) {
   const scannerRegionId = useRef(`credential-qr-reader-${Math.random().toString(36).slice(2)}`).current;
   const scannerRef = useRef(null);
   const scanLockedRef = useRef(false);
@@ -27,10 +28,18 @@ export function CredentialScanner({ data, onNavigate }) {
   const [scanError, setScanError] = useState('');
   const [manualCode, setManualCode] = useState('');
   const directory = useMemo(() => buildCredentialDirectory(data || {}), [data]);
+  const canScan = canDo(currentUser, 'credential-scanner', 'scan');
+  const canManualIdentify = canDo(currentUser, 'credential-scanner', 'manual-identify');
+  const canRegisterDelivery = canDo(currentUser, 'credential-scanner', 'register-delivery');
 
   useEffect(() => () => stopCamera(), []);
 
   async function startCamera(cameraId = selectedCameraId) {
+    if (!canScan) {
+      setCameraError('Tu usuario no tiene permiso para usar la camara del lector de credenciales.');
+      setScanStatus('Escaneo no autorizado.');
+      return;
+    }
     setScanError('');
     setCameraError('');
     setScanStatus('Activando camara...');
@@ -118,6 +127,12 @@ export function CredentialScanner({ data, onNavigate }) {
 
   function identifyManualCode(event) {
     event.preventDefault();
+    if (!canManualIdentify) {
+      setResult(null);
+      setScanError('Tu usuario no tiene permiso para identificar credenciales manualmente.');
+      setScanStatus('Identificacion manual no autorizada.');
+      return;
+    }
     setScanError('');
     setCameraError('');
     const match = findManualCredentialMatch(manualCode, directory);
@@ -136,7 +151,7 @@ export function CredentialScanner({ data, onNavigate }) {
       <PageHeader
         title="Escanear credencial"
         description="Lector QR integrado en ALTHEMON para identificar credenciales oficiales sin exponer datos personales en el QR."
-        actions={<Button onClick={isCameraActive ? () => stopCamera() : () => startCamera()}>{isCameraActive ? <XCircle size={16} /> : <Camera size={16} />} {isCameraActive ? 'Cerrar camara' : 'Escanear credencial'}</Button>}
+        actions={<Button disabled={!canScan} onClick={isCameraActive ? () => stopCamera() : () => startCamera()}>{isCameraActive ? <XCircle size={16} /> : <Camera size={16} />} {isCameraActive ? 'Cerrar camara' : 'Escanear credencial'}</Button>}
       />
 
       <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -184,7 +199,7 @@ export function CredentialScanner({ data, onNavigate }) {
           <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm font-semibold text-brand-800">
             <p>{scanStatus}</p>
           </div>
-          {cameraError && <AlertBox tone="amber" text={cameraError} action={<Button variant="secondary" onClick={() => startCamera()}><RefreshCw size={16} /> Reintentar</Button>} />}
+          {cameraError && <AlertBox tone="amber" text={cameraError} action={canScan ? <Button variant="secondary" onClick={() => startCamera()}><RefreshCw size={16} /> Reintentar</Button> : null} />}
           {scanError && <AlertBox tone="red" text={scanError} />}
 
           <form onSubmit={identifyManualCode} className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -197,13 +212,14 @@ export function CredentialScanner({ data, onNavigate }) {
                 value={manualCode}
                 onChange={(event) => setManualCode(event.target.value)}
                 placeholder="PYE-00001"
+                disabled={!canManualIdentify}
               />
-              <Button type="submit">Identificar persona</Button>
+              <Button type="submit" disabled={!canManualIdentify}>Identificar persona</Button>
             </div>
           </form>
         </article>
 
-        <CredentialResult result={result} data={data || {}} onNavigate={onNavigate} />
+        <CredentialResult result={result} data={data || {}} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -221,7 +237,7 @@ export function CredentialScanner({ data, onNavigate }) {
   );
 }
 
-function CredentialResult({ result, data, onNavigate }) {
+function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
   if (!result) {
     return (
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -234,13 +250,13 @@ function CredentialResult({ result, data, onNavigate }) {
     );
   }
 
-  if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} onNavigate={onNavigate} />;
+  if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />;
   if (result.kind === 'volunteer') return <VolunteerScanResult result={result} data={data} />;
   if (result.kind === 'collaborator') return <CollaboratorScanResult result={result} data={data} />;
   return <DonorScanResult result={result} data={data} />;
 }
 
-function BeneficiaryScanResult({ result, data, onNavigate }) {
+function BeneficiaryScanResult({ result, data, canRegisterDelivery, onNavigate }) {
   const beneficiary = result.record;
   const deliveries = (data.deliveries || []).filter((delivery) => delivery.beneficiary_id === beneficiary.id && isActiveDelivery(delivery));
   const lastDelivery = latestByDate(deliveries, 'delivered_at');
@@ -262,7 +278,7 @@ function BeneficiaryScanResult({ result, data, onNavigate }) {
             {receivedToday ? (
               <p className="mt-2 text-sm font-semibold text-emerald-700">Entrega ya registrada hoy. No se permite registrar otra desde el escaneo.</p>
             ) : (
-              <Button className="mt-3 w-full sm:w-auto" onClick={() => onNavigate?.({ moduleId: 'deliveries', filter: 'registrar-entrega', profileId: beneficiary.id })}>
+              <Button className="mt-3 w-full sm:w-auto" disabled={!canRegisterDelivery} onClick={() => onNavigate?.({ moduleId: 'deliveries', filter: 'registrar-entrega', profileId: beneficiary.id })}>
                 <PackageCheck size={16} /> Registrar entrega
               </Button>
             )}
@@ -349,7 +365,7 @@ function CredentialPersonPhoto({ kind, record }) {
   useEffect(() => {
     let cancelled = false;
     async function resolvePhoto() {
-      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.logo_data_url || record.logo_url || record.impact?.credential_photo_data_url || '';
+      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.logo_data_url || record.logo_url || '';
       if (direct) {
         if (!cancelled) setSrc(direct);
         return;

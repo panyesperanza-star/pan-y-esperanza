@@ -23,6 +23,10 @@ export function Donors({ data, actions, currentUser }) {
   const filtered = useMemo(() => filterDonors(donors, { searchTerm, typeFilter, portalFilter }), [donors, searchTerm, typeFilter, portalFilter]);
   const canCreate = canDo(currentUser, 'donors', 'create');
   const canEdit = canDo(currentUser, 'donors', 'edit');
+  const canActivate = canDo(currentUser, 'donors', 'activate');
+  const canGenerateCredential = canDo(currentUser, 'donors', 'generate-credential');
+  const canPrint = canDo(currentUser, 'donors', 'print');
+  const canSend = canDo(currentUser, 'donors', 'send');
 
   async function saveDonor(payload, current = null) {
     if (current) await actions.updateDonor(current.id, payload);
@@ -163,12 +167,12 @@ export function Donors({ data, actions, currentUser }) {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => setModal({ type: 'detail', donor })}><Eye size={16} /> Ficha</Button>
-                      <OfficialCredentialButton kind="donor" subject={donor} />
+                      {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} />}
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', donor })}><Edit3 size={16} /> Editar</Button>}
-                      <Button variant="secondary" onClick={() => printAccess(donor)}><Printer size={16} /> Imprimir acceso</Button>
-                      {canEdit && donor.portalActive && <Button variant="secondary" onClick={() => resendAccess(donor)}><Mail size={16} /> Reenviar acceso</Button>}
-                      {canEdit && donor.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(donor)}><PowerOff size={16} /> Desactivar</Button>}
-                      {canEdit && !donor.portalActive && <Button variant="secondary" onClick={() => activatePortal(donor)}><Power size={16} /> Activar</Button>}
+                      {canPrint && <Button variant="secondary" onClick={() => printAccess(donor)}><Printer size={16} /> Imprimir acceso</Button>}
+                      {canSend && donor.portalActive && <Button variant="secondary" onClick={() => resendAccess(donor)}><Mail size={16} /> Reenviar acceso</Button>}
+                      {canActivate && donor.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(donor)}><PowerOff size={16} /> Desactivar</Button>}
+                      {canActivate && !donor.portalActive && <Button variant="secondary" onClick={() => activatePortal(donor)}><Power size={16} /> Activar</Button>}
                     </div>
                   </td>
                 </tr>
@@ -199,7 +203,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'detail' && (
         <Modal title={`Ficha del donante - ${modal.donor.code || modal.donor.name}`} onClose={() => setModal(null)} wide>
-          <DonorDetail donor={modal.donor} onPrint={() => printAccess(modal.donor)} />
+          <DonorDetail donor={modal.donor} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
         </Modal>
       )}
     </>
@@ -214,7 +218,7 @@ function DonorForm({ initial = null, onSubmit }) {
     address: initial?.address || '',
     type: initial?.type || 'Particular',
     status: initial?.status || 'Activo',
-    photo_data_url: initial?.photo_data_url || initial?.impact?.credential_photo_data_url || '',
+    photo_data_url: initial?.photo_data_url || '',
     notes: initial?.notes || ''
   });
   const [saving, setSaving] = useState(false);
@@ -277,7 +281,7 @@ function DonorForm({ initial = null, onSubmit }) {
   );
 }
 
-function DonorDetail({ donor, onPrint }) {
+function DonorDetail({ donor, canGenerateCredential, canPrint, onPrint }) {
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-2">
@@ -296,8 +300,8 @@ function DonorDetail({ donor, onPrint }) {
           <InfoLine icon={CalendarDays} label="Ultimo acceso" value={donor.lastAccess ? formatDateTime(donor.lastAccess) : '-'} />
           <InfoLine icon={FileText} label="Certificados" value={donor.certificates.length} />
           <div className="mt-4 flex flex-wrap gap-2">
-            <OfficialCredentialButton kind="donor" subject={donor} />
-            <Button variant="secondary" onClick={onPrint}><Printer size={16} /> Imprimir acceso</Button>
+            {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} />}
+            {canPrint && <Button variant="secondary" onClick={onPrint}><Printer size={16} /> Imprimir acceso</Button>}
           </div>
         </InfoCard>
       </section>
@@ -401,7 +405,7 @@ function enrichDonors(donors, data) {
       ].filter(Boolean).sort().at(-1);
       return {
         ...donor,
-        photo_data_url: donor.photo_data_url || donor.impact?.credential_photo_data_url || '',
+        photo_data_url: donor.photo_data_url || '',
         portalActive: donor.is_active !== false,
         lastAccess,
         lastOtp,

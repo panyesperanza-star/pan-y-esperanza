@@ -169,7 +169,11 @@ export function canDo(user, moduleId, action = 'view') {
   if (user.role === 'Superadministrador') return true;
   if (!isRoleActionAllowed(user.role, moduleId, action)) return false;
   if (hasPermissionMatrix(user)) {
-    if (hasModulePermissionEntry(user, moduleId)) return Boolean(user.permission_matrix?.[moduleId]?.[action]);
+    if (hasModulePermissionEntry(user, moduleId)) {
+      const modulePermissions = user.permission_matrix?.[moduleId] || {};
+      if (Object.prototype.hasOwnProperty.call(modulePermissions, action)) return Boolean(modulePermissions[action]);
+      return roleCanDo(user, moduleId, action);
+    }
     return roleCanDo(user, moduleId, action);
   }
   return action === 'view' && Array.isArray(user.permissions) && user.permissions.includes(moduleId);

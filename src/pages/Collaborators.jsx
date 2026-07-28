@@ -23,6 +23,10 @@ export function Collaborators({ data, actions, currentUser }) {
   const filtered = useMemo(() => filterCollaborators(collaborators, { searchTerm, typeFilter, portalFilter }), [collaborators, searchTerm, typeFilter, portalFilter]);
   const canCreate = canDo(currentUser, 'collaborators', 'create');
   const canEdit = canDo(currentUser, 'collaborators', 'edit');
+  const canActivate = canDo(currentUser, 'collaborators', 'activate');
+  const canGenerateCredential = canDo(currentUser, 'collaborators', 'generate-credential');
+  const canPrint = canDo(currentUser, 'collaborators', 'print');
+  const canSend = canDo(currentUser, 'collaborators', 'send');
 
   async function saveCollaborator(payload, current = null) {
     if (current) await actions.updateCollaborator(current.id, payload);
@@ -161,12 +165,12 @@ export function Collaborators({ data, actions, currentUser }) {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
-                      <OfficialCredentialButton kind="collaborator" subject={collaborator} />
+                      {canGenerateCredential && <OfficialCredentialButton kind="collaborator" subject={collaborator} />}
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', collaborator })}><Edit3 size={16} /> Editar</Button>}
-                      <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>
-                      {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}
-                      {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(collaborator)}><PowerOff size={16} /> Desactivar portal</Button>}
-                      {canEdit && !collaborator.portalActive && <Button variant="secondary" onClick={() => activatePortal(collaborator)}><Power size={16} /> Activar portal</Button>}
+                      {canPrint && <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>}
+                      {canSend && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}
+                      {canActivate && collaborator.portalActive && <Button variant="secondary" onClick={() => deactivatePortal(collaborator)}><PowerOff size={16} /> Desactivar portal</Button>}
+                      {canActivate && !collaborator.portalActive && <Button variant="secondary" onClick={() => activatePortal(collaborator)}><Power size={16} /> Activar portal</Button>}
                     </div>
                   </td>
                 </tr>
@@ -217,7 +221,7 @@ function CollaboratorForm({ initial = null, onSubmit }) {
     phone: initial?.phone || '',
     address: initial?.address || '',
     status: initial?.status || 'Activo',
-    photo_data_url: initial?.photo_data_url || initial?.impact?.credential_photo_data_url || '',
+    photo_data_url: initial?.photo_data_url || '',
     notes: initial?.notes || ''
   });
   const [saving, setSaving] = useState(false);
@@ -336,7 +340,7 @@ function enrichCollaborators(collaborators, data) {
       ].filter(Boolean).sort().at(-1);
       return {
         ...collaborator,
-        photo_data_url: collaborator.photo_data_url || collaborator.impact?.credential_photo_data_url || '',
+        photo_data_url: collaborator.photo_data_url || '',
         portalActive: collaborator.is_active !== false,
         lastAccess,
         lastOtp

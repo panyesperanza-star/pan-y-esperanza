@@ -89,11 +89,11 @@ values
 insert into public.roles (id, name, modules)
 values
   ('superadmin', 'Superadministrador', '["*"]'::jsonb),
-  ('presidenta', 'Presidenta', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "receipts", "inventory", "donations", "donors", "collaborators", "treasury", "reports", "users", "settings"]'::jsonb),
-  ('tesorera', 'Tesorera', '["notifications", "agenda", "donations", "donors", "collaborators", "treasury", "reports", "receipts"]'::jsonb),
-  ('secretaria', 'Secretaria', '["notifications", "agenda", "beneficiaries", "families", "receipts", "reports", "users", "settings"]'::jsonb),
-  ('coordinator', 'Coordinador', '["notifications", "agenda", "beneficiaries", "families", "deliveries", "inventory", "collaborators", "donors", "treasury", "receipts", "reports"]'::jsonb),
-  ('volunteer', 'Voluntario', '["notifications", "agenda", "beneficiaries", "deliveries", "inventory", "treasury"]'::jsonb),
+  ('presidenta', 'Presidenta', '["notifications", "social-care", "agenda", "beneficiaries", "communications", "families", "deliveries", "credential-scanner", "receipts", "inventory", "donations", "donors", "accounting", "volunteers", "collaborators", "reports", "users", "settings"]'::jsonb),
+  ('tesorera', 'Tesorera', '["notifications", "agenda", "donations", "donors", "accounting", "collaborators", "reports", "receipts", "communications"]'::jsonb),
+  ('secretaria', 'Secretaria', '["notifications", "social-care", "agenda", "beneficiaries", "communications", "families", "receipts", "reports", "users", "settings"]'::jsonb),
+  ('coordinator', 'Coordinador', '["notifications", "social-care", "agenda", "beneficiaries", "communications", "families", "deliveries", "credential-scanner", "receipts", "inventory", "accounting", "volunteers", "collaborators", "donors", "reports"]'::jsonb),
+  ('volunteer', 'Voluntario', '["notifications", "social-care", "agenda", "beneficiaries", "communications", "deliveries", "credential-scanner", "inventory", "accounting"]'::jsonb),
   ('viewer', 'Consulta', '["notifications", "agenda", "dashboard", "reports"]'::jsonb)
 on conflict (id) do update
 set name = excluded.name,

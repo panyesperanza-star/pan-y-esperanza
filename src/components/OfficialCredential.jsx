@@ -248,7 +248,6 @@ function credentialPhotoUrl(subject = {}) {
     subject.avatar_url ||
     subject.logo_data_url ||
     subject.logo_url ||
-    subject.impact?.credential_photo_data_url ||
     ''
   );
 }
