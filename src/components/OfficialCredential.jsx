@@ -27,6 +27,10 @@ const KIND_FALLBACK_CODES = {
   user: 'USR-00000'
 };
 
+const CREDENTIAL_PDF_WIDTH_MM = 110;
+const CREDENTIAL_PDF_HEIGHT_MM = 80;
+const CREDENTIAL_PDF_SIDES = ['front', 'back'];
+
 export function OfficialCredentialButton({ kind, subject, variant = 'secondary', className = '' }) {
   const [open, setOpen] = useState(false);
   const credential = useMemo(() => buildOfficialCredential(kind, subject), [kind, subject]);
@@ -63,12 +67,21 @@ function OfficialCredentialPreview({ credential }) {
     setError('');
     try {
       await waitForAssets(printArea);
-      const pages = Array.from(printArea.querySelectorAll('.official-credential-page'));
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [110, 80] });
+      const pages = getCredentialPdfPages(printArea);
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: [CREDENTIAL_PDF_WIDTH_MM, CREDENTIAL_PDF_HEIGHT_MM],
+        compress: true
+      });
       for (let index = 0; index < pages.length; index += 1) {
-        if (index > 0) pdf.addPage([110, 80], 'landscape');
+        if (index > 0) pdf.addPage([CREDENTIAL_PDF_WIDTH_MM, CREDENTIAL_PDF_HEIGHT_MM], 'landscape');
+        pdf.setPage(index + 1);
         const dataUrl = await renderElementToPng(pages[index]);
-        pdf.addImage(dataUrl, 'PNG', 0, 0, 110, 80);
+        pdf.addImage(dataUrl, 'PNG', 0, 0, CREDENTIAL_PDF_WIDTH_MM, CREDENTIAL_PDF_HEIGHT_MM);
+      }
+      if (pdf.getNumberOfPages() !== CREDENTIAL_PDF_SIDES.length) {
+        throw new Error(`El PDF debe tener ${CREDENTIAL_PDF_SIDES.length} paginas y contiene ${pdf.getNumberOfPages()}.`);
       }
       pdf.save(`Credencial-${safeFilename(credential.code || credential.name)}.pdf`);
     } catch (downloadError) {
@@ -100,20 +113,28 @@ function OfficialCredentialPreview({ credential }) {
 
       <div className="official-credential-print-area" ref={printAreaRef}>
         <div className="official-credential-pages">
-          <section className="official-credential-page" aria-label="Anverso de la credencial">
+          <section className="official-credential-page" data-credential-side="front" aria-label="Anverso de la credencial">
             <CredentialFront credential={credential} qrDataUrl={qrDataUrl} />
           </section>
-          <section className="official-credential-page" aria-label="Reverso de la credencial">
+          <section className="official-credential-page" data-credential-side="back" aria-label="Reverso de la credencial">
             <img className="official-credential-back-image" src={credentialBackUrl} alt="Reverso de la credencial" />
           </section>
         </div>
       </div>
 
       <p className="official-credential-preview-note">
-        Preparada para impresion en funda A7 de 110 x 80 mm. Imprime anverso y reverso, recorta por el borde de la tarjeta e introduce en la funda.
+        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para funda A7 de 110 x 80 mm.
       </p>
     </div>
   );
+}
+
+function getCredentialPdfPages(printArea) {
+  const pages = CREDENTIAL_PDF_SIDES.map((side) => printArea.querySelector(`[data-credential-side="${side}"]`));
+  if (pages.some((page) => !page)) {
+    throw new Error('No se han encontrado exactamente el anverso y el reverso de la credencial.');
+  }
+  return pages;
 }
 
 function CredentialFront({ credential, qrDataUrl }) {
