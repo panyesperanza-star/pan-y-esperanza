@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import { OfficialCredentialButton } from '../components/OfficialCredential';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
@@ -155,6 +156,7 @@ export function Donors({ data, actions, currentUser }) {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => setModal({ type: 'detail', donor })}><Eye size={16} /> Ficha</Button>
+                      <OfficialCredentialButton kind="donor" subject={donor} />
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', donor })}><Edit3 size={16} /> Editar</Button>}
                       <Button variant="secondary" onClick={() => printAccess(donor)}><Printer size={16} /> Imprimir acceso</Button>
                       {canEdit && donor.portalActive && <Button variant="secondary" onClick={() => resendAccess(donor)}><Mail size={16} /> Reenviar acceso</Button>}
@@ -278,6 +280,7 @@ function DonorDetail({ donor, onPrint }) {
           <InfoLine icon={CalendarDays} label="Ultimo acceso" value={donor.lastAccess ? formatDateTime(donor.lastAccess) : '-'} />
           <InfoLine icon={FileText} label="Certificados" value={donor.certificates.length} />
           <div className="mt-4 flex flex-wrap gap-2">
+            <OfficialCredentialButton kind="donor" subject={donor} />
             <Button variant="secondary" onClick={onPrint}><Printer size={16} /> Imprimir acceso</Button>
           </div>
         </InfoCard>

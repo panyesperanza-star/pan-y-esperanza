@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import { OfficialCredentialButton } from '../components/OfficialCredential';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
@@ -153,6 +154,7 @@ export function Collaborators({ data, actions, currentUser }) {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
+                      <OfficialCredentialButton kind="collaborator" subject={collaborator} />
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', collaborator })}><Edit3 size={16} /> Editar</Button>}
                       <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>
                       {canEdit && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}

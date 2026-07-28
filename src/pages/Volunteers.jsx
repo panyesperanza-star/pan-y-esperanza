@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import { OfficialCredentialButton } from '../components/OfficialCredential';
 import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { canDo } from '../lib/auth';
@@ -221,6 +222,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <OfficialCredentialButton kind="volunteer" subject={volunteer} />
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}

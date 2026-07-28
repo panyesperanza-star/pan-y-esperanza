@@ -41,6 +41,7 @@ import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import { OfficialCredentialButton } from '../components/OfficialCredential';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { removeBeneficiaryDocumentFile, resolveBeneficiaryDocumentUrl, uploadBeneficiaryDocumentFile } from '../lib/beneficiaryDocuments';
@@ -1795,6 +1796,7 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, docum
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
             {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
+            <OfficialCredentialButton kind="beneficiary" subject={beneficiary} />
             <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>
             <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>
           </div>
