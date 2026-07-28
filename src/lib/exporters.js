@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { resolveBeneficiaryPhotoUrl } from './beneficiaryPhotos';
+import { buildOfficialCredentialQrPayload } from './credentials';
 import { formatDate, formatDateTime, nextReceiptNumber } from './formatters';
 
 export function exportExcel(filename, sheets) {
@@ -123,7 +124,15 @@ export async function printDonorCredentialPdf(donor = {}, organization = {}) {
     dateValue: donor.joined_at || donor.created_at || donor.first_donation_at || new Date().toISOString(),
     organization,
     subjectId: donor.id || donor.code || null,
-    showPhoto: false
+    showPhoto: true,
+    photoOptional: true,
+    photoSources: [
+      donor.photo_data_url,
+      donor.photo_url,
+      donor.logo_data_url,
+      donor.logo_url,
+      donor.avatar_url
+    ]
   });
   return openOfficialCredentialPdf(doc, filename);
 }
@@ -177,105 +186,103 @@ export async function printVolunteerCredentialPdf(volunteer = {}, organization =
 export async function createOfficialCredentialPdf(credential = {}) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [85, 54] });
   const issuedAt = new Date().toISOString();
-  const organization = credential.organization || {};
-  const orgName = organization.name || 'Asociación Pan y Esperanza';
   const status = credential.status || 'Activo';
-  const qr = await QRCode.toDataURL(officialCredentialQrPayload({ ...credential, issuedAt, status, organization }), { margin: 0, width: 260 });
-  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources) : null;
+  const qr = await QRCode.toDataURL(buildOfficialCredentialQrPayload({ ...credential, issuedAt }), { margin: 0, width: 300 });
+  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'contain' }) : null;
   const statusTone = officialCredentialStatusTone(status);
   const role = credential.role || '';
+  const displayName = credential.displayName || '-';
+  const credentialTitle = credential.title || 'Credencial oficial';
 
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(0, 0, 85, 54, 3, 3, 'F');
-  doc.setDrawColor(204, 222, 211);
+  doc.setDrawColor(199, 217, 206);
   doc.setLineWidth(0.35);
   doc.roundedRect(0.4, 0.4, 84.2, 53.2, 3, 3, 'S');
 
   doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 85, 11, 'F');
-  await addOfficialLogo(doc, 4.3, 2.2, 12, 6.7);
+  doc.rect(0, 0, 85, 13.2, 'F');
+  await addOfficialLogo(doc, 4.2, 2.4, 11.5, 7.2);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(6.2);
-  drawCredentialFitText(doc, orgName, 18, 5.2, 42, { fontSize: 6.2, minFontSize: 4.6 });
-  doc.setFontSize(4.9);
+  drawCredentialFitText(doc, displayName, 17.5, 5.7, 49, { fontSize: 7.8, minFontSize: 4.9 });
   doc.setFont('helvetica', 'normal');
-  doc.text('Credencial oficial', 18, 8.5);
+  drawCredentialFitText(doc, credentialTitle, 17.6, 9.8, 47, { fontSize: 4.9, minFontSize: 3.9 });
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.3);
-  doc.text(credential.typeLabel || 'CREDENCIAL', 80.5, 7.1, { align: 'right' });
+  doc.setFontSize(4.5);
+  doc.text('OFICIAL', 80.5, 8, { align: 'right' });
 
-  const mediaX = 4.5;
-  const mediaY = 14.2;
-  const mediaW = 22;
-  const mediaH = 28;
+  const mediaX = 4.8;
+  const mediaY = 15.3;
+  const mediaW = 22.8;
+  const mediaH = 29;
   if (credential.showPhoto && photo?.dataUrl) {
-    doc.setFillColor(244, 248, 245);
-    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.2, 2.2, 'F');
+    doc.setFillColor(247, 250, 248);
+    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.4, 2.4, 'F');
     doc.addImage(photo.dataUrl, photo.format || 'JPEG', mediaX, mediaY, mediaW, mediaH);
-    doc.setDrawColor(188, 211, 197);
-    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.2, 2.2, 'S');
   } else if (credential.photoRequired) {
     drawCredentialPhotoRequired(doc, mediaX, mediaY, mediaW, mediaH);
   } else {
     drawCredentialInstitutionalMark(doc, mediaX, mediaY, mediaW, mediaH, credential);
   }
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(23, 33, 27);
-  drawCredentialFitText(doc, credential.displayName || '-', 29.5, 18.5, 29.5, { fontSize: 8.9, minFontSize: 6.1 });
-
+  doc.setTextColor(46, 62, 52);
   if (role) {
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(80, 94, 86);
-    drawCredentialFitText(doc, role, 29.5, 23.3, 29.5, { fontSize: 5.2, minFontSize: 4.2 });
+    doc.setFont('helvetica', 'bold');
+    drawCredentialFitText(doc, role, 30, 18.4, 27.5, { fontSize: 5.2, minFontSize: 4 });
   }
 
-  doc.setFillColor(36, 126, 80);
-  doc.roundedRect(29.5, 27.4, 28.8, 8.2, 1.8, 1.8, 'F');
-  doc.setTextColor(255, 255, 255);
+  const codeY = role ? 21.2 : 18.2;
+  doc.setFillColor(242, 248, 244);
+  doc.roundedRect(30, codeY, 27.3, 9.8, 1.8, 1.8, 'F');
+  doc.setDrawColor(207, 224, 214);
+  doc.roundedRect(30, codeY, 27.3, 9.8, 1.8, 1.8, 'S');
+  doc.setTextColor(36, 126, 80);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(3.9);
-  doc.text('CÓDIGO', 31.1, 30.3);
-  drawCredentialFitText(doc, credential.code || '-', 31.1, 34, 25.5, { fontSize: 8.2, minFontSize: 5.3 });
+  doc.setFontSize(3.8);
+  doc.text('CODIGO', 31.6, codeY + 3.1);
+  doc.setTextColor(23, 33, 27);
+  drawCredentialFitText(doc, credential.code || '-', 31.5, codeY + 7.4, 24.2, { fontSize: 7.7, minFontSize: 5.2 });
 
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(87, 103, 93);
-  doc.setFontSize(4.9);
-  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 29.5, 40.5);
+  doc.setTextColor(83, 99, 89);
+  doc.setFontSize(4.6);
+  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 30, 34.5);
 
   doc.setFillColor(...statusTone.fill);
-  doc.roundedRect(29.5, 43.1, 28.8, 5.5, 1.8, 1.8, 'F');
+  doc.roundedRect(30, 37.3, 27.3, 5.9, 1.8, 1.8, 'F');
+  doc.setFillColor(...statusTone.dot);
+  doc.circle(33.2, 40.2, 1.2, 'F');
   doc.setTextColor(...statusTone.text);
   doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, String(status).toUpperCase(), 31, 46.8, 25.8, { fontSize: 5.2, minFontSize: 4.2, align: 'center' });
+  drawCredentialFitText(doc, status, 35.4, 41.2, 19.2, { fontSize: 5.1, minFontSize: 4 });
 
-  const qrX = 61;
-  const qrY = 15.2;
-  const qrSize = 21.8;
+  const qrX = 60.2;
+  const qrY = 16.1;
+  const qrSize = 22.9;
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(qrX - 1.4, qrY - 1.4, qrSize + 2.8, qrSize + 2.8, 2, 2, 'F');
+  doc.roundedRect(qrX - 1.6, qrY - 1.6, qrSize + 3.2, qrSize + 3.2, 2.2, 2.2, 'F');
   doc.setDrawColor(214, 225, 217);
-  doc.roundedRect(qrX - 1.4, qrY - 1.4, qrSize + 2.8, qrSize + 2.8, 2, 2, 'S');
+  doc.roundedRect(qrX - 1.6, qrY - 1.6, qrSize + 3.2, qrSize + 3.2, 2.2, 2.2, 'S');
   doc.addImage(qr, 'PNG', qrX, qrY, qrSize, qrSize);
 
   doc.setDrawColor(219, 229, 220);
-  doc.line(4.5, 48.4, 80.5, 48.4);
-  doc.setTextColor(36, 126, 80);
+  doc.line(4.8, 45.5, 80.4, 45.5);
+  doc.setTextColor(48, 68, 56);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5);
-  doc.text('Generado por ALTHEMON v1.0', 4.8, 51.7);
+  doc.setFontSize(4.7);
+  doc.text('Credencial oficial de Pan y Esperanza.', 4.8, 48.2);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(98, 112, 104);
-  doc.setFontSize(4.4);
-  doc.text('Uso interno oficial', 80.3, 51.7, { align: 'right' });
+  doc.setTextColor(96, 110, 101);
+  doc.setFontSize(4.2);
+  doc.text('Su uso es personal e intransferible.', 4.8, 51);
+  doc.text('Generado por ALTHEMON v1.0', 80.2, 51, { align: 'right' });
 
   return {
     doc,
     filename: `Credencial-${safePdfFilename(credential.kind || 'persona')}-${safePdfFilename(credential.code || credential.displayName || 'althemon')}.pdf`
   };
 }
-
 export async function printSocialAttentionReportPdf({
   beneficiary,
   family = null,
@@ -1656,31 +1663,16 @@ function officialCredentialStatus(record = {}) {
 
 function officialCredentialStatusTone(status) {
   const normalized = normalizeTextForReport(status);
-  if (normalized.includes('caduc')) return { fill: [254, 226, 226], text: [185, 28, 28] };
-  if (normalized.includes('suspend') || normalized.includes('inactivo') || normalized.includes('bloque')) return { fill: [254, 243, 199], text: [146, 64, 14] };
-  return { fill: [220, 242, 229], text: [36, 126, 80] };
+  if (normalized.includes('caduc')) return { fill: [254, 226, 226], text: [185, 28, 28], dot: [220, 38, 38] };
+  if (normalized.includes('suspend') || normalized.includes('inactivo') || normalized.includes('bloque')) return { fill: [254, 243, 199], text: [146, 64, 14], dot: [217, 119, 6] };
+  return { fill: [220, 242, 229], text: [36, 126, 80], dot: [34, 197, 94] };
 }
 
-function officialCredentialQrPayload({ kind, subjectId, code, displayName, organization = {}, issuedAt, status }) {
-  return JSON.stringify({
-    type: 'official-credential',
-    version: 1,
-    credential_kind: kind || 'person',
-    subject_id: subjectId || null,
-    code: code || null,
-    display_name: displayName || null,
-    organization: organization.name || 'Pan y Esperanza',
-    issued_at: issuedAt,
-    status,
-    integrations: ['deliveries', 'access-control', 'quick-validation', 'mobile-app']
-  });
-}
-
-async function resolveOfficialCredentialPhoto(sources = []) {
+async function resolveOfficialCredentialPhoto(sources = [], options = {}) {
   const candidates = Array.isArray(sources) ? sources : [sources];
   for (const source of candidates) {
     if (!source) continue;
-    const photo = await prepareCredentialPhoto(source).catch(() => null);
+    const photo = await prepareCredentialPhoto(source, options).catch(() => null);
     if (photo?.dataUrl) return photo;
   }
   return null;
@@ -1739,7 +1731,7 @@ function drawCredentialInstitutionalMark(doc, x, y, width, height, credential = 
   drawCredentialFitText(doc, credential.typeLabel || 'CREDENCIAL', x + 2, y + height - 4.2, width - 4, { fontSize: 4.2, minFontSize: 3.5, align: 'center' });
 }
 
-function prepareCredentialPhoto(source) {
+function prepareCredentialPhoto(source, options = {}) {
   return new Promise((resolve) => {
     const image = new Image();
     image.crossOrigin = 'anonymous';
@@ -1747,26 +1739,35 @@ function prepareCredentialPhoto(source) {
       try {
         const targetWidth = 440;
         const targetHeight = 560;
-        const targetRatio = targetWidth / targetHeight;
-        const sourceRatio = image.naturalWidth / image.naturalHeight;
-        let sx = 0;
-        let sy = 0;
-        let sw = image.naturalWidth;
-        let sh = image.naturalHeight;
-        if (sourceRatio > targetRatio) {
-          sw = image.naturalHeight * targetRatio;
-          sx = (image.naturalWidth - sw) / 2;
-        } else {
-          sh = image.naturalWidth / targetRatio;
-          sy = (image.naturalHeight - sh) / 2;
-        }
         const canvas = document.createElement('canvas');
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         const context = canvas.getContext('2d');
-        context.fillStyle = '#ffffff';
+        context.fillStyle = '#f7faf8';
         context.fillRect(0, 0, targetWidth, targetHeight);
-        context.drawImage(image, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+        if (options.fit === 'cover') {
+          const targetRatio = targetWidth / targetHeight;
+          const sourceRatio = image.naturalWidth / image.naturalHeight;
+          let sx = 0;
+          let sy = 0;
+          let sw = image.naturalWidth;
+          let sh = image.naturalHeight;
+          if (sourceRatio > targetRatio) {
+            sw = image.naturalHeight * targetRatio;
+            sx = (image.naturalWidth - sw) / 2;
+          } else {
+            sh = image.naturalWidth / targetRatio;
+            sy = (image.naturalHeight - sh) / 2;
+          }
+          context.drawImage(image, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+        } else {
+          const scale = Math.min(targetWidth / image.naturalWidth, targetHeight / image.naturalHeight);
+          const drawWidth = image.naturalWidth * scale;
+          const drawHeight = image.naturalHeight * scale;
+          const drawX = (targetWidth - drawWidth) / 2;
+          const drawY = (targetHeight - drawHeight) / 2;
+          context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+        }
         resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.84), format: 'JPEG' });
       } catch {
         resolve(null);

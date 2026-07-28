@@ -13,6 +13,7 @@ import { Backup } from './pages/Backup';
 import { Collaborators } from './pages/Collaborators';
 import { CollaboratorPortal } from './pages/CollaboratorPortal';
 import { Communications } from './pages/Communications';
+import { CredentialScanner } from './pages/CredentialScanner';
 import { Dashboard } from './pages/Dashboard';
 import { DebugAdmin } from './pages/DebugAdmin';
 import { Deliveries } from './pages/Deliveries';
@@ -251,6 +252,7 @@ export default function App() {
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    'credential-scanner': <CredentialScanner data={sorted} onNavigate={navigateTo} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     donations: <Donations data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
