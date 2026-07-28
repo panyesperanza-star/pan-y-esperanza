@@ -184,99 +184,85 @@ export async function printVolunteerCredentialPdf(volunteer = {}, organization =
 }
 
 export async function createOfficialCredentialPdf(credential = {}) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [85, 54] });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [85.6, 53.98] });
   const issuedAt = new Date().toISOString();
   const status = credential.status || 'Activo';
-  const qr = await QRCode.toDataURL(buildOfficialCredentialQrPayload({ ...credential, issuedAt }), { margin: 0, width: 300 });
-  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'contain' }) : null;
+  const qr = await QRCode.toDataURL(buildOfficialCredentialQrPayload({ ...credential, issuedAt }), { margin: 0, width: 360 });
+  const photo = credential.showPhoto ? await resolveOfficialCredentialPhoto(credential.photoSources, { fit: 'cover' }) : null;
   const statusTone = officialCredentialStatusTone(status);
-  const role = credential.role || '';
   const displayName = credential.displayName || '-';
   const credentialTitle = credential.title || 'Credencial oficial';
+  const typeLabel = credential.typeLabel || 'CREDENCIAL';
+  const cardWidth = 85.6;
+  const cardHeight = 53.98;
 
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(0, 0, 85, 54, 3, 3, 'F');
-  doc.setDrawColor(199, 217, 206);
-  doc.setLineWidth(0.35);
-  doc.roundedRect(0.4, 0.4, 84.2, 53.2, 3, 3, 'S');
+  doc.rect(0, 0, cardWidth, cardHeight, 'F');
 
   doc.setFillColor(36, 126, 80);
-  doc.rect(0, 0, 85, 13.2, 'F');
-  await addOfficialLogo(doc, 4.2, 2.4, 11.5, 7.2);
-  doc.setFont('helvetica', 'bold');
+  doc.rect(0, 0, cardWidth, 12.4, 'F');
+  await addOfficialLogo(doc, 4.2, 2.2, 8.8, 8.1);
   doc.setTextColor(255, 255, 255);
-  drawCredentialFitText(doc, displayName, 17.5, 5.7, 49, { fontSize: 7.8, minFontSize: 4.9 });
-  doc.setFont('helvetica', 'normal');
-  drawCredentialFitText(doc, credentialTitle, 17.6, 9.8, 47, { fontSize: 4.9, minFontSize: 3.9 });
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(4.5);
-  doc.text('OFICIAL', 80.5, 8, { align: 'right' });
+  drawCredentialFitText(doc, 'Pan y Esperanza', 15, 5.3, 34, { fontSize: 6.4, minFontSize: 4.8 });
+  doc.setFont('helvetica', 'normal');
+  drawCredentialFitText(doc, credentialTitle, 15, 9.1, 42, { fontSize: 4.2, minFontSize: 3.5 });
+  doc.setFont('helvetica', 'bold');
+  drawCredentialFitText(doc, typeLabel, 62, 7.5, 19.5, { fontSize: 5.1, minFontSize: 3.9, align: 'right' });
 
-  const mediaX = 4.8;
-  const mediaY = 15.3;
-  const mediaW = 22.8;
-  const mediaH = 29;
+  const photoX = 0;
+  const photoY = 12.4;
+  const photoW = 24.8;
+  const photoH = 34.8;
   if (credential.showPhoto && photo?.dataUrl) {
-    doc.setFillColor(247, 250, 248);
-    doc.roundedRect(mediaX, mediaY, mediaW, mediaH, 2.4, 2.4, 'F');
-    doc.addImage(photo.dataUrl, photo.format || 'JPEG', mediaX, mediaY, mediaW, mediaH);
+    doc.addImage(photo.dataUrl, photo.format || 'JPEG', photoX, photoY, photoW, photoH);
   } else if (credential.photoRequired) {
-    drawCredentialPhotoRequired(doc, mediaX, mediaY, mediaW, mediaH);
+    drawCredentialPhotoRequired(doc, 4.2, 17.2, 16.6, 21.8);
   } else {
-    drawCredentialInstitutionalMark(doc, mediaX, mediaY, mediaW, mediaH, credential);
+    drawCredentialInstitutionalMark(doc, 4.2, 17.2, 16.6, 21.8, credential);
   }
 
-  doc.setTextColor(46, 62, 52);
-  if (role) {
-    doc.setFont('helvetica', 'bold');
-    drawCredentialFitText(doc, role, 30, 18.4, 27.5, { fontSize: 5.2, minFontSize: 4 });
-  }
+  doc.setFillColor(255, 255, 255);
+  doc.rect(24.8, 12.4, 60.8, 34.8, 'F');
+  doc.setDrawColor(226, 232, 226);
+  doc.setLineWidth(0.25);
+  doc.line(27.7, 17.3, 27.7, 22.5);
+  doc.setDrawColor(193, 120, 42);
+  doc.line(28.6, 17.3, 28.6, 22.5);
 
-  const codeY = role ? 21.2 : 18.2;
-  doc.setFillColor(242, 248, 244);
-  doc.roundedRect(30, codeY, 27.3, 9.8, 1.8, 1.8, 'F');
-  doc.setDrawColor(207, 224, 214);
-  doc.roundedRect(30, codeY, 27.3, 9.8, 1.8, 1.8, 'S');
-  doc.setTextColor(36, 126, 80);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(3.8);
-  doc.text('CODIGO', 31.6, codeY + 3.1);
-  doc.setTextColor(23, 33, 27);
-  drawCredentialFitText(doc, credential.code || '-', 31.5, codeY + 7.4, 24.2, { fontSize: 7.7, minFontSize: 5.2 });
+  doc.setTextColor(20, 28, 32);
+  drawCredentialFitText(doc, displayName, 31.2, 21.1, 49.5, { fontSize: 10.9, minFontSize: 6.2 });
 
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(20, 28, 32);
+  drawCredentialFitText(doc, credential.code || '-', 31.2, 28.1, 23.6, { fontSize: 6.3, minFontSize: 4.7 });
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(83, 99, 89);
-  doc.setFontSize(4.6);
-  doc.text(`${credential.dateLabel || 'Fecha'}: ${formatDate(credential.dateValue || issuedAt)}`, 30, 34.5);
+  doc.setTextColor(82, 96, 88);
+  drawCredentialFitText(doc, `Emisión: ${formatDate(issuedAt)}`, 31.2, 32.3, 23.8, { fontSize: 4.2, minFontSize: 3.5 });
 
-  doc.setFillColor(...statusTone.fill);
-  doc.roundedRect(30, 37.3, 27.3, 5.9, 1.8, 1.8, 'F');
   doc.setFillColor(...statusTone.dot);
-  doc.circle(33.2, 40.2, 1.2, 'F');
+  doc.circle(32.3, 37.4, 1.25, 'F');
   doc.setTextColor(...statusTone.text);
   doc.setFont('helvetica', 'bold');
-  drawCredentialFitText(doc, status, 35.4, 41.2, 19.2, { fontSize: 5.1, minFontSize: 4 });
+  drawCredentialFitText(doc, status, 35, 38.6, 19.5, { fontSize: 5, minFontSize: 3.9 });
 
-  const qrX = 60.2;
-  const qrY = 16.1;
-  const qrSize = 22.9;
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(qrX - 1.6, qrY - 1.6, qrSize + 3.2, qrSize + 3.2, 2.2, 2.2, 'F');
-  doc.setDrawColor(214, 225, 217);
-  doc.roundedRect(qrX - 1.6, qrY - 1.6, qrSize + 3.2, qrSize + 3.2, 2.2, 2.2, 'S');
+  const qrSize = 26.4;
+  const qrX = 58.1;
+  const qrY = 19.7;
   doc.addImage(qr, 'PNG', qrX, qrY, qrSize, qrSize);
 
-  doc.setDrawColor(219, 229, 220);
-  doc.line(4.8, 45.5, 80.4, 45.5);
+  doc.setFillColor(247, 250, 248);
+  doc.rect(0, 47.2, cardWidth, 6.78, 'F');
+  doc.setDrawColor(221, 231, 224);
+  doc.setLineWidth(0.2);
+  doc.line(0, 47.2, cardWidth, 47.2);
   doc.setTextColor(48, 68, 56);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(4.7);
-  doc.text('Credencial oficial de Pan y Esperanza.', 4.8, 48.2);
+  drawCredentialFitText(doc, 'Credencial oficial de Pan y Esperanza', 4.2, 50, 45, { fontSize: 4.2, minFontSize: 3.4 });
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(96, 110, 101);
-  doc.setFontSize(4.2);
-  doc.text('Su uso es personal e intransferible.', 4.8, 51);
-  doc.text('Generado por ALTHEMON v1.0', 80.2, 51, { align: 'right' });
+  doc.setTextColor(103, 116, 108);
+  drawCredentialFitText(doc, 'Generado por ALTHEMON v1.0', 49.8, 50, 31, { fontSize: 3.9, minFontSize: 3.2, align: 'right' });
 
   return {
     doc,
@@ -1704,22 +1690,15 @@ function drawCredentialFitText(doc, value, x, y, maxWidth, options = {}) {
 
 function drawCredentialPhotoRequired(doc, x, y, width, height) {
   doc.setFillColor(255, 251, 235);
-  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'F');
-  doc.setDrawColor(217, 119, 6);
-  doc.setLineWidth(0.35);
-  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'S');
+  doc.circle(x + width / 2, y + height / 2 - 2.8, 6.8, 'F');
   doc.setTextColor(146, 64, 14);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
-  doc.text('FOTO', x + width / 2, y + height / 2 - 1.5, { align: 'center' });
-  doc.text('REQUERIDA', x + width / 2, y + height / 2 + 4.2, { align: 'center' });
+  doc.setFontSize(4.8);
+  doc.text('FOTO', x + width / 2, y + height / 2 - 3.5, { align: 'center' });
+  doc.text('REQUERIDA', x + width / 2, y + height / 2 + 2.2, { align: 'center' });
 }
 
 function drawCredentialInstitutionalMark(doc, x, y, width, height, credential = {}) {
-  doc.setFillColor(235, 246, 240);
-  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'F');
-  doc.setDrawColor(188, 211, 197);
-  doc.roundedRect(x, y, width, height, 2.2, 2.2, 'S');
   doc.setFillColor(36, 126, 80);
   doc.circle(x + width / 2, y + height / 2 - 2.2, 7.4, 'F');
   doc.setTextColor(255, 255, 255);
