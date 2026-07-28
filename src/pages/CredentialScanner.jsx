@@ -3,7 +3,7 @@ import { AlertTriangle, BriefcaseBusiness, Camera, CheckCircle2, Heart, IdCard, 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
-import { canDo } from '../lib/auth';
+import { canDo, isPlatformOwner, isSystemSuperadmin } from '../lib/auth';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
@@ -12,7 +12,8 @@ const KIND_META = {
   beneficiary: { label: 'Beneficiario', icon: UserRound, tone: 'brand' },
   volunteer: { label: 'Voluntario', icon: UserRoundCheck, tone: 'blue' },
   collaborator: { label: 'Colaborador', icon: BriefcaseBusiness, tone: 'amber' },
-  donor: { label: 'Donante', icon: Heart, tone: 'rose' }
+  donor: { label: 'Donante', icon: Heart, tone: 'rose' },
+  user: { label: 'Usuario del ERP', icon: ShieldCheck, tone: 'brand' }
 };
 
 export function CredentialScanner({ data, currentUser, onNavigate }) {
@@ -253,6 +254,7 @@ function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
   if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />;
   if (result.kind === 'volunteer') return <VolunteerScanResult result={result} data={data} />;
   if (result.kind === 'collaborator') return <CollaboratorScanResult result={result} data={data} />;
+  if (result.kind === 'user') return <UserScanResult result={result} />;
   return <DonorScanResult result={result} data={data} />;
 }
 
@@ -340,6 +342,26 @@ function DonorScanResult({ result, data }) {
   );
 }
 
+function UserScanResult({ result }) {
+  const user = result.record;
+  const status = user.status || (user.is_active === false ? 'Inactivo' : 'Activo');
+  const role = [user.position, user.role].filter(Boolean).join(' · ') || 'Rol interno';
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <ResultHeader result={result} status={status} />
+      <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
+        <CredentialPersonPhoto kind="user" record={user} />
+        <div className="grid gap-3">
+          <InfoRow label="Cargo y rol" value={role} />
+          <InfoRow label="Ultimo acceso" value={user.last_access_at ? formatDateTime(user.last_access_at) : '-'} />
+          <Button variant="secondary" className="w-full sm:w-auto" disabled><ShieldCheck size={16} /> Validacion interna</Button>
+          <p className="text-xs font-semibold text-slate-500">Preparado para control de acceso, fichaje y operaciones internas.</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ResultHeader({ result, status }) {
   const meta = KIND_META[result.kind] || KIND_META.beneficiary;
   const Icon = meta.icon;
@@ -365,7 +387,7 @@ function CredentialPersonPhoto({ kind, record }) {
   useEffect(() => {
     let cancelled = false;
     async function resolvePhoto() {
-      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.logo_data_url || record.logo_url || '';
+      const direct = record.photo_data_url || record.photo_url || record.avatar_url || record.profile_photo || record.logo_data_url || record.logo_url || '';
       if (direct) {
         if (!cancelled) setSrc(direct);
         return;
@@ -417,6 +439,8 @@ function buildCredentialDirectory(data) {
   (data.volunteers || []).forEach((record) => entries.push(toDirectoryEntry('volunteer', record, record.full_name || record.name || 'Voluntario', record.code || record.volunteer_code)));
   (data.collaborators || []).forEach((record) => entries.push(toDirectoryEntry('collaborator', record, record.name || record.business_name || record.company_name || record.contact_name || 'Colaborador', record.code || record.collaborator_code)));
   (data.donors || []).forEach((record) => entries.push(toDirectoryEntry('donor', record, record.name || record.company_name || record.full_name || record.email || 'Donante', record.code || record.donor_code)));
+  const erpUsers = (data.app_users || []).filter((record) => !isSystemSuperadmin(record) && !isPlatformOwner(record));
+  erpUsers.forEach((record, index, source) => entries.push(toDirectoryEntry('user', record, userDisplayName(record), userCredentialCode(record, source))));
   return entries.filter(Boolean);
 }
 
@@ -445,6 +469,23 @@ function findManualCredentialMatch(value, directory = []) {
 
 function normalizeCredentialCode(value) {
   return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function userDisplayName(user = {}) {
+  return [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.full_name || user.name || user.email || 'Usuario del ERP';
+}
+
+function userCredentialCode(user = {}, users = []) {
+  const existing = user.code || user.user_code || user.employee_code;
+  if (existing) return existing;
+  const sorted = [...users].sort((left, right) => {
+    const leftDate = new Date(left.created_at || 0).getTime();
+    const rightDate = new Date(right.created_at || 0).getTime();
+    if (leftDate !== rightDate) return leftDate - rightDate;
+    return String(left.email || left.id || '').localeCompare(String(right.email || right.id || ''));
+  });
+  const index = sorted.findIndex((item) => item.id === user.id || (item.email && item.email === user.email));
+  return `USR-${String(index >= 0 ? index + 1 : 0).padStart(5, '0')}`;
 }
 
 function pickCamera(cameras = [], preferredId = '') {

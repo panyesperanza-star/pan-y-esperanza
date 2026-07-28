@@ -15,14 +15,16 @@ const KIND_LABELS = {
   beneficiary: 'Beneficiario',
   volunteer: 'Voluntario',
   collaborator: 'Colaborador',
-  donor: 'Donante'
+  donor: 'Donante',
+  user: 'Usuario del ERP'
 };
 
 const KIND_FALLBACK_CODES = {
   beneficiary: 'PYE-00000',
   volunteer: 'VOL-00000',
   collaborator: 'COL-00000',
-  donor: 'DON-00000'
+  donor: 'DON-00000',
+  user: 'USR-00000'
 };
 
 export function OfficialCredentialButton({ kind, subject, variant = 'secondary', className = '' }) {
@@ -126,7 +128,7 @@ function CredentialFront({ credential, qrDataUrl }) {
       <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
       <div className="official-credential-brand">Pan y Esperanza</div>
       <div className="official-credential-subtitle">Juntos llevamos esperanza</div>
-      <div className="official-credential-kind">{credential.typeLabel} acreditado</div>
+      <div className="official-credential-kind">{credential.accreditationLabel}</div>
       <CredentialPhoto credential={credential} />
       <div className={`official-credential-name ${nameTone}`}>
         <span>{nameParts.first}</span>
@@ -277,12 +279,13 @@ function useCredentialQr(credential) {
 
 function buildOfficialCredential(kind, subject = {}) {
   const normalizedKind = KIND_LABELS[kind] ? kind : 'beneficiary';
-  const name = cleanText(subject.full_name || subject.name || subject.business_name || subject.company_name || subject.contact_name || subject.email || KIND_LABELS[normalizedKind]);
-  const code = cleanText(subject.code || subject.beneficiary_code || subject.volunteer_code || subject.collaborator_code || subject.donor_code || KIND_FALLBACK_CODES[normalizedKind]);
+  const name = credentialName(normalizedKind, subject);
+  const code = credentialCode(normalizedKind, subject);
   const subjectId = cleanText(subject.id || code);
   return {
     kind: normalizedKind,
     typeLabel: KIND_LABELS[normalizedKind],
+    accreditationLabel: credentialAccreditationLabel(normalizedKind, subject),
     name,
     code,
     subjectId,
@@ -300,6 +303,7 @@ function credentialPhotoUrl(subject = {}) {
     subject.photo_data_url ||
     subject.photo_url ||
     subject.avatar_url ||
+    subject.profile_photo ||
     subject.logo_data_url ||
     subject.logo_url ||
     ''
@@ -312,6 +316,7 @@ function credentialPhotoSource(subject = {}) {
     photo_url: subject.photo_url,
     photo: subject.photo,
     avatar_url: subject.avatar_url,
+    profile_photo: subject.profile_photo,
     logo_data_url: subject.logo_data_url,
     logo_url: subject.logo_url
   };
@@ -322,10 +327,42 @@ function credentialPhotoKey(subject = {}) {
     subject.photo_url,
     subject.photo,
     subject.avatar_url,
+    subject.profile_photo,
     subject.photo_data_url,
     subject.logo_data_url,
     subject.logo_url
   ].map(cleanText).join('|');
+}
+
+function credentialName(kind, subject = {}) {
+  if (kind === 'user') {
+    const fullName = [subject.first_name, subject.last_name].filter(Boolean).join(' ').trim();
+    return cleanText(subject.full_name || fullName || subject.name || subject.email || KIND_LABELS.user);
+  }
+  return cleanText(subject.full_name || subject.name || subject.business_name || subject.company_name || subject.contact_name || subject.email || KIND_LABELS[kind]);
+}
+
+function credentialCode(kind, subject = {}) {
+  return cleanText(
+    subject.code ||
+    subject.beneficiary_code ||
+    subject.volunteer_code ||
+    subject.collaborator_code ||
+    subject.donor_code ||
+    subject.user_code ||
+    subject.employee_code ||
+    KIND_FALLBACK_CODES[kind]
+  );
+}
+
+function credentialAccreditationLabel(kind, subject = {}) {
+  if (kind === 'user') {
+    const role = cleanText(subject.role);
+    const position = cleanText(subject.position);
+    if (position && role && position.toLowerCase() !== role.toLowerCase()) return `${position} · ${role}`;
+    return role || position || 'Usuario del ERP';
+  }
+  return `${KIND_LABELS[kind]} acreditado`;
 }
 
 function cacheProofPhotoUrl(url, version) {

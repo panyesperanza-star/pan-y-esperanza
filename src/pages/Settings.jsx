@@ -3,6 +3,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import { OfficialCredentialButton } from '../components/OfficialCredential';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
@@ -173,6 +174,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
   const canCreate = canDo(currentUser, 'users', 'create');
   const canEdit = canDo(currentUser, 'users', 'edit');
   const canDelete = canDo(currentUser, 'users', 'delete');
+  const canGenerateCredential = canDo(currentUser, 'users', 'generate-credential');
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -197,7 +199,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       {section === 'users' && <UsersTable users={associationUsers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
       {section === 'permissions' && canEdit && <PermissionsMatrix users={associationUsers} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
-      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} organization={organization} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
+      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} users={associationUsers} organization={organization} canGenerateCredential={canGenerateCredential} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
@@ -324,7 +326,7 @@ function MiniStat({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-ink">{value}</p></div>;
 }
 
-function UserForm({ initial, organization, onSubmit }) {
+function UserForm({ initial, users = [], organization, canGenerateCredential = false, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
@@ -348,6 +350,11 @@ function UserForm({ initial, organization, onSubmit }) {
       }
     }}>
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
+      {form.id && canGenerateCredential && (
+        <div className="flex justify-end sm:col-span-2">
+          <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} />
+        </div>
+      )}
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>
       <FormField label="Apellidos"><input className={inputClass} value={form.last_name || ''} onChange={(event) => update('last_name', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" required value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
@@ -363,6 +370,33 @@ function UserForm({ initial, organization, onSubmit }) {
       <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar usuario</Button></div>
     </form>
   );
+}
+
+function buildUserCredentialSubject(user = {}, users = []) {
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+  return {
+    ...user,
+    full_name: fullName || user.email || 'Usuario del ERP',
+    code: userCredentialCode(user, users),
+    user_code: userCredentialCode(user, users),
+    photo_url: user.profile_photo || user.photo_url || '',
+    photo_data_url: user.profile_photo || user.photo_data_url || '',
+    joined_at: user.created_at,
+    registered_at: user.created_at
+  };
+}
+
+function userCredentialCode(user = {}, users = []) {
+  const existing = user.code || user.user_code || user.employee_code;
+  if (existing) return existing;
+  const sorted = [...users].sort((left, right) => {
+    const leftDate = new Date(left.created_at || 0).getTime();
+    const rightDate = new Date(right.created_at || 0).getTime();
+    if (leftDate !== rightDate) return leftDate - rightDate;
+    return String(left.email || left.id || '').localeCompare(String(right.email || right.id || ''));
+  });
+  const index = sorted.findIndex((item) => item.id === user.id || (item.email && item.email === user.email));
+  return `USR-${String(index >= 0 ? index + 1 : 0).padStart(5, '0')}`;
 }
 
 function PermissionEditor({ value, role, onChange }) {
