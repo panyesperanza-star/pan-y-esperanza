@@ -108,7 +108,7 @@ export function getEmergencyAdmin(requestId, logPrefix) {
     };
   }
 
-  if (diagnostics.serviceRoleKeyHasNonAscii || !diagnostics.serviceRoleKeyLooksJwt) {
+  if (diagnostics.serviceRoleKeyHasNonAscii || !diagnostics.serviceRoleKeyLooksValid) {
     console.error(`${logPrefix} SUPABASE_SERVICE_ROLE_KEY invalida`, { requestId, ...diagnostics });
     return {
       ok: false,

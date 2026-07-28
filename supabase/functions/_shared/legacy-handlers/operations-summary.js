@@ -23,7 +23,7 @@ export default async function handler(request, response) {
       });
     }
 
-    if (serverDiagnostics.serviceRoleKeyHasNonAscii || !serverDiagnostics.serviceRoleKeyLooksJwt) {
+    if (serverDiagnostics.serviceRoleKeyHasNonAscii || !serverDiagnostics.serviceRoleKeyLooksValid) {
       console.error('[operations-summary] SUPABASE_SERVICE_ROLE_KEY invalida', { requestId, ...serverDiagnostics });
       return sendJson(response, 503, {
         ok: false,

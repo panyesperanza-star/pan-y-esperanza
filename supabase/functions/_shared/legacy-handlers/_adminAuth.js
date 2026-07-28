@@ -29,7 +29,8 @@ export function getServerConfig() {
       serviceRoleKeyLength: serviceRoleKey.length,
       serviceRoleKeyStartsWith: serviceRoleKey.slice(0, 20),
       serviceRoleKeyHasNonAscii: hasNonAscii(serviceRoleKey),
-      serviceRoleKeyLooksJwt: isJwtLike(serviceRoleKey)
+      serviceRoleKeyLooksValid: isServiceRoleKeyLike(serviceRoleKey),
+      serviceRoleKeyFormat: serviceRoleKey.startsWith('sb_secret_') ? 'sb_secret' : isJwtLike(serviceRoleKey) ? 'legacy_jwt' : 'unknown'
     }
   };
 }
@@ -277,6 +278,10 @@ function hasNonAscii(value) {
 
 function isJwtLike(token) {
   return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+}
+
+function isServiceRoleKeyLike(value) {
+  return isJwtLike(value) || /^sb_secret_[A-Za-z0-9_-]{20,}$/.test(value);
 }
 
 function isActive(user) {
