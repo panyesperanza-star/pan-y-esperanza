@@ -242,7 +242,7 @@ function useCredentialPhotoUrl(credential) {
 
 function CredentialDetail({ icon, label, value, accent = false }) {
   return (
-    <div className="official-credential-detail-row">
+    <div className={`official-credential-detail-row official-credential-detail-row--${icon}`}>
       <CredentialIcon type={icon} />
       <span>{label}</span>
       <strong className={accent ? 'official-credential-state' : ''}>{value || '-'}</strong>
@@ -378,10 +378,8 @@ function credentialCode(kind, subject = {}) {
 
 function credentialAccreditationLabel(kind, subject = {}) {
   if (kind === 'user') {
-    const role = cleanText(subject.role);
     const position = cleanText(subject.position);
-    if (position && role && position.toLowerCase() !== role.toLowerCase()) return `${position} · ${role}`;
-    return role || position || 'Usuario del ERP';
+    return position || 'Usuario del ERP';
   }
   return `${KIND_LABELS[kind]} acreditado`;
 }
