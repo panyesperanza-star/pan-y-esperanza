@@ -2074,3 +2074,11 @@ create policy "authenticated_write_donor_profile_updates" on public.donor_portal
 create policy "authenticated_read_donor_certificates" on public.donor_certificates for select to authenticated using (public.can_donor_portal_action('view'));
 create policy "authenticated_write_donor_certificates" on public.donor_certificates for all to authenticated using (public.can_donor_portal_action('edit')) with check (public.can_donor_portal_action('create') or public.can_donor_portal_action('edit'));
 grant execute on function public.can_donor_portal_action(text) to authenticated;
+grant select, insert, update on public.donors to authenticated;
+grant select, insert, update on public.donor_portal_otps to authenticated;
+grant select, insert, update on public.donor_portal_profile_updates to authenticated;
+grant select, insert, update on public.donor_certificates to authenticated;
+revoke delete on public.donors from authenticated;
+revoke delete on public.donor_portal_otps from authenticated;
+revoke delete on public.donor_portal_profile_updates from authenticated;
+revoke delete on public.donor_certificates from authenticated;

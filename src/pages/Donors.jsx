@@ -222,13 +222,18 @@ function DonorForm({ initial = null, onSubmit }) {
     notes: initial?.notes || ''
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
   async function submit(event) {
     event.preventDefault();
     setSaving(true);
+    setError('');
     try {
       await onSubmit(form);
+    } catch (err) {
+      console.error('[Donantes] No se pudo guardar el donante', err);
+      setError(err?.message || 'No se ha podido guardar el donante.');
     } finally {
       setSaving(false);
     }
@@ -274,6 +279,11 @@ function DonorForm({ initial = null, onSubmit }) {
         <p className="font-bold text-brand-800">Portal del Donante</p>
         <p className="mt-1 text-sm text-brand-700">Al guardar la ficha se prepara el portal con acceso por email y OTP.</p>
       </div>
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">
+          {error}
+        </div>
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar donante'}</Button>
       </div>
