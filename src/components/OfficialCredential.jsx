@@ -8,7 +8,8 @@ import { formatDate } from '../lib/formatters';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import credentialBackUrl from '../assets/credential-back-pan-y-esperanza.png';
-import credentialLogoUrl from '../assets/credential-logo-pan-y-esperanza.jpeg';
+import credentialHologramUrl from '../assets/credential-master-hologram.png';
+import credentialLogoUrl from '../assets/credential-master-logo.png';
 import './OfficialCredential.css';
 
 const KIND_LABELS = {
@@ -28,7 +29,7 @@ const KIND_FALLBACK_CODES = {
 };
 
 const CREDENTIAL_PDF_WIDTH_MM = 110;
-const CREDENTIAL_PDF_HEIGHT_MM = 80;
+const CREDENTIAL_PDF_HEIGHT_MM = 85;
 const CREDENTIAL_PDF_SIDES = ['front', 'back'];
 
 export function OfficialCredentialButton({ kind, subject, variant = 'secondary', className = '' }) {
@@ -123,7 +124,7 @@ function OfficialCredentialPreview({ credential }) {
       </div>
 
       <p className="official-credential-preview-note">
-        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para funda A7 de 110 x 80 mm.
+        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para funda A7 de 110 x 85 mm.
       </p>
     </div>
   );
@@ -138,30 +139,97 @@ function getCredentialPdfPages(printArea) {
 }
 
 function CredentialFront({ credential, qrDataUrl }) {
+  const typeLines = credentialTypeLines(credential.kind);
+  const nameTone = credential.name.length > 31
+    ? 'official-credential-name--compact'
+    : credential.name.length > 22
+      ? 'official-credential-name--narrow'
+      : '';
+
+  return (
+    <article className="official-credential-card">
+      <div className="official-credential-header">
+        <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
+        <div className="official-credential-brand-block">
+          <div className="official-credential-brand">PAN Y ESPERANZA</div>
+          <div className="official-credential-subtitle">JUNTOS LLEVAMOS <span>ESPERANZA.</span></div>
+          <div className="official-credential-header-rule" aria-hidden="true">
+            <span />
+            <b>&hearts;</b>
+            <span />
+          </div>
+        </div>
+        <div className="official-credential-header-divider" aria-hidden="true" />
+        <div className="official-credential-kind">
+          <b>&#9825;</b>
+          <span>{typeLines.main}</span>
+          <strong>{typeLines.accent}</strong>
+        </div>
+        <div className="official-credential-leaves" aria-hidden="true" />
+      </div>
+
+      <CredentialPhoto credential={credential} />
+      <div className={`official-credential-name ${nameTone}`}>{credential.name}</div>
+      <div className="official-credential-name-rule" aria-hidden="true">
+        <span />
+        <b>&hearts;</b>
+        <span />
+      </div>
+
+      <div className="official-credential-details">
+        <CredentialDetail icon="id" label="CODIGO" value={credential.code} />
+        <CredentialDetail icon="calendar" label="DESDE" value={formatDate(credential.issuedAt)} />
+        <CredentialDetail icon="shield" label="ESTADO" value={credential.status} accent />
+      </div>
+
+      <div className="official-credential-qr-frame">
+        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Codigo QR" /> : <div className="official-credential-qr-loading" />}
+        <div className="official-credential-qr-label">
+          <CredentialIcon type="shield" />
+          <span>VERIFICACION OFICIAL</span>
+        </div>
+      </div>
+
+      <div className="official-credential-watermark" aria-hidden="true" />
+      <div className="official-credential-footer">
+        <div className="official-credential-footer-cell">
+          <span className="official-credential-footer-icon"><CredentialIcon type="heart-shield" /></span>
+          <p>Esta credencial es personal <strong>e intransferible.</strong></p>
+        </div>
+        <div className="official-credential-footer-cell">
+          <p>Debe presentarse siempre que sea requerida.</p>
+        </div>
+      </div>
+      <img className="official-credential-hologram" src={credentialHologramUrl} alt="" aria-hidden="true" />
+    </article>
+  );
+}
+
+function CredentialFrontLegacy({ credential, qrDataUrl }) {
   const nameParts = splitCredentialName(credential.name);
   const nameTone = credential.name.length > 29 ? 'official-credential-name--compact' : credential.name.length > 21 ? 'official-credential-name--narrow' : '';
   return (
     <article className="official-credential-card">
       <div className="official-credential-header">
         <div className="official-credential-header-arc" aria-hidden="true" />
-        <div className="official-credential-header-heart" aria-hidden="true">♡</div>
+        <div className="official-credential-header-heart" aria-hidden="true">&#9825;</div>
       </div>
       <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
       <div className="official-credential-brand">Pan y Esperanza</div>
       <div className="official-credential-subtitle">Juntos llevamos esperanza</div>
-      <div className="official-credential-kind">{credential.accreditationLabel}</div>
       <CredentialPhoto credential={credential} />
       <div className={`official-credential-name ${nameTone}`}>
         <span>{nameParts.first}</span>
         {nameParts.rest && <span>{nameParts.rest}</span>}
       </div>
+      <div className="official-credential-role">{credential.accreditationLabel}</div>
       <div className="official-credential-details">
-        <CredentialDetail icon="id" label="Codigo:" value={credential.code} />
+        <CredentialDetail icon="id" label="Código:" value={credential.code} />
         <CredentialDetail icon="calendar" label="Desde:" value={formatDate(credential.issuedAt)} />
         <CredentialDetail icon="shield" label="Estado:" value={credential.status} accent />
       </div>
       <div className="official-credential-qr-frame">
-        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Codigo QR" /> : <div className="official-credential-qr-loading" />}
+        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Código QR" /> : <div className="official-credential-qr-loading" />}
       </div>
       <div className="official-credential-footer-line" />
       <div className="official-credential-footer-text">
@@ -170,10 +238,9 @@ function CredentialFront({ credential, qrDataUrl }) {
       </div>
       <div className="official-credential-heart-wrap" aria-hidden="true">
         <span />
-        <b>♥</b>
+        <b>&hearts;</b>
         <span />
       </div>
-      <div className="official-credential-althemon">Generado por ALTHEMON&reg;</div>
     </article>
   );
 }
@@ -243,14 +310,24 @@ function useCredentialPhotoUrl(credential) {
 function CredentialDetail({ icon, label, value, accent = false }) {
   return (
     <div className={`official-credential-detail-row official-credential-detail-row--${icon}`}>
-      <CredentialIcon type={icon} />
-      <span>{label}</span>
+      <span className="official-credential-detail-icon">
+        <CredentialIcon type={icon} />
+      </span>
+      <span className="official-credential-detail-label">{label}</span>
       <strong className={accent ? 'official-credential-state' : ''}>{value || '-'}</strong>
     </div>
   );
 }
 
 function CredentialIcon({ type }) {
+  if (type === 'heart-shield') {
+    return (
+      <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M12 3 20 6v6c0 5-3.4 8.6-8 9-4.6-.4-8-4-8-9V6l8-3Z" />
+        <path d="M8.5 10.5c0-1.1.8-1.9 1.9-1.9.7 0 1.3.3 1.6.9.3-.6.9-.9 1.6-.9 1.1 0 1.9.8 1.9 1.9 0 1.9-3.5 4.1-3.5 4.1s-3.5-2.2-3.5-4.1Z" />
+      </svg>
+    );
+  }
   if (type === 'calendar') {
     return (
       <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -382,6 +459,12 @@ function credentialAccreditationLabel(kind, subject = {}) {
     return position || 'Usuario del ERP';
   }
   return `${KIND_LABELS[kind]} acreditado`;
+}
+
+function credentialTypeLines(kind) {
+  if (kind === 'user') return { main: 'USUARIO ERP', accent: 'ACREDITADO' };
+  const label = KIND_LABELS[kind] || KIND_LABELS.beneficiary;
+  return { main: label.toUpperCase(), accent: 'ACREDITADO' };
 }
 
 function cacheProofPhotoUrl(url, version) {
