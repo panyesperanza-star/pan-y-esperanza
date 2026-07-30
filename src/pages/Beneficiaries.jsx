@@ -1587,6 +1587,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   return (
     <div className="-m-5 bg-slate-50">
       <ProfessionalCrmHeader
+        actions={actions}
         beneficiary={beneficiary}
         family={family}
         deliveries={activeDeliveries}
@@ -1764,7 +1765,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   );
 }
 
-function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canGenerateCredential, canPrint, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
+function ProfessionalCrmHeader({ actions, beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canGenerateCredential, canPrint, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const priority = socialPriorityLabel(beneficiary, history);
   const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
