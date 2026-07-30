@@ -79,7 +79,7 @@ function nextDonorCode(donors = []) {
     const match = String(item?.code || '').match(/DON-(\d+)/i);
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
-  return `DON-${String(max + 1).padStart(6, '0')}`;
+  return `DON-${String(max + 1).padStart(5, '0')}`;
 }
 
 function nextCollaboratorCode(collaborators = []) {

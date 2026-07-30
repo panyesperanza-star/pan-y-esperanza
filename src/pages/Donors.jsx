@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
+import { nextDonorCode } from '../services/donors/DonanteService';
 
 const TYPES = ['Particular', 'Empresa', 'Comercio', 'Asociación', 'Institución'];
 const STATUSES = ['Activo', 'Inactivo', 'En seguimiento'];
@@ -27,6 +28,7 @@ export function Donors({ data, actions, currentUser }) {
   const canGenerateCredential = canDo(currentUser, 'donors', 'generate-credential');
   const canPrint = canDo(currentUser, 'donors', 'print');
   const canSend = canDo(currentUser, 'donors', 'send');
+  const nextCode = useMemo(() => nextDonorCode(donors), [donors]);
 
   async function saveDonor(payload, current = null) {
     if (current) await actions.updateDonor(current.id, payload);
@@ -67,7 +69,7 @@ export function Donors({ data, actions, currentUser }) {
       <PageHeader
         title="Donantes"
         description="Personas donantes con portal propio, historial unificado y certificados."
-        actions={canCreate && <Button onClick={() => setModal({ type: 'create' })}><Plus size={18} /> Nuevo donante</Button>}
+        actions={canCreate && <Button onClick={() => setModal({ type: 'create', initial: { code: nextCode } })}><Plus size={18} /> Nuevo donante</Button>}
       />
 
       {notice && (
@@ -191,7 +193,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'create' && (
         <Modal title="Nuevo donante" onClose={() => setModal(null)} wide>
-          <DonorForm onSubmit={(payload) => saveDonor(payload)} />
+          <DonorForm initial={modal.initial} onSubmit={(payload) => saveDonor(payload)} />
         </Modal>
       )}
 
@@ -212,6 +214,7 @@ export function Donors({ data, actions, currentUser }) {
 
 function DonorForm({ initial = null, onSubmit }) {
   const [form, setForm] = useState({
+    code: initial?.code || '',
     name: initial?.name || '',
     email: initial?.email || '',
     phone: initial?.phone || '',
@@ -241,6 +244,10 @@ function DonorForm({ initial = null, onSubmit }) {
 
   return (
     <form className="grid gap-4" onSubmit={submit}>
+      <FormField label="Codigo de donante">
+        <input className={`${inputClass} bg-slate-50 font-semibold text-slate-600`} value={form.code} readOnly />
+        <p className="mt-1 text-xs text-slate-500">Codigo generado automaticamente y no editable.</p>
+      </FormField>
       <div className="grid gap-4 md:grid-cols-2">
         <FormField label="Nombre" required>
           <input className={inputClass} value={form.name} onChange={(event) => update('name', event.target.value)} />

@@ -47,12 +47,18 @@ function normalizeStatus(value) {
   return DONOR_STATUSES.find((item) => normalize(item) === normalize(clean)) || 'Activo';
 }
 
-function nextDonorCode(donors = []) {
+export function nextDonorCode(donors = []) {
   const max = donors.reduce((highest, item) => {
     const match = String(item?.code || '').match(/DON-(\d+)/i);
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0);
-  return `DON-${String(max + 1).padStart(6, '0')}`;
+  return `DON-${String(max + 1).padStart(5, '0')}`;
+}
+
+function findDuplicateDonorCode(donors = [], code = '', currentId = '') {
+  const normalizedCode = normalize(code);
+  if (!normalizedCode) return null;
+  return donors.find((item) => normalize(item?.code) === normalizedCode && item.id !== currentId) || null;
 }
 
 function donorPayloadFromForm(payload = {}, current = {}, donors = []) {
@@ -66,8 +72,11 @@ function donorPayloadFromForm(payload = {}, current = {}, donors = []) {
     : payload.status !== undefined
       ? status !== 'Inactivo'
       : current.is_active !== false;
+  const code = current.id
+    ? cleanText(current.code || payload.code)
+    : cleanText(payload.code) || nextDonorCode(donors);
   return {
-    code: cleanText(current.code) || nextDonorCode(donors),
+    code,
     name,
     email,
     access_email: cleanText(payload.access_email || payload.email || current.access_email || current.email).toLowerCase(),
@@ -117,9 +126,13 @@ export class DonanteService {
     this.assertPermission('donors', 'create');
     const donors = await this.readDonors();
     const clean = donorPayloadFromForm(payload, { is_active: true }, donors);
+    const duplicateCode = findDuplicateDonorCode(donors, clean.code);
+    if (duplicateCode) {
+      throw new Error(`Ya existe un donante registrado con codigo ${clean.code}. Abre de nuevo "Nuevo donante" para obtener el siguiente codigo disponible.`);
+    }
     const duplicate = donors.find((item) => lower(item.email) === lower(clean.email) || lower(item.access_email) === lower(clean.email));
     if (duplicate) {
-      return this.update(duplicate.id, clean);
+      throw new Error(`Ya existe un donante registrado con ese email (${duplicate.code || duplicate.name}). Abre su ficha para editarlo.`);
     }
     const created = await this.repository.createDonor({
       ...clean,
@@ -147,6 +160,8 @@ export class DonanteService {
     const current = await this.requireDonor(id);
     const donors = await this.readDonors();
     const clean = donorPayloadFromForm(payload, current, donors);
+    const duplicateCode = findDuplicateDonorCode(donors, clean.code, id);
+    if (duplicateCode) throw new Error('Ya existe un donante registrado con ese codigo.');
     const duplicate = donors.find((item) => item.id !== id && (lower(item.email) === lower(clean.email) || lower(item.access_email) === lower(clean.email)));
     if (duplicate) throw new Error('Ya existe un donante con ese email.');
     const updated = await this.repository.updateDonor(id, clean);
