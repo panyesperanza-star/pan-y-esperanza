@@ -1809,7 +1809,7 @@ function ProfessionalCrmHeader({ beneficiary, family, deliveries, history, docum
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
             {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
-            {canGenerateCredential && <OfficialCredentialButton kind="beneficiary" subject={beneficiary} />}
+            {canGenerateCredential && <OfficialCredentialButton kind="beneficiary" subject={beneficiary} actions={actions} />}
             {canPrint && <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>}
             {canPrint && <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>}
           </div>

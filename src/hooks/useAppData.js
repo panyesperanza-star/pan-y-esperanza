@@ -103,6 +103,8 @@ const EMPTY_APP_DATA = Object.freeze({
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
+  official_credential_registry: EMPTY_TABLE,
+  official_credential_events: EMPTY_TABLE,
   app_users: EMPTY_TABLE
 });
 const PLATFORM_OWNER_TABLES = new Set(['platform_maintenance_logs']);
@@ -128,10 +130,10 @@ export function useAppData(enabled = true, currentUser = null) {
         repository.loadAll(appDataTablesForUser(currentUser)),
         APP_DATA_LOAD_TIMEOUT_MS
       );
-      setData({
+      setData(enrichOfficialCredentialData({
         ...EMPTY_APP_DATA,
         ...loadedData
-      });
+      }));
     } catch (err) {
       setData((current) => current || EMPTY_APP_DATA);
       setError(err.message || 'No se pudieron cargar los datos.');
@@ -222,6 +224,50 @@ export function useAppData(enabled = true, currentUser = null) {
 
   async function repositoryResetLocalDemo() {
     return createRepository().resetLocalDemo();
+  }
+
+  async function manageOfficialCredential(credential = {}, action, reason = '') {
+    const credentialUid = String(credential.credentialUid || credential.credential_uid || credential.credentialId || '').trim();
+    if (!credentialUid) throw new Error('La credencial no tiene un ID oficial asignado.');
+    if (!action) throw new Error('Indica la acción que deseas registrar sobre la credencial.');
+
+    if (action === 'replace' && (!hasSupabaseConfig || !supabase)) {
+      throw new Error('La sustitución de credenciales requiere Supabase para emitir un ID oficial nuevo.');
+    }
+
+    if (hasSupabaseConfig && supabase) {
+      const { data: result, error: rpcError } = await supabase.rpc('manage_official_credential', {
+        p_credential_uid: credentialUid,
+        p_action: action,
+        p_reason: String(reason || '').trim()
+      });
+      if (rpcError) throw rpcError;
+      await audit(`Credencial oficial ${credentialUid}: ${action}`);
+      await reload();
+      return result;
+    }
+
+    await repositoryCreate('official_credential_events', {
+      credential_uid: credentialUid,
+      subject_type: credential.kind || credential.subject_type || 'beneficiary',
+      subject_id: credential.subjectId || credential.subject_id || credential.id || crypto.randomUUID(),
+      event_type: action,
+      status_from: credential.credentialStatus || credential.credential_status || 'active',
+      status_to: credential.credentialStatus || credential.credential_status || 'active',
+      actor_id: currentUser?.id || null,
+      actor_name: currentUserName(),
+      actor_email: currentUser?.email || '',
+      reason: String(reason || '').trim(),
+      metadata: {
+        demo: true,
+        qr_version: credential.qrVersion || credential.credential_qr_version || 1,
+        print_count: credential.printCount || credential.credential_print_count || 0
+      },
+      created_at: new Date().toISOString()
+    });
+    await audit(`Credencial oficial ${credentialUid}: ${action}`);
+    await reload();
+    return null;
   }
 
   function createInventarioService(repositoryAdapter = createRepository(), notificacionService = null) {
@@ -1848,6 +1894,14 @@ export function useAppData(enabled = true, currentUser = null) {
     priorities: priorityEngineService,
     reports: informeService,
     reloadData: reload,
+    manageOfficialCredential,
+    recordOfficialCredentialPrint: async (credential) => manageOfficialCredential(credential, 'print'),
+    recordOfficialCredentialDownload: async (credential) => manageOfficialCredential(credential, 'download_pdf'),
+    replaceOfficialCredential: async (credential, reason = '') => manageOfficialCredential(credential, 'replace', reason),
+    suspendOfficialCredential: async (credential, reason = '') => manageOfficialCredential(credential, 'suspend', reason),
+    revokeOfficialCredential: async (credential, reason = '') => manageOfficialCredential(credential, 'revoke', reason),
+    reactivateOfficialCredential: async (credential, reason = '') => manageOfficialCredential(credential, 'reactivate', reason),
+    expireOfficialCredential: async (credential, reason = '') => manageOfficialCredential(credential, 'expire', reason),
     markNotificationRead: async (id) => {
       await notificacionService.markAsRead(id);
       await reload();
@@ -2713,4 +2767,72 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
     || (reference.document_id && metadata.document_id === reference.document_id)
     || (reference.document_id && notification.entity_type === 'beneficiary_document' && notification.entity_id === reference.document_id)
   );
+}
+
+function enrichOfficialCredentialData(data = {}) {
+  const registry = data.official_credential_registry || [];
+  const events = data.official_credential_events || [];
+  const byUid = new Map(registry.map((item) => [String(item.credential_uid || '').trim(), item]));
+  const bySubject = new Map(registry.map((item) => [`${item.subject_type}:${item.subject_id}`, item]));
+  const credentialsBySubject = new Map();
+  const eventsBySubject = new Map();
+
+  registry.forEach((item) => {
+    const key = `${item.subject_type}:${item.subject_id}`;
+    const list = credentialsBySubject.get(key) || [];
+    list.push(item);
+    credentialsBySubject.set(key, list);
+  });
+
+  events.forEach((item) => {
+    const key = `${item.subject_type}:${item.subject_id}`;
+    const list = eventsBySubject.get(key) || [];
+    list.push(item);
+    eventsBySubject.set(key, list);
+  });
+
+  credentialsBySubject.forEach((list) => {
+    list.sort((left, right) => new Date(right.issued_at || right.created_at || 0) - new Date(left.issued_at || left.created_at || 0));
+  });
+  eventsBySubject.forEach((list) => {
+    list.sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+  });
+
+  const enrichRows = (rows = [], subjectType) => rows.map((row) => {
+    const uid = String(row.credential_uid || row.official_credential_id || row.credential_id || '').trim();
+    const subjectKey = `${subjectType}:${row.id}`;
+    const subjectCredentials = credentialsBySubject.get(subjectKey) || [];
+    const activeCredential = subjectCredentials.find((item) => item.status === 'active') || null;
+    const credential = (uid && byUid.get(uid)) || activeCredential || bySubject.get(subjectKey);
+    if (!credential) return row;
+    return {
+      ...row,
+      credential_uid: uid || credential.credential_uid,
+      credential_status: credential.status || 'active',
+      credential_status_reason: credential.status_reason || '',
+      credential_expires_at: credential.expires_at || null,
+      credential_qr_version: credential.qr_version || 1,
+      credential_issued_at: credential.issued_at || row.credential_issued_at || row.created_at,
+      credential_last_printed_at: credential.last_printed_at || null,
+      credential_last_printed_by: credential.last_printed_by || null,
+      credential_print_count: credential.print_count || 0,
+      credential_last_validated_at: credential.last_validated_at || null,
+      credential_validation_count: credential.validation_count || 0,
+      credential_replaces_uid: credential.replaces_credential_uid || null,
+      credential_replaced_by_uid: credential.replaced_by_credential_uid || null,
+      credential_history: {
+        credentials: subjectCredentials,
+        events: eventsBySubject.get(subjectKey) || []
+      }
+    };
+  });
+
+  return {
+    ...data,
+    beneficiaries: enrichRows(data.beneficiaries, 'beneficiary'),
+    volunteers: enrichRows(data.volunteers, 'volunteer'),
+    collaborators: enrichRows(data.collaborators, 'collaborator'),
+    donors: enrichRows(data.donors, 'donor'),
+    app_users: enrichRows(data.app_users, 'user')
+  };
 }

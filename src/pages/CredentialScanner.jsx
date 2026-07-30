@@ -140,7 +140,7 @@ export function CredentialScanner({ data, currentUser, onNavigate }) {
     if (!match) {
       setResult(null);
       setScanError('No se ha encontrado ninguna credencial con ese codigo.');
-      setScanStatus('Codigo no localizado.');
+      setScanStatus('Código no localizado.');
       return;
     }
     setResult(match);
@@ -271,7 +271,7 @@ function BeneficiaryScanResult({ result, data, canRegisterDelivery, onNavigate }
       <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
         <CredentialPersonPhoto kind="beneficiary" record={beneficiary} />
         <div className="grid gap-3">
-          <InfoRow label="Codigo" value={beneficiary.code || '-'} />
+          <InfoRow label="Código" value={beneficiary.code || '-'} />
           <InfoRow label="Estado" value={status} />
           <InfoRow label="Ultima entrega" value={lastDelivery ? `${formatDate(lastDelivery.delivered_at || lastDelivery.created_at)} · ${lastDelivery.help_type || 'Ayuda'}` : 'Sin entregas registradas'} />
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -446,25 +446,48 @@ function buildCredentialDirectory(data) {
 
 function toDirectoryEntry(kind, record, name, code) {
   const subjectId = record.id || code || null;
-  const credentialId = buildCredentialSecureIdentifier({ kind, subjectId, code });
+  const storedCredentialId = normalizeCredentialIdentifier(record.credential_uid || record.official_credential_id || record.credential_id);
+  const legacyCredentialId = buildCredentialSecureIdentifier({ kind, subjectId, code });
+  const credentialId = storedCredentialId || legacyCredentialId;
   if (!credentialId) return null;
-  return { kind, record, name, code, credentialId, subjectId, legacyCode: code };
+  return { kind, record, name, code, credentialId, legacyCredentialId, subjectId, legacyCode: code };
 }
 
 function findCredentialMatch(payload, directory) {
-  const kind = payload.credential_kind || payload.kind || 'person';
+  const kind = payload.credential_kind || (payload.kind && payload.kind !== 'official-credential' ? payload.kind : '');
+  const scannedCredentialId = normalizeCredentialIdentifier(payload.credential_id || payload.credential_uid);
+  const scannedQrVersion = Number.parseInt(String(payload.qr_version || ''), 10);
   const candidateIds = new Set([
-    payload.credential_id,
+    scannedCredentialId,
     payload.subject_id ? buildCredentialSecureIdentifier({ kind, subjectId: payload.subject_id, code: payload.code }) : '',
     payload.code ? buildCredentialSecureIdentifier({ kind, subjectId: payload.code, code: payload.code }) : ''
-  ].filter(Boolean));
-  return directory.find((entry) => entry.kind === kind && (candidateIds.has(entry.credentialId) || payload.subject_id === entry.subjectId || payload.code === entry.legacyCode)) || null;
+  ].filter(Boolean).map(normalizeCredentialIdentifier));
+  return directory.find((entry) => {
+    if (kind && entry.kind !== kind) return false;
+    if (Number.isFinite(scannedQrVersion) && scannedQrVersion > 0) {
+      const currentVersion = Number.parseInt(String(entry.record?.credential_qr_version || 1), 10);
+      if (currentVersion !== scannedQrVersion) return false;
+    }
+    return (
+      candidateIds.has(normalizeCredentialIdentifier(entry.credentialId))
+      || candidateIds.has(normalizeCredentialIdentifier(entry.legacyCredentialId))
+      || payload.subject_id === entry.subjectId
+      || payload.code === entry.legacyCode
+    );
+  }) || null;
 }
 
 function findManualCredentialMatch(value, directory = []) {
   const code = normalizeCredentialCode(value);
   if (!code) return null;
-  return directory.find((entry) => normalizeCredentialCode(entry.code || entry.legacyCode) === code) || null;
+  return directory.find((entry) => (
+    normalizeCredentialCode(entry.credentialId) === code
+    || normalizeCredentialCode(entry.code || entry.legacyCode) === code
+  )) || null;
+}
+
+function normalizeCredentialIdentifier(value) {
+  return String(value || '').trim();
 }
 
 function normalizeCredentialCode(value) {

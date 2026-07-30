@@ -14,6 +14,7 @@ import { Collaborators } from './pages/Collaborators';
 import { CollaboratorPortal } from './pages/CollaboratorPortal';
 import { Communications } from './pages/Communications';
 import { CredentialScanner } from './pages/CredentialScanner';
+import { CredentialVerification } from './pages/CredentialVerification';
 import { Dashboard } from './pages/Dashboard';
 import { DebugAdmin } from './pages/DebugAdmin';
 import { Deliveries } from './pages/Deliveries';
@@ -48,6 +49,7 @@ export default function App() {
   const isCollaboratorPortalRoute = normalizePath(pathname) === '/portal-colaboradores';
   const isDonorPortalRoute = normalizePath(pathname) === '/portal-donaciones';
   const isLoginRoute = normalizePath(pathname) === '/acceso';
+  const isCredentialVerificationRoute = normalizePath(pathname).startsWith('/verificar-credencial');
   const isPortalRoute = isBeneficiaryPortalRoute || isCollaboratorPortalRoute || isDonorPortalRoute;
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
   const [navigationTarget, setNavigationTarget] = useState(() => readNavigationTargetFromLocation());
@@ -56,7 +58,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(true);
   const portalActions = useMemo(() => createPortalApiActions(), []);
   const isPlatformOwnerUser = isPlatformOwner(currentUser);
-  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
+  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isCredentialVerificationRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -70,7 +72,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function validateStoredSession() {
-      if (isLoginRoute) {
+      if (isLoginRoute || isCredentialVerificationRoute) {
         if (!cancelled) setAuthReady(true);
         return;
       }
@@ -100,7 +102,7 @@ export default function App() {
     }
     validateStoredSession();
     return () => { cancelled = true; };
-  }, [currentUser?.id, currentUser?.email, hasResetToken, isLoginRoute, skipInitialSessionValidation]);
+  }, [currentUser?.id, currentUser?.email, hasResetToken, isCredentialVerificationRoute, isLoginRoute, skipInitialSessionValidation]);
 
   const firstAccessibleModule = getFirstAccessibleModule(currentUser);
 
@@ -110,6 +112,7 @@ export default function App() {
     if (isBeneficiaryPortalRoute) return;
     if (isCollaboratorPortalRoute) return;
     if (isDonorPortalRoute) return;
+    if (isCredentialVerificationRoute) return;
     const normalizedPathname = pathname !== '/' ? pathname.replace(/\/$/, '') : pathname;
     if (normalizedPathname === '/treasury' && canAccess(currentUser, 'accounting')) {
       const nextPath = `/accounting${window.location.search || ''}`;
@@ -133,7 +136,7 @@ export default function App() {
     setPathname(nextPath);
     setNavigationTarget({ moduleId: firstAccessibleModule, key: Date.now() });
     setActive(firstAccessibleModule);
-  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, isLoginRoute, pathname]);
+  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, isCredentialVerificationRoute, isLoginRoute, pathname]);
 
   function navigateTo(destination) {
     const target = normalizeNavigationTarget(destination);
@@ -200,6 +203,10 @@ export default function App() {
 
   if (isLoginRoute) {
     return <Login onAccess={handleLoginAccess} />;
+  }
+
+  if (isCredentialVerificationRoute) {
+    return <CredentialVerification />;
   }
 
   if (!authReady) return <div className="flex min-h-screen items-center justify-center">Comprobando permisos...</div>;

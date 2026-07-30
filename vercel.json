@@ -19,6 +19,7 @@
     { "source": "/families", "destination": "/erp/index.html" },
     { "source": "/deliveries", "destination": "/erp/index.html" },
     { "source": "/credential-scanner", "destination": "/erp/index.html" },
+    { "source": "/verificar-credencial/:id", "destination": "/erp/index.html" },
     { "source": "/receipts", "destination": "/erp/index.html" },
     { "source": "/inventory", "destination": "/erp/index.html" },
     { "source": "/donations", "destination": "/erp/index.html" },

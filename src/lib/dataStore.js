@@ -59,6 +59,8 @@ const TABLES = [
   'roles',
   'audit_logs',
   'platform_maintenance_logs',
+  'official_credential_registry',
+  'official_credential_events',
   'app_users'
 ];
 const OPTIONAL_TABLES = new Set([
@@ -99,7 +101,9 @@ const OPTIONAL_TABLES = new Set([
   'campana_agenda_eventos',
   'categorias_recursos',
   'recursos',
-  'platform_maintenance_logs'
+  'platform_maintenance_logs',
+  'official_credential_registry',
+  'official_credential_events'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
@@ -149,6 +153,11 @@ const DATE_FIELDS = new Set([
   'end_at',
   'start_date',
   'end_date',
+  'last_printed_at',
+  'last_validated_at',
+  'suspended_at',
+  'revoked_at',
+  'expired_at',
   'renewal_due_at',
   'reviewed_at',
   'archived_at',

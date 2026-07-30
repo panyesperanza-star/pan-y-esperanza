@@ -224,7 +224,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} />}
+            {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} actions={actions} />}
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}

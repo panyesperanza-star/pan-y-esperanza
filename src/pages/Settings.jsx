@@ -199,7 +199,7 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       {section === 'users' && <UsersTable users={associationUsers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
       {section === 'permissions' && canEdit && <PermissionsMatrix users={associationUsers} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
-      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} users={associationUsers} organization={organization} canGenerateCredential={canGenerateCredential} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
+      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} users={associationUsers} organization={organization} actions={actions} canGenerateCredential={canGenerateCredential} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
@@ -326,7 +326,7 @@ function MiniStat({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-ink">{value}</p></div>;
 }
 
-function UserForm({ initial, users = [], organization, canGenerateCredential = false, onSubmit }) {
+function UserForm({ initial, users = [], organization, actions, canGenerateCredential = false, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
@@ -352,7 +352,7 @@ function UserForm({ initial, users = [], organization, canGenerateCredential = f
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
       {form.id && canGenerateCredential && (
         <div className="flex justify-end sm:col-span-2">
-          <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} />
+          <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} actions={actions} />
         </div>
       )}
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>

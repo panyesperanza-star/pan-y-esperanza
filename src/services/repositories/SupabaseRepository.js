@@ -43,6 +43,11 @@ const DATE_FIELDS = new Set([
   'end_at',
   'start_date',
   'end_date',
+  'last_printed_at',
+  'last_validated_at',
+  'suspended_at',
+  'revoked_at',
+  'expired_at',
   'renewal_due_at',
   'reviewed_at',
   'archived_at',
@@ -98,7 +103,9 @@ const OPTIONAL_TABLES = new Set([
   'campana_agenda_eventos',
   'categorias_recursos',
   'recursos',
-  'platform_maintenance_logs'
+  'platform_maintenance_logs',
+  'official_credential_registry',
+  'official_credential_events'
 ]);
 
 const SECURITY_TABLES = new Set([

@@ -8,6 +8,11 @@ export function buildCredentialSecureIdentifier({ kind = 'person', subjectId = '
 export function parseOfficialCredentialQr(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
+  const fromUrl = parseCredentialVerificationUrl(raw);
+  if (fromUrl) return fromUrl;
+  if (/^[A-Z]{2,4}-\d{4}-\d{6,}$/i.test(raw) || /^[A-Z]{2,4}-\d{5,}$/i.test(raw)) {
+    return { type: 'official-credential', credential_id: raw };
+  }
   try {
     const payload = JSON.parse(raw);
     if (payload?.type !== 'official-credential') return null;
@@ -15,6 +20,33 @@ export function parseOfficialCredentialQr(value) {
   } catch {
     return null;
   }
+}
+
+function parseCredentialVerificationUrl(value) {
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/\/verificar-credencial\/([^/]+)/);
+    if (!match) return null;
+    return {
+      type: 'official-credential',
+      credential_id: decodeURIComponent(match[1]),
+      qr_version: readQrVersion(url.searchParams.get('v'))
+    };
+  } catch {
+    const match = value.match(/\/verificar-credencial\/([^/?#]+)/);
+    if (!match) return null;
+    const queryMatch = value.match(/[?&]v=(\d+)/);
+    return {
+      type: 'official-credential',
+      credential_id: decodeURIComponent(match[1]),
+      qr_version: readQrVersion(queryMatch?.[1])
+    };
+  }
+}
+
+function readQrVersion(value) {
+  const version = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(version) && version > 0 ? version : null;
 }
 
 function hashCredentialSubject(value) {

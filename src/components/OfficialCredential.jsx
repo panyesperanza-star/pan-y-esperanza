@@ -1,4 +1,4 @@
-import { Download, IdCard, Printer } from 'lucide-react';
+import { Ban, CheckCircle2, Clock3, Download, IdCard, Printer, RefreshCw, ShieldOff } from 'lucide-react';
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -32,7 +32,7 @@ const CREDENTIAL_PDF_WIDTH_MM = 110;
 const CREDENTIAL_PDF_HEIGHT_MM = 85;
 const CREDENTIAL_PDF_SIDES = ['front', 'back'];
 
-export function OfficialCredentialButton({ kind, subject, variant = 'secondary', className = '' }) {
+export function OfficialCredentialButton({ kind, subject, actions = null, variant = 'secondary', className = '' }) {
   const [open, setOpen] = useState(false);
   const credential = useMemo(() => buildOfficialCredential(kind, subject), [kind, subject]);
 
@@ -43,18 +43,65 @@ export function OfficialCredentialButton({ kind, subject, variant = 'secondary',
       </Button>
       {open && (
         <Modal title="Credencial oficial" onClose={() => setOpen(false)} wide>
-          <OfficialCredentialPreview credential={credential} />
+          <OfficialCredentialPreview credential={credential} actions={actions} />
         </Modal>
       )}
     </>
   );
 }
 
-function OfficialCredentialPreview({ credential }) {
+function OfficialCredentialPreview({ credential, actions = null }) {
   const printAreaRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const qrDataUrl = useCredentialQr(credential);
+  const [notice, setNotice] = useState('');
+  const [localCredential, setLocalCredential] = useState(credential);
+  const qrDataUrl = useCredentialQr(localCredential);
+
+  useEffect(() => {
+    setLocalCredential(credential);
+  }, [credential]);
+
+  async function runCredentialAction(actionName, label, options = {}) {
+    if (!actions?.manageOfficialCredential) {
+      setError('La gestión de credenciales requiere Supabase actualizado.');
+      return null;
+    }
+    const reason = options.requireReason ? window.prompt(`Motivo para ${label.toLowerCase()}:`) : '';
+    if (reason === null) return null;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await actions.manageOfficialCredential(localCredential, actionName, reason || '');
+      if (updated) {
+        setLocalCredential((current) => ({
+          ...current,
+          credentialUid: updated.credential_uid || current.credentialUid,
+          credentialId: updated.credential_uid || current.credentialId,
+          issuedAt: updated.issued_at || current.issuedAt,
+          credentialStatus: updated.status || current.credentialStatus,
+          status: statusLabelFromRegistry(updated.status) || current.status,
+          credentialStatusReason: updated.status_reason || '',
+          expiresAt: updated.expires_at || current.expiresAt,
+          qrVersion: updated.qr_version || current.qrVersion,
+          printCount: updated.print_count ?? current.printCount,
+          lastPrintedAt: updated.last_printed_at || current.lastPrintedAt,
+          lastValidatedAt: updated.last_validated_at || current.lastValidatedAt,
+          replacesCredentialUid: updated.replaces_credential_uid || current.replacesCredentialUid,
+          replacedByCredentialUid: updated.replaced_by_credential_uid || current.replacedByCredentialUid
+        }));
+      }
+      setNotice(`${label} registrado correctamente.`);
+      return updated;
+    } catch (actionError) {
+      console.error('[OfficialCredential] No se pudo gestionar la credencial', actionError);
+      setError(actionError?.message || 'No se ha podido gestionar la credencial.');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function printCredential() {
     const printArea = printAreaRef.current;
@@ -70,9 +117,11 @@ function OfficialCredentialPreview({ credential }) {
       await waitForAssets(printHost);
       await nextAnimationFrame();
       window.print();
+      await actions?.manageOfficialCredential?.(localCredential, 'print', '');
+      setNotice('Impresión registrada correctamente.');
     } catch (printError) {
-      console.error('[OfficialCredential] No se pudo preparar la impresion', printError);
-      setError('No se ha podido preparar la impresion. Puedes descargar el PDF e imprimirlo.');
+      console.error('[OfficialCredential] No se pudo preparar la impresión', printError);
+      setError('No se ha podido preparar la impresión. Puedes descargar el PDF e imprimirlo.');
     } finally {
       document.body.classList.remove('official-credential-printing');
       printHost?.remove();
@@ -106,9 +155,11 @@ function OfficialCredentialPreview({ credential }) {
         pdf.addImage(dataUrl, 'PNG', 0, 0, CREDENTIAL_PDF_WIDTH_MM, CREDENTIAL_PDF_HEIGHT_MM);
       }
       if (pdf.getNumberOfPages() !== CREDENTIAL_PDF_SIDES.length) {
-        throw new Error(`El PDF debe tener ${CREDENTIAL_PDF_SIDES.length} paginas y contiene ${pdf.getNumberOfPages()}.`);
+        throw new Error(`El PDF debe tener ${CREDENTIAL_PDF_SIDES.length} páginas y contiene ${pdf.getNumberOfPages()}.`);
       }
-      pdf.save(`Credencial-${safeFilename(credential.code || credential.name)}.pdf`);
+      pdf.save(`Credencial-${safeFilename(localCredential.code || localCredential.name)}.pdf`);
+      await actions?.manageOfficialCredential?.(localCredential, 'download_pdf', '');
+      setNotice('Descarga registrada correctamente.');
     } catch (downloadError) {
       console.error('[OfficialCredential] No se pudo generar el PDF', downloadError);
       setError('No se ha podido descargar el PDF. Puedes imprimir la credencial desde la vista previa.');
@@ -122,12 +173,13 @@ function OfficialCredentialPreview({ credential }) {
     <div className="official-credential-preview">
       <div className="official-credential-preview-actions">
         <div>
-          <p className="text-sm font-bold text-ink">{credential.name}</p>
-          <p className="text-xs font-semibold text-slate-500">{credential.typeLabel} · {credential.code}</p>
+          <p className="text-sm font-bold text-ink">{localCredential.name}</p>
+          <p className="text-xs font-semibold text-slate-500">{localCredential.typeLabel} · {localCredential.code}</p>
+          <p className="text-xs font-semibold text-brand-700">ID: {localCredential.credentialUid || localCredential.credentialId}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={printCredential} disabled={busy}>
-            <Printer size={16} /> Imprimir
+            <Printer size={16} /> Reimprimir
           </Button>
           <Button type="button" onClick={downloadCredentialPdf} disabled={busy}>
             <Download size={16} /> {busy ? 'Generando...' : 'Descargar PDF'}
@@ -136,11 +188,39 @@ function OfficialCredentialPreview({ credential }) {
       </div>
 
       {error && <div className="official-credential-error" role="alert">{error}</div>}
+      {notice && <div className="mb-3 rounded-md border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
+
+      <div className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm md:grid-cols-[1fr_auto]">
+        <div>
+          <p className="font-bold text-ink">Estado: {statusLabelFromRegistry(localCredential.credentialStatus) || localCredential.status}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Impresiones: {Number(localCredential.printCount || 0)} · QR v{Number(localCredential.qrVersion || 1)}
+            {localCredential.expiresAt ? ` · Caduca: ${formatDate(localCredential.expiresAt)}` : ''}
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => runCredentialAction('replace', 'Sustituir credencial', { requireReason: true })} disabled={busy || localCredential.credentialStatus === 'revoked'}>
+            <RefreshCw size={16} /> Sustituir credencial
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => runCredentialAction('suspend', 'Suspender', { requireReason: true })} disabled={busy}>
+            <Ban size={16} /> Suspender
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => runCredentialAction('reactivate', 'Reactivar')} disabled={busy}>
+            <CheckCircle2 size={16} /> Reactivar
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => runCredentialAction('expire', 'Caducar', { requireReason: true })} disabled={busy}>
+            <Clock3 size={16} /> Caducar
+          </Button>
+          <Button type="button" variant="danger" onClick={() => runCredentialAction('revoke', 'Revocar', { requireReason: true })} disabled={busy}>
+            <ShieldOff size={16} /> Revocar
+          </Button>
+        </div>
+      </div>
 
       <div className="official-credential-print-area" ref={printAreaRef}>
         <div className="official-credential-pages">
           <section className="official-credential-page" data-credential-side="front" aria-label="Anverso de la credencial">
-            <CredentialFront credential={credential} qrDataUrl={qrDataUrl} />
+            <CredentialFront credential={localCredential} qrDataUrl={qrDataUrl} />
           </section>
           <section className="official-credential-page" data-credential-side="back" aria-label="Reverso de la credencial">
             <img className="official-credential-back-image" src={credentialBackUrl} alt="Reverso de la credencial" />
@@ -149,9 +229,65 @@ function OfficialCredentialPreview({ credential }) {
       </div>
 
       <p className="official-credential-preview-note">
-        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para funda A7 de 110 x 85 mm.
+        El PDF genera dos páginas independientes: página 1 anverso y página 2 reverso, preparadas para funda A7 de 110 x 85 mm.
       </p>
+
+      <CredentialHistory history={localCredential.credentialHistory} currentCredentialUid={localCredential.credentialUid || localCredential.credentialId} />
     </div>
+  );
+}
+
+function CredentialHistory({ history = {}, currentCredentialUid = '' }) {
+  const credentials = Array.isArray(history.credentials) ? history.credentials : [];
+  const events = Array.isArray(history.events) ? history.events : [];
+  if (!credentials.length && !events.length) return null;
+
+  return (
+    <section className="mt-4 rounded-md border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-ink">Historial de credenciales</h3>
+          <p className="text-xs text-slate-500">Visible solo para usuarios autorizados del ERP.</p>
+        </div>
+      </div>
+
+      {credentials.length > 0 && (
+        <div className="mt-3 grid gap-2">
+          {credentials.slice(0, 6).map((item) => (
+            <div key={item.credential_uid} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <strong className="text-slate-900">{item.credential_uid}</strong>
+                <span className="font-bold uppercase text-brand-700">
+                  {item.credential_uid === currentCredentialUid ? 'Actual · ' : ''}{statusLabelFromRegistry(item.status) || item.status || 'ACTIVA'}
+                </span>
+              </div>
+              <p className="mt-1">
+                Emisión: {formatDate(item.issued_at || item.created_at)}
+                {item.revoked_at ? ` · Revocación: ${formatDate(item.revoked_at)}` : ''}
+              </p>
+              {item.status_reason && <p className="mt-1">Motivo: {item.status_reason}</p>}
+              {item.replaced_by_credential_uid && <p className="mt-1">Sustituida por: {item.replaced_by_credential_uid}</p>}
+              {item.replaces_credential_uid && <p className="mt-1">Sustituye a: {item.replaces_credential_uid}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {events.length > 0 && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="mb-2 text-xs font-bold uppercase text-slate-500">Últimas acciones</p>
+          <div className="grid gap-1.5 text-xs text-slate-600">
+            {events.slice(0, 6).map((event) => (
+              <p key={event.id || `${event.credential_uid}-${event.event_type}-${event.created_at}`}>
+                <strong>{formatDate(event.created_at)}</strong> · {credentialEventLabel(event.event_type)}
+                {event.actor_name ? ` · ${event.actor_name}` : ''}
+                {event.reason ? ` · ${event.reason}` : ''}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -164,11 +300,11 @@ function getCredentialPdfPages(printArea) {
 }
 
 function CredentialFront({ credential, qrDataUrl }) {
-  const typeLines = credentialTypeLines(credential.kind);
+  const typeLines = credentialTypeLines(credential.roleLabel || credential.accreditationLabel || credential.kind);
   const nameLayout = credentialNameLayout(credential.name);
 
   return (
-    <article className="official-credential-card">
+    <article className="official-credential-card" data-credential-kind={credential.kind}>
       <div className="official-credential-header">
         <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
         <div className="official-credential-brand-block">
@@ -200,16 +336,16 @@ function CredentialFront({ credential, qrDataUrl }) {
       </div>
 
       <div className="official-credential-details">
-        <CredentialDetail icon="id" label="CODIGO" value={credential.code} />
+        <CredentialDetail icon="id" label="CÓDIGO" value={credential.code} subvalue={credential.credentialUid ? `ID: ${credential.credentialUid}` : ''} />
         <CredentialDetail icon="calendar" label="DESDE" value={formatDate(credential.issuedAt)} />
         <CredentialDetail icon="shield" label="ESTADO" value={credential.status} accent />
       </div>
 
       <div className="official-credential-qr-frame">
-        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Codigo QR" /> : <div className="official-credential-qr-loading" />}
+        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Código QR" /> : <div className="official-credential-qr-loading" />}
         <div className="official-credential-qr-label">
           <CredentialIcon type="shield" />
-          <span>VERIFICACION OFICIAL</span>
+          <span>CREDENCIAL OFICIAL</span>
         </div>
       </div>
 
@@ -217,10 +353,11 @@ function CredentialFront({ credential, qrDataUrl }) {
       <div className="official-credential-footer">
         <div className="official-credential-footer-cell">
           <span className="official-credential-footer-icon"><CredentialIcon type="heart-shield" /></span>
-          <p>Esta credencial es personal <strong>e intransferible.</strong></p>
+          <p><strong>Documento oficial de Pan y Esperanza</strong><br />Personal e intransferible.</p>
         </div>
         <div className="official-credential-footer-cell">
-          <p>Debe presentarse siempre que sea requerida.</p>
+          <span className="official-credential-footer-icon"><CredentialIcon type="id" /></span>
+          <p><strong>Presentación obligatoria</strong><br />cuando sea requerida.</p>
         </div>
       </div>
       <img className="official-credential-hologram" src={credentialHologramUrl} alt="" aria-hidden="true" />
@@ -330,7 +467,7 @@ function useCredentialPhotoUrl(credential) {
   return photoUrl;
 }
 
-function CredentialDetail({ icon, label, value, accent = false }) {
+function CredentialDetail({ icon, label, value, subvalue = '', accent = false }) {
   return (
     <div className={`official-credential-detail-row official-credential-detail-row--${icon}`}>
       <span className="official-credential-detail-icon">
@@ -338,6 +475,7 @@ function CredentialDetail({ icon, label, value, accent = false }) {
       </span>
       <span className="official-credential-detail-label">{label}</span>
       <strong className={accent ? 'official-credential-state' : ''}>{value || '-'}</strong>
+      {subvalue && <span className="official-credential-detail-subvalue">{subvalue}</span>}
     </div>
   );
 }
@@ -380,21 +518,15 @@ function useCredentialQr(credential) {
   const [qrDataUrl, setQrDataUrl] = useState('');
   useEffect(() => {
     let active = true;
-    const payload = {
-      type: 'official-credential',
-      credential_kind: credential.kind,
-      credential_id: credential.credentialId,
-      subject_id: credential.subjectId,
-      code: credential.code
-    };
-    QRCode.toDataURL(JSON.stringify(payload), { margin: 1, width: 420, errorCorrectionLevel: 'M' })
+    const payload = credentialVerificationUrl(credential);
+    QRCode.toDataURL(payload, { margin: 1, width: 420, errorCorrectionLevel: 'M' })
       .then((url) => { if (active) setQrDataUrl(url); })
       .catch((error) => {
         console.error('[OfficialCredential] No se pudo generar QR', error);
         if (active) setQrDataUrl('');
       });
     return () => { active = false; };
-  }, [credential.kind, credential.credentialId, credential.subjectId, credential.code]);
+  }, [credential.credentialId, credential.qrVersion]);
   return qrDataUrl;
 }
 
@@ -403,20 +535,49 @@ function buildOfficialCredential(kind, subject = {}) {
   const name = credentialName(normalizedKind, subject);
   const code = credentialCode(normalizedKind, subject);
   const subjectId = cleanText(subject.id || code);
+  const storedCredentialUid = credentialStoredUid(subject);
+  const legacyCredentialId = buildCredentialSecureIdentifier({ kind: normalizedKind, subjectId, code });
   return {
     kind: normalizedKind,
     typeLabel: KIND_LABELS[normalizedKind],
     accreditationLabel: credentialAccreditationLabel(normalizedKind, subject),
+    roleLabel: credentialRoleLabel(normalizedKind, subject),
     name,
     code,
     subjectId,
-    credentialId: buildCredentialSecureIdentifier({ kind: normalizedKind, subjectId, code }),
-    issuedAt: subject.joined_at || subject.created_at || subject.registered_at || subject.start_date || new Date().toISOString(),
+    credentialUid: storedCredentialUid,
+    credentialId: storedCredentialUid || legacyCredentialId,
+    legacyCredentialId,
+    issuedAt: subject.credential_issued_at || subject.joined_at || subject.created_at || subject.registered_at || subject.start_date || new Date().toISOString(),
+    expiresAt: subject.credential_expires_at || subject.expires_at || null,
+    qrVersion: subject.credential_qr_version || 1,
+    credentialStatus: subject.credential_status || 'active',
+    credentialStatusReason: subject.credential_status_reason || '',
+    replacesCredentialUid: subject.credential_replaces_uid || null,
+    replacedByCredentialUid: subject.credential_replaced_by_uid || null,
+    credentialHistory: subject.credential_history || null,
+    printCount: subject.credential_print_count || 0,
+    lastPrintedAt: subject.credential_last_printed_at || null,
+    lastValidatedAt: subject.credential_last_validated_at || null,
     status: statusLabel(subject),
     photoSource: credentialPhotoSource(subject),
     photoKey: credentialPhotoKey(subject),
     photoVersion: cleanText(subject.updated_at || subject.photo_updated_at || subject.created_at || subject.id || code)
   };
+}
+
+function credentialStoredUid(subject = {}) {
+  return cleanText(subject.credential_uid || subject.official_credential_id || subject.credential_id);
+}
+
+function credentialVerificationUrl(credential = {}) {
+  const credentialUid = cleanText(credential.credentialId || credential.credentialUid);
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://www.panyesperanza.org';
+  const url = new URL(`/verificar-credencial/${encodeURIComponent(credentialUid)}`, origin);
+  if (credential.qrVersion) url.searchParams.set('v', String(credential.qrVersion));
+  return url.toString();
 }
 
 function credentialPhotoUrl(subject = {}) {
@@ -484,20 +645,40 @@ function credentialAccreditationLabel(kind, subject = {}) {
   return `${KIND_LABELS[kind]} acreditado`;
 }
 
-function credentialTypeLines(kind) {
-  if (kind === 'user') return { main: 'USUARIO ERP', accent: 'ACREDITADO' };
-  const label = KIND_LABELS[kind] || KIND_LABELS.beneficiary;
-  return { main: label.toUpperCase(), accent: 'ACREDITADO' };
+function credentialRoleLabel(kind, subject = {}) {
+  const explicit = cleanText(
+    subject.credential_role ||
+    subject.role_label ||
+    subject.position ||
+    subject.cargo ||
+    subject.title
+  );
+  if (explicit) return explicit.toUpperCase();
+  if (kind === 'volunteer') return 'VOLUNTARIO ACREDITADO';
+  if (kind === 'collaborator') return 'COLABORADOR';
+  if (kind === 'donor') return 'DONANTE';
+  if (kind === 'user') return 'USUARIO DEL ERP';
+  return 'BENEFICIARIO';
+}
+
+function credentialTypeLines(value) {
+  const label = cleanText(value).toUpperCase();
+  if (!label) return { main: 'CREDENCIAL', accent: 'OFICIAL' };
+  if (label.includes(' ACREDITADO')) {
+    return { main: label.replace(/\s+ACREDITADO.*/, ''), accent: 'ACREDITADO' };
+  }
+  const parts = label.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { main: parts[0] || 'CREDENCIAL', accent: '' };
+  return { main: parts.slice(0, -1).join(' '), accent: parts.at(-1) };
 }
 
 function credentialNameLayout(name) {
   const cleanName = cleanText(name);
-  const length = cleanName.length;
-  const stacked = length > 26 ? splitCredentialDisplayName(cleanName) : [cleanName];
-  const tone = credentialNameTone(cleanName);
+  const displayName = cleanName.split(/\s+/).filter(Boolean)[0] || cleanName;
+  const tone = credentialNameTone(displayName);
   return {
-    lines: stacked,
-    className: `${tone} ${stacked.length > 1 ? 'official-credential-name--stacked' : ''}`.trim()
+    lines: [displayName],
+    className: tone
   };
 }
 
@@ -528,9 +709,35 @@ function cacheProofPhotoUrl(url, version) {
 }
 
 function statusLabel(subject = {}) {
-  if (subject.status) return cleanText(subject.status);
-  if (subject.is_active === false) return 'Inactivo';
-  return 'Activo';
+  const registryStatus = statusLabelFromRegistry(subject.credential_status);
+  if (registryStatus) return registryStatus;
+  if (subject.status) return cleanText(subject.status).toUpperCase();
+  if (subject.is_active === false) return 'INACTIVO';
+  return 'ACTIVO';
+}
+
+function statusLabelFromRegistry(value) {
+  const status = cleanText(value).toLowerCase();
+  if (status === 'active') return 'ACTIVO';
+  if (status === 'suspended') return 'SUSPENDIDA';
+  if (status === 'revoked') return 'REVOCADA';
+  if (status === 'expired') return 'CADUCADA';
+  return '';
+}
+
+function credentialEventLabel(value) {
+  const event = cleanText(value).toLowerCase();
+  if (event === 'created') return 'Credencial emitida';
+  if (event === 'replaced') return 'Credencial sustituida';
+  if (event === 'revoke') return 'Credencial revocada';
+  if (event === 'suspend') return 'Credencial suspendida';
+  if (event === 'reactivate') return 'Credencial reactivada';
+  if (event === 'expire') return 'Credencial caducada';
+  if (event === 'print' || event === 'reprint') return 'Impresión registrada';
+  if (event === 'download_pdf') return 'PDF descargado';
+  if (event === 'validated_public') return 'Validación pública';
+  if (event === 'validation_rejected') return 'Validación rechazada';
+  return value || 'Acción registrada';
 }
 
 function splitCredentialName(name) {
