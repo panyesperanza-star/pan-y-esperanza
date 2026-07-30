@@ -56,9 +56,28 @@ function OfficialCredentialPreview({ credential }) {
   const [error, setError] = useState('');
   const qrDataUrl = useCredentialQr(credential);
 
-  function printCredential() {
+  async function printCredential() {
+    const printArea = printAreaRef.current;
+    if (!printArea) return;
     setError('');
-    window.print();
+    setBusy(true);
+    let printHost = null;
+    try {
+      await waitForAssets(printArea);
+      printHost = createCredentialCloneHost(printArea, 'official-credential-print-host');
+      document.body.appendChild(printHost);
+      document.body.classList.add('official-credential-printing');
+      await waitForAssets(printHost);
+      await nextAnimationFrame();
+      window.print();
+    } catch (printError) {
+      console.error('[OfficialCredential] No se pudo preparar la impresion', printError);
+      setError('No se ha podido preparar la impresion. Puedes descargar el PDF e imprimirlo.');
+    } finally {
+      document.body.classList.remove('official-credential-printing');
+      printHost?.remove();
+      setBusy(false);
+    }
   }
 
   async function downloadCredentialPdf() {
@@ -66,9 +85,14 @@ function OfficialCredentialPreview({ credential }) {
     if (!printArea) return;
     setBusy(true);
     setError('');
+    let renderHost = null;
     try {
       await waitForAssets(printArea);
-      const pages = getCredentialPdfPages(printArea);
+      renderHost = createCredentialCloneHost(printArea, 'official-credential-pdf-host');
+      document.body.appendChild(renderHost);
+      await waitForAssets(renderHost);
+      await nextAnimationFrame();
+      const pages = getCredentialPdfPages(renderHost);
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
@@ -89,6 +113,7 @@ function OfficialCredentialPreview({ credential }) {
       console.error('[OfficialCredential] No se pudo generar el PDF', downloadError);
       setError('No se ha podido descargar el PDF. Puedes imprimir la credencial desde la vista previa.');
     } finally {
+      renderHost?.remove();
       setBusy(false);
     }
   }
@@ -101,7 +126,7 @@ function OfficialCredentialPreview({ credential }) {
           <p className="text-xs font-semibold text-slate-500">{credential.typeLabel} · {credential.code}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={printCredential}>
+          <Button type="button" variant="secondary" onClick={printCredential} disabled={busy}>
             <Printer size={16} /> Imprimir
           </Button>
           <Button type="button" onClick={downloadCredentialPdf} disabled={busy}>
@@ -140,11 +165,7 @@ function getCredentialPdfPages(printArea) {
 
 function CredentialFront({ credential, qrDataUrl }) {
   const typeLines = credentialTypeLines(credential.kind);
-  const nameTone = credential.name.length > 31
-    ? 'official-credential-name--compact'
-    : credential.name.length > 22
-      ? 'official-credential-name--narrow'
-      : '';
+  const nameLayout = credentialNameLayout(credential.name);
 
   return (
     <article className="official-credential-card">
@@ -169,7 +190,9 @@ function CredentialFront({ credential, qrDataUrl }) {
       </div>
 
       <CredentialPhoto credential={credential} />
-      <div className={`official-credential-name ${nameTone}`}>{credential.name}</div>
+      <div className={`official-credential-name ${nameLayout.className}`}>
+        {nameLayout.lines.map((line) => <span key={line}>{line}</span>)}
+      </div>
       <div className="official-credential-name-rule" aria-hidden="true">
         <span />
         <b>&hearts;</b>
@@ -467,6 +490,36 @@ function credentialTypeLines(kind) {
   return { main: label.toUpperCase(), accent: 'ACREDITADO' };
 }
 
+function credentialNameLayout(name) {
+  const cleanName = cleanText(name);
+  const length = cleanName.length;
+  const stacked = length > 26 ? splitCredentialDisplayName(cleanName) : [cleanName];
+  const tone = credentialNameTone(cleanName);
+  return {
+    lines: stacked,
+    className: `${tone} ${stacked.length > 1 ? 'official-credential-name--stacked' : ''}`.trim()
+  };
+}
+
+function credentialNameTone(name) {
+  const length = cleanText(name).length;
+  if (length > 44) return 'official-credential-name--micro';
+  if (length > 36) return 'official-credential-name--tiny';
+  if (length > 29) return 'official-credential-name--compact';
+  if (length > 20) return 'official-credential-name--narrow';
+  return '';
+}
+
+function splitCredentialDisplayName(name) {
+  const parts = cleanText(name).split(/\s+/).filter(Boolean);
+  if (parts.length < 4) return [cleanText(name)];
+  const surnameStart = Math.max(1, parts.length - 2);
+  return [
+    parts.slice(0, surnameStart).join(' '),
+    parts.slice(surnameStart).join(' ')
+  ];
+}
+
 function cacheProofPhotoUrl(url, version) {
   const cleanUrl = cleanText(url);
   if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) return cleanUrl;
@@ -514,6 +567,20 @@ async function waitForAssets(root) {
     }
     if (image.decode) await image.decode().catch(() => {});
   }));
+}
+
+function createCredentialCloneHost(printArea, className) {
+  const pages = printArea.querySelector('.official-credential-pages');
+  if (!pages) throw new Error('No se ha encontrado el area de credenciales para imprimir.');
+  const host = document.createElement('div');
+  host.className = className;
+  host.setAttribute('aria-hidden', 'true');
+  host.appendChild(pages.cloneNode(true));
+  return host;
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 async function renderElementToPng(element) {
