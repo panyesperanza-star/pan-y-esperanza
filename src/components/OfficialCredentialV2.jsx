@@ -242,7 +242,7 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
 }
 
 function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
-  const type = credentialTypeParts(credential.roleLabel || credential.accreditationLabel || credential.typeLabel);
+  const type = credentialTypeParts(credentialHeaderLabel(credential));
   if (side === 'back') {
     const replaceBackType = type.full !== 'VOLUNTARIO ACREDITADO';
     return (
@@ -484,6 +484,11 @@ function credentialAccreditationLabel(kind, subject = {}) {
 
 function credentialRoleLabel(kind, subject = {}) {
   return cleanText(subject.credential_role || subject.role_label || subject.position || subject.cargo || subject.title || credentialAccreditationLabel(kind, subject));
+}
+
+function credentialHeaderLabel(credential = {}) {
+  if (credential.kind === 'volunteer') return 'Voluntario acreditado';
+  return credential.roleLabel || credential.accreditationLabel || credential.typeLabel;
 }
 
 function credentialPhotoUrl(subject = {}) {
