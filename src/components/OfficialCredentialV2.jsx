@@ -250,7 +250,7 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
         <img className="official-credential-v2-template" src={backMasterUrl} alt="Reverso oficial de la credencial" />
         {replaceBackType && <div className="official-credential-v2-back-type-mask" aria-hidden="true" />}
         {replaceBackType && (
-          <div className="official-credential-v2-back-type" aria-label={type.full}>
+          <div className={credentialTypeClassName('official-credential-v2-back-type', type)} aria-label={type.full}>
             <span>{type.main}</span>
             {type.accent && <strong>{type.accent}</strong>}
           </div>
@@ -287,7 +287,7 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
       )}
 
       {replaceType && (
-        <div className="official-credential-v2-type" aria-label={type.full}>
+        <div className={credentialTypeClassName('official-credential-v2-type', type)} aria-label={type.full}>
           <span>{type.main}</span>
           {type.accent && <strong>{type.accent}</strong>}
         </div>
@@ -576,6 +576,13 @@ function credentialTypeParts(value) {
   const words = full.split(/\s+/).filter(Boolean);
   if (words.length <= 1) return { full, main: words[0] || full, accent: '' };
   return { full, main: words.slice(0, -1).join(' '), accent: words.at(-1) };
+}
+
+function credentialTypeClassName(baseClass, type = {}) {
+  return [
+    baseClass,
+    cleanText(type.main).length > 10 ? `${baseClass}--long` : ''
+  ].filter(Boolean).join(' ');
 }
 
 function initials(value) {
