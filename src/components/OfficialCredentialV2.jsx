@@ -244,17 +244,15 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
 function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
   const type = credentialTypeParts(credentialHeaderLabel(credential));
   if (side === 'back') {
-    const replaceBackType = type.full !== 'VOLUNTARIO ACREDITADO';
     return (
       <article className="official-credential-v2-card official-credential-v2-card--back" data-official-credential-v2-card="back">
         <img className="official-credential-v2-template" src={backMasterUrl} alt="Reverso oficial de la credencial" />
-        {replaceBackType && <div className="official-credential-v2-back-type-mask" aria-hidden="true" />}
-        {replaceBackType && (
-          <div className={credentialTypeClassName('official-credential-v2-back-type', type)} aria-label={type.full}>
-            <span>{type.main}</span>
-            {type.accent && <strong>{type.accent}</strong>}
-          </div>
-        )}
+        <div className="official-credential-v2-back-type-mask" aria-hidden="true" />
+        <div className={credentialTypeClassName('official-credential-v2-back-type', type)} aria-label={type.full}>
+          <span>{type.main}</span>
+          {type.accent && <strong>{type.accent}</strong>}
+        </div>
+        <OfficialCredentialV2BackText credential={credential} />
       </article>
     );
   }
@@ -262,11 +260,11 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
   const displayName = credentialDisplayName(credential.name);
   const formattedDate = formatDate(credential.issuedAt);
   const credentialUid = credential.credentialUid || credential.credentialId;
-  const replaceType = type.full !== 'VOLUNTARIO ACREDITADO';
-  const replaceName = displayName !== 'Amadilia';
-  const replaceCode = credential.code !== 'VOL-24789' || credentialUid !== 'PE-2026-00024789';
-  const replaceDate = formattedDate !== '28/07/2026';
-  const replaceStatus = credential.status !== 'ACTIVO';
+  const replaceType = true;
+  const replaceName = true;
+  const replaceCode = true;
+  const replaceDate = true;
+  const replaceStatus = true;
 
   return (
     <article className="official-credential-v2-card official-credential-v2-card--front" data-official-credential-v2-card="front">
@@ -301,17 +299,83 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
 
       {replaceCode && (
         <>
+          <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
           <strong className="official-credential-v2-code">{credential.code}</strong>
           <span className="official-credential-v2-id">ID: {credentialUid}</span>
         </>
       )}
-      {replaceDate && <strong className="official-credential-v2-date">{formattedDate}</strong>}
-      {replaceStatus && <strong className="official-credential-v2-status">{credential.status}</strong>}
+      {replaceDate && (
+        <>
+          <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
+          <strong className="official-credential-v2-date">{formattedDate}</strong>
+        </>
+      )}
+      {replaceStatus && (
+        <>
+          <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
+          <strong className="official-credential-v2-status">{credential.status}</strong>
+        </>
+      )}
 
       <div className="official-credential-v2-qr">
         {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
       </div>
     </article>
+  );
+}
+
+function OfficialCredentialV2BackText({ credential }) {
+  const typeDescription = credentialBackTypeDescription(credential);
+  return (
+    <>
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--phone" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--email" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--web" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--address" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--social" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--usage" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--personal" aria-hidden="true" />
+      <div className="official-credential-v2-back-mask official-credential-v2-back-mask--lost" aria-hidden="true" />
+
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--phone">
+        <strong>TELÉFONO</strong>
+        <span>+34 611 88 91 67</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--email">
+        <strong>CORREO</strong>
+        <span>info@panyesperanza.org</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--web">
+        <strong>WEB</strong>
+        <span>www.panyesperanza.org</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--address">
+        <strong>DIRECCIÓN</strong>
+        <span>Calle de la Esperanza, 12</span>
+        <span>28045 Madrid, España</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--social">
+        <strong>SÍGUENOS</strong>
+        <span>@panyesperanzamadrid</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--usage">
+        <strong>USO DE LA CREDENCIAL</strong>
+        <span>Uso exclusivo como</span>
+        <span>{typeDescription}</span>
+        <span>de Pan y Esperanza.</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--personal">
+        <strong>PERSONAL E INTRANSFERIBLE</strong>
+        <span>Esta credencial es personal</span>
+        <span>e intransferible.</span>
+      </div>
+      <div className="official-credential-v2-back-copy official-credential-v2-back-copy--lost">
+        <strong>EN CASO DE PÉRDIDA</strong>
+        <span>Si encuentras esta credencial,</span>
+        <span>por favor contacta con</span>
+        <span>nuestra organización.</span>
+      </div>
+    </>
   );
 }
 
@@ -489,6 +553,12 @@ function credentialRoleLabel(kind, subject = {}) {
 function credentialHeaderLabel(credential = {}) {
   if (credential.kind === 'volunteer') return 'Voluntario acreditado';
   return credential.roleLabel || credential.accreditationLabel || credential.typeLabel;
+}
+
+function credentialBackTypeDescription(credential = {}) {
+  const label = cleanText(credentialHeaderLabel(credential)).toLowerCase();
+  if (!label) return 'credencial oficial';
+  return label;
 }
 
 function credentialPhotoUrl(subject = {}) {
