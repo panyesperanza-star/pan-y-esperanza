@@ -6,11 +6,8 @@ import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier } from '../lib/credentials';
 import { formatDate } from '../lib/formatters';
 import { Button } from './Button';
+import { CredentialCardV2 } from './CredentialCardV2';
 import { Modal } from './Modal';
-import credentialBackUrl from '../assets/credential-back-pan-y-esperanza.png';
-import credentialHologramUrl from '../assets/credential-master-hologram.png';
-import credentialLogoUrl from '../assets/credential-master-logo.png';
-import './OfficialCredential.css';
 
 const KIND_LABELS = {
   beneficiary: 'Beneficiario',
@@ -30,7 +27,7 @@ const KIND_FALLBACK_CODES = {
 
 const CREDENTIAL_PDF_WIDTH_MM = 110;
 const CREDENTIAL_PDF_HEIGHT_MM = 85;
-const CREDENTIAL_PDF_SIDES = ['front', 'back'];
+const CREDENTIAL_SIDES = ['front', 'back'];
 
 export function OfficialCredentialButton({ kind, subject, actions = null, variant = 'secondary', className = '' }) {
   const [open, setOpen] = useState(false);
@@ -57,6 +54,7 @@ function OfficialCredentialPreview({ credential, actions = null }) {
   const [notice, setNotice] = useState('');
   const [localCredential, setLocalCredential] = useState(credential);
   const qrDataUrl = useCredentialQr(localCredential);
+  const photoUrl = useCredentialPhotoUrl(localCredential);
 
   useEffect(() => {
     setLocalCredential(credential);
@@ -64,7 +62,7 @@ function OfficialCredentialPreview({ credential, actions = null }) {
 
   async function runCredentialAction(actionName, label, options = {}) {
     if (!actions?.manageOfficialCredential) {
-      setError('La gestión de credenciales requiere Supabase actualizado.');
+      setError('La gestion de credenciales requiere Supabase actualizado.');
       return null;
     }
     const reason = options.requireReason ? window.prompt(`Motivo para ${label.toLowerCase()}:`) : '';
@@ -111,19 +109,19 @@ function OfficialCredentialPreview({ credential, actions = null }) {
     let printHost = null;
     try {
       await waitForAssets(printArea);
-      printHost = createCredentialCloneHost(printArea, 'official-credential-print-host');
+      printHost = createCredentialCloneHost(printArea, 'credential-v2-print-host');
       document.body.appendChild(printHost);
-      document.body.classList.add('official-credential-printing');
+      document.body.classList.add('credential-v2-printing');
       await waitForAssets(printHost);
       await nextAnimationFrame();
       window.print();
       await actions?.manageOfficialCredential?.(localCredential, 'print', '');
-      setNotice('Impresión registrada correctamente.');
+      setNotice('Impresion registrada correctamente.');
     } catch (printError) {
-      console.error('[OfficialCredential] No se pudo preparar la impresión', printError);
-      setError('No se ha podido preparar la impresión. Puedes descargar el PDF e imprimirlo.');
+      console.error('[OfficialCredential] No se pudo preparar la impresion', printError);
+      setError('No se ha podido preparar la impresion. Puedes descargar el PDF e imprimirlo.');
     } finally {
-      document.body.classList.remove('official-credential-printing');
+      document.body.classList.remove('credential-v2-printing');
       printHost?.remove();
       setBusy(false);
     }
@@ -137,7 +135,7 @@ function OfficialCredentialPreview({ credential, actions = null }) {
     let renderHost = null;
     try {
       await waitForAssets(printArea);
-      renderHost = createCredentialCloneHost(printArea, 'official-credential-pdf-host');
+      renderHost = createCredentialCloneHost(printArea, 'credential-v2-pdf-host');
       document.body.appendChild(renderHost);
       await waitForAssets(renderHost);
       await nextAnimationFrame();
@@ -154,8 +152,8 @@ function OfficialCredentialPreview({ credential, actions = null }) {
         const dataUrl = await renderElementToPng(pages[index]);
         pdf.addImage(dataUrl, 'PNG', 0, 0, CREDENTIAL_PDF_WIDTH_MM, CREDENTIAL_PDF_HEIGHT_MM);
       }
-      if (pdf.getNumberOfPages() !== CREDENTIAL_PDF_SIDES.length) {
-        throw new Error(`El PDF debe tener ${CREDENTIAL_PDF_SIDES.length} páginas y contiene ${pdf.getNumberOfPages()}.`);
+      if (pdf.getNumberOfPages() !== CREDENTIAL_SIDES.length) {
+        throw new Error(`El PDF debe tener ${CREDENTIAL_SIDES.length} paginas y contiene ${pdf.getNumberOfPages()}.`);
       }
       pdf.save(`Credencial-${safeFilename(localCredential.code || localCredential.name)}.pdf`);
       await actions?.manageOfficialCredential?.(localCredential, 'download_pdf', '');
@@ -170,8 +168,8 @@ function OfficialCredentialPreview({ credential, actions = null }) {
   }
 
   return (
-    <div className="official-credential-preview">
-      <div className="official-credential-preview-actions">
+    <div className="credential-v2-preview">
+      <div className="credential-v2-toolbar">
         <div>
           <p className="text-sm font-bold text-ink">{localCredential.name}</p>
           <p className="text-xs font-semibold text-slate-500">{localCredential.typeLabel} · {localCredential.code}</p>
@@ -179,7 +177,7 @@ function OfficialCredentialPreview({ credential, actions = null }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={printCredential} disabled={busy}>
-            <Printer size={16} /> Reimprimir
+            <Printer size={16} /> Imprimir
           </Button>
           <Button type="button" onClick={downloadCredentialPdf} disabled={busy}>
             <Download size={16} /> {busy ? 'Generando...' : 'Descargar PDF'}
@@ -187,20 +185,20 @@ function OfficialCredentialPreview({ credential, actions = null }) {
         </div>
       </div>
 
-      {error && <div className="official-credential-error" role="alert">{error}</div>}
-      {notice && <div className="mb-3 rounded-md border border-brand-100 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700" role="status">{notice}</div>}
+      {error && <div className="credential-v2-alert" role="alert">{error}</div>}
+      {notice && <div className="credential-v2-notice" role="status">{notice}</div>}
 
-      <div className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm md:grid-cols-[1fr_auto]">
+      <div className="credential-v2-management">
         <div>
-          <p className="font-bold text-ink">Estado: {statusLabelFromRegistry(localCredential.credentialStatus) || localCredential.status}</p>
+          <p className="text-sm font-bold text-ink">Estado: {statusLabelFromRegistry(localCredential.credentialStatus) || localCredential.status}</p>
           <p className="mt-1 text-xs text-slate-500">
             Impresiones: {Number(localCredential.printCount || 0)} · QR v{Number(localCredential.qrVersion || 1)}
             {localCredential.expiresAt ? ` · Caduca: ${formatDate(localCredential.expiresAt)}` : ''}
           </p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="credential-v2-management__actions">
           <Button type="button" variant="secondary" onClick={() => runCredentialAction('replace', 'Sustituir credencial', { requireReason: true })} disabled={busy || localCredential.credentialStatus === 'revoked'}>
-            <RefreshCw size={16} /> Sustituir credencial
+            <RefreshCw size={16} /> Sustituir
           </Button>
           <Button type="button" variant="secondary" onClick={() => runCredentialAction('suspend', 'Suspender', { requireReason: true })} disabled={busy}>
             <Ban size={16} /> Suspender
@@ -217,19 +215,19 @@ function OfficialCredentialPreview({ credential, actions = null }) {
         </div>
       </div>
 
-      <div className="official-credential-print-area" ref={printAreaRef}>
-        <div className="official-credential-pages">
-          <section className="official-credential-page" data-credential-side="front" aria-label="Anverso de la credencial">
-            <CredentialFront credential={localCredential} qrDataUrl={qrDataUrl} />
+      <div ref={printAreaRef}>
+        <div className="credential-v2-pages" data-credential-v2-pages>
+          <section className="credential-v2-page" data-credential-v2-page="front" aria-label="Anverso de la credencial">
+            <CredentialCardV2 side="front" credential={localCredential} qrDataUrl={qrDataUrl} photoUrl={photoUrl} />
           </section>
-          <section className="official-credential-page" data-credential-side="back" aria-label="Reverso de la credencial">
-            <img className="official-credential-back-image" src={credentialBackUrl} alt="Reverso de la credencial" />
+          <section className="credential-v2-page" data-credential-v2-page="back" aria-label="Reverso de la credencial">
+            <CredentialCardV2 side="back" credential={localCredential} qrDataUrl={qrDataUrl} photoUrl={photoUrl} />
           </section>
         </div>
       </div>
 
-      <p className="official-credential-preview-note">
-        El PDF genera dos páginas independientes: página 1 anverso y página 2 reverso, preparadas para funda A7 de 110 x 85 mm.
+      <p className="credential-v2-note">
+        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para funda A7 de 110 x 85 mm.
       </p>
 
       <CredentialHistory history={localCredential.credentialHistory} currentCredentialUid={localCredential.credentialUid || localCredential.credentialId} />
@@ -238,23 +236,19 @@ function OfficialCredentialPreview({ credential, actions = null }) {
 }
 
 function CredentialHistory({ history = {}, currentCredentialUid = '' }) {
-  const credentials = Array.isArray(history.credentials) ? history.credentials : [];
-  const events = Array.isArray(history.events) ? history.events : [];
+  const credentials = Array.isArray(history?.credentials) ? history.credentials : [];
+  const events = Array.isArray(history?.events) ? history.events : [];
   if (!credentials.length && !events.length) return null;
 
   return (
-    <section className="mt-4 rounded-md border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-bold text-ink">Historial de credenciales</h3>
-          <p className="text-xs text-slate-500">Visible solo para usuarios autorizados del ERP.</p>
-        </div>
-      </div>
+    <section className="credential-v2-history">
+      <h3 className="text-sm font-bold text-ink">Historial de credenciales</h3>
+      <p className="text-xs text-slate-500">Visible solo para usuarios autorizados del ERP.</p>
 
       {credentials.length > 0 && (
-        <div className="mt-3 grid gap-2">
+        <div className="credential-v2-history__list">
           {credentials.slice(0, 6).map((item) => (
-            <div key={item.credential_uid} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <div key={item.credential_uid} className="credential-v2-history__item">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <strong className="text-slate-900">{item.credential_uid}</strong>
                 <span className="font-bold uppercase text-brand-700">
@@ -262,8 +256,8 @@ function CredentialHistory({ history = {}, currentCredentialUid = '' }) {
                 </span>
               </div>
               <p className="mt-1">
-                Emisión: {formatDate(item.issued_at || item.created_at)}
-                {item.revoked_at ? ` · Revocación: ${formatDate(item.revoked_at)}` : ''}
+                Emision: {formatDate(item.issued_at || item.created_at)}
+                {item.revoked_at ? ` · Revocacion: ${formatDate(item.revoked_at)}` : ''}
               </p>
               {item.status_reason && <p className="mt-1">Motivo: {item.status_reason}</p>}
               {item.replaced_by_credential_uid && <p className="mt-1">Sustituida por: {item.replaced_by_credential_uid}</p>}
@@ -274,17 +268,14 @@ function CredentialHistory({ history = {}, currentCredentialUid = '' }) {
       )}
 
       {events.length > 0 && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <p className="mb-2 text-xs font-bold uppercase text-slate-500">Últimas acciones</p>
-          <div className="grid gap-1.5 text-xs text-slate-600">
-            {events.slice(0, 6).map((event) => (
-              <p key={event.id || `${event.credential_uid}-${event.event_type}-${event.created_at}`}>
-                <strong>{formatDate(event.created_at)}</strong> · {credentialEventLabel(event.event_type)}
-                {event.actor_name ? ` · ${event.actor_name}` : ''}
-                {event.reason ? ` · ${event.reason}` : ''}
-              </p>
-            ))}
-          </div>
+        <div className="credential-v2-history__list">
+          {events.slice(0, 6).map((event) => (
+            <p key={event.id || `${event.credential_uid}-${event.event_type}-${event.created_at}`} className="text-xs text-slate-600">
+              <strong>{formatDate(event.created_at)}</strong> · {credentialEventLabel(event.event_type)}
+              {event.actor_name ? ` · ${event.actor_name}` : ''}
+              {event.reason ? ` · ${event.reason}` : ''}
+            </p>
+          ))}
         </div>
       )}
     </section>
@@ -292,150 +283,27 @@ function CredentialHistory({ history = {}, currentCredentialUid = '' }) {
 }
 
 function getCredentialPdfPages(printArea) {
-  const pages = CREDENTIAL_PDF_SIDES.map((side) => printArea.querySelector(`[data-credential-side="${side}"]`));
+  const pages = CREDENTIAL_SIDES.map((side) => printArea.querySelector(`[data-credential-v2-page="${side}"]`));
   if (pages.some((page) => !page)) {
     throw new Error('No se han encontrado exactamente el anverso y el reverso de la credencial.');
   }
   return pages;
 }
 
-function CredentialFront({ credential, qrDataUrl }) {
-  const typeLines = credentialTypeLines(credential.roleLabel || credential.accreditationLabel || credential.kind);
-  const nameLayout = credentialNameLayout(credential.name);
-
-  return (
-    <article className="official-credential-card" data-credential-kind={credential.kind}>
-      <div className="official-credential-header">
-        <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
-        <div className="official-credential-brand-block">
-          <div className="official-credential-brand">PAN Y ESPERANZA</div>
-          <div className="official-credential-subtitle">JUNTOS LLEVAMOS <span>ESPERANZA.</span></div>
-          <div className="official-credential-header-rule" aria-hidden="true">
-            <span />
-            <b>&hearts;</b>
-            <span />
-          </div>
-        </div>
-        <div className="official-credential-header-divider" aria-hidden="true" />
-        <div className="official-credential-kind">
-          <b>&#9825;</b>
-          <span>{typeLines.main}</span>
-          <strong>{typeLines.accent}</strong>
-        </div>
-        <div className="official-credential-leaves" aria-hidden="true" />
-      </div>
-
-      <CredentialPhoto credential={credential} />
-      <div className={`official-credential-name ${nameLayout.className}`}>
-        {nameLayout.lines.map((line) => <span key={line}>{line}</span>)}
-      </div>
-      <div className="official-credential-name-rule" aria-hidden="true">
-        <span />
-        <b>&hearts;</b>
-        <span />
-      </div>
-
-      <div className="official-credential-details">
-        <CredentialDetail icon="id" label="CÓDIGO" value={credential.code} subvalue={credential.credentialUid ? `ID: ${credential.credentialUid}` : ''} />
-        <CredentialDetail icon="calendar" label="DESDE" value={formatDate(credential.issuedAt)} />
-        <CredentialDetail icon="shield" label="ESTADO" value={credential.status} accent />
-      </div>
-
-      <div className="official-credential-qr-frame">
-        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Código QR" /> : <div className="official-credential-qr-loading" />}
-        <div className="official-credential-qr-label">
-          <CredentialIcon type="shield" />
-          <span>CREDENCIAL OFICIAL</span>
-        </div>
-      </div>
-
-      <div className="official-credential-watermark" aria-hidden="true" />
-      <div className="official-credential-footer">
-        <div className="official-credential-footer-cell">
-          <span className="official-credential-footer-icon"><CredentialIcon type="heart-shield" /></span>
-          <p><strong>Documento oficial de Pan y Esperanza</strong><br />Personal e intransferible.</p>
-        </div>
-        <div className="official-credential-footer-cell">
-          <span className="official-credential-footer-icon"><CredentialIcon type="id" /></span>
-          <p><strong>Presentación obligatoria</strong><br />cuando sea requerida.</p>
-        </div>
-      </div>
-      <img className="official-credential-hologram" src={credentialHologramUrl} alt="" aria-hidden="true" />
-    </article>
-  );
-}
-
-function CredentialFrontLegacy({ credential, qrDataUrl }) {
-  const nameParts = splitCredentialName(credential.name);
-  const nameTone = credential.name.length > 29 ? 'official-credential-name--compact' : credential.name.length > 21 ? 'official-credential-name--narrow' : '';
-  return (
-    <article className="official-credential-card">
-      <div className="official-credential-header">
-        <div className="official-credential-header-arc" aria-hidden="true" />
-        <div className="official-credential-header-heart" aria-hidden="true">&#9825;</div>
-      </div>
-      <img className="official-credential-logo" src={credentialLogoUrl} alt="Pan y Esperanza" />
-      <div className="official-credential-brand">Pan y Esperanza</div>
-      <div className="official-credential-subtitle">Juntos llevamos esperanza</div>
-      <CredentialPhoto credential={credential} />
-      <div className={`official-credential-name ${nameTone}`}>
-        <span>{nameParts.first}</span>
-        {nameParts.rest && <span>{nameParts.rest}</span>}
-      </div>
-      <div className="official-credential-role">{credential.accreditationLabel}</div>
-      <div className="official-credential-details">
-        <CredentialDetail icon="id" label="Código:" value={credential.code} />
-        <CredentialDetail icon="calendar" label="Desde:" value={formatDate(credential.issuedAt)} />
-        <CredentialDetail icon="shield" label="Estado:" value={credential.status} accent />
-      </div>
-      <div className="official-credential-qr-frame">
-        {qrDataUrl ? <img className="official-credential-qr" src={qrDataUrl} alt="Código QR" /> : <div className="official-credential-qr-loading" />}
-      </div>
-      <div className="official-credential-footer-line" />
-      <div className="official-credential-footer-text">
-        Credencial oficial de Pan y Esperanza.<br />
-        Su uso es personal e intransferible.
-      </div>
-      <div className="official-credential-heart-wrap" aria-hidden="true">
-        <span />
-        <b>&hearts;</b>
-        <span />
-      </div>
-    </article>
-  );
-}
-
-function CredentialPhoto({ credential }) {
-  const photoUrl = useCredentialPhotoUrl(credential);
-  const [failedUrl, setFailedUrl] = useState('');
-
+function useCredentialQr(credential) {
+  const [qrDataUrl, setQrDataUrl] = useState('');
   useEffect(() => {
-    setFailedUrl('');
-  }, [photoUrl]);
-
-  if (photoUrl && photoUrl !== failedUrl) {
-    return (
-      <img
-        key={photoUrl}
-        className="official-credential-photo"
-        src={photoUrl}
-        alt={`Foto de ${credential.name}`}
-        onError={() => {
-          console.error('[OfficialCredential] No se pudo cargar la foto del expediente', {
-            kind: credential.kind,
-            subjectId: credential.subjectId,
-            photoSource: credential.photoSource
-          });
-          setFailedUrl(photoUrl);
-        }}
-      />
-    );
-  }
-  return (
-    <div className="official-credential-photo official-credential-photo--empty" aria-label="Sin fotografia">
-      <span>{initials(credential.name)}</span>
-    </div>
-  );
+    let active = true;
+    const payload = credentialVerificationUrl(credential);
+    QRCode.toDataURL(payload, { margin: 0, width: 520, errorCorrectionLevel: 'M' })
+      .then((url) => { if (active) setQrDataUrl(url); })
+      .catch((error) => {
+        console.error('[OfficialCredential] No se pudo generar QR', error);
+        if (active) setQrDataUrl('');
+      });
+    return () => { active = false; };
+  }, [credential.credentialId, credential.qrVersion]);
+  return qrDataUrl;
 }
 
 function useCredentialPhotoUrl(credential) {
@@ -452,8 +320,8 @@ function useCredentialPhotoUrl(credential) {
           ? await resolveBeneficiaryPhotoUrl(source)
           : credentialPhotoUrl(source);
         if (active) setPhotoUrl(cacheProofPhotoUrl(resolved, credential.photoVersion));
-      } catch (error) {
-        console.error('[OfficialCredential] No se pudo resolver la foto vigente del expediente', error);
+      } catch (photoError) {
+        console.error('[OfficialCredential] No se pudo resolver la foto vigente del expediente', photoError);
         if (active) setPhotoUrl('');
       }
     }
@@ -467,69 +335,6 @@ function useCredentialPhotoUrl(credential) {
   return photoUrl;
 }
 
-function CredentialDetail({ icon, label, value, subvalue = '', accent = false }) {
-  return (
-    <div className={`official-credential-detail-row official-credential-detail-row--${icon}`}>
-      <span className="official-credential-detail-icon">
-        <CredentialIcon type={icon} />
-      </span>
-      <span className="official-credential-detail-label">{label}</span>
-      <strong className={accent ? 'official-credential-state' : ''}>{value || '-'}</strong>
-      {subvalue && <span className="official-credential-detail-subvalue">{subvalue}</span>}
-    </div>
-  );
-}
-
-function CredentialIcon({ type }) {
-  if (type === 'heart-shield') {
-    return (
-      <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-        <path d="M12 3 20 6v6c0 5-3.4 8.6-8 9-4.6-.4-8-4-8-9V6l8-3Z" />
-        <path d="M8.5 10.5c0-1.1.8-1.9 1.9-1.9.7 0 1.3.3 1.6.9.3-.6.9-.9 1.6-.9 1.1 0 1.9.8 1.9 1.9 0 1.9-3.5 4.1-3.5 4.1s-3.5-2.2-3.5-4.1Z" />
-      </svg>
-    );
-  }
-  if (type === 'calendar') {
-    return (
-      <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-        <rect x="3" y="4" width="18" height="17" rx="2" />
-        <path d="M8 2v4M16 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
-      </svg>
-    );
-  }
-  if (type === 'shield') {
-    return (
-      <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-        <path d="M12 3 20 6v6c0 5-3.4 8.6-8 9-4.6-.4-8-4-8-9V6l8-3Z" />
-        <path d="m8.8 12.1 2.1 2.1 4.4-4.5" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="official-credential-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <circle cx="8" cy="11" r="2" />
-      <path d="M12 9h6M12 13h6M6 16h5" />
-    </svg>
-  );
-}
-
-function useCredentialQr(credential) {
-  const [qrDataUrl, setQrDataUrl] = useState('');
-  useEffect(() => {
-    let active = true;
-    const payload = credentialVerificationUrl(credential);
-    QRCode.toDataURL(payload, { margin: 1, width: 420, errorCorrectionLevel: 'M' })
-      .then((url) => { if (active) setQrDataUrl(url); })
-      .catch((error) => {
-        console.error('[OfficialCredential] No se pudo generar QR', error);
-        if (active) setQrDataUrl('');
-      });
-    return () => { active = false; };
-  }, [credential.credentialId, credential.qrVersion]);
-  return qrDataUrl;
-}
-
 function buildOfficialCredential(kind, subject = {}) {
   const normalizedKind = KIND_LABELS[kind] ? kind : 'beneficiary';
   const name = credentialName(normalizedKind, subject);
@@ -537,6 +342,7 @@ function buildOfficialCredential(kind, subject = {}) {
   const subjectId = cleanText(subject.id || code);
   const storedCredentialUid = credentialStoredUid(subject);
   const legacyCredentialId = buildCredentialSecureIdentifier({ kind: normalizedKind, subjectId, code });
+
   return {
     kind: normalizedKind,
     typeLabel: KIND_LABELS[normalizedKind],
@@ -580,42 +386,6 @@ function credentialVerificationUrl(credential = {}) {
   return url.toString();
 }
 
-function credentialPhotoUrl(subject = {}) {
-  return (
-    subject.photo_data_url ||
-    subject.photo_url ||
-    subject.avatar_url ||
-    subject.profile_photo ||
-    subject.logo_data_url ||
-    subject.logo_url ||
-    ''
-  );
-}
-
-function credentialPhotoSource(subject = {}) {
-  return {
-    photo_data_url: subject.photo_data_url,
-    photo_url: subject.photo_url,
-    photo: subject.photo,
-    avatar_url: subject.avatar_url,
-    profile_photo: subject.profile_photo,
-    logo_data_url: subject.logo_data_url,
-    logo_url: subject.logo_url
-  };
-}
-
-function credentialPhotoKey(subject = {}) {
-  return [
-    subject.photo_url,
-    subject.photo,
-    subject.avatar_url,
-    subject.profile_photo,
-    subject.photo_data_url,
-    subject.logo_data_url,
-    subject.logo_url
-  ].map(cleanText).join('|');
-}
-
 function credentialName(kind, subject = {}) {
   if (kind === 'user') {
     const fullName = [subject.first_name, subject.last_name].filter(Boolean).join(' ').trim();
@@ -642,63 +412,40 @@ function credentialAccreditationLabel(kind, subject = {}) {
     const position = cleanText(subject.position);
     return position || 'Usuario del ERP';
   }
-  return `${KIND_LABELS[kind]} acreditado`;
+  if (kind === 'volunteer') return 'Voluntario acreditado';
+  if (kind === 'collaborator') return 'Colaborador acreditado';
+  if (kind === 'donor') return 'Donante acreditado';
+  return 'Beneficiario acreditado';
 }
 
 function credentialRoleLabel(kind, subject = {}) {
-  const explicit = cleanText(
-    subject.credential_role ||
-    subject.role_label ||
-    subject.position ||
-    subject.cargo ||
-    subject.title
-  );
-  if (explicit) return explicit.toUpperCase();
-  if (kind === 'volunteer') return 'VOLUNTARIO ACREDITADO';
-  if (kind === 'collaborator') return 'COLABORADOR';
-  if (kind === 'donor') return 'DONANTE';
-  if (kind === 'user') return 'USUARIO DEL ERP';
-  return 'BENEFICIARIO';
+  const explicit = cleanText(subject.credential_role || subject.role_label || subject.position || subject.cargo || subject.title);
+  if (explicit) return explicit;
+  return credentialAccreditationLabel(kind, subject);
 }
 
-function credentialTypeLines(value) {
-  const label = cleanText(value).toUpperCase();
-  if (!label) return { main: 'CREDENCIAL', accent: 'OFICIAL' };
-  if (label.includes(' ACREDITADO')) {
-    return { main: label.replace(/\s+ACREDITADO.*/, ''), accent: 'ACREDITADO' };
-  }
-  const parts = label.split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return { main: parts[0] || 'CREDENCIAL', accent: '' };
-  return { main: parts.slice(0, -1).join(' '), accent: parts.at(-1) };
+function credentialPhotoUrl(subject = {}) {
+  return cleanText(subject.photo_data_url || subject.photo_url || subject.avatar_url || subject.profile_photo || '');
 }
 
-function credentialNameLayout(name) {
-  const cleanName = cleanText(name);
-  const displayName = cleanName.split(/\s+/).filter(Boolean)[0] || cleanName;
-  const tone = credentialNameTone(displayName);
+function credentialPhotoSource(subject = {}) {
   return {
-    lines: [displayName],
-    className: tone
+    photo_data_url: subject.photo_data_url,
+    photo_url: subject.photo_url,
+    photo: subject.photo,
+    avatar_url: subject.avatar_url,
+    profile_photo: subject.profile_photo
   };
 }
 
-function credentialNameTone(name) {
-  const length = cleanText(name).length;
-  if (length > 44) return 'official-credential-name--micro';
-  if (length > 36) return 'official-credential-name--tiny';
-  if (length > 29) return 'official-credential-name--compact';
-  if (length > 20) return 'official-credential-name--narrow';
-  return '';
-}
-
-function splitCredentialDisplayName(name) {
-  const parts = cleanText(name).split(/\s+/).filter(Boolean);
-  if (parts.length < 4) return [cleanText(name)];
-  const surnameStart = Math.max(1, parts.length - 2);
+function credentialPhotoKey(subject = {}) {
   return [
-    parts.slice(0, surnameStart).join(' '),
-    parts.slice(surnameStart).join(' ')
-  ];
+    subject.photo_url,
+    subject.photo,
+    subject.avatar_url,
+    subject.profile_photo,
+    subject.photo_data_url
+  ].map(cleanText).join('|');
 }
 
 function cacheProofPhotoUrl(url, version) {
@@ -733,29 +480,11 @@ function credentialEventLabel(value) {
   if (event === 'suspend') return 'Credencial suspendida';
   if (event === 'reactivate') return 'Credencial reactivada';
   if (event === 'expire') return 'Credencial caducada';
-  if (event === 'print' || event === 'reprint') return 'Impresión registrada';
+  if (event === 'print' || event === 'reprint') return 'Impresion registrada';
   if (event === 'download_pdf') return 'PDF descargado';
-  if (event === 'validated_public') return 'Validación pública';
-  if (event === 'validation_rejected') return 'Validación rechazada';
-  return value || 'Acción registrada';
-}
-
-function splitCredentialName(name) {
-  const parts = cleanText(name).split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return { first: parts[0] || 'Persona', rest: '' };
-  return {
-    first: parts[0],
-    rest: parts.slice(1).join(' ')
-  };
-}
-
-function initials(value) {
-  return cleanText(value)
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'PY';
+  if (event === 'validated_public') return 'Validacion publica';
+  if (event === 'validation_rejected') return 'Validacion rechazada';
+  return value || 'Accion registrada';
 }
 
 function cleanText(value) {
@@ -777,7 +506,7 @@ async function waitForAssets(root) {
 }
 
 function createCredentialCloneHost(printArea, className) {
-  const pages = printArea.querySelector('.official-credential-pages');
+  const pages = printArea.querySelector('[data-credential-v2-pages]');
   if (!pages) throw new Error('No se ha encontrado el area de credenciales para imprimir.');
   const host = document.createElement('div');
   host.className = className;
