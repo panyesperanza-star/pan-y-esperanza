@@ -41,7 +41,7 @@ import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
-import { OfficialCredentialButton } from '../components/OfficialCredential';
+import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion } from '../lib/auth';
 import { removeBeneficiaryDocumentFile, resolveBeneficiaryDocumentUrl, uploadBeneficiaryDocumentFile } from '../lib/beneficiaryDocuments';

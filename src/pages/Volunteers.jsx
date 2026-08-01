@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
-import { OfficialCredentialButton } from '../components/OfficialCredential';
+import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { canDo } from '../lib/auth';

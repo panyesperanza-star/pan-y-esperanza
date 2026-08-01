@@ -3,7 +3,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
-import { OfficialCredentialButton } from '../components/OfficialCredential';
+import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';

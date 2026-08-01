@@ -4,7 +4,7 @@ import { Button } from '../components/Button';
 import { CredentialPhotoPicker, CredentialPhotoPreview } from '../components/CredentialPhotoPicker';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
-import { OfficialCredentialButton } from '../components/OfficialCredential';
+import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { printPortalAccessPdf } from '../lib/exporters';
