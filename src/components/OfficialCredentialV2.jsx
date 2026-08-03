@@ -258,42 +258,9 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
     );
   }
 
-  const displayName = credentialDisplayName(credential.name);
-  const formattedDate = formatDate(credential.issuedAt);
-  const displayCredentialUid = shortCredentialDisplayId(credential);
-
   return (
     <article className="official-credential-v2-card official-credential-v2-card--front" data-official-credential-v2-card="front">
-      <img className="official-credential-v2-template" src={frontMasterUrl} alt="" aria-hidden="true" />
-
-      {photoUrl ? (
-        <img className="official-credential-v2-photo" src={photoUrl} alt={`Foto de ${credential.name}`} />
-      ) : (
-        <div className="official-credential-v2-photo official-credential-v2-photo--empty" aria-label="Sin fotografia">
-          {initials(credential.name)}
-        </div>
-      )}
-
-      <div className={credentialTypeClassName('official-credential-v2-type', type)} aria-label={type.full}>
-        <span>{type.main}</span>
-        {type.accent && <strong>{type.accent}</strong>}
-      </div>
-
-      <div className="official-credential-v2-name" style={{ '--credential-name-size': credentialNameSize(displayName) }}>
-        {displayName}
-      </div>
-
-      <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
-      <strong className="official-credential-v2-code">{credential.code}</strong>
-      <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
-      <strong className="official-credential-v2-date">{formattedDate}</strong>
-      <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
-      <strong className="official-credential-v2-status">{credential.status}</strong>
-
-      <div className="official-credential-v2-qr">
-        {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
-      </div>
-      <div className="official-credential-v2-qr-id">ID: {displayCredentialUid}</div>
+      <img className="official-credential-v2-template" src={frontMasterUrl} alt="Anverso oficial de la credencial" />
     </article>
   );
 }
