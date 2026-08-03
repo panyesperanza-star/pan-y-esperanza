@@ -352,7 +352,7 @@ function UserForm({ initial, users = [], organization, actions, canGenerateCrede
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
       {form.id && canGenerateCredential && (
         <div className="flex justify-end sm:col-span-2">
-          <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} actions={actions} />
+          <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} organization={organization} actions={actions} />
         </div>
       )}
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>

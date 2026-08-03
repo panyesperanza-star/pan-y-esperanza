@@ -165,7 +165,7 @@ export function Collaborators({ data, actions, currentUser }) {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
-                      {canGenerateCredential && <OfficialCredentialButton kind="collaborator" subject={collaborator} actions={actions} />}
+                      {canGenerateCredential && <OfficialCredentialButton kind="collaborator" subject={collaborator} organization={data.organization_settings?.[0]} actions={actions} />}
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', collaborator })}><Edit3 size={16} /> Editar</Button>}
                       {canPrint && <Button variant="secondary" onClick={() => printAccess(collaborator)}><Printer size={16} /> Imprimir acceso</Button>}
                       {canSend && collaborator.portalActive && <Button variant="secondary" onClick={() => resendAccess(collaborator)}><Mail size={16} /> Reenviar acceso</Button>}

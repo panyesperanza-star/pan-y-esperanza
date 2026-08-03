@@ -1592,6 +1592,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
         family={family}
         deliveries={activeDeliveries}
         history={history}
+        organization={data.organization_settings?.[0]}
         documentIssue={documentIssue}
         canEdit={canEdit}
         canDelete={canDelete}
@@ -1765,7 +1766,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   );
 }
 
-function ProfessionalCrmHeader({ actions, beneficiary, family, deliveries, history, documentIssue, canEdit, canDelete, canGenerateCredential, canPrint, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
+function ProfessionalCrmHeader({ actions, beneficiary, family, deliveries, history, organization, documentIssue, canEdit, canDelete, canGenerateCredential, canPrint, onEdit, onSummaryPdf, onSocialReport, onPhotoChange }) {
   const latestDelivery = getLatestDelivery(deliveries);
   const priority = socialPriorityLabel(beneficiary, history);
   const nextReview = nextReviewLabel(beneficiary, latestDelivery, history);
@@ -1810,7 +1811,7 @@ function ProfessionalCrmHeader({ actions, beneficiary, family, deliveries, histo
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
             {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={17} /> Editar</Button>}
-            {canGenerateCredential && <OfficialCredentialButton kind="beneficiary" subject={beneficiary} actions={actions} />}
+            {canGenerateCredential && <OfficialCredentialButton kind="beneficiary" subject={beneficiary} organization={organization} actions={actions} />}
             {canPrint && <Button variant="secondary" onClick={onSummaryPdf}><Printer size={17} /> Resumen PDF</Button>}
             {canPrint && <Button variant="secondary" onClick={onSocialReport}><Download size={17} /> Informe social</Button>}
           </div>

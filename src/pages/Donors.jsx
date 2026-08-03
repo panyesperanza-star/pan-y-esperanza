@@ -169,7 +169,7 @@ export function Donors({ data, actions, currentUser }) {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="secondary" onClick={() => setModal({ type: 'detail', donor })}><Eye size={16} /> Ficha</Button>
-                      {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} actions={actions} />}
+                      {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} organization={data.organization_settings?.[0]} actions={actions} />}
                       {canEdit && <Button variant="secondary" onClick={() => setModal({ type: 'edit', donor })}><Edit3 size={16} /> Editar</Button>}
                       {canPrint && <Button variant="secondary" onClick={() => printAccess(donor)}><Printer size={16} /> Imprimir acceso</Button>}
                       {canSend && donor.portalActive && <Button variant="secondary" onClick={() => resendAccess(donor)}><Mail size={16} /> Reenviar acceso</Button>}
@@ -205,7 +205,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'detail' && (
         <Modal title={`Ficha del donante - ${modal.donor.code || modal.donor.name}`} onClose={() => setModal(null)} wide>
-          <DonorDetail donor={modal.donor} actions={actions} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
+          <DonorDetail donor={modal.donor} actions={actions} organization={data.organization_settings?.[0]} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
         </Modal>
       )}
     </>
@@ -298,7 +298,7 @@ function DonorForm({ initial = null, onSubmit }) {
   );
 }
 
-function DonorDetail({ donor, actions, canGenerateCredential, canPrint, onPrint }) {
+function DonorDetail({ donor, actions, organization, canGenerateCredential, canPrint, onPrint }) {
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-2">
@@ -317,7 +317,7 @@ function DonorDetail({ donor, actions, canGenerateCredential, canPrint, onPrint 
           <InfoLine icon={CalendarDays} label="Ultimo acceso" value={donor.lastAccess ? formatDateTime(donor.lastAccess) : '-'} />
           <InfoLine icon={FileText} label="Certificados" value={donor.certificates.length} />
           <div className="mt-4 flex flex-wrap gap-2">
-            {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} actions={actions} />}
+            {canGenerateCredential && <OfficialCredentialButton kind="donor" subject={donor} organization={organization} actions={actions} />}
             {canPrint && <Button variant="secondary" onClick={onPrint}><Printer size={16} /> Imprimir acceso</Button>}
           </div>
         </InfoCard>

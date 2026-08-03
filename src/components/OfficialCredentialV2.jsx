@@ -31,9 +31,10 @@ const PDF_WIDTH_MM = 110;
 const PDF_HEIGHT_MM = 80;
 const PDF_SIDES = ['front', 'back'];
 
-export function OfficialCredentialButton({ kind, subject, actions = null, variant = 'secondary', className = '' }) {
+export function OfficialCredentialButton({ kind, subject, organization = null, actions = null, variant = 'secondary', className = '' }) {
   const [open, setOpen] = useState(false);
-  const credential = useMemo(() => buildOfficialCredentialV2(kind, subject), [kind, subject]);
+  const credentialSubject = useMemo(() => ({ ...(subject || {}), organization: organization || subject?.organization || {} }), [subject, organization]);
+  const credential = useMemo(() => buildOfficialCredentialV2(kind, credentialSubject), [kind, credentialSubject]);
 
   return (
     <>
@@ -179,7 +180,7 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
         <div>
           <p className="text-sm font-bold text-ink">{localCredential.name}</p>
           <p className="text-xs font-semibold text-slate-500">{localCredential.typeLabel} - {localCredential.code}</p>
-          <p className="text-xs font-semibold text-brand-700">ID: {localCredential.credentialUid || localCredential.credentialId}</p>
+          <p className="text-xs font-semibold text-brand-700">ID: {shortCredentialDisplayId(localCredential)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={printCredential} disabled={busy}>
@@ -259,7 +260,7 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
 
   const displayName = credentialDisplayName(credential.name);
   const formattedDate = formatDate(credential.issuedAt);
-  const credentialUid = credential.credentialUid || credential.credentialId;
+  const displayCredentialUid = shortCredentialDisplayId(credential);
 
   return (
     <article className="official-credential-v2-card official-credential-v2-card--front" data-official-credential-v2-card="front">
@@ -284,7 +285,6 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
 
       <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
       <strong className="official-credential-v2-code">{credential.code}</strong>
-      <span className="official-credential-v2-id">ID: {credentialUid}</span>
       <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
       <strong className="official-credential-v2-date">{formattedDate}</strong>
       <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
@@ -293,12 +293,14 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
       <div className="official-credential-v2-qr">
         {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
       </div>
+      <div className="official-credential-v2-qr-id">{displayCredentialUid}</div>
     </article>
   );
 }
 
 function OfficialCredentialV2BackText({ credential }) {
   const typeDescription = credentialBackTypeDescription(credential);
+  const organization = credential.organization || {};
   return (
     <>
       <div className="official-credential-v2-back-mask official-credential-v2-back-mask--phone" aria-hidden="true" />
@@ -312,20 +314,19 @@ function OfficialCredentialV2BackText({ credential }) {
 
       <div className="official-credential-v2-back-copy official-credential-v2-back-copy--phone">
         <strong>TELÉFONO</strong>
-        <span>+34 611 88 91 67</span>
+        <span>{organization.phone}</span>
       </div>
       <div className="official-credential-v2-back-copy official-credential-v2-back-copy--email">
         <strong>CORREO</strong>
-        <span>info@panyesperanza.org</span>
+        <span>{organization.email}</span>
       </div>
       <div className="official-credential-v2-back-copy official-credential-v2-back-copy--web">
         <strong>WEB</strong>
-        <span>www.panyesperanza.org</span>
+        <span>{organization.website}</span>
       </div>
       <div className="official-credential-v2-back-copy official-credential-v2-back-copy--address">
         <strong>DIRECCIÓN</strong>
-        <span>Calle de la Esperanza, 12</span>
-        <span>28045 Madrid, España</span>
+        {organization.addressLines.map((line) => <span key={line}>{line}</span>)}
       </div>
       <div className="official-credential-v2-back-copy official-credential-v2-back-copy--social">
         <strong>SÍGUENOS</strong>
@@ -419,7 +420,7 @@ function buildOfficialCredentialV2(kind, subject = {}) {
     issuedAt: subject.credential_issued_at || subject.joined_at || subject.created_at || subject.registered_at || subject.start_date || new Date().toISOString(),
     expiresAt: subject.credential_expires_at || subject.expires_at || null,
     qrVersion: subject.credential_qr_version || 1,
-    credentialStatus: subject.credential_status || 'active',
+    credentialStatus: credentialStatusCode(subject),
     credentialStatusReason: subject.credential_status_reason || '',
     replacesCredentialUid: subject.credential_replaces_uid || null,
     replacedByCredentialUid: subject.credential_replaced_by_uid || null,
@@ -428,6 +429,7 @@ function buildOfficialCredentialV2(kind, subject = {}) {
     lastPrintedAt: subject.credential_last_printed_at || null,
     lastValidatedAt: subject.credential_last_validated_at || null,
     status: statusLabel(subject),
+    organization: normalizeOrganizationSettings(subject.organization),
     photoSource: credentialPhotoSource(subject),
     photoKey: credentialPhotoKey(subject),
     photoVersion: cleanText(subject.updated_at || subject.photo_updated_at || subject.created_at || subject.id || code)
@@ -558,6 +560,35 @@ function credentialPhotoKey(subject = {}) {
   ].map(cleanText).join('|');
 }
 
+function normalizeOrganizationSettings(settings = {}) {
+  const address = cleanText(
+    settings.address ||
+    settings.address_full ||
+    settings.public_address ||
+    settings.legal_address ||
+    settings.street_address
+  );
+  const addressExtra = cleanText(
+    settings.address_extra ||
+    settings.city_line ||
+    [settings.postal_code, settings.city, settings.country].map(cleanText).filter(Boolean).join(' ')
+  );
+  const addressLines = [address, addressExtra].filter(Boolean);
+
+  return {
+    phone: cleanText(settings.phone || settings.telephone || settings.contact_phone || settings.public_phone) || '+34 611 88 91 67',
+    email: cleanText(settings.email || settings.contact_email || settings.public_email || settings.mail_sender_email) || 'info@panyesperanza.org',
+    website: normalizeWebsite(settings.website || settings.web || settings.public_website || settings.public_site_url || 'www.panyesperanza.org'),
+    addressLines: addressLines.length ? addressLines.slice(0, 2) : ['Calle de la Esperanza, 12', '28045 Madrid, España'],
+    social: cleanText(settings.social_handle || settings.instagram || settings.social_media || settings.social) || '@panyesperanzamadrid'
+  };
+}
+
+function normalizeWebsite(value) {
+  const website = cleanText(value) || 'www.panyesperanza.org';
+  return website.replace(/^https?:\/\//i, '').replace(/\/+$/g, '');
+}
+
 function cacheProofPhotoUrl(url, version) {
   const cleanUrl = cleanText(url);
   if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) return cleanUrl;
@@ -565,8 +596,51 @@ function cacheProofPhotoUrl(url, version) {
   return `${cleanUrl}${separator}v=${encodeURIComponent(cleanText(version) || Date.now().toString())}`;
 }
 
+function shortCredentialDisplayId(credential = {}) {
+  const source = cleanText(credential.credentialUid || credential.credentialId || credential.code);
+  const prefix = credentialShortPrefix(credential.kind, source);
+  const yearSerial = source.match(/^[A-Z]{2,4}-\d{4}-(\d+)$/i);
+  const digits = yearSerial?.[1] || (source.match(/\d+/g) || []).join('');
+  const serial = digits ? digits.slice(-6).padStart(6, '0') : '000000';
+  return `${prefix}-${serial}`;
+}
+
+function credentialShortPrefix(kind, value) {
+  const clean = cleanText(value).toUpperCase();
+  const match = clean.match(/^([A-Z]{2,4})-/);
+  const rawPrefix = match?.[1] || '';
+  if (rawPrefix === 'PYE') return 'PE';
+  if (rawPrefix) return rawPrefix;
+  if (kind === 'volunteer') return 'VOL';
+  if (kind === 'collaborator') return 'COL';
+  if (kind === 'donor') return 'DON';
+  if (kind === 'user') return 'USR';
+  return 'PE';
+}
+
+function credentialStatusCode(subject = {}) {
+  const registry = cleanText(subject.credential_status).toLowerCase();
+  if (['active', 'suspended', 'revoked', 'expired', 'inactive'].includes(registry)) return registry;
+  if (isPastDate(subject.credential_expires_at || subject.expires_at)) return 'expired';
+  const status = cleanText(subject.status || subject.state || subject.portal_status).toLowerCase();
+  if (/revocad/.test(status)) return 'revoked';
+  if (/caducad|expirad/.test(status)) return 'expired';
+  if (/suspendid|bloquead/.test(status)) return 'suspended';
+  if (/inactiv|archivad|baja|desactivad/.test(status) || subject.is_active === false) return 'inactive';
+  return 'active';
+}
+
+function isPastDate(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date < today;
+}
+
 function statusLabel(subject = {}) {
-  const registryStatus = statusLabelFromRegistry(subject.credential_status);
+  const registryStatus = statusLabelFromRegistry(credentialStatusCode(subject));
   if (registryStatus) return registryStatus;
   if (subject.status) return cleanText(subject.status).toUpperCase();
   if (subject.is_active === false) return 'INACTIVO';
@@ -576,9 +650,10 @@ function statusLabel(subject = {}) {
 function statusLabelFromRegistry(value) {
   const status = cleanText(value).toLowerCase();
   if (status === 'active') return 'ACTIVO';
-  if (status === 'suspended') return 'SUSPENDIDA';
-  if (status === 'revoked') return 'REVOCADA';
-  if (status === 'expired') return 'CADUCADA';
+  if (status === 'suspended') return 'SUSPENDIDO';
+  if (status === 'revoked') return 'REVOCADO';
+  if (status === 'expired') return 'CADUCADO';
+  if (status === 'inactive') return 'INACTIVO';
   return '';
 }
 
