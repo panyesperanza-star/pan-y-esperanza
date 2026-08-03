@@ -260,21 +260,10 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
   const displayName = credentialDisplayName(credential.name);
   const formattedDate = formatDate(credential.issuedAt);
   const credentialUid = credential.credentialUid || credential.credentialId;
-  const replaceType = true;
-  const replaceName = true;
-  const replaceCode = true;
-  const replaceDate = true;
-  const replaceStatus = true;
 
   return (
     <article className="official-credential-v2-card official-credential-v2-card--front" data-official-credential-v2-card="front">
       <img className="official-credential-v2-template" src={frontMasterUrl} alt="" aria-hidden="true" />
-
-      {replaceType && <div className="official-credential-v2-mask official-credential-v2-mask--type" aria-hidden="true" />}
-      {replaceName && <div className="official-credential-v2-mask official-credential-v2-mask--name" aria-hidden="true" />}
-      {replaceCode && <div className="official-credential-v2-mask official-credential-v2-mask--code" aria-hidden="true" />}
-      {replaceDate && <div className="official-credential-v2-mask official-credential-v2-mask--date" aria-hidden="true" />}
-      {replaceStatus && <div className="official-credential-v2-mask official-credential-v2-mask--status" aria-hidden="true" />}
 
       {photoUrl ? (
         <img className="official-credential-v2-photo" src={photoUrl} alt={`Foto de ${credential.name}`} />
@@ -284,38 +273,22 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
         </div>
       )}
 
-      {replaceType && (
-        <div className={credentialTypeClassName('official-credential-v2-type', type)} aria-label={type.full}>
-          <span>{type.main}</span>
-          {type.accent && <strong>{type.accent}</strong>}
-        </div>
-      )}
+      <div className={credentialTypeClassName('official-credential-v2-type', type)} aria-label={type.full}>
+        <span>{type.main}</span>
+        {type.accent && <strong>{type.accent}</strong>}
+      </div>
 
-      {replaceName && (
-        <div className="official-credential-v2-name" style={{ '--credential-name-size': credentialNameSize(displayName) }}>
-          {displayName}
-        </div>
-      )}
+      <div className="official-credential-v2-name" style={{ '--credential-name-size': credentialNameSize(displayName) }}>
+        {displayName}
+      </div>
 
-      {replaceCode && (
-        <>
-          <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
-          <strong className="official-credential-v2-code">{credential.code}</strong>
-          <span className="official-credential-v2-id">ID: {credentialUid}</span>
-        </>
-      )}
-      {replaceDate && (
-        <>
-          <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
-          <strong className="official-credential-v2-date">{formattedDate}</strong>
-        </>
-      )}
-      {replaceStatus && (
-        <>
-          <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
-          <strong className="official-credential-v2-status">{credential.status}</strong>
-        </>
-      )}
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
+      <strong className="official-credential-v2-code">{credential.code}</strong>
+      <span className="official-credential-v2-id">ID: {credentialUid}</span>
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
+      <strong className="official-credential-v2-date">{formattedDate}</strong>
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
+      <strong className="official-credential-v2-status">{credential.status}</strong>
 
       <div className="official-credential-v2-qr">
         {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
@@ -631,10 +604,10 @@ function credentialDisplayName(value) {
 
 function credentialNameSize(value) {
   const length = cleanText(value).length;
-  if (length > 18) return '6.0cqw';
-  if (length > 14) return '6.7cqw';
-  if (length > 10) return '7.4cqw';
-  return '8.25cqw';
+  if (length > 18) return '5.2cqw';
+  if (length > 14) return '5.8cqw';
+  if (length > 10) return '6.4cqw';
+  return '7.1cqw';
 }
 
 function credentialTypeParts(value) {
