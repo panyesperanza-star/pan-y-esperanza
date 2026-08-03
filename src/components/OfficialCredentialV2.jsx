@@ -293,7 +293,7 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
       <div className="official-credential-v2-qr">
         {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
       </div>
-      <div className="official-credential-v2-qr-id">{displayCredentialUid}</div>
+      <div className="official-credential-v2-qr-id">ID: {displayCredentialUid}</div>
     </article>
   );
 }
