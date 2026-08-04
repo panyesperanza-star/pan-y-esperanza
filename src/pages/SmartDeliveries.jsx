@@ -182,7 +182,6 @@ export function SmartDeliveries({ data, actions, currentUser, onNavigate }) {
         responsible: currentUserName(currentUser),
         help_type: 'Alimentos',
         quantity: 1,
-        inventory_item_id: '',
         receiver_name: summary.beneficiary.full_name || '',
         receiver_document_id: beneficiaryDocument(summary.beneficiary),
         notes: 'Entrega registrada desde Entregas Inteligentes.'
