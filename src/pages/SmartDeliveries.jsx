@@ -201,12 +201,13 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     setFeedback(null);
     try {
       const now = new Date();
+      const registeredBy = currentUserName(currentUser);
       const payload = {
         beneficiary_id: summary.beneficiary.id,
         delivered_at: todayISO(),
         delivered_time: now.toTimeString().slice(0, 5),
         reception_at: now.toISOString(),
-        responsible: currentUserName(currentUser),
+        responsible: registeredBy,
         help_type: 'Alimentos',
         quantity: 1,
         receiver_name: summary.beneficiary.full_name || '',
@@ -222,7 +223,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         type: 'success',
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
         time: formatTime(now),
-        peopleCount: summary.peopleCount
+        peopleCount: summary.peopleCount,
+        registeredBy
       });
       setResult(null);
       setManualQuery('');
@@ -251,9 +253,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     if (!summary?.receivedToday) return;
     setFeedback({
       type: 'duplicate',
-      beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
-      time: summary.lastDeliveryTime,
-      volunteer: summary.lastDeliveryResponsible
+      lastDeliveryDateTime: summary.todayDeliveryDateTime,
+      registeredBy: summary.todayDeliveryResponsible
     });
     setResult(null);
     setManualQuery('');
@@ -495,13 +496,19 @@ function DeliveryFeedbackOverlay({ feedback }) {
         <p className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
           {isDuplicate ? 'ESTE BENEFICIARIO YA HA RECIBIDO LA AYUDA HOY' : 'ENTREGA REGISTRADA'}
         </p>
-        <p className="mt-4 text-2xl font-black">{feedback.beneficiaryName}</p>
         <div className="mx-auto mt-5 grid max-w-md gap-3 rounded-2xl bg-white/15 p-4 text-left text-base font-bold">
-          <InfoLineLight label={isDuplicate ? 'Ultima entrega' : 'Hora'} value={feedback.time || '-'} />
           {isDuplicate ? (
-            <InfoLineLight label="Voluntario" value={feedback.volunteer || '-'} />
+            <>
+              <InfoLineLight label="Ultima entrega" value={feedback.lastDeliveryDateTime || '-'} />
+              <InfoLineLight label="Registrada por" value={feedback.registeredBy || '-'} />
+            </>
           ) : (
-            <InfoLineLight label="Personas atendidas" value={feedback.peopleCount || 1} />
+            <>
+              <InfoLineLight label="Beneficiario" value={feedback.beneficiaryName || '-'} />
+              <InfoLineLight label="Personas atendidas" value={feedback.peopleCount || 1} />
+              <InfoLineLight label="Hora" value={feedback.time || '-'} />
+              <InfoLineLight label="Registrada por" value={feedback.registeredBy || '-'} />
+            </>
           )}
         </div>
       </div>
@@ -570,8 +577,10 @@ function BeneficiaryPhoto({ beneficiary }) {
 function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credentialEntry, source }) {
   const allDeliveries = [...recentDeliveries, ...(data.deliveries || [])];
   const deliveries = allDeliveries.filter((delivery) => delivery.beneficiary_id === beneficiary.id && isActiveDelivery(delivery));
-  const lastDelivery = latestByDate(deliveries, 'delivered_at');
-  const receivedToday = deliveries.some((delivery) => sameDay(delivery.delivered_at || delivery.created_at, new Date()));
+  const todayDeliveries = deliveries.filter((delivery) => sameDay(delivery.delivered_at || delivery.reception_at || delivery.created_at, new Date()));
+  const todayDelivery = latestDeliveryRecord(todayDeliveries);
+  const lastDelivery = latestDeliveryRecord(deliveries);
+  const receivedToday = Boolean(todayDelivery);
   const family = (data.families || []).find((item) => item.id === beneficiary.family_id);
   const members = beneficiary.family_id
     ? (data.beneficiaries || []).filter((item) => item.family_id === beneficiary.family_id && item.is_active !== false)
@@ -592,6 +601,8 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     lastDelivery,
     lastDeliveryTime: deliveryDisplayTime(lastDelivery),
     lastDeliveryResponsible: deliveryResponsible(lastDelivery),
+    todayDeliveryDateTime: deliveryDisplayDateTime(todayDelivery),
+    todayDeliveryResponsible: deliveryResponsible(todayDelivery),
     lastDeliveryLabel: lastDelivery ? `${formatDate(lastDelivery.delivered_at || lastDelivery.created_at)} · ${lastDelivery.help_type || 'Ayuda'}` : 'Sin entregas',
     sourceLabel: source === 'qr' && credentialEntry?.credentialId ? 'Credencial oficial' : 'Busqueda manual'
   };
@@ -740,9 +751,30 @@ function deliveryDisplayTime(delivery = null) {
   return formatTime(delivery.reception_at || delivery.created_at || delivery.delivered_at);
 }
 
+function deliveryDisplayDateTime(delivery = null) {
+  if (!delivery) return '-';
+  const dateValue = delivery.delivered_at || delivery.reception_at || delivery.created_at;
+  const dateLabel = dateValue ? formatDate(dateValue) : '-';
+  const timeLabel = deliveryDisplayTime(delivery);
+  return [dateLabel, timeLabel].filter((item) => item && item !== '-').join(' · ') || '-';
+}
+
 function deliveryResponsible(delivery = null) {
   if (!delivery) return '-';
   return delivery.responsible || delivery.volunteer_name || delivery.delivered_by || delivery.created_by || '-';
+}
+
+function latestDeliveryRecord(items = []) {
+  return [...items]
+    .filter(Boolean)
+    .sort((a, b) => deliverySortValue(b).localeCompare(deliverySortValue(a)))[0] || null;
+}
+
+function deliverySortValue(delivery = {}) {
+  if (delivery.reception_at) return String(delivery.reception_at);
+  if (delivery.created_at) return String(delivery.created_at);
+  if (delivery.delivered_at) return `${delivery.delivered_at}T${delivery.delivered_time || '00:00'}`;
+  return '';
 }
 
 function invalidCredentialMessage(status, reason = '') {
@@ -793,12 +825,6 @@ function cameraErrorMessage(error) {
     return 'El navegador solo permite usar la camara en HTTPS.';
   }
   return error?.message || 'No se ha podido iniciar la camara. Revisa permisos y vuelve a intentarlo.';
-}
-
-function latestByDate(items = [], field) {
-  return [...items]
-    .filter(Boolean)
-    .sort((a, b) => String(b[field] || b.created_at || '').localeCompare(String(a[field] || a.created_at || '')))[0] || null;
 }
 
 function sameDay(value, date) {
