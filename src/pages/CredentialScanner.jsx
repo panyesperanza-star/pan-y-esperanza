@@ -251,11 +251,34 @@ function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
     );
   }
 
+  if (result.invalidCredential) return <InvalidScanResult result={result} />;
   if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />;
   if (result.kind === 'volunteer') return <VolunteerScanResult result={result} data={data} />;
   if (result.kind === 'collaborator') return <CollaboratorScanResult result={result} data={data} />;
   if (result.kind === 'user') return <UserScanResult result={result} />;
   return <DonorScanResult result={result} data={data} />;
+}
+
+function InvalidScanResult({ result }) {
+  return (
+    <article className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="rounded-2xl bg-white p-3 text-red-700"><AlertTriangle size={26} /></span>
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-red-700">Credencial no vigente</p>
+          <h3 className="mt-2 text-2xl font-black tracking-tight">{result.message || 'CREDENCIAL ANULADA'}</h3>
+          <p className="mt-2 max-w-md text-sm font-semibold text-red-700">
+            Por seguridad no se muestran datos personales de una credencial revocada, caducada, suspendida o sustituida.
+          </p>
+        </div>
+      </div>
+      <dl className="mt-5 grid gap-3">
+        <InfoRow label="ID de credencial" value={result.credentialId || '-'} />
+        <InfoRow label="Estado" value={statusLabelFromRegistry(result.credentialStatus) || 'No vigente'} />
+        <InfoRow label="Motivo" value={result.credentialStatusReason || result.message || 'Credencial no activa'} />
+      </dl>
+    </article>
+  );
 }
 
 function BeneficiaryScanResult({ result, data, canRegisterDelivery, onNavigate }) {
@@ -373,6 +396,7 @@ function ResultHeader({ result, status }) {
           <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-700">{meta.label}</p>
           <h3 className="mt-1 text-2xl font-black text-ink">{result.name}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-500">{result.code || 'Sin codigo visible'}</p>
+          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-brand-700">ID: {result.credentialId}</p>
         </div>
       </div>
       <span className="inline-flex items-center gap-2 self-start rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
@@ -441,7 +465,19 @@ function buildCredentialDirectory(data) {
   (data.donors || []).forEach((record) => entries.push(toDirectoryEntry('donor', record, record.name || record.company_name || record.full_name || record.email || 'Donante', record.code || record.donor_code)));
   const erpUsers = (data.app_users || []).filter((record) => !isSystemSuperadmin(record) && !isPlatformOwner(record));
   erpUsers.forEach((record, index, source) => entries.push(toDirectoryEntry('user', record, userDisplayName(record), userCredentialCode(record, source))));
-  return entries.filter(Boolean);
+  const subjectEntries = entries.filter(Boolean);
+  const bySubject = new Map(subjectEntries.map((entry) => [`${entry.kind}:${entry.subjectId}`, entry]));
+  const byCredentialId = new Set(subjectEntries.map((entry) => normalizeCredentialIdentifier(entry.credentialId)));
+
+  (data.official_credential_registry || []).forEach((credential) => {
+    const credentialId = normalizeCredentialIdentifier(credential.credential_uid);
+    if (!credentialId || byCredentialId.has(credentialId)) return;
+    const subjectEntry = bySubject.get(`${credential.subject_type}:${credential.subject_id}`);
+    subjectEntries.push(toRegistryCredentialEntry(credential, subjectEntry));
+    byCredentialId.add(credentialId);
+  });
+
+  return subjectEntries.filter(Boolean);
 }
 
 function toDirectoryEntry(kind, record, name, code) {
@@ -450,7 +486,39 @@ function toDirectoryEntry(kind, record, name, code) {
   const legacyCredentialId = buildCredentialSecureIdentifier({ kind, subjectId, code });
   const credentialId = storedCredentialId || legacyCredentialId;
   if (!credentialId) return null;
-  return { kind, record, name, code, credentialId, legacyCredentialId, subjectId, legacyCode: code };
+  return {
+    kind,
+    record,
+    name,
+    code,
+    credentialId,
+    legacyCredentialId,
+    subjectId,
+    legacyCode: code,
+    credentialStatus: record.credential_status || 'active',
+    credentialStatusReason: record.credential_status_reason || '',
+    credentialQrVersion: Number.parseInt(String(record.credential_qr_version || 1), 10) || 1
+  };
+}
+
+function toRegistryCredentialEntry(credential = {}, subjectEntry = null) {
+  const credentialId = normalizeCredentialIdentifier(credential.credential_uid);
+  return {
+    kind: credential.subject_type || subjectEntry?.kind || 'beneficiary',
+    record: credential.status === 'active' ? subjectEntry?.record || null : null,
+    name: credential.status === 'active' ? subjectEntry?.name || '' : '',
+    code: credential.status === 'active' ? subjectEntry?.code || '' : '',
+    credentialId,
+    legacyCredentialId: '',
+    subjectId: credential.subject_id,
+    legacyCode: subjectEntry?.legacyCode || '',
+    credentialStatus: credential.status || 'revoked',
+    credentialStatusReason: credential.status_reason || '',
+    credentialQrVersion: Number.parseInt(String(credential.qr_version || 1), 10) || 1,
+    invalidCredential: credential.status !== 'active',
+    revokedAt: credential.revoked_at || null,
+    message: invalidCredentialMessage(credential.status, credential.status_reason)
+  };
 }
 
 function findCredentialMatch(payload, directory) {
@@ -462,28 +530,82 @@ function findCredentialMatch(payload, directory) {
     payload.subject_id ? buildCredentialSecureIdentifier({ kind, subjectId: payload.subject_id, code: payload.code }) : '',
     payload.code ? buildCredentialSecureIdentifier({ kind, subjectId: payload.code, code: payload.code }) : ''
   ].filter(Boolean).map(normalizeCredentialIdentifier));
-  return directory.find((entry) => {
-    if (kind && entry.kind !== kind) return false;
-    if (Number.isFinite(scannedQrVersion) && scannedQrVersion > 0) {
-      const currentVersion = Number.parseInt(String(entry.record?.credential_qr_version || 1), 10);
-      if (currentVersion !== scannedQrVersion) return false;
-    }
-    return (
+  for (const entry of directory) {
+    if (kind && entry.kind !== kind) continue;
+    const matches = (
       candidateIds.has(normalizeCredentialIdentifier(entry.credentialId))
       || candidateIds.has(normalizeCredentialIdentifier(entry.legacyCredentialId))
       || payload.subject_id === entry.subjectId
       || payload.code === entry.legacyCode
     );
-  }) || null;
+    if (!matches) continue;
+
+    const currentVersion = Number.parseInt(String(entry.credentialQrVersion || entry.record?.credential_qr_version || 1), 10) || 1;
+    if (Number.isFinite(scannedQrVersion) && scannedQrVersion > 0 && currentVersion !== scannedQrVersion) {
+      return {
+        ...entry,
+        record: null,
+        name: '',
+        code: '',
+        invalidCredential: true,
+        credentialStatus: 'revoked',
+        credentialStatusReason: 'QR obsoleto o no vigente.',
+        message: 'CREDENCIAL ANULADA'
+      };
+    }
+    if (entry.invalidCredential || entry.credentialStatus !== 'active' || !entry.record) {
+      return {
+        ...entry,
+        record: null,
+        name: '',
+        code: '',
+        invalidCredential: true,
+        message: invalidCredentialMessage(entry.credentialStatus, entry.credentialStatusReason)
+      };
+    }
+    return entry;
+  }
+  return null;
 }
 
 function findManualCredentialMatch(value, directory = []) {
   const code = normalizeCredentialCode(value);
   if (!code) return null;
-  return directory.find((entry) => (
+  const match = directory.find((entry) => (
     normalizeCredentialCode(entry.credentialId) === code
     || normalizeCredentialCode(entry.code || entry.legacyCode) === code
   )) || null;
+  if (!match) return null;
+  if (match.invalidCredential || match.credentialStatus !== 'active' || !match.record) {
+    return {
+      ...match,
+      record: null,
+      name: '',
+      code: '',
+      invalidCredential: true,
+      message: invalidCredentialMessage(match.credentialStatus, match.credentialStatusReason)
+    };
+  }
+  return match;
+}
+
+function invalidCredentialMessage(status, reason = '') {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus === 'revoked') return 'CREDENCIAL ANULADA';
+  if (normalizedStatus === 'expired') return 'Esta credencial ha caducado y ya no es válida.';
+  if (normalizedStatus === 'suspended') return 'Esta credencial está suspendida temporalmente.';
+  if (normalizedStatus === 'inactive') return 'Esta credencial está inactiva.';
+  return reason || 'Esta credencial ya no es válida.';
+}
+
+function statusLabelFromRegistry(status) {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus === 'active') return 'Activa';
+  if (normalizedStatus === 'suspended') return 'Suspendida';
+  if (normalizedStatus === 'revoked') return 'Revocada';
+  if (normalizedStatus === 'expired') return 'Caducada';
+  if (normalizedStatus === 'inactive') return 'Inactiva';
+  return '';
 }
 
 function normalizeCredentialIdentifier(value) {

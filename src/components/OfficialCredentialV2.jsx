@@ -30,6 +30,15 @@ const KIND_CODES = {
 const PDF_WIDTH_MM = 110;
 const PDF_HEIGHT_MM = 80;
 const PDF_SIDES = ['front', 'back'];
+const CREDENTIAL_REVOCATION_REASONS = [
+  'Pérdida',
+  'Robo',
+  'Deterioro',
+  'Renovación',
+  'Error de impresión',
+  'Cambio de datos',
+  'Otro'
+];
 
 export function OfficialCredentialButton({ kind, subject, organization = null, actions = null, variant = 'secondary', className = '' }) {
   const [open, setOpen] = useState(false);
@@ -68,13 +77,14 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
       setError('La gestion de credenciales requiere Supabase actualizado.');
       return null;
     }
-    const reason = options.requireReason ? window.prompt(`Motivo para ${label.toLowerCase()}:`) : '';
+    const reason = options.requireReason ? askCredentialActionReason(actionName, label) : '';
     if (reason === null) return null;
+    const resolvedReason = String(reason || '').trim() || defaultCredentialActionReason(actionName);
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const updated = await actions.manageOfficialCredential(localCredential, actionName, reason || '');
+      const updated = await actions.manageOfficialCredential(localCredential, actionName, resolvedReason);
       if (updated) {
         setLocalCredential((current) => ({
           ...current,
@@ -258,9 +268,42 @@ function OfficialCredentialV2Card({ side, credential, photoUrl, qrDataUrl }) {
     );
   }
 
+  const displayName = credentialDisplayName(credential.name);
+  const formattedDate = formatDate(credential.issuedAt);
+  const displayCredentialUid = shortCredentialDisplayId(credential);
+
   return (
     <article className="official-credential-v2-card official-credential-v2-card--front" data-official-credential-v2-card="front">
-      <img className="official-credential-v2-template" src={frontMasterUrl} alt="Anverso oficial de la credencial" />
+      <img className="official-credential-v2-template" src={frontMasterUrl} alt="" aria-hidden="true" />
+
+      {photoUrl ? (
+        <img className="official-credential-v2-photo" src={photoUrl} alt={`Foto de ${credential.name}`} />
+      ) : (
+        <div className="official-credential-v2-photo official-credential-v2-photo--empty" aria-label="Sin fotografia">
+          {initials(credential.name)}
+        </div>
+      )}
+
+      <div className={credentialTypeClassName('official-credential-v2-type', type)} aria-label={type.full}>
+        <span>{type.main}</span>
+        {type.accent && <strong>{type.accent}</strong>}
+      </div>
+
+      <div className="official-credential-v2-name" style={{ '--credential-name-size': credentialNameSize(displayName) }}>
+        {displayName}
+      </div>
+
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--code">CÓDIGO</span>
+      <strong className="official-credential-v2-code">{credential.code}</strong>
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--date">DESDE</span>
+      <strong className="official-credential-v2-date">{formattedDate}</strong>
+      <span className="official-credential-v2-field-label official-credential-v2-field-label--status">ESTADO</span>
+      <strong className="official-credential-v2-status">{credential.status}</strong>
+
+      <div className="official-credential-v2-qr">
+        {qrDataUrl ? <img src={qrDataUrl} alt="Codigo QR" /> : <span />}
+      </div>
+      <div className="official-credential-v2-qr-id">ID: {displayCredentialUid}</div>
     </article>
   );
 }
@@ -357,6 +400,8 @@ function CredentialHistoryV2({ history = {}, currentCredentialUid = '' }) {
               <strong>{formatDate(event.created_at)}</strong> - {credentialEventLabel(event.event_type)}
               {event.actor_name ? ` - ${event.actor_name}` : ''}
               {event.reason ? ` - ${event.reason}` : ''}
+              {event.metadata?.previous_credential_uid ? ` - Anterior: ${event.metadata.previous_credential_uid}` : ''}
+              {event.metadata?.new_credential_uid ? ` - Nueva: ${event.metadata.new_credential_uid}` : ''}
             </p>
           ))}
         </div>
@@ -637,6 +682,37 @@ function credentialEventLabel(value) {
   if (event === 'validated_public') return 'Validacion publica';
   if (event === 'validation_rejected') return 'Validacion rechazada';
   return value || 'Accion registrada';
+}
+
+function defaultCredentialActionReason(actionName) {
+  const action = cleanText(actionName).toLowerCase();
+  if (action === 'replace' || action === 'revoke') return 'Pérdida';
+  if (action === 'suspend') return 'Suspensión administrativa';
+  if (action === 'expire') return 'Caducidad';
+  return '';
+}
+
+function askCredentialActionReason(actionName, label) {
+  const action = cleanText(actionName).toLowerCase();
+  if (action === 'replace' || action === 'revoke') {
+    const options = CREDENTIAL_REVOCATION_REASONS
+      .map((reason, index) => `${index + 1}. ${reason}`)
+      .join('\n');
+    const answer = window.prompt(
+      `Motivo para ${label.toLowerCase()}:\n\n${options}\n\nEscribe el número o el motivo:`,
+      defaultCredentialActionReason(actionName)
+    );
+    if (answer === null) return null;
+    const cleanAnswer = cleanText(answer);
+    const selected = CREDENTIAL_REVOCATION_REASONS[Number.parseInt(cleanAnswer, 10) - 1];
+    if (selected === 'Otro') {
+      const custom = window.prompt('Indica el motivo:', 'Otro');
+      if (custom === null) return null;
+      return cleanText(custom) || 'Otro';
+    }
+    return selected || cleanAnswer || defaultCredentialActionReason(actionName);
+  }
+  return window.prompt(`Motivo para ${label.toLowerCase()}:`, defaultCredentialActionReason(actionName));
 }
 
 function credentialDisplayName(value) {

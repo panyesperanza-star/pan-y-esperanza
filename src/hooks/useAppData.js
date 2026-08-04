@@ -2803,11 +2803,11 @@ function enrichOfficialCredentialData(data = {}) {
     const subjectKey = `${subjectType}:${row.id}`;
     const subjectCredentials = credentialsBySubject.get(subjectKey) || [];
     const activeCredential = subjectCredentials.find((item) => item.status === 'active') || null;
-    const credential = (uid && byUid.get(uid)) || activeCredential || bySubject.get(subjectKey);
+    const credential = activeCredential || (uid && byUid.get(uid)) || bySubject.get(subjectKey);
     if (!credential) return row;
     return {
       ...row,
-      credential_uid: uid || credential.credential_uid,
+      credential_uid: credential.credential_uid || uid,
       credential_status: credential.status || 'active',
       credential_status_reason: credential.status_reason || '',
       credential_expires_at: credential.expires_at || null,

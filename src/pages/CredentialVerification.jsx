@@ -1,13 +1,13 @@
 import { AlertTriangle, CheckCircle2, IdCard, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { formatDate } from '../lib/formatters';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
 
 const STATUS_META = {
   active: { label: 'Activa', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200', icon: CheckCircle2 },
   suspended: { label: 'Suspendida', className: 'bg-amber-50 text-amber-700 ring-amber-200', icon: AlertTriangle },
   revoked: { label: 'Revocada', className: 'bg-red-50 text-red-700 ring-red-200', icon: AlertTriangle },
-  expired: { label: 'Caducada', className: 'bg-slate-100 text-slate-700 ring-slate-200', icon: AlertTriangle }
+  expired: { label: 'Caducada', className: 'bg-slate-100 text-slate-700 ring-slate-200', icon: AlertTriangle },
+  inactive: { label: 'Inactiva', className: 'bg-slate-100 text-slate-700 ring-slate-200', icon: AlertTriangle }
 };
 
 export function CredentialVerification() {
@@ -126,7 +126,8 @@ function CredentialVerificationCard({ credential }) {
         <p className="mt-2 text-lg font-bold uppercase tracking-wide text-brand-700">{credential.role_label}</p>
 
         <dl className="mt-6 grid gap-3 sm:grid-cols-1">
-          <Info label="ID de credencial" value={credential.credential_uid} />
+          <Info label="Código" value={credential.credential_code} />
+          <Info label="ID de credencial" value={shortCredentialDisplayId(credential)} />
         </dl>
 
         <div className="mt-6 rounded-2xl border border-brand-100 bg-brand-50 p-4 text-brand-800">
@@ -140,8 +141,9 @@ function CredentialVerificationCard({ credential }) {
 
 function InvalidCredentialCard({ credential, meta, StatusIcon }) {
   const status = String(credential.status || '').toLowerCase();
-  const invalidatedAt = credential.revoked_at || (status === 'expired' ? credential.expires_at : null);
-  const invalidatedLabel = status === 'expired' ? 'Fecha de caducidad' : 'Fecha de revocación';
+  const title = status === 'revoked'
+    ? 'CREDENCIAL ANULADA'
+    : credential.message || 'Esta credencial ya no es válida.';
 
   return (
     <div className="grid min-h-[360px] place-items-center p-6 sm:p-8">
@@ -150,10 +152,8 @@ function InvalidCredentialCard({ credential, meta, StatusIcon }) {
           <StatusIcon size={18} />
           Estado: {credential.status_label || meta.label}
         </div>
-        <h2 className="mt-5 text-2xl font-black tracking-tight text-ink">Esta credencial ya no es válida.</h2>
-        <dl className="mt-6 grid gap-3 text-left sm:grid-cols-2">
-          <Info label="ID de credencial" value={credential.credential_uid} />
-          <Info label={invalidatedLabel} value={invalidatedAt ? formatDate(invalidatedAt) : 'No indicada'} />
+        <h2 className="mt-5 text-2xl font-black tracking-tight text-ink">{title}</h2>
+        <dl className="mt-6 grid gap-3 text-left">
           <Info label="Motivo" value={credential.status_reason || credential.message || 'Credencial no válida'} />
         </dl>
         <div className="mt-6 rounded-2xl border border-red-100 bg-white p-4 text-red-700">
@@ -184,6 +184,28 @@ function readCredentialPayloadFromLocation() {
     uid: String(fromPath || fromQuery).trim(),
     qrVersion: Number.isFinite(qrVersion) && qrVersion > 0 ? qrVersion : null
   };
+}
+
+function shortCredentialDisplayId(credential = {}) {
+  const source = String(credential.credential_uid || '').trim();
+  const prefix = credentialShortPrefix(credential.subject_type, source);
+  const yearSerial = source.match(/^[A-Z]{2,4}-\d{4}-(\d+)$/i);
+  const digits = yearSerial?.[1] || (source.match(/\d+/g) || []).join('');
+  const serial = digits ? digits.slice(-6).padStart(6, '0') : '000000';
+  return `${prefix}-${serial}`;
+}
+
+function credentialShortPrefix(kind, value) {
+  const clean = String(value || '').trim().toUpperCase();
+  const match = clean.match(/^([A-Z]{2,4})-/);
+  const rawPrefix = match?.[1] || '';
+  if (rawPrefix === 'PYE') return 'PE';
+  if (rawPrefix) return rawPrefix;
+  if (kind === 'volunteer') return 'VOL';
+  if (kind === 'collaborator') return 'COL';
+  if (kind === 'donor') return 'DON';
+  if (kind === 'user') return 'USR';
+  return 'PE';
 }
 
 function initials(value) {
