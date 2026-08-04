@@ -1,5 +1,5 @@
 import { Keyboard, Search, UserRound } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier } from '../lib/credentials';
 import { normalize } from '../lib/formatters';
@@ -89,6 +89,129 @@ export function BeneficiaryQuickSearch({
   );
 }
 
+export function BeneficiarySearchSelect({
+  data = {},
+  beneficiaries,
+  value,
+  onChange,
+  required = false,
+  disabled = false,
+  placeholder = 'Seleccionar beneficiario'
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
+  const rows = beneficiaries || data.beneficiaries || [];
+  const directory = useMemo(() => buildBeneficiaryCredentialDirectory({ ...data, beneficiaries: rows }), [data, rows]);
+  const selected = rows.find((beneficiary) => beneficiary.id === value) || null;
+  const filteredRows = useMemo(() => {
+    const cleanQuery = String(query || '').trim();
+    if (!cleanQuery) {
+      return rows.map((beneficiary) => ({
+        beneficiary,
+        status: beneficiaryStatus(beneficiary),
+        matchLabel: beneficiary.code ? `Codigo PYE: ${beneficiary.code}` : ''
+      }));
+    }
+    return findBeneficiaryMatches(cleanQuery, rows, directory, Math.max(rows.length, 20));
+  }, [directory, query, rows]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 20);
+    function handlePointerDown(event) {
+      if (!wrapperRef.current?.contains(event.target)) setOpen(false);
+    }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  function chooseBeneficiary(beneficiaryId) {
+    onChange?.(beneficiaryId);
+    setOpen(false);
+    setQuery('');
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+        onClick={() => setOpen((current) => !current)}
+      >
+        {selected ? (
+          <span className="block truncate font-semibold text-ink">{selected.code} - {selected.full_name}</span>
+        ) : (
+          <span className="block text-slate-500">{placeholder}{required ? ' *' : ''}</span>
+        )}
+      </button>
+      <select
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        value={value || ''}
+        disabled={disabled}
+        onChange={(event) => chooseBeneficiary(event.target.value)}
+      >
+        <option value="">{placeholder}</option>
+        {rows.map((beneficiary) => (
+          <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.code} - {beneficiary.full_name}</option>
+        ))}
+      </select>
+
+      {open && (
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" role="listbox">
+          <div className="sticky top-0 z-10 border-b border-slate-100 bg-white p-3">
+            <input
+              ref={inputRef}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="🔍 Buscar beneficiario..."
+            />
+            <p className="mt-2 text-xs font-semibold text-slate-500">Nombre, codigo PYE, documento, telefono, codigo de credencial o ID corto.</p>
+          </div>
+          <div className="max-h-72 overflow-y-auto p-2">
+            {filteredRows.map((item) => (
+              <button
+                key={item.beneficiary.id}
+                type="button"
+                role="option"
+                aria-selected={value === item.beneficiary.id}
+                onClick={() => chooseBeneficiary(item.beneficiary.id)}
+                className={`w-full rounded-xl px-3 py-2 text-left transition hover:bg-brand-50 ${
+                  value === item.beneficiary.id ? 'bg-brand-50 text-brand-800' : 'text-slate-700'
+                }`}
+              >
+                <span className="block truncate text-sm font-black text-ink">{item.beneficiary.full_name}</span>
+                <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">
+                  {item.beneficiary.code || 'Sin codigo PYE'} - {beneficiaryStatus(item.beneficiary)}
+                </span>
+                {item.matchLabel && <span className="mt-0.5 block truncate text-xs font-bold text-brand-700">{item.matchLabel}</span>}
+              </button>
+            ))}
+            {!filteredRows.length && (
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">No hay coincidencias.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BeneficiaryQuickSearchPhoto({ beneficiary }) {
   const [src, setSrc] = useState('');
   useEffect(() => {
@@ -166,7 +289,7 @@ export function toBeneficiaryDirectoryEntry(record = {}) {
   };
 }
 
-export function findBeneficiaryMatches(query, beneficiaries = [], directory = []) {
+export function findBeneficiaryMatches(query, beneficiaries = [], directory = [], limit = 8) {
   const clean = normalize(query).replace(/\s+/g, ' ');
   const compact = clean.replace(/\s+/g, '');
   if (!compact) return [];
@@ -193,7 +316,7 @@ export function findBeneficiaryMatches(query, beneficiaries = [], directory = []
       };
     })
     .filter(Boolean)
-    .slice(0, 8);
+    .slice(0, limit);
 }
 
 export function beneficiaryStatus(beneficiary = {}) {
