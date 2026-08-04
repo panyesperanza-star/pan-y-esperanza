@@ -6,6 +6,7 @@ import { canDo } from '../lib/auth';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
+import { SignatureCaptureField } from './Deliveries';
 
 export function SmartDeliveries({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const scannerRegionId = useRef(`smart-delivery-reader-${Math.random().toString(36).slice(2)}`).current;
@@ -22,6 +23,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [manualMatches, setManualMatches] = useState([]);
   const [result, setResult] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [signatureFlow, setSignatureFlow] = useState(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState('');
   const [recentDeliveries, setRecentDeliveries] = useState([]);
@@ -68,6 +70,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     setCameraError('');
     setRegisterError('');
     setFeedback(null);
+    setSignatureFlow(null);
     setScanStatus('Activando camara...');
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Este dispositivo no permite abrir la camara desde el navegador.');
@@ -173,6 +176,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     event.preventDefault();
     setRegisterError('');
     setFeedback(null);
+    setSignatureFlow(null);
     const matches = findBeneficiaryMatches(manualQuery, data?.beneficiaries || []);
     setManualMatches(matches);
     if (!matches.length) {
@@ -191,10 +195,64 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     setResult({ type: 'beneficiary', source, entry, beneficiary });
     setManualMatches([]);
     setManualQuery('');
+    setSignatureFlow(null);
     setScanStatus(source === 'qr' ? 'Beneficiario identificado desde credencial.' : 'Beneficiario identificado por busqueda manual.');
   }
 
-  async function registerDelivery(summary) {
+  function beginSignatureFlow(summary) {
+    if (!summary?.beneficiary || summary.receivedToday || summary.blocked) return;
+    setRegisterError('');
+    setFeedback(null);
+    setSignatureFlow({
+      summary,
+      step: 'beneficiary',
+      beneficiarySignature: '',
+      responsibleSignature: '',
+      responsibleName: currentUserName(currentUser),
+      error: ''
+    });
+    setResult(null);
+    setManualQuery('');
+    setManualMatches([]);
+    setScanStatus('Pendiente de firma del beneficiario.');
+  }
+
+  function updateSignatureFlow(patch) {
+    setSignatureFlow((current) => current ? { ...current, ...patch, error: patch.error ?? '' } : current);
+  }
+
+  function confirmBeneficiarySignature() {
+    setSignatureFlow((current) => {
+      if (!current) return current;
+      if (!current.beneficiarySignature) return { ...current, error: 'La firma del beneficiario es obligatoria.' };
+      return { ...current, step: 'responsible', error: '' };
+    });
+    setScanStatus('Pendiente de firma del usuario que realiza la entrega.');
+  }
+
+  async function completeSignedDelivery() {
+    if (!signatureFlow) return;
+    if (!signatureFlow.beneficiarySignature) {
+      updateSignatureFlow({ error: 'La firma del beneficiario es obligatoria.' });
+      return;
+    }
+    if (!signatureFlow.responsibleSignature) {
+      updateSignatureFlow({ error: 'La firma del usuario que realiza la entrega es obligatoria.' });
+      return;
+    }
+    await registerDelivery(signatureFlow.summary, {
+      beneficiarySignature: signatureFlow.beneficiarySignature,
+      responsibleSignature: signatureFlow.responsibleSignature
+    });
+  }
+
+  function cancelSignatureFlow() {
+    setSignatureFlow(null);
+    setScanStatus('Firma cancelada. Preparando siguiente lectura...');
+    scheduleReturnToScanner(300);
+  }
+
+  async function registerDelivery(summary, signatures) {
     if (!summary?.beneficiary || summary.receivedToday || summary.blocked) return;
     setRegistering(true);
     setRegisterError('');
@@ -212,6 +270,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         quantity: 1,
         receiver_name: summary.beneficiary.full_name || '',
         receiver_document_id: beneficiaryDocument(summary.beneficiary),
+        signature_data_url: signatures.beneficiarySignature,
+        responsible_signature_data_url: signatures.responsibleSignature,
         notes: 'Entrega registrada desde Entregas Inteligentes.'
       };
       await (actions.createSmartDelivery || actions.createDelivery)(payload);
@@ -226,6 +286,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         peopleCount: summary.peopleCount,
         registeredBy
       });
+      setSignatureFlow(null);
       setResult(null);
       setManualQuery('');
       setManualMatches([]);
@@ -257,10 +318,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       registeredBy: summary.todayDeliveryResponsible
     });
     setResult(null);
+    setSignatureFlow(null);
     setManualQuery('');
     setManualMatches([]);
     setScanStatus('Entrega ya registrada hoy. Preparando siguiente lectura...');
-    scheduleReturnToScanner(2000);
+    scheduleReturnToScanner(5000);
   }, [summary?.beneficiary?.id, summary?.receivedToday]);
 
   function scheduleReturnToScanner(delayMs) {
@@ -269,6 +331,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       setFeedback(null);
       startCamera();
     }, delayMs);
+  }
+
+  function returnToScannerNow() {
+    if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    setFeedback(null);
+    startCamera();
   }
 
   return (
@@ -285,7 +353,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
           </Button>
         </header>
 
-        {feedback && <DeliveryFeedbackOverlay feedback={feedback} />}
+        {feedback && <DeliveryFeedbackOverlay feedback={feedback} onAccept={returnToScannerNow} />}
 
         <section className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(28rem,1.18fr)]">
           <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
@@ -374,17 +442,30 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
           </div>
 
           <div className="rounded-[2rem] border border-white/80 bg-white p-4 shadow-2xl shadow-brand-900/10 sm:p-5">
-            {!result && <ReadyPanel />}
-            {result?.type === 'invalid' && <InvalidPanel title={result.title} message={result.message} />}
-            {result?.type === 'revoked' && <RevokedPanel result={result} />}
-            {summary && (
+            {signatureFlow ? (
+              <SmartDeliverySignaturePanel
+                flow={signatureFlow}
+                registering={registering}
+                onUpdate={updateSignatureFlow}
+                onConfirmBeneficiary={confirmBeneficiarySignature}
+                onSubmit={completeSignedDelivery}
+                onCancel={cancelSignatureFlow}
+              />
+            ) : (
+              <>
+                {!result && <ReadyPanel />}
+                {result?.type === 'invalid' && <InvalidPanel title={result.title} message={result.message} />}
+                {result?.type === 'revoked' && <RevokedPanel result={result} />}
+                {summary && (
               <BeneficiaryFastPanel
                 summary={summary}
                 canRegister={canRegister}
                 registering={registering}
                 error={registerError}
-                onRegister={() => registerDelivery(summary)}
+                onRegister={() => beginSignatureFlow(summary)}
               />
+                )}
+              </>
             )}
           </div>
         </section>
@@ -487,7 +568,84 @@ function BeneficiaryFastPanel({ summary, canRegister, registering, error, onRegi
   );
 }
 
-function DeliveryFeedbackOverlay({ feedback }) {
+function SmartDeliverySignaturePanel({ flow, registering, onUpdate, onConfirmBeneficiary, onSubmit, onCancel }) {
+  const summary = flow.summary;
+  const isBeneficiaryStep = flow.step === 'beneficiary';
+  return (
+    <article className="flex h-full min-h-[34rem] flex-col rounded-[1.5rem] bg-slate-50 p-5">
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-700">Firma obligatoria</p>
+        <h2 className="mt-1 text-3xl font-black tracking-tight text-ink">Confirmar entrega</h2>
+        <p className="mt-2 text-sm font-semibold text-slate-600">La entrega no se registrara hasta completar ambas firmas.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <InfoLine label="Beneficiario" value={summary.beneficiary.full_name || '-'} />
+          <InfoLine label="Personas atendidas" value={summary.peopleCount || 1} />
+          <InfoLine label="Responsable" value={currentUserNameFromFlow(flow)} />
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <StepBadge active={isBeneficiaryStep} complete={Boolean(flow.beneficiarySignature)} label="1. Firma beneficiario" />
+        <StepBadge active={!isBeneficiaryStep} complete={Boolean(flow.responsibleSignature)} label="2. Firma usuario" />
+      </div>
+
+      <div className="mt-5 flex-1 rounded-2xl bg-white p-4 shadow-sm">
+        {isBeneficiaryStep ? (
+          <div className="grid gap-4">
+            <SignatureCaptureField
+              label="Firma del beneficiario"
+              value={flow.beneficiarySignature}
+              required
+              onChange={(value) => onUpdate({ beneficiarySignature: value })}
+              description="Primero debe firmar la persona beneficiaria que recibe la ayuda."
+            />
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+              <Button type="button" disabled={!flow.beneficiarySignature} onClick={onConfirmBeneficiary}>
+                Continuar con firma del usuario
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            <SignatureCaptureField
+              label="Firma del usuario que realiza la entrega"
+              value={flow.responsibleSignature}
+              required
+              onChange={(value) => onUpdate({ responsibleSignature: value })}
+              description="La entrega quedara registrada definitivamente al guardar esta segunda firma."
+            />
+            <div className="flex flex-wrap justify-between gap-2">
+              <Button type="button" variant="secondary" onClick={() => onUpdate({ step: 'beneficiary' })}>Volver</Button>
+              <Button type="button" disabled={registering || !flow.beneficiarySignature || !flow.responsibleSignature} onClick={onSubmit}>
+                {registering ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                {registering ? 'Registrando...' : 'Finalizar y registrar entrega'}
+              </Button>
+            </div>
+          </div>
+        )}
+        {flow.error && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{flow.error}</p>}
+      </div>
+    </article>
+  );
+}
+
+function StepBadge({ active, complete, label }) {
+  return (
+    <div className={`rounded-2xl border p-4 font-black ${complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : active ? 'border-brand-200 bg-brand-50 text-brand-800' : 'border-slate-200 bg-white text-slate-500'}`}>
+      <div className="flex items-center gap-2">
+        {complete ? <CheckCircle2 size={20} /> : <IdCard size={20} />}
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function currentUserNameFromFlow(flow) {
+  return flow?.responsibleName || 'Usuario autorizado';
+}
+
+function DeliveryFeedbackOverlay({ feedback, onAccept }) {
   const isDuplicate = feedback.type === 'duplicate';
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center px-4 text-center text-white ${isDuplicate ? 'bg-red-950/90' : 'bg-emerald-950/85'}`}>
@@ -511,6 +669,15 @@ function DeliveryFeedbackOverlay({ feedback }) {
             </>
           )}
         </div>
+        {isDuplicate && (
+          <button
+            type="button"
+            onClick={onAccept}
+            className="mt-5 rounded-2xl bg-white px-6 py-3 text-base font-black text-red-700 shadow-lg transition hover:bg-red-50"
+          >
+            Aceptar
+          </button>
+        )}
       </div>
     </div>
   );

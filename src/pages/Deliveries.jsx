@@ -528,7 +528,7 @@ function DeliverySignatureForm({ delivery, beneficiary, signatureRequired, busy,
   );
 }
 
-function SignatureCaptureField({ label, value, onChange, required = false, description = '' }) {
+export function SignatureCaptureField({ label, value, onChange, required = false, description = '' }) {
   const [open, setOpen] = useState(false);
   const hasSignature = Boolean(value);
 
