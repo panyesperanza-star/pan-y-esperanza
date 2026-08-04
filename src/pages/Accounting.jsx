@@ -2145,11 +2145,19 @@ function buildDeliverySocialRows(deliveries, inventoryItemsById, inventoryUnitVa
 function deliveryValueDetails(delivery, item, inventoryUnitValues) {
   const quantity = positiveNumberOrNull(delivery.quantity);
   const explicitTotal = positiveNumberOrNull(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
+  const smartDeliveryTotal = smartDeliveryNoteValue(delivery.notes, 'Valor aproximado lote');
   if (explicitTotal !== null) {
     return {
       total: explicitTotal,
       quantity,
       unitValue: quantity !== null ? roundCurrency(explicitTotal / quantity) : null
+    };
+  }
+  if (smartDeliveryTotal !== null) {
+    return {
+      total: smartDeliveryTotal,
+      quantity,
+      unitValue: quantity !== null ? roundCurrency(smartDeliveryTotal / quantity) : null
     };
   }
   const unitValue = positiveNumberOrNull(delivery.unit_value, delivery.estimated_unit_value, inventoryUnitValues.get(delivery.inventory_item_id), item?.unit_value, item?.estimated_unit_value, item?.economic_value, item?.price, item?.cost);
@@ -2158,6 +2166,14 @@ function deliveryValueDetails(delivery, item, inventoryUnitValues) {
     quantity,
     unitValue
   };
+}
+
+function smartDeliveryNoteValue(notes, label) {
+  const match = String(notes || '').match(new RegExp(`${label}:\\s*([\\d.,]+)`, 'i'));
+  if (!match) return null;
+  const normalized = match[1].replace(/\./g, '').replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function buildInventoryUnitValueMap(items, socialValueEvents = []) {

@@ -1105,9 +1105,19 @@ function inventoryStatus(item) {
 function deliveryValue(delivery, item) {
   const explicit = firstNumber(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
   if (explicit !== null) return explicit;
+  const smartDeliveryTotal = smartDeliveryNoteValue(delivery.notes, 'Valor aproximado lote');
+  if (smartDeliveryTotal !== null) return smartDeliveryTotal;
   const quantity = firstNumber(delivery.quantity);
   const unitValue = firstNumber(delivery.unit_value, delivery.estimated_unit_value, item?.unit_value, item?.estimated_unit_value, item?.economic_value, item?.price, item?.cost);
   return quantity !== null && unitValue !== null ? roundCurrency(quantity * unitValue) : 0;
+}
+
+function smartDeliveryNoteValue(notes, label) {
+  const match = String(notes || '').match(new RegExp(`${label}:\\s*([\\d.,]+)`, 'i'));
+  if (!match) return null;
+  const normalized = match[1].replace(/\./g, '').replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function firstNumber(...values) {

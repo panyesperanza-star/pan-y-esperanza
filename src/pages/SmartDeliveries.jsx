@@ -1,5 +1,5 @@
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { AlertTriangle, ArrowLeft, Baby, Camera, CheckCircle2, Clock, IdCard, Keyboard, Loader2, Minus, PackageCheck, Pencil, Plus, RefreshCw, Search, ScanLine, ShieldAlert, UserRound, UsersRound, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Baby, Camera, CheckCircle2, Clock, Euro, IdCard, Keyboard, Loader2, Minus, PackageCheck, Pencil, Plus, RefreshCw, Search, ScanLine, ShieldAlert, UserRound, UsersRound, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { canDo } from '../lib/auth';
@@ -346,7 +346,15 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         registeredBy,
         date: now
       });
+      const stockNotices = await createSmartDeliveryLowStockNotices({
+        actions,
+        deliveryPlan,
+        deliveryNumber
+      });
       const inventoryIncident = inventoryResult.error ? `Inventario: ${inventoryResult.error}` : '';
+      const stockIncident = stockNotices.length
+        ? `Avisos de stock: ${stockNotices.map((notice) => notice.label).join(', ')}`
+        : '';
       setRecentDeliveries((current) => [
         { id: createdDelivery?.id || `smart-${Date.now()}`, ...payload, ...createdDelivery, created_at: createdDelivery?.created_at || now.toISOString(), status: createdDelivery?.status || 'Completada' },
         ...current
@@ -375,13 +383,16 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         changeReason: deliveryPlan.reason,
         modifiedBy: deliveryPlan.modifiedBy,
         modifiedAt: deliveryPlan.modifiedAt,
+        estimatedValue: deliveryPlan.estimatedValue,
+        recommendedValue: deliveryPlan.recommendedValue,
         deliveredItems: deliveryPlan.deliveredItems,
         recommendedItems: deliveryPlan.recommendedItems,
         inventoryMovements: inventoryResult.movements,
+        stockNotices,
         identificationMethod: traceability.identificationMethod,
         signatureCount: flow.cannotSign ? 1 : 2,
         cannotSign: flow.cannotSign,
-        incident: [flow.cannotSign ? `No puede firmar: ${flow.noSignReason}` : '', ...(deliveryPlan.incidents || []), inventoryIncident].filter(Boolean).join('; '),
+        incident: [flow.cannotSign ? `No puede firmar: ${flow.noSignReason}` : '', ...(deliveryPlan.incidents || []), inventoryIncident, stockIncident].filter(Boolean).join('; '),
         registeredBy,
         at: now.toISOString()
       });
@@ -409,11 +420,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   }
 
   function finishRepartoSession() {
-    setRepartoSession((current) => ({
-      ...current,
-      endedAt: current.endedAt || new Date().toISOString(),
-      users: uniqueValues([...current.users, currentUserName(currentUser)].filter(Boolean))
-    }));
+    setRepartoSession((current) => closeRepartoSession(current, currentUser));
   }
 
   const summary = result?.type === 'beneficiary'
@@ -785,6 +792,11 @@ function PreparedBatchCard({ batch, customization, onCustomize }) {
           <p className="text-xs font-black uppercase tracking-[0.18em]">{batch ? 'Lote preparado' : 'Lote preparado'}</p>
           <p className="mt-1 text-lg font-black text-ink">{batch?.label || 'Sin lote preparado'}</p>
           <p className="mt-1 text-sm font-semibold">{batch?.detail || 'La entrega se registrara como ayuda general si no existe un lote planificado.'}</p>
+          {plan.estimatedValue > 0 && (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-sm font-black text-brand-800">
+              <Euro size={15} /> Valor aproximado del lote: {formatCurrency(plan.estimatedValue)}
+            </p>
+          )}
           {hasCustomization && (
             <div className="mt-3 rounded-xl bg-white/80 p-3 text-sm font-bold text-brand-900">
               <p>Entrega personalizada: {plan.deliveredLabel}</p>
@@ -1193,9 +1205,24 @@ function RepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
       <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-600">
         <p><strong>Usuarios:</strong> {acta.users || '-'}</p>
         <p><strong>Productos:</strong> {acta.products || 'Sin productos registrados'}</p>
+        <p><strong>Valor aproximado:</strong> {formatCurrency(acta.impact.estimatedValue)}</p>
         <p><strong>Incidencias:</strong> {acta.incidents || 'Sin incidencias'}</p>
         <p><strong>Entregas anuladas:</strong> {acta.cancelled}</p>
       </div>
+      {session.endedAt && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-xl border border-brand-100 bg-brand-50 p-3 text-xs font-semibold text-brand-900">
+            <p className="font-black uppercase tracking-[0.14em] text-brand-700">Estadisticas generadas</p>
+            <p className="mt-2">Entregas: {acta.statistics.deliveryCount} - Bloqueadas: {acta.statistics.duplicateCount}</p>
+            <p>Productos distintos: {acta.statistics.productCount} - Incidencias: {acta.statistics.incidentCount}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900">
+            <p className="font-black uppercase tracking-[0.14em] text-emerald-700">Impacto generado</p>
+            <p className="mt-2">Personas atendidas: {acta.impact.people}</p>
+            <p>Valor social aproximado: {formatCurrency(acta.impact.estimatedValue)}</p>
+          </div>
+        </div>
+      )}
       {acta.deliveryRows.length > 0 && (
         <div className="mt-3 space-y-2">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-700">Entregas del acta</p>
@@ -1214,6 +1241,9 @@ function RepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
                   <span className="block text-brand-700">Recomendado: {item.recommendedLabel} · Entregado: {item.deliveredLabel} · Motivo: {item.changeReason}</span>
                 )}
               </span>
+              {item.estimatedValue > 0 && (
+                <span className="text-xs font-black text-emerald-700">{formatCurrency(item.estimatedValue)}</span>
+              )}
               <span className="text-brand-700">Abrir entrega</span>
             </button>
           ))}
@@ -1315,6 +1345,7 @@ function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date
     flow.collectorType === 'authorized' ? `Relacion autorizada: ${collection.relation}.` : '',
     `Lote recomendado: ${deliveryPlan?.recommendedLabel || 'Sin lote preparado previo'}.`,
     `Lote entregado: ${deliveryPlan?.deliveredLabel || 'Ayuda general x 1'}.`,
+    deliveryPlan?.estimatedValue > 0 ? `Valor aproximado lote: ${formatCurrency(deliveryPlan.estimatedValue)}.` : '',
     deliveryPlan?.incidents?.length ? `Incidencias lote: ${deliveryPlan.incidents.join('; ')}.` : '',
     deliveryPlan?.changed ? `Motivo cambio lote: ${deliveryPlan.reason}.` : '',
     deliveryPlan?.changed ? `Modificado por: ${deliveryPlan.modifiedBy || registeredBy}.` : '',
@@ -1341,12 +1372,16 @@ function buildDeliveryPlan(summary, customization) {
   const primaryItem = positiveItems[0] || defaultDeliveryItem();
   const changed = Boolean(activeCustomization) && hasDeliveryItemChanges(deliveredItemsForSummary(summary), deliveredItems);
   const incidents = [...(summary?.preparedBatch?.shortages || []).map((item) => item.message)];
+  const recommendedValue = calculateDeliveryItemsValue(recommendedItems);
+  const estimatedValue = calculateDeliveryItemsValue(deliveredItems);
   return {
     recommendedItems,
     deliveredItems,
     primaryItem,
     changed,
     incidents,
+    recommendedValue,
+    estimatedValue,
     reason: changed ? activeCustomization.reason : '',
     modifiedBy: changed ? activeCustomization.modifiedBy : '',
     modifiedAt: changed ? activeCustomization.modifiedAt : '',
@@ -1391,17 +1426,26 @@ function defaultDeliveryItem() {
 
 function cloneDeliveryItem(item = {}) {
   const availableStock = item.availableStock ?? item.stock ?? null;
+  const unitValue = inventoryItemUnitValue(item);
+  const quantity = sanitizeDeliveryQuantity(item.quantity ?? 1, availableStock);
+  const stockAfterDelivery = availableStock === null || availableStock === undefined || availableStock === ''
+    ? (item.stockAfterDelivery ?? null)
+    : Math.max(Number(availableStock || 0) - Number(quantity || 0), 0);
   return {
     id: String(item.id || item.inventoryItemId || item.inventory_item_id || item.name || 'general'),
     inventoryItemId: item.inventoryItemId || item.inventory_item_id || null,
     name: item.name || item.inventory_item_name || item.product || item.helpType || 'Ayuda general',
     helpType: item.helpType || item.help_type || item.name || 'Alimentos',
-    quantity: sanitizeDeliveryQuantity(item.quantity ?? 1, availableStock),
+    quantity,
     unit: item.unit || 'unidad(es)',
     availableStock,
+    stockAfterDelivery,
+    lowStockThreshold: Number(item.lowStockThreshold ?? item.low_stock_threshold ?? 0),
+    unitValue,
     recommendedQuantity: Number(item.recommendedQuantity ?? item.quantity ?? 1),
     quantityPerPerson: Number(item.quantityPerPerson || 0),
-    shortageMessage: item.shortageMessage || ''
+    shortageMessage: item.shortageMessage || '',
+    substitutionFor: item.substitutionFor || ''
   };
 }
 
@@ -1436,6 +1480,33 @@ function formatDeliveryItemQuantity(item = {}) {
 function formatQuantity(value) {
   const quantity = Number(value || 0);
   return Number.isInteger(quantity) ? String(quantity) : String(quantity).replace('.', ',');
+}
+
+function calculateDeliveryItemsValue(items = []) {
+  return roundCurrency(items.reduce((total, item) => (
+    total + (Number(item.quantity || 0) * Number(item.unitValue || 0))
+  ), 0));
+}
+
+function inventoryItemUnitValue(item = {}) {
+  return firstPositiveNumber(item.unitValue, item.unit_value, item.estimated_unit_value, item.economic_value, item.price, item.cost);
+}
+
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return 0;
+}
+
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
 }
 
 function nextSmartDeliveryNumber(deliveries = [], date = new Date()) {
@@ -1491,6 +1562,43 @@ async function registerSmartDeliveryInventoryMovements({ actions, deliveryPlan, 
     console.error('[Entregas inteligentes] No se pudieron registrar todos los movimientos de inventario', error);
     return { movements: [], error: error.message || 'No se pudieron registrar todos los movimientos.' };
   }
+}
+
+async function createSmartDeliveryLowStockNotices({ actions, deliveryPlan, deliveryNumber }) {
+  const notifier = actions?.notifications;
+  if (!notifier?.notifyInventoryChanged) return [];
+  const notices = [];
+  const uniqueItems = new Map();
+  (deliveryPlan.deliveredItems || [])
+    .filter((item) => item.inventoryItemId)
+    .forEach((item) => uniqueItems.set(item.inventoryItemId, item));
+
+  for (const item of uniqueItems.values()) {
+    const remaining = Number(item.stockAfterDelivery ?? (Number(item.availableStock || 0) - Number(item.quantity || 0)));
+    const threshold = Number(item.lowStockThreshold || 0);
+    const shouldNotify = remaining <= 0 || (threshold > 0 && remaining <= threshold);
+    if (!shouldNotify) continue;
+    const type = remaining <= 0 ? 'out_of_stock' : 'low_stock';
+    await notifier.notifyInventoryChanged({
+      type,
+      item: {
+        id: item.inventoryItemId,
+        name: item.name,
+        stock: remaining,
+        low_stock_threshold: threshold
+      },
+      payload: {
+        source: 'smart-deliveries',
+        delivery_number: deliveryNumber
+      }
+    });
+    notices.push({
+      id: item.inventoryItemId,
+      type,
+      label: `${item.name} (${remaining <= 0 ? 'agotado' : 'stock bajo'})`
+    });
+  }
+  return notices;
 }
 
 async function createInventoryMovementsSequentially(actions, movements) {
@@ -1553,6 +1661,8 @@ function buildBatchInventoryItems(inventoryItems = []) {
       category: item.category || '',
       unit: item.unit || 'unidad(es)',
       stock: Number(item.stock || 0),
+      lowStockThreshold: Number(item.low_stock_threshold || item.lowStockThreshold || 0),
+      unitValue: inventoryItemUnitValue(item),
       helpType: item.name || 'Alimentos'
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
@@ -1622,6 +1732,24 @@ function createRepartoSession(user = {}) {
   };
 }
 
+function closeRepartoSession(session = {}, user = {}) {
+  const endedAt = session.endedAt || new Date().toISOString();
+  const closed = {
+    ...session,
+    endedAt,
+    users: uniqueValues([...(session.users || []), currentUserName(user)].filter(Boolean))
+  };
+  const acta = buildRepartoActa(closed);
+  return {
+    ...closed,
+    acta: {
+      generatedAt: new Date().toISOString(),
+      statistics: acta.statistics,
+      impact: acta.impact
+    }
+  };
+}
+
 function updateRepartoSession(current, type, entry = {}) {
   const base = {
     ...current,
@@ -1638,6 +1766,9 @@ function buildRepartoActa(session = {}) {
   const deliveries = session.deliveries || [];
   const duplicates = session.duplicates || [];
   const incidents = [...(session.incidents || []), ...deliveries.filter((item) => item.incident).map((item) => ({ detail: item.incident }))];
+  const products = summarizeProducts(deliveries);
+  const impact = buildRepartoImpact(deliveries);
+  const statistics = buildRepartoStatistics({ deliveries, duplicates, incidents, cancelled: session.cancelled || [] });
   return {
     status: session.endedAt ? 'Acta cerrada' : 'Acta en curso',
     date: formatDate(session.startedAt),
@@ -1646,11 +1777,13 @@ function buildRepartoActa(session = {}) {
     users: (session.users || []).join(', '),
     beneficiaries: uniqueValues(deliveries.map((item) => item.beneficiaryName)).length,
     people: deliveries.reduce((total, item) => total + Number(item.peopleCount || 0), 0),
-    products: summarizeProducts(deliveries),
+    products,
     incidents: incidents.map((item) => item.detail || item.title).filter(Boolean).join('; '),
     duplicates: duplicates.length,
     cancelled: (session.cancelled || []).length,
     signatures: deliveries.reduce((total, item) => total + Number(item.signatureCount || 0), 0),
+    statistics,
+    impact,
     deliveryRows: deliveries.map((item) => ({
       id: item.id,
       deliveryId: item.deliveryId || '',
@@ -1663,8 +1796,35 @@ function buildRepartoActa(session = {}) {
       changeReason: item.changeReason || '',
       modifiedBy: item.modifiedBy || '',
       modifiedAt: item.modifiedAt || '',
+      estimatedValue: Number(item.estimatedValue || 0),
       at: item.at
     }))
+  };
+}
+
+function buildRepartoStatistics({ deliveries = [], duplicates = [], incidents = [], cancelled = [] } = {}) {
+  const productNames = new Set();
+  deliveries.forEach((delivery) => {
+    (delivery.deliveredItems || parseDeliveryItemsFromLabel(delivery.deliveredLabel || delivery.productLabel || ''))
+      .forEach((item) => productNames.add(item.name || 'Ayuda general'));
+  });
+  return {
+    deliveryCount: deliveries.length,
+    duplicateCount: duplicates.length,
+    productCount: productNames.size,
+    incidentCount: incidents.length,
+    cancelledCount: cancelled.length
+  };
+}
+
+function buildRepartoImpact(deliveries = []) {
+  return {
+    people: deliveries.reduce((total, item) => total + Number(item.peopleCount || 0), 0),
+    estimatedValue: roundCurrency(deliveries.reduce((total, item) => total + Number(item.estimatedValue || 0), 0)),
+    deliveredUnits: roundCurrency(deliveries.reduce((total, item) => {
+      const items = item.deliveredItems || parseDeliveryItemsFromLabel(item.deliveredLabel || item.productLabel || '');
+      return total + items.reduce((sum, product) => sum + Number(product.quantity || 0), 0);
+    }, 0))
   };
 }
 
@@ -1743,17 +1903,21 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
 function buildRecommendedBatchForReparto(repartoBatch, peopleCount = 1) {
   if (!repartoBatch?.items?.length) return null;
   const recommendedItems = [];
-  const deliveredItems = [];
+  const deliveredById = new Map();
+  const stockRemaining = new Map();
   const shortages = [];
+
+  repartoBatch.items.forEach((item) => {
+    stockRemaining.set(item.id, Math.max(Number(item.stock || 0), 0));
+  });
 
   repartoBatch.items.forEach((item) => {
     const requested = Math.max(0, Math.round(Number(item.quantityPerPerson || 0) * Number(peopleCount || 1) * 100) / 100);
     if (requested <= 0) return;
     const available = Number(item.stock || 0);
     const delivered = Math.min(requested, Math.max(available, 0));
-    const substitute = delivered < requested ? findBatchSubstitute(repartoBatch.items, item) : null;
     const shortageMessage = delivered < requested
-      ? `${item.name}: recomendado ${formatQuantity(requested)} ${item.unit || ''}, disponible ${formatQuantity(available)}${substitute ? `; sustitucion propuesta: ${substitute.name}` : '; sin sustitucion disponible'}`
+      ? `${item.name}: recomendado ${formatQuantity(requested)} ${item.unit || ''}, disponible ${formatQuantity(available)}.`
       : '';
 
     recommendedItems.push(cloneDeliveryItem({
@@ -1764,25 +1928,66 @@ function buildRecommendedBatchForReparto(repartoBatch, peopleCount = 1) {
       shortageMessage
     }));
 
-    deliveredItems.push(cloneDeliveryItem({
+    deliveredById.set(item.id, cloneDeliveryItem({
       ...item,
       quantity: delivered,
       recommendedQuantity: requested,
       availableStock: available,
+      stockAfterDelivery: Math.max(available - delivered, 0),
       shortageMessage
     }));
-
-    if (shortageMessage) {
-      shortages.push({
-        product: item.name,
-        requested,
-        available,
-        substitute: substitute?.name || '',
-        message: shortageMessage
-      });
-    }
+    stockRemaining.set(item.id, Math.max(available - delivered, 0));
   });
 
+  deliveredById.forEach((deliveredItem) => {
+    const requested = Number(deliveredItem.recommendedQuantity || 0);
+    const delivered = Number(deliveredItem.quantity || 0);
+    if (delivered >= requested) return;
+    const missing = Math.max(0, Math.round((requested - delivered) * 100) / 100);
+    const sourceItem = repartoBatch.items.find((item) => item.id === deliveredItem.id) || deliveredItem;
+    const substitute = findBatchSubstitute(repartoBatch.items, sourceItem, stockRemaining);
+    const substituteAvailable = substitute ? Number(stockRemaining.get(substitute.id) ?? substitute.stock ?? 0) : 0;
+    const substituteQuantity = substitute ? Math.min(missing, Math.max(substituteAvailable, 0)) : 0;
+    let message = `No hay ${sourceItem.name}. Sin sustitucion disponible.`;
+
+    if (substitute && substituteQuantity > 0) {
+      const currentSubstitute = deliveredById.get(substitute.id) || cloneDeliveryItem({
+        ...substitute,
+        quantity: 0,
+        recommendedQuantity: 0,
+        availableStock: Number(substitute.stock || 0)
+      });
+      const nextQuantity = Math.round((Number(currentSubstitute.quantity || 0) + substituteQuantity) * 100) / 100;
+      deliveredById.set(substitute.id, {
+        ...currentSubstitute,
+        quantity: nextQuantity,
+        stockAfterDelivery: Math.max(substituteAvailable - substituteQuantity, 0),
+        substitutionFor: uniqueValues([currentSubstitute.substitutionFor, sourceItem.name]).join(', ')
+      });
+      stockRemaining.set(substitute.id, Math.max(substituteAvailable - substituteQuantity, 0));
+      message = `No hay ${sourceItem.name}. Sugerencia aplicada: +${formatQuantity(substituteQuantity)} ${substitute.name}.`;
+    }
+
+    deliveredById.set(deliveredItem.id, {
+      ...deliveredItem,
+      shortageMessage: message,
+      stockAfterDelivery: Math.max(Number(stockRemaining.get(deliveredItem.id) ?? 0), 0)
+    });
+    shortages.push({
+      product: sourceItem.name,
+      requested,
+      available: Number(deliveredItem.availableStock || 0),
+      missing,
+      substitute: substitute?.name || '',
+      substituteQuantity,
+      message
+    });
+  });
+
+  const deliveredItems = [...deliveredById.values()].map((item) => ({
+    ...item,
+    stockAfterDelivery: Number(stockRemaining.get(item.id) ?? item.stockAfterDelivery ?? 0)
+  }));
   const positiveDelivered = deliveredItems.filter((item) => Number(item.quantity || 0) > 0);
   const primary = positiveDelivered[0] || deliveredItems[0] || recommendedItems[0] || defaultDeliveryItem();
 
@@ -1795,18 +2000,21 @@ function buildRecommendedBatchForReparto(repartoBatch, peopleCount = 1) {
     inventoryItemId: primary.inventoryItemId || null,
     items: recommendedItems,
     deliveredItems,
-    shortages
+    shortages,
+    estimatedValue: calculateDeliveryItemsValue(deliveredItems),
+    recommendedValue: calculateDeliveryItemsValue(recommendedItems)
   };
 }
 
-function findBatchSubstitute(items = [], unavailableItem = {}) {
+function findBatchSubstitute(items = [], unavailableItem = {}, stockRemaining = null) {
+  const hasStock = (item) => Number(stockRemaining?.get(item.id) ?? item.stock ?? 0) > 0;
   const sameCategory = items.find((item) => (
     item.id !== unavailableItem.id
-    && Number(item.stock || 0) > 0
+    && hasStock(item)
     && normalize(item.category || '') === normalize(unavailableItem.category || '')
   ));
   if (sameCategory) return sameCategory;
-  return items.find((item) => item.id !== unavailableItem.id && Number(item.stock || 0) > 0) || null;
+  return items.find((item) => item.id !== unavailableItem.id && hasStock(item)) || null;
 }
 
 function findPreparedBatch(beneficiary, data = {}, deliveries = []) {

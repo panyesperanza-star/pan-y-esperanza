@@ -1083,9 +1083,19 @@ function deliveryValue(delivery, inventoryItems = []) {
   if (!isActiveDelivery(delivery)) return 0;
   const explicitTotal = firstPositiveNumber(delivery.estimated_total_value, delivery.total_value, delivery.estimated_value, delivery.value_amount);
   if (explicitTotal !== null) return explicitTotal;
+  const smartDeliveryTotal = smartDeliveryNoteValue(delivery.notes, 'Valor aproximado lote');
+  if (smartDeliveryTotal !== null) return smartDeliveryTotal;
   const inventoryItem = inventoryItems.find((item) => item.id === delivery.inventory_item_id);
   const unitValue = firstPositiveNumber(delivery.unit_value, delivery.estimated_unit_value, inventoryItem?.unit_value, inventoryItem?.estimated_unit_value, inventoryItem?.economic_value, inventoryItem?.price, inventoryItem?.cost);
   return unitValue !== null ? unitValue * Number(delivery.quantity || 0) : 0;
+}
+
+function smartDeliveryNoteValue(notes, label) {
+  const match = String(notes || '').match(new RegExp(`${label}:\\s*([\\d.,]+)`, 'i'));
+  if (!match) return null;
+  const normalized = match[1].replace(/\./g, '').replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function firstPositiveNumber(...values) {
