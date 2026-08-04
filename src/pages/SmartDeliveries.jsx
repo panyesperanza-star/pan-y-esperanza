@@ -1,5 +1,5 @@
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { AlertTriangle, ArrowLeft, Baby, Camera, CheckCircle2, Clock, IdCard, Keyboard, Loader2, PackageCheck, RefreshCw, Search, ScanLine, ShieldAlert, UserRound, UsersRound, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Baby, Camera, CheckCircle2, Clock, IdCard, Keyboard, Loader2, Minus, PackageCheck, Pencil, Plus, RefreshCw, Search, ScanLine, ShieldAlert, UserRound, UsersRound, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { canDo } from '../lib/auth';
@@ -29,6 +29,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [registerError, setRegisterError] = useState('');
   const [recentDeliveries, setRecentDeliveries] = useState([]);
   const [repartoSession, setRepartoSession] = useState(() => createRepartoSession(currentUser));
+  const [deliveryCustomization, setDeliveryCustomization] = useState(null);
+  const [customizeTarget, setCustomizeTarget] = useState(null);
   const directory = useMemo(() => buildBeneficiaryCredentialDirectory(data || {}), [data]);
   const canScan = canDo(currentUser, 'smart-deliveries', 'view');
   const canRegister = canDo(currentUser, 'smart-deliveries', 'create') || canDo(currentUser, 'deliveries', 'create');
@@ -175,6 +177,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       setScanStatus('Credencial anulada.');
       return;
     }
+    setDeliveryCustomization(null);
+    setCustomizeTarget(null);
     setResult({ type: 'beneficiary', source: 'qr', entry: match, beneficiary: match.record });
     setScanStatus('Beneficiario identificado.');
   }
@@ -199,6 +203,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
   function selectBeneficiary(beneficiary, source = 'manual') {
     const entry = directory.find((item) => item.record?.id === beneficiary.id) || toBeneficiaryDirectoryEntry(beneficiary);
+    setDeliveryCustomization(null);
+    setCustomizeTarget(null);
     setResult({ type: 'beneficiary', source, entry, beneficiary });
     setManualMatches([]);
     setManualQuery('');
@@ -212,6 +218,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     setFeedback(null);
     setSignatureFlow({
       summary,
+      customization: customizationForSummary(summary, deliveryCustomization),
       step: 'collector',
       collectorType: 'holder',
       authorizedName: '',
@@ -299,7 +306,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       const receiverSignature = flow.cannotSign
         ? buildCannotSignAttestationDataUrl({ summary, flow, registeredBy, date: now })
         : flow.beneficiarySignature;
-      const preparedBatch = summary.preparedBatch;
+      const deliveryPlan = buildDeliveryPlan(summary, flow.customization);
+      const preparedBatch = deliveryPlan.primaryItem;
       const deliveryNumber = nextSmartDeliveryNumber([...recentDeliveries, ...(data?.deliveries || [])], now);
       const traceability = {
         deliveryNumber,
@@ -314,14 +322,14 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         delivered_time: now.toTimeString().slice(0, 5),
         reception_at: now.toISOString(),
         responsible: registeredBy,
-        help_type: preparedBatch?.helpType || 'Alimentos',
+        help_type: preparedBatch?.helpType || preparedBatch?.name || 'Alimentos',
         quantity: preparedBatch?.quantity || 1,
         inventory_item_id: preparedBatch?.inventoryItemId || null,
         receiver_name: collection.receiverName,
         receiver_document_id: collection.receiverDocument,
         signature_data_url: receiverSignature,
         responsible_signature_data_url: flow.responsibleSignature,
-        notes: buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date: now, traceability })
+        notes: buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date: now, traceability, deliveryPlan })
       };
       const createdDelivery = await (actions.createSmartDelivery || actions.createDelivery)(payload);
       setRecentDeliveries((current) => [
@@ -346,7 +354,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         beneficiaryId: summary.beneficiary.id,
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
         peopleCount: summary.peopleCount,
-        productLabel: preparedBatch?.label || payload.help_type,
+        productLabel: deliveryPlan.deliveredLabel || preparedBatch?.label || payload.help_type,
+        recommendedLabel: deliveryPlan.recommendedLabel,
+        deliveredLabel: deliveryPlan.deliveredLabel,
+        changeReason: deliveryPlan.reason,
+        modifiedBy: deliveryPlan.modifiedBy,
+        modifiedAt: deliveryPlan.modifiedAt,
         identificationMethod: traceability.identificationMethod,
         signatureCount: flow.cannotSign ? 1 : 2,
         cannotSign: flow.cannotSign,
@@ -355,6 +368,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         at: now.toISOString()
       });
       setSignatureFlow(null);
+      setDeliveryCustomization(null);
+      setCustomizeTarget(null);
       setResult(null);
       setManualQuery('');
       setManualMatches([]);
@@ -392,6 +407,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       source: result.source
     })
     : null;
+  const activeCustomization = summary ? customizationForSummary(summary, deliveryCustomization) : null;
 
   useEffect(() => {
     if (!summary?.receivedToday) return;
@@ -447,6 +463,22 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         </header>
 
         {feedback && <DeliveryFeedbackOverlay feedback={feedback} onAccept={returnToScannerNow} />}
+        {customizeTarget && (
+          <CustomizeDeliveryModal
+            summary={customizeTarget}
+            customization={customizationForSummary(customizeTarget, deliveryCustomization)}
+            currentUser={currentUser}
+            onCancel={() => setCustomizeTarget(null)}
+            onReset={() => {
+              setDeliveryCustomization(null);
+              setCustomizeTarget(null);
+            }}
+            onSave={(customization) => {
+              setDeliveryCustomization(customization);
+              setCustomizeTarget(null);
+            }}
+          />
+        )}
 
         <section className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(28rem,1.18fr)]">
           <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
@@ -562,6 +594,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
                 canRegister={canRegister}
                 registering={registering}
                 error={registerError}
+                customization={activeCustomization}
+                onCustomize={() => setCustomizeTarget(summary)}
                 onRegister={() => beginSignatureFlow(summary)}
               />
                 )}
@@ -608,7 +642,7 @@ function RevokedPanel({ result }) {
   );
 }
 
-function BeneficiaryFastPanel({ summary, canRegister, registering, error, onRegister }) {
+function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, onCustomize, onRegister }) {
   const disabled = registering || summary.receivedToday || summary.blocked || !canRegister;
   return (
     <article className="grid h-full min-h-[34rem] gap-5 lg:grid-cols-[16rem_1fr]">
@@ -636,7 +670,7 @@ function BeneficiaryFastPanel({ summary, canRegister, registering, error, onRegi
           <Metric icon={IdCard} label="Identificacion" value={summary.sourceLabel} />
         </div>
 
-        <PreparedBatchCard batch={summary.preparedBatch} />
+        <PreparedBatchCard batch={summary.preparedBatch} customization={customization} onCustomize={onCustomize} />
 
         {summary.receivedToday && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800">
@@ -670,15 +704,130 @@ function BeneficiaryFastPanel({ summary, canRegister, registering, error, onRegi
   );
 }
 
-function PreparedBatchCard({ batch }) {
+function PreparedBatchCard({ batch, customization, onCustomize }) {
+  const plan = buildDeliveryPlan({ preparedBatch: batch, beneficiary: { id: customization?.beneficiaryId || '' } }, customization);
+  const hasCustomization = Boolean(customization);
   return (
     <div className={`mt-5 rounded-2xl border p-4 ${batch ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between gap-3">
         <PackageCheck className={batch ? 'text-brand-700' : 'text-slate-400'} size={24} />
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-black uppercase tracking-[0.18em]">{batch ? 'Lote preparado' : 'Lote preparado'}</p>
           <p className="mt-1 text-lg font-black text-ink">{batch?.label || 'Sin lote preparado'}</p>
           <p className="mt-1 text-sm font-semibold">{batch?.detail || 'La entrega se registrara como ayuda general si no existe un lote planificado.'}</p>
+          {hasCustomization && (
+            <div className="mt-3 rounded-xl bg-white/80 p-3 text-sm font-bold text-brand-900">
+              <p>Entrega personalizada: {plan.deliveredLabel}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">Motivo: {customization.reason}</p>
+            </div>
+          )}
+        </div>
+        <Button type="button" variant="secondary" onClick={onCustomize} className="h-10 shrink-0 px-3 text-xs">
+          <Pencil size={15} /> Personalizar entrega
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel, onReset, onSave }) {
+  const recommendedItems = recommendedItemsForSummary(summary);
+  const [items, setItems] = useState(() => (customization?.items?.length ? customization.items : recommendedItems).map(cloneDeliveryItem));
+  const [reason, setReason] = useState(customization?.reason || '');
+  const [error, setError] = useState('');
+  const changed = hasDeliveryItemChanges(recommendedItems, items);
+
+  function updateQuantity(itemId, nextQuantity) {
+    setItems((current) => current.map((item) => item.id === itemId ? { ...item, quantity: sanitizeDeliveryQuantity(nextQuantity) } : item));
+  }
+
+  function saveCustomization() {
+    setError('');
+    if (!items.some((item) => Number(item.quantity || 0) > 0)) {
+      setError('Debe entregarse al menos un producto.');
+      return;
+    }
+    if (changed && !String(reason || '').trim()) {
+      setError('Indica el motivo del cambio.');
+      return;
+    }
+    if (!changed) {
+      onReset();
+      return;
+    }
+    onSave({
+      beneficiaryId: summary.beneficiary.id,
+      recommendedItems: recommendedItems.map(cloneDeliveryItem),
+      items: items.map(cloneDeliveryItem),
+      reason: String(reason || '').trim(),
+      modifiedBy: currentUserName(currentUser),
+      modifiedAt: new Date().toISOString()
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
+      <div className="w-full max-w-2xl rounded-[2rem] bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-700">Smart Deliveries</p>
+            <h2 className="mt-1 text-2xl font-black text-ink">Personalizar entrega</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-600">Ajusta solo lo necesario. Si no cambias nada, se usara el lote recomendado.</p>
+          </div>
+          <Button type="button" variant="secondary" onClick={onCancel} className="h-10 px-3 text-xs">
+            Cancelar
+          </Button>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          {items.map((item) => {
+            const recommended = recommendedItems.find((entry) => entry.id === item.id);
+            return (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-base font-black text-ink">{item.name}</p>
+                    <p className="text-xs font-semibold text-slate-500">Recomendado: {formatDeliveryItemQuantity(recommended)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={() => updateQuantity(item.id, Number(item.quantity || 0) - 1)} className="h-10 w-10 px-0">
+                      <Minus size={16} />
+                    </Button>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={item.quantity}
+                      onChange={(event) => updateQuantity(item.id, event.target.value)}
+                      className="h-10 w-24 rounded-xl border border-slate-200 bg-white px-3 text-center text-base font-black outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                    />
+                    <Button type="button" variant="secondary" onClick={() => updateQuantity(item.id, Number(item.quantity || 0) + 1)} className="h-10 w-10 px-0">
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <label className="mt-4 block text-sm font-bold text-slate-700">
+          Motivo del cambio
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Ejemplo: unidad familiar mayor, falta de producto, ajuste indicado por coordinacion..."
+            className="mt-1 min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+          />
+        </label>
+
+        {error && <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+
+        <div className="mt-5 flex flex-wrap justify-between gap-2">
+          <Button type="button" variant="secondary" onClick={onReset}>Usar recomendado</Button>
+          <Button type="button" onClick={saveCustomization}>
+            Guardar personalizacion
+          </Button>
         </div>
       </div>
     </div>
@@ -980,6 +1129,9 @@ function RepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
               <span>
                 <strong className="text-ink">{item.deliveryNumber}</strong> · {item.beneficiaryName}
                 <span className="block text-slate-500">{item.peopleCount} persona(s) · {formatTime(item.at)} · {item.identificationMethod}</span>
+                {item.changeReason && (
+                  <span className="block text-brand-700">Recomendado: {item.recommendedLabel} · Entregado: {item.deliveredLabel} · Motivo: {item.changeReason}</span>
+                )}
               </span>
               <span className="text-brand-700">Abrir entrega</span>
             </button>
@@ -1065,7 +1217,7 @@ function buildCollectionInfo(summary, flow) {
   };
 }
 
-function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date, traceability = {} }) {
+function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date, traceability = {}, deliveryPlan = null }) {
   const notes = [
     'Entrega registrada desde Entregas Inteligentes.',
     `Numero de entrega: ${traceability.deliveryNumber || '-'}.`,
@@ -1080,11 +1232,105 @@ function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date
     `Recoge: ${collection.label}.`,
     flow.collectorType === 'authorized' ? `Nombre autorizado: ${collection.receiverName}.` : '',
     flow.collectorType === 'authorized' ? `Relacion autorizada: ${collection.relation}.` : '',
-    summary.preparedBatch ? `Lote preparado: ${summary.preparedBatch.label}.` : 'Sin lote preparado previo.',
+    `Lote recomendado: ${deliveryPlan?.recommendedLabel || 'Sin lote preparado previo'}.`,
+    `Lote entregado: ${deliveryPlan?.deliveredLabel || 'Ayuda general x 1'}.`,
+    deliveryPlan?.changed ? `Motivo cambio lote: ${deliveryPlan.reason}.` : '',
+    deliveryPlan?.changed ? `Modificado por: ${deliveryPlan.modifiedBy || registeredBy}.` : '',
+    deliveryPlan?.changed ? `Fecha modificacion lote: ${formatDate(deliveryPlan.modifiedAt || date)} ${formatTime(deliveryPlan.modifiedAt || date)}.` : '',
     flow.cannotSign ? `No puede firmar. Motivo: ${flow.noSignReason}. Testigo: ${registeredBy}.` : '',
     `Hora de recepcion: ${formatTime(date)}.`
   ];
   return notes.filter(Boolean).join(' ');
+}
+
+function customizationForSummary(summary, customization) {
+  return customization?.beneficiaryId && customization.beneficiaryId === summary?.beneficiary?.id ? customization : null;
+}
+
+function buildDeliveryPlan(summary, customization) {
+  const activeCustomization = customizationForSummary(summary, customization);
+  const recommendedItems = activeCustomization?.recommendedItems?.length
+    ? activeCustomization.recommendedItems.map(cloneDeliveryItem)
+    : recommendedItemsForSummary(summary);
+  const deliveredItems = activeCustomization?.items?.length
+    ? activeCustomization.items.map(cloneDeliveryItem)
+    : recommendedItems.map(cloneDeliveryItem);
+  const positiveItems = deliveredItems.filter((item) => Number(item.quantity || 0) > 0);
+  const primaryItem = positiveItems[0] || deliveredItems[0] || recommendedItems[0] || defaultDeliveryItem();
+  const changed = Boolean(activeCustomization) && hasDeliveryItemChanges(recommendedItems, deliveredItems);
+  return {
+    recommendedItems,
+    deliveredItems,
+    primaryItem,
+    changed,
+    reason: changed ? activeCustomization.reason : '',
+    modifiedBy: changed ? activeCustomization.modifiedBy : '',
+    modifiedAt: changed ? activeCustomization.modifiedAt : '',
+    recommendedLabel: formatDeliveryItems(recommendedItems),
+    deliveredLabel: formatDeliveryItems(deliveredItems)
+  };
+}
+
+function recommendedItemsForSummary(summary) {
+  const batch = summary?.preparedBatch || summary;
+  if (Array.isArray(batch?.items) && batch.items.length) return batch.items.map(cloneDeliveryItem);
+  if (batch?.label || batch?.helpType || batch?.inventoryItemId) {
+    return [cloneDeliveryItem({
+      id: batch.inventoryItemId || 'general',
+      inventoryItemId: batch.inventoryItemId || null,
+      name: batch.label || batch.helpType || 'Ayuda general',
+      helpType: batch.helpType || batch.label || 'Alimentos',
+      quantity: Number(batch.quantity || 1),
+      unit: batch.unit || 'unidad(es)'
+    })];
+  }
+  return [defaultDeliveryItem()];
+}
+
+function defaultDeliveryItem() {
+  return {
+    id: 'general',
+    inventoryItemId: null,
+    name: 'Ayuda general',
+    helpType: 'Alimentos',
+    quantity: 1,
+    unit: 'unidad(es)'
+  };
+}
+
+function cloneDeliveryItem(item = {}) {
+  return {
+    id: String(item.id || item.inventoryItemId || item.inventory_item_id || item.name || 'general'),
+    inventoryItemId: item.inventoryItemId || item.inventory_item_id || null,
+    name: item.name || item.inventory_item_name || item.product || item.helpType || 'Ayuda general',
+    helpType: item.helpType || item.help_type || item.name || 'Alimentos',
+    quantity: sanitizeDeliveryQuantity(item.quantity || 1),
+    unit: item.unit || 'unidad(es)'
+  };
+}
+
+function sanitizeDeliveryQuantity(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.round(parsed * 100) / 100;
+}
+
+function hasDeliveryItemChanges(recommendedItems = [], deliveredItems = []) {
+  const deliveredById = new Map(deliveredItems.map((item) => [item.id, Number(item.quantity || 0)]));
+  if (recommendedItems.length !== deliveredItems.length) return true;
+  return recommendedItems.some((item) => Number(item.quantity || 0) !== Number(deliveredById.get(item.id) ?? -1));
+}
+
+function formatDeliveryItems(items = []) {
+  const positive = items.filter((item) => Number(item.quantity || 0) > 0);
+  if (!positive.length) return 'Sin productos';
+  return positive.map(formatDeliveryItemQuantity).join('; ');
+}
+
+function formatDeliveryItemQuantity(item = {}) {
+  const quantity = Number(item.quantity || 0);
+  const quantityLabel = Number.isInteger(quantity) ? String(quantity) : String(quantity).replace('.', ',');
+  return `${item.name || 'Ayuda general'} x ${quantityLabel}${item.unit ? ` ${item.unit}` : ''}`;
 }
 
 function nextSmartDeliveryNumber(deliveries = [], date = new Date()) {
@@ -1188,6 +1434,11 @@ function buildRepartoActa(session = {}) {
       beneficiaryName: item.beneficiaryName || 'Beneficiario',
       peopleCount: item.peopleCount || 1,
       identificationMethod: item.identificationMethod || 'Busqueda manual',
+      recommendedLabel: item.recommendedLabel || '',
+      deliveredLabel: item.deliveredLabel || item.productLabel || '',
+      changeReason: item.changeReason || '',
+      modifiedBy: item.modifiedBy || '',
+      modifiedAt: item.modifiedAt || '',
       at: item.at
     }))
   };
@@ -1253,13 +1504,22 @@ function findPreparedBatch(beneficiary, data = {}, deliveries = []) {
     .sort((a, b) => String(a.delivered_at || '').localeCompare(String(b.delivered_at || '')))[0];
 
   if (plannedDelivery) {
+    const plannedItem = {
+      id: plannedDelivery.inventory_item_id || plannedDelivery.help_type || 'programada',
+      inventoryItemId: plannedDelivery.inventory_item_id || null,
+      name: plannedDelivery.inventory_item_name || plannedDelivery.help_type || 'Lote programado',
+      helpType: plannedDelivery.help_type || 'Ayuda',
+      quantity: Number(plannedDelivery.quantity || 1),
+      unit: plannedDelivery.inventory_item_unit || 'unidad(es)'
+    };
     return {
       source: 'Entrega programada',
       label: plannedDelivery.inventory_item_name || plannedDelivery.help_type || 'Lote programado',
       detail: `${formatDate(plannedDelivery.delivered_at)} · ${plannedDelivery.help_type || 'Ayuda'} · ${plannedDelivery.quantity || 1} unidad(es)`,
       helpType: plannedDelivery.help_type || 'Alimentos',
       quantity: Number(plannedDelivery.quantity || 1),
-      inventoryItemId: plannedDelivery.inventory_item_id || null
+      inventoryItemId: plannedDelivery.inventory_item_id || null,
+      items: [plannedItem]
     };
   }
 
@@ -1267,13 +1527,24 @@ function findPreparedBatch(beneficiary, data = {}, deliveries = []) {
   if (!campaign) return null;
   const products = productsForCampaign(campaign.id, data);
   const label = products.length ? products.map((item) => item.name).join(', ') : (campaign.name || 'Campana activa');
+  const items = products.length
+    ? products.map((item) => ({
+      id: item.id,
+      inventoryItemId: item.id,
+      name: item.name,
+      helpType: item.name || campaign.name || 'Alimentos',
+      quantity: Number(item.campaignQuantity || 1),
+      unit: item.unit || 'unidad(es)'
+    }))
+    : [defaultDeliveryItem()];
   return {
     source: 'Campana activa',
     label,
     detail: `${campaign.name || 'Campana'} · ${products.length ? `${products.length} producto(s)` : 'Sin productos vinculados'}`,
     helpType: campaign.name || 'Alimentos',
-    quantity: 1,
-    inventoryItemId: products[0]?.id || null
+    quantity: Number(items[0]?.quantity || 1),
+    inventoryItemId: items[0]?.inventoryItemId || null,
+    items
   };
 }
 
@@ -1291,10 +1562,12 @@ function findActiveCampaignForBeneficiary(beneficiary, data = {}) {
 }
 
 function productsForCampaign(campaignId, data = {}) {
-  const productIds = new Set((data.campana_productos || [])
-    .filter((item) => item.campaign_id === campaignId)
-    .map((item) => item.product_id));
-  return (data.inventory_items || []).filter((item) => productIds.has(item.id));
+  const links = (data.campana_productos || []).filter((item) => item.campaign_id === campaignId);
+  const quantityByProduct = new Map(links.map((item) => [item.product_id, Number(item.quantity || item.cantidad || 1)]));
+  const productIds = new Set(links.map((item) => item.product_id));
+  return (data.inventory_items || [])
+    .filter((item) => productIds.has(item.id))
+    .map((item) => ({ ...item, campaignQuantity: quantityByProduct.get(item.id) || 1 }));
 }
 
 function buildBeneficiaryCredentialDirectory(data = {}) {

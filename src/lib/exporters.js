@@ -250,7 +250,12 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Usuario que registro la entrega', operationalData.registeredBy],
       ['Rol del usuario', operationalData.userRole],
       ['Metodo de identificacion', operationalData.identificationMethod],
-      ['Dispositivo', operationalData.device]
+      ['Dispositivo', operationalData.device],
+      ['Lote recomendado', operationalData.recommendedBatch],
+      ['Lote realmente entregado', operationalData.deliveredBatch],
+      ...(operationalData.changeReason ? [['Motivo del cambio', operationalData.changeReason]] : []),
+      ...(operationalData.modifiedBy ? [['Modificado por', operationalData.modifiedBy]] : []),
+      ...(operationalData.modifiedAt ? [['Fecha modificacion', operationalData.modifiedAt]] : [])
     ],
     theme: 'plain',
     styles: { fontSize: 9, cellPadding: 2.2, textColor: [23, 33, 27] },
@@ -459,6 +464,9 @@ function getReceiptProductRows(delivery) {
     ]);
   }
 
+  const deliveredBatchRows = parseReceiptItemsFromLabel(matchReceiptNoteValue(delivery.notes, 'Lote entregado'));
+  if (deliveredBatchRows.length) return deliveredBatchRows;
+
   return [[
     delivery.inventory_item_name || delivery.product || delivery.help_type || 'Ayuda entregada',
     delivery.quantity || '-'
@@ -475,6 +483,11 @@ function receiptOperationalData(delivery, beneficiary) {
   const userRole = matchReceiptNoteValue(notes, 'Rol usuario') || '-';
   const identificationMethod = matchReceiptNoteValue(notes, 'Metodo identificacion') || '-';
   const device = matchReceiptNoteValue(notes, 'Dispositivo') || '-';
+  const recommendedBatch = matchReceiptNoteValue(notes, 'Lote recomendado') || '-';
+  const deliveredBatch = matchReceiptNoteValue(notes, 'Lote entregado') || '-';
+  const changeReason = matchReceiptNoteValue(notes, 'Motivo cambio lote');
+  const modifiedBy = matchReceiptNoteValue(notes, 'Modificado por');
+  const modifiedAt = matchReceiptNoteValue(notes, 'Fecha modificacion lote');
   return {
     beneficiaryCode,
     credentialCode,
@@ -483,10 +496,26 @@ function receiptOperationalData(delivery, beneficiary) {
     userRole,
     identificationMethod,
     device,
+    recommendedBatch,
+    deliveredBatch,
+    changeReason,
+    modifiedBy,
+    modifiedAt,
     receiverLabel: authorizedName
       ? authorizedName
       : (delivery.receiver_name || beneficiary?.full_name || delivery.beneficiary_name || '-')
   };
+}
+
+function parseReceiptItemsFromLabel(value = '') {
+  return String(value || '')
+    .split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(.*?)\s+x\s+(.+)$/i);
+      return match ? [match[1].trim(), match[2].trim()] : [item, '-'];
+    });
 }
 
 function matchReceiptNoteValue(notes, label) {
