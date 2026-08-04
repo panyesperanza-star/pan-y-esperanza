@@ -30,6 +30,7 @@ import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { SmartDeliveries } from './pages/SmartDeliveries';
 import { SocialCareCenter } from './pages/SocialCareCenter';
 import { Volunteers } from './pages/Volunteers';
 import { createPortalApiActions } from './services/portalAuth/PortalApiService';
@@ -259,6 +260,7 @@ export default function App() {
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
+    'smart-deliveries': <SmartDeliveries data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     'credential-scanner': <CredentialScanner data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
@@ -279,6 +281,10 @@ export default function App() {
 
   const showDemoControls = import.meta.env.DEV && !isSystemSuperadmin(currentUser);
   const notificationCount = (sorted.notificaciones || []).filter(isUnreadNotification).length;
+
+  if (selectedPage === 'smart-deliveries') {
+    return pageContent;
+  }
 
   return (
     <Layout active={selectedPage} setActive={navigateTo} onReset={actions.resetDemo} currentUser={currentUser} onLogout={logout} showReset={showDemoControls} notificationCount={notificationCount}>

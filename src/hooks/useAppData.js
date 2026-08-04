@@ -423,7 +423,8 @@ export function useAppData(enabled = true, currentUser = null) {
     inventarioService = null,
     dashboardService = createDashboardService(),
     configuracionService = null,
-    notificacionService = null
+    notificacionService = null,
+    assertPermissionOverride = assertPermission
   } = {}) {
     return new EntregaService({
       repository: new EntregaRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
@@ -437,7 +438,7 @@ export function useAppData(enabled = true, currentUser = null) {
       families: appData.families || [],
       inventoryItems: appData.inventory_items || [],
       audit,
-      assertPermission,
+      assertPermission: assertPermissionOverride,
       assertCanDelete: assertSuperadmin,
       assertCancelFallback: () => {
         if (currentUser?.role !== 'Superadministrador') {
@@ -2203,6 +2204,16 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     createDelivery: async (payload) => {
       await entregaService.create(payload);
+      await reload();
+    },
+    createSmartDelivery: async (payload) => {
+      const smartDeliveryService = createEntregaService({
+        assertPermissionOverride: (moduleId, actionId) => {
+          if (moduleId === 'deliveries' && actionId === 'create' && canDo(currentUser, 'smart-deliveries', 'create')) return;
+          assertPermission(moduleId, actionId);
+        }
+      });
+      await smartDeliveryService.create(payload);
       await reload();
     },
     deleteDelivery: async (id) => {
