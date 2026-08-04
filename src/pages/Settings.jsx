@@ -28,12 +28,23 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
   const [tab, setTab] = useState(requestedTabAllowed ? initialTab : fallbackTab);
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
   const deliveryPreferences = form.erp_preferences?.deliveries || {};
+  const smartDeliveryPreferences = form.erp_preferences?.smartDeliveries || {};
   const updateDeliveryPreference = (field, value) => setForm((state) => ({
     ...state,
     erp_preferences: {
       ...(state.erp_preferences || {}),
       deliveries: {
         ...(state.erp_preferences?.deliveries || {}),
+        [field]: value
+      }
+    }
+  }));
+  const updateSmartDeliveryPreference = (field, value) => setForm((state) => ({
+    ...state,
+    erp_preferences: {
+      ...(state.erp_preferences || {}),
+      smartDeliveries: {
+        ...(state.erp_preferences?.smartDeliveries || {}),
         [field]: value
       }
     }
@@ -77,6 +88,17 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
               </span>
             </label>
           </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+            <FormField label="Destinatarios adicionales del acta de reparto">
+              <textarea
+                className={`${inputClass} min-h-24`}
+                value={formatRecipientListForSettings(smartDeliveryPreferences.actaRecipients)}
+                onChange={(event) => updateSmartDeliveryPreference('actaRecipients', parseRecipientListFromSettings(event.target.value))}
+                placeholder="correo1@ejemplo.org, correo2@ejemplo.org"
+              />
+            </FormField>
+            <p className="mt-2 text-sm text-slate-500">Presidencia, Vicepresidencia y Coordinacion General se resuelven desde usuarios/roles. Aqui puedes anadir destinatarios extra.</p>
+          </div>
           <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar configuracion</Button></div>
         </form>
       </section>
@@ -86,6 +108,18 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
       {tab === 'system' && <SystemStatus configService={settingsService} />}
     </>
   );
+}
+
+function formatRecipientListForSettings(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value || '');
+}
+
+function parseRecipientListFromSettings(value) {
+  return String(value || '')
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function SystemStatus({ configService }) {

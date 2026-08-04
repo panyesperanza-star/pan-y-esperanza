@@ -5,8 +5,12 @@ import { Button } from '../components/Button';
 import { canDo } from '../lib/auth';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
+import { normalizeEmailError, sendEmailViaApi } from '../lib/emailClient';
+import { createSmartRepartoActaPdf } from '../lib/exporters';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 import { SignatureCaptureField } from './Deliveries';
+
+const CLOSE_REPARTO_PHRASE = 'CERRAR REPARTO';
 
 export function SmartDeliveries({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const scannerRegionId = useRef(`smart-delivery-reader-${Math.random().toString(36).slice(2)}`).current;
@@ -32,10 +36,18 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [deliveryCustomization, setDeliveryCustomization] = useState(null);
   const [customizeTarget, setCustomizeTarget] = useState(null);
   const [batchConfig, setBatchConfig] = useState(() => createDefaultRepartoBatchConfig());
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [closeConfirmation, setCloseConfirmation] = useState('');
+  const [closeRepartoError, setCloseRepartoError] = useState('');
+  const [closingReparto, setClosingReparto] = useState(false);
   const directory = useMemo(() => buildBeneficiaryCredentialDirectory(data || {}), [data]);
   const currentRepartoBatch = useMemo(() => buildCurrentRepartoBatch(data?.inventory_items || [], batchConfig), [data?.inventory_items, batchConfig]);
+  const organization = data?.organization_settings?.[0] || {};
+  const actaRecipients = useMemo(() => resolveRepartoActaRecipients(data || {}, currentUser), [data, currentUser]);
   const canScan = canDo(currentUser, 'smart-deliveries', 'view');
   const canRegister = canDo(currentUser, 'smart-deliveries', 'create') || canDo(currentUser, 'deliveries', 'create');
+  const canReopenReparto = canDo(currentUser, 'smart-deliveries', 'edit') || canDo(currentUser, 'deliveries', 'edit') || canDo(currentUser, 'settings', 'edit');
+  const repartoClosed = Boolean(repartoSession.endedAt || repartoSession.locked);
 
   useEffect(() => () => {
     stopCamera();
@@ -72,6 +84,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   }, [data?.beneficiaries, navigationTarget?.moduleId, navigationTarget?.profileId]);
 
   async function startCamera(cameraId = selectedCameraId) {
+    if (repartoClosed) {
+      setCameraError('El reparto esta cerrado. Reabre el acta con un usuario autorizado para volver a escanear.');
+      setScanStatus('Reparto cerrado.');
+      return;
+    }
     if (!canScan) {
       setCameraError('Tu usuario no tiene permiso para usar el modo reparto.');
       setScanStatus('Escaneo no autorizado.');
@@ -220,6 +237,10 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
   function beginSignatureFlow(summary) {
     if (!summary?.beneficiary || summary.receivedToday || summary.blocked) return;
+    if (repartoClosed) {
+      setRegisterError('El reparto esta cerrado. Reabre el acta con un usuario autorizado para registrar nuevas entregas.');
+      return;
+    }
     setRegisterError('');
     setFeedback(null);
     setSignatureFlow({
@@ -301,6 +322,10 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
   async function registerDelivery(summary, flow) {
     if (!summary?.beneficiary || summary.receivedToday || summary.blocked) return;
+    if (repartoClosed) {
+      setRegisterError('El reparto esta cerrado. No se pueden registrar nuevas entregas.');
+      return;
+    }
     setRegistering(true);
     setRegisterError('');
     setFeedback(null);
@@ -377,6 +402,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         beneficiaryId: summary.beneficiary.id,
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
         peopleCount: summary.peopleCount,
+        adults: summary.adults,
+        minors: summary.minors,
         productLabel: deliveryPlan.deliveredLabel || preparedBatch?.label || payload.help_type,
         recommendedLabel: deliveryPlan.recommendedLabel,
         deliveredLabel: deliveryPlan.deliveredLabel,
@@ -419,8 +446,82 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     }));
   }
 
-  function finishRepartoSession() {
-    setRepartoSession((current) => closeRepartoSession(current, currentUser));
+  function requestCloseRepartoSession() {
+    setCloseConfirmation('');
+    setCloseRepartoError('');
+    setCloseDialogOpen(true);
+  }
+
+  async function confirmCloseRepartoSession() {
+    setCloseRepartoError('');
+    if (normalize(closeConfirmation) !== normalize(CLOSE_REPARTO_PHRASE)) {
+      setCloseRepartoError(`Escribe exactamente "${CLOSE_REPARTO_PHRASE}" para cerrar el reparto.`);
+      return;
+    }
+    if (!actaRecipients.length) {
+      setCloseRepartoError('No hay destinatarios configurados para enviar el acta. Revisa Configuracion.');
+      return;
+    }
+    setClosingReparto(true);
+    try {
+      const closed = closeRepartoSession(repartoSession, currentUser);
+      const acta = buildRepartoActa(closed, { batch: currentRepartoBatch });
+      const { blob, filename } = await createSmartRepartoActaPdf(acta, organization, closed);
+      const subject = `Acta oficial del reparto - ${acta.date}`;
+      const message = buildRepartoExecutiveEmail(acta, closed, actaRecipients);
+      const payload = await sendEmailViaApi({
+        to: actaRecipients.join(', '),
+        subject,
+        message,
+        attachments: [{ filename, blob, size: blob.size, contentType: 'application/pdf' }],
+        organization,
+        logEmail: true
+      });
+      try {
+        await actions.createAuditLog?.({
+          user_name: currentUserName(currentUser),
+          user_email: currentUser?.email || '',
+          action: `Smart Deliveries: cerro reparto ${closed.id} con ${acta.beneficiaries} beneficiarios y ${acta.people} personas atendidas.`,
+          happened_at: closed.endedAt
+        });
+      } catch (auditError) {
+        console.warn('[Entregas inteligentes] No se pudo registrar auditoria de cierre', auditError);
+      }
+      setRepartoSession({
+        ...closed,
+        acta: {
+          ...(closed.acta || {}),
+          statistics: acta.statistics,
+          impact: acta.impact,
+          pdfFilename: filename,
+          emailedAt: new Date().toISOString(),
+          emailRecipients: actaRecipients,
+          providerId: payload.id || ''
+        }
+      });
+      if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+      await stopCamera({ silent: true });
+      setCloseDialogOpen(false);
+      setScanStatus('Reparto cerrado oficialmente.');
+    } catch (error) {
+      console.error('[Entregas inteligentes] Error al cerrar reparto', error);
+      setCloseRepartoError(normalizeEmailError(error));
+    } finally {
+      setClosingReparto(false);
+    }
+  }
+
+  function reopenRepartoSession() {
+    if (!canReopenReparto) return;
+    setRepartoSession((current) => ({
+      ...current,
+      endedAt: '',
+      locked: false,
+      reopenedAt: new Date().toISOString(),
+      reopenedBy: currentUserName(currentUser)
+    }));
+    setCameraError('');
+    setScanStatus('Reparto reabierto por usuario autorizado.');
   }
 
   const summary = result?.type === 'beneficiary'
@@ -503,6 +604,17 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
               setDeliveryCustomization(customization);
               setCustomizeTarget(null);
             }}
+          />
+        )}
+        {closeDialogOpen && (
+          <CloseRepartoDialog
+            recipients={actaRecipients}
+            confirmation={closeConfirmation}
+            error={closeRepartoError}
+            closing={closingReparto}
+            onChange={setCloseConfirmation}
+            onCancel={() => setCloseDialogOpen(false)}
+            onConfirm={confirmCloseRepartoSession}
           />
         )}
 
@@ -598,7 +710,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
             <RepartoSessionPanel
               session={repartoSession}
-              onFinish={finishRepartoSession}
+              batch={currentRepartoBatch}
+              closing={closingReparto}
+              closeError={closeRepartoError}
+              canReopen={canReopenReparto}
+              onFinish={requestCloseRepartoSession}
+              onReopen={reopenRepartoSession}
               onOpenDelivery={(deliveryId) => deliveryId && onNavigate?.({ moduleId: 'deliveries', itemId: deliveryId })}
             />
           </div>
@@ -626,6 +743,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
                 registering={registering}
                 error={registerError}
                 customization={activeCustomization}
+                repartoClosed={repartoClosed}
                 onCustomize={() => setCustomizeTarget(summary)}
                 onRegister={() => beginSignatureFlow(summary)}
               />
@@ -668,6 +786,48 @@ function RevokedPanel({ result }) {
       <div className="mt-5 grid w-full max-w-md gap-3 rounded-2xl bg-white p-4 text-left">
         <InfoLine label="ID" value={result.credentialId || '-'} />
         <InfoLine label="Motivo" value={result.message || '-'} />
+      </div>
+    </div>
+  );
+}
+
+function CloseRepartoDialog({ recipients, confirmation, error, closing, onChange, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
+      <div className="w-full max-w-xl rounded-[2rem] bg-white p-5 shadow-2xl">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-700">Cierre oficial</p>
+          <h2 className="mt-1 text-2xl font-black text-ink">Cerrar reparto</h2>
+          <p className="mt-2 text-sm font-semibold text-slate-600">
+            Se generara el Acta Oficial en PDF, se registrara el cierre y se enviara el resumen a los destinatarios configurados.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm font-semibold text-brand-900">
+          <p className="font-black">Destinatarios del acta</p>
+          <p className="mt-1">{recipients.length ? recipients.join(', ') : 'Sin destinatarios configurados'}</p>
+        </div>
+
+        <label className="mt-4 block text-sm font-bold text-slate-700">
+          Frase de confirmacion
+          <input
+            className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-black uppercase outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+            value={confirmation}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={CLOSE_REPARTO_PHRASE}
+          />
+        </label>
+        <p className="mt-2 text-xs font-semibold text-slate-500">Escribe exactamente: {CLOSE_REPARTO_PHRASE}</p>
+
+        {error && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={closing}>Cancelar</Button>
+          <Button type="button" onClick={onConfirm} disabled={closing}>
+            {closing && <Loader2 className="animate-spin" size={16} />}
+            Cerrar y enviar acta
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -719,8 +879,8 @@ function RepartoBatchPanel({ batch, onRuleChange }) {
   );
 }
 
-function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, onCustomize, onRegister }) {
-  const disabled = registering || summary.receivedToday || summary.blocked || !canRegister;
+function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, repartoClosed = false, onCustomize, onRegister }) {
+  const disabled = registering || summary.receivedToday || summary.blocked || !canRegister || repartoClosed;
   return (
     <article className="grid h-full min-h-[34rem] gap-5 lg:grid-cols-[16rem_1fr]">
       <div className="rounded-[1.5rem] bg-slate-50 p-4">
@@ -760,6 +920,13 @@ function BeneficiaryFastPanel({ summary, canRegister, registering, error, custom
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800">
             <p className="text-2xl font-black">Expediente no activo</p>
             <p className="mt-1 font-semibold">El estado actual impide registrar una entrega rapida.</p>
+          </div>
+        )}
+
+        {repartoClosed && (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+            <p className="text-2xl font-black">Reparto cerrado</p>
+            <p className="mt-1 font-semibold">El acta ya esta cerrada. No se pueden registrar nuevas entregas salvo reapertura autorizada.</p>
           </div>
         )}
 
@@ -1182,7 +1349,117 @@ function CollectorOption({ selected, title, text, onClick }) {
   );
 }
 
-function RepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
+function RepartoSessionPanel({ session, batch, closing, closeError, canReopen, onFinish, onReopen, onOpenDelivery }) {
+  const acta = buildRepartoActa(session, { batch });
+  const latestRows = acta.deliveryRows.slice(0, 5);
+  const stockItems = acta.stock.items.slice(0, 5);
+  return (
+    <section className="mt-4 rounded-2xl border border-brand-100 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-700">Sala de control</p>
+          <h3 className="text-xl font-black text-ink">{acta.status}</h3>
+          <p className="text-xs font-semibold text-slate-500">{acta.date} · Inicio {acta.startTime}{acta.endTime ? ` · Fin ${acta.endTime}` : ''}</p>
+        </div>
+        {session.endedAt ? (
+          <Button type="button" variant="secondary" onClick={onReopen} disabled={!canReopen} className="h-10 px-3 text-xs">
+            Reabrir
+          </Button>
+        ) : (
+          <Button type="button" variant="secondary" onClick={onFinish} disabled={closing} className="h-10 px-3 text-xs">
+            {closing ? <Loader2 className="animate-spin" size={14} /> : '🏁'} Cerrar reparto
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <SessionMetric label="Beneficiarios" value={acta.beneficiaries} />
+        <SessionMetric label="Personas" value={acta.people} />
+        <SessionMetric label="Adultos" value={acta.adults} />
+        <SessionMetric label="Menores" value={acta.minors} />
+        <SessionMetric label="Duplicadas" value={acta.duplicates} />
+        <SessionMetric label="Tiempo medio" value={acta.averageTime} />
+        <SessionMetric label="Firmas" value={acta.signatures} />
+        <SessionMetric label="Valor" value={formatCurrency(acta.impact.estimatedValue)} />
+      </div>
+
+      <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+        <p><strong>Usuarios registrando:</strong> {acta.users || '-'}</p>
+        <p><strong>Productos entregados:</strong> {acta.products || 'Sin productos registrados'}</p>
+        <p><strong>Stock restante:</strong> {acta.stock.label || 'Sin stock configurado'}</p>
+        <p><strong>Productos agotados o bajo minimo:</strong> {acta.stock.alertsLabel || 'Sin alertas'}</p>
+        <p><strong>Incidencias:</strong> {acta.incidents || 'Sin incidencias'}</p>
+        <p><strong>Entregas anuladas:</strong> {acta.cancelled}</p>
+      </div>
+
+      {stockItems.length > 0 && (
+        <div className="mt-3 grid gap-2">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-700">Stock restante</p>
+          {stockItems.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+              <span>{item.name}</span>
+              <span className={item.status === 'Disponible' ? 'text-emerald-700' : item.status === 'Stock bajo' ? 'text-amber-700' : 'text-red-700'}>
+                {formatQuantity(item.stock)} {item.unit} · {item.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {closeError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{closeError}</p>}
+
+      {session.endedAt && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-xl border border-brand-100 bg-brand-50 p-3 text-xs font-semibold text-brand-900">
+            <p className="font-black uppercase tracking-[0.14em] text-brand-700">Estadisticas generadas</p>
+            <p className="mt-2">Entregas: {acta.statistics.deliveryCount} - Bloqueadas: {acta.statistics.duplicateCount}</p>
+            <p>Productos distintos: {acta.statistics.productCount} - Incidencias: {acta.statistics.incidentCount}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900">
+            <p className="font-black uppercase tracking-[0.14em] text-emerald-700">Impacto generado</p>
+            <p className="mt-2">Personas atendidas: {acta.impact.people}</p>
+            <p>Valor social aproximado: {formatCurrency(acta.impact.estimatedValue)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 sm:col-span-2">
+            <p className="font-black uppercase tracking-[0.14em] text-slate-600">Repartos cerrados</p>
+            <p className="mt-2">Cerrado por {acta.closedBy || '-'}{acta.closedByRole ? ` (${acta.closedByRole})` : ''} a las {acta.closedAt ? formatTime(acta.closedAt) : '-'}</p>
+            <p>Acta: {session.acta?.pdfFilename || 'Generada'}</p>
+            <p>Enviada a: {(session.acta?.emailRecipients || []).join(', ') || 'Pendiente de registro'}</p>
+          </div>
+        </div>
+      )}
+
+      {latestRows.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-700">Ultimas entregas</p>
+          {latestRows.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenDelivery?.(item.deliveryId)}
+              disabled={!item.deliveryId}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span>
+                <strong className="text-ink">{item.deliveryNumber}</strong> · {item.beneficiaryName}
+                <span className="block text-slate-500">{item.peopleCount} persona(s) · {formatTime(item.at)} · {item.identificationMethod}</span>
+                {item.changeReason && (
+                  <span className="block text-brand-700">Recomendado: {item.recommendedLabel} · Entregado: {item.deliveredLabel} · Motivo: {item.changeReason}</span>
+                )}
+              </span>
+              {item.estimatedValue > 0 && (
+                <span className="text-xs font-black text-emerald-700">{formatCurrency(item.estimatedValue)}</span>
+              )}
+              <span className="text-brand-700">Abrir entrega</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LegacyRepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
   const acta = buildRepartoActa(session);
   return (
     <section className="mt-4 rounded-2xl border border-brand-100 bg-white p-4 shadow-sm">
@@ -1737,6 +2014,12 @@ function closeRepartoSession(session = {}, user = {}) {
   const closed = {
     ...session,
     endedAt,
+    locked: true,
+    closedAt: endedAt,
+    closedBy: currentUserName(user),
+    closedByRole: currentUserRole(user),
+    closedById: user?.id || '',
+    closedByEmail: user?.email || '',
     users: uniqueValues([...(session.users || []), currentUserName(user)].filter(Boolean))
   };
   const acta = buildRepartoActa(closed);
@@ -1762,26 +2045,112 @@ function updateRepartoSession(current, type, entry = {}) {
   return base;
 }
 
-function buildRepartoActa(session = {}) {
+function resolveRepartoActaRecipients(data = {}, currentUser = {}) {
+  const settings = data.organization_settings?.[0] || {};
+  const preferences = settings.erp_preferences?.smartDeliveries || {};
+  const configured = normalizeRecipientList(preferences.actaRecipients || preferences.repartoActaRecipients || settings.smart_delivery_acta_recipients);
+  const roleRecipients = (data.app_users || [])
+    .filter(userHasOfficialRecipientRole)
+    .map((user) => user.email);
+  const fallback = [
+    settings.presidency_email,
+    settings.vicepresidency_email,
+    settings.coordination_email,
+    settings.email,
+    settings.mail_sender_email,
+    currentUser?.email
+  ];
+  return uniqueValues([...roleRecipients, ...configured, ...fallback].filter(isValidEmail));
+}
+
+function userHasOfficialRecipientRole(user = {}) {
+  const label = normalize([
+    user.role_label,
+    user.role_name,
+    user.role,
+    user.position,
+    user.cargo,
+    user.title,
+    user.first_name,
+    user.last_name,
+    user.email
+  ].filter(Boolean).join(' '));
+  return (
+    label.includes('presid') ||
+    label.includes('vicepresid') ||
+    label.includes('coordinacion general') ||
+    label.includes('coordinacion') ||
+    label.includes('coordinador') ||
+    label.includes('coordinadora')
+  );
+}
+
+function normalizeRecipientList(value) {
+  if (Array.isArray(value)) return value;
+  return String(value || '')
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function buildRepartoExecutiveEmail(acta = {}, session = {}, recipients = []) {
+  return [
+    'Se ha cerrado oficialmente un reparto desde ALTHEMON Smart Deliveries.',
+    '',
+    `Fecha: ${acta.date}`,
+    `Inicio: ${acta.startTime}`,
+    `Fin: ${acta.endTime || formatTime(session.endedAt) || '-'}`,
+    `Cerrado por: ${acta.closedBy || '-'}`,
+    '',
+    `Beneficiarios atendidos: ${acta.beneficiaries}`,
+    `Personas atendidas: ${acta.people}`,
+    `Adultos: ${acta.adults}`,
+    `Menores: ${acta.minors}`,
+    `Productos entregados: ${acta.products || 'Sin productos registrados'}`,
+    `Duplicados bloqueados: ${acta.duplicates}`,
+    `Incidencias: ${acta.incidents || 'Sin incidencias'}`,
+    `Valor e impacto aproximado: ${formatCurrency(acta.impact?.estimatedValue)}`,
+    '',
+    `Destinatarios: ${recipients.join(', ')}`,
+    '',
+    'Se adjunta el Acta Oficial del Reparto en PDF.'
+  ].join('\n');
+}
+
+function buildRepartoActa(session = {}, options = {}) {
   const deliveries = session.deliveries || [];
   const duplicates = session.duplicates || [];
   const incidents = [...(session.incidents || []), ...deliveries.filter((item) => item.incident).map((item) => ({ detail: item.incident }))];
   const products = summarizeProducts(deliveries);
   const impact = buildRepartoImpact(deliveries);
   const statistics = buildRepartoStatistics({ deliveries, duplicates, incidents, cancelled: session.cancelled || [] });
+  const stock = summarizeControlRoomStock(options.batch, deliveries);
   return {
     status: session.endedAt ? 'Acta cerrada' : 'Acta en curso',
     date: formatDate(session.startedAt),
     startTime: formatTime(session.startedAt),
     endTime: session.endedAt ? formatTime(session.endedAt) : '',
+    locked: Boolean(session.locked),
+    closedBy: session.closedBy || '',
+    closedByRole: session.closedByRole || '',
+    closedAt: session.closedAt || session.endedAt || '',
     users: (session.users || []).join(', '),
     beneficiaries: uniqueValues(deliveries.map((item) => item.beneficiaryName)).length,
     people: deliveries.reduce((total, item) => total + Number(item.peopleCount || 0), 0),
+    adults: deliveries.reduce((total, item) => total + Number(item.adults || 0), 0),
+    minors: deliveries.reduce((total, item) => total + Number(item.minors || 0), 0),
     products,
+    stock,
     incidents: incidents.map((item) => item.detail || item.title).filter(Boolean).join('; '),
     duplicates: duplicates.length,
     cancelled: (session.cancelled || []).length,
     signatures: deliveries.reduce((total, item) => total + Number(item.signatureCount || 0), 0),
+    averageSeconds: averageDeliverySeconds(deliveries, session.startedAt, session.endedAt),
+    averageTime: formatDurationSeconds(averageDeliverySeconds(deliveries, session.startedAt, session.endedAt)),
     statistics,
     impact,
     deliveryRows: deliveries.map((item) => ({
@@ -1790,6 +2159,8 @@ function buildRepartoActa(session = {}) {
       deliveryNumber: item.deliveryNumber || 'Entrega sin numero',
       beneficiaryName: item.beneficiaryName || 'Beneficiario',
       peopleCount: item.peopleCount || 1,
+      adults: Number(item.adults || 0),
+      minors: Number(item.minors || 0),
       identificationMethod: item.identificationMethod || 'Busqueda manual',
       recommendedLabel: item.recommendedLabel || '',
       deliveredLabel: item.deliveredLabel || item.productLabel || '',
@@ -1800,6 +2171,48 @@ function buildRepartoActa(session = {}) {
       at: item.at
     }))
   };
+}
+
+function summarizeControlRoomStock(batch = {}, deliveries = []) {
+  const items = (batch?.items || []).map((item) => {
+    const stock = Math.max(0, Math.round(Number(item.stock || 0) * 100) / 100);
+    const threshold = Number(item.lowStockThreshold || 0);
+    const status = stock <= 0 ? 'Agotado' : threshold > 0 && stock <= threshold ? 'Stock bajo' : 'Disponible';
+    return {
+      id: item.id,
+      name: item.name,
+      unit: item.unit || 'unidad(es)',
+      stock,
+      threshold,
+      status
+    };
+  });
+  const alerts = items.filter((item) => item.status !== 'Disponible');
+  return {
+    items,
+    alerts,
+    label: items.length ? items.map((item) => `${item.name} (${formatQuantity(item.stock)} ${item.unit})`).join(', ') : '',
+    alertsLabel: alerts.map((item) => `${item.name}: ${item.status}`).join(', '),
+    exhausted: alerts.filter((item) => item.status === 'Agotado').length,
+    lowStock: alerts.filter((item) => item.status === 'Stock bajo').length
+  };
+}
+
+function averageDeliverySeconds(deliveries = [], startedAt = '', endedAt = '') {
+  if (!deliveries.length) return 0;
+  const start = new Date(startedAt || deliveries[deliveries.length - 1]?.at || Date.now()).getTime();
+  const end = new Date(endedAt || deliveries[0]?.at || Date.now()).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return Math.round((end - start) / 1000 / deliveries.length);
+}
+
+function formatDurationSeconds(seconds) {
+  const value = Number(seconds || 0);
+  if (!value) return '0 s';
+  if (value < 60) return `${value} s`;
+  const minutes = Math.floor(value / 60);
+  const rest = value % 60;
+  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
 }
 
 function buildRepartoStatistics({ deliveries = [], duplicates = [], incidents = [], cancelled = [] } = {}) {

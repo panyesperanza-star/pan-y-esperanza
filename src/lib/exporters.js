@@ -336,6 +336,105 @@ export async function createReceiptEmailAttachments(receiptEntries, allDeliverie
   return attachments;
 }
 
+export async function createSmartRepartoActaPdf(acta = {}, organization = {}, session = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociacion Pan y Esperanza';
+  const generatedAt = new Date().toISOString();
+  const filename = `Acta-oficial-reparto-${safePdfFilename(acta.date || generatedAt)}.pdf`;
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 42, 'F');
+  await addOfficialLogo(doc, 14, 8, 30, 24);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(23, 33, 27);
+  doc.setFontSize(18);
+  doc.text('ACTA OFICIAL DEL REPARTO', 50, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(orgName, 50, 27);
+  doc.text(`Generada: ${formatDateTime(generatedAt)}`, 50, 34);
+
+  autoTable(doc, {
+    startY: 50,
+    head: [['Campo', 'Detalle']],
+    body: [
+      ['Fecha', acta.date || '-'],
+      ['Hora de inicio', acta.startTime || '-'],
+      ['Hora de fin', acta.endTime || '-'],
+      ['Cerrado por', [acta.closedBy, acta.closedByRole].filter(Boolean).join(' - ') || '-'],
+      ['Usuarios participantes', acta.users || '-'],
+      ['Beneficiarios atendidos', String(acta.beneficiaries || 0)],
+      ['Personas atendidas', String(acta.people || 0)],
+      ['Adultos', String(acta.adults || 0)],
+      ['Menores', String(acta.minors || 0)],
+      ['Tiempo medio por entrega', acta.averageTime || '0 s'],
+      ['Duplicados bloqueados', String(acta.duplicates || 0)],
+      ['Entregas anuladas', String(acta.cancelled || 0)],
+      ['Firmas registradas', String(acta.signatures || 0)],
+      ['Valor e impacto generado', formatMoney(acta.impact?.estimatedValue || 0)]
+    ],
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 }, 1: { cellWidth: 120 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Productos entregados', 'Incidencias', 'Stock restante']],
+    body: [[
+      acta.products || 'Sin productos registrados',
+      acta.incidents || 'Sin incidencias',
+      acta.stock?.label || 'Sin stock configurado'
+    ]],
+    headStyles: { fillColor: [15, 47, 37] },
+    styles: { fontSize: 8.5, cellPadding: 3 },
+    columnStyles: { 0: { cellWidth: 62 }, 1: { cellWidth: 55 }, 2: { cellWidth: 62 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 8,
+    body: [['Productos agotados o bajo minimo', acta.stock?.alertsLabel || 'Sin alertas']],
+    theme: 'plain',
+    styles: { fontSize: 9, cellPadding: 2.5, textColor: [23, 33, 27] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62, textColor: [36, 126, 80] }, 1: { cellWidth: 118 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  if (acta.deliveryRows?.length) {
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [['Entrega', 'Beneficiario', 'Personas', 'Metodo', 'Hora', 'Valor']],
+      body: acta.deliveryRows.map((item) => [
+        item.deliveryNumber || '-',
+        item.beneficiaryName || '-',
+        String(item.peopleCount || 0),
+        item.identificationMethod || '-',
+        formatTime(item.at) || '-',
+        formatMoney(item.estimatedValue || 0)
+      ]),
+      headStyles: { fillColor: [36, 126, 80] },
+      alternateRowStyles: { fillColor: [247, 250, 246] },
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      margin: { left: 14, right: 14 }
+    });
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  const finalY = Math.min(282, (doc.lastAutoTable?.finalY || 260) + 12);
+  doc.text('Acta generada automaticamente por ALTHEMON Smart Deliveries.', 14, finalY);
+  if (session.acta?.providerId) doc.text(`Referencia correo: ${session.acta.providerId}`, 14, finalY + 5);
+
+  return {
+    doc,
+    blob: doc.output('blob'),
+    filename
+  };
+}
+
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
