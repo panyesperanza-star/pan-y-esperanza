@@ -121,6 +121,13 @@ export function CredentialScanner({ data, currentUser, onNavigate }) {
       setScanStatus('Credencial no localizada.');
       return;
     }
+    if (match.kind === 'beneficiary' && !match.invalidCredential && canRegisterDelivery) {
+      setResult(null);
+      setScanError('');
+      setScanStatus('Abriendo modo reparto inteligente...');
+      onNavigate?.({ moduleId: 'smart-deliveries', profileId: match.record.id });
+      return;
+    }
     setResult(match);
     setScanError('');
     setScanStatus('Credencial identificada correctamente.');
