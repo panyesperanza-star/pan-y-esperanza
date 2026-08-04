@@ -247,7 +247,10 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Unidad familiar', familyLabel],
       ['Recogida por', operationalData.receiverLabel],
       ...(operationalData.authorizedRelation ? [['Relacion', operationalData.authorizedRelation]] : []),
-      ['Usuario que registro la entrega', operationalData.registeredBy]
+      ['Usuario que registro la entrega', operationalData.registeredBy],
+      ['Rol del usuario', operationalData.userRole],
+      ['Metodo de identificacion', operationalData.identificationMethod],
+      ['Dispositivo', operationalData.device]
     ],
     theme: 'plain',
     styles: { fontSize: 9, cellPadding: 2.2, textColor: [23, 33, 27] },
@@ -469,11 +472,17 @@ function receiptOperationalData(delivery, beneficiary) {
   const authorizedName = matchReceiptNoteValue(notes, 'Nombre autorizado');
   const authorizedRelation = matchReceiptNoteValue(notes, 'Relacion autorizada');
   const registeredBy = matchReceiptNoteValue(notes, 'Usuario autenticado') || delivery.responsible || '-';
+  const userRole = matchReceiptNoteValue(notes, 'Rol usuario') || '-';
+  const identificationMethod = matchReceiptNoteValue(notes, 'Metodo identificacion') || '-';
+  const device = matchReceiptNoteValue(notes, 'Dispositivo') || '-';
   return {
     beneficiaryCode,
     credentialCode,
     authorizedRelation,
     registeredBy,
+    userRole,
+    identificationMethod,
+    device,
     receiverLabel: authorizedName
       ? authorizedName
       : (delivery.receiver_name || beneficiary?.full_name || delivery.beneficiary_name || '-')
@@ -503,7 +512,9 @@ function receiptQrPayload({ receiptNumber, delivery, beneficiary, orgName }) {
     `Beneficiario: ${beneficiary?.full_name || delivery.beneficiary_name || '-'}`,
     `Codigo beneficiario: ${operationalData.beneficiaryCode}`,
     `Credencial: ${operationalData.credentialCode}`,
-    `Usuario que registro: ${operationalData.registeredBy}`
+    `Usuario que registro: ${operationalData.registeredBy}`,
+    `Rol: ${operationalData.userRole}`,
+    `Metodo: ${operationalData.identificationMethod}`
   ].join('\n');
 }
 

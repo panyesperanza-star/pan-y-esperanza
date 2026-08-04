@@ -7,7 +7,7 @@ export function buildDeliveryTrackingNote(delivery, beneficiary, item, quantity,
   ];
   if (item?.name) parts.push(`Producto: ${item.name}.`);
   if (quantity) parts.push(`Cantidad: ${quantity}${item?.unit ? ` ${item.unit}` : ''}.`);
-  if (delivery.receipt_number) parts.push(`Justificante: ${delivery.receipt_number}.`);
+  if (delivery.receipt_number) parts.push(`Entrega: ${delivery.receipt_number}.`);
   parts.push(`Responsable: ${delivery.responsible || responsibleFallback}.`);
   if (delivery.notes) parts.push(`Observaciones: ${delivery.notes}`);
   return parts.join(' ');

@@ -294,13 +294,22 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     try {
       const now = new Date();
       const registeredBy = currentUserName(currentUser);
+      const registeredRole = currentUserRole(currentUser);
       const collection = buildCollectionInfo(summary, flow);
       const receiverSignature = flow.cannotSign
         ? buildCannotSignAttestationDataUrl({ summary, flow, registeredBy, date: now })
         : flow.beneficiarySignature;
       const preparedBatch = summary.preparedBatch;
+      const deliveryNumber = nextSmartDeliveryNumber([...recentDeliveries, ...(data?.deliveries || [])], now);
+      const traceability = {
+        deliveryNumber,
+        registeredRole,
+        device: deliveryDeviceLabel(),
+        identificationMethod: summary.identificationMethod || 'Busqueda manual'
+      };
       const payload = {
         beneficiary_id: summary.beneficiary.id,
+        receipt_number: deliveryNumber,
         delivered_at: todayISO(),
         delivered_time: now.toTimeString().slice(0, 5),
         reception_at: now.toISOString(),
@@ -312,11 +321,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         receiver_document_id: collection.receiverDocument,
         signature_data_url: receiverSignature,
         responsible_signature_data_url: flow.responsibleSignature,
-        notes: buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date: now })
+        notes: buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date: now, traceability })
       };
-      await (actions.createSmartDelivery || actions.createDelivery)(payload);
+      const createdDelivery = await (actions.createSmartDelivery || actions.createDelivery)(payload);
       setRecentDeliveries((current) => [
-        { id: `smart-${Date.now()}`, ...payload, created_at: now.toISOString(), status: 'Completada' },
+        { id: createdDelivery?.id || `smart-${Date.now()}`, ...payload, ...createdDelivery, created_at: createdDelivery?.created_at || now.toISOString(), status: createdDelivery?.status || 'Completada' },
         ...current
       ]);
       setFeedback({
@@ -332,9 +341,13 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         responsibleSignatureLabel: 'Usuario que realizo la entrega'
       });
       appendRepartoEvent('delivery', {
+        deliveryId: createdDelivery?.id || '',
+        deliveryNumber,
+        beneficiaryId: summary.beneficiary.id,
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
         peopleCount: summary.peopleCount,
         productLabel: preparedBatch?.label || payload.help_type,
+        identificationMethod: traceability.identificationMethod,
         signatureCount: flow.cannotSign ? 1 : 2,
         cannotSign: flow.cannotSign,
         incident: flow.cannotSign ? `No puede firmar: ${flow.noSignReason}` : '',
@@ -520,7 +533,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
               </div>
             )}
 
-            <RepartoSessionPanel session={repartoSession} onFinish={finishRepartoSession} />
+            <RepartoSessionPanel
+              session={repartoSession}
+              onFinish={finishRepartoSession}
+              onOpenDelivery={(deliveryId) => deliveryId && onNavigate?.({ moduleId: 'deliveries', itemId: deliveryId })}
+            />
           </div>
 
           <div className="rounded-[2rem] border border-white/80 bg-white p-4 shadow-2xl shadow-brand-900/10 sm:p-5">
@@ -923,7 +940,7 @@ function CollectorOption({ selected, title, text, onClick }) {
   );
 }
 
-function RepartoSessionPanel({ session, onFinish }) {
+function RepartoSessionPanel({ session, onFinish, onOpenDelivery }) {
   const acta = buildRepartoActa(session);
   return (
     <section className="mt-4 rounded-2xl border border-brand-100 bg-white p-4 shadow-sm">
@@ -949,6 +966,26 @@ function RepartoSessionPanel({ session, onFinish }) {
         <p><strong>Incidencias:</strong> {acta.incidents || 'Sin incidencias'}</p>
         <p><strong>Entregas anuladas:</strong> {acta.cancelled}</p>
       </div>
+      {acta.deliveryRows.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-brand-700">Entregas del acta</p>
+          {acta.deliveryRows.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenDelivery?.(item.deliveryId)}
+              disabled={!item.deliveryId}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span>
+                <strong className="text-ink">{item.deliveryNumber}</strong> · {item.beneficiaryName}
+                <span className="block text-slate-500">{item.peopleCount} persona(s) · {formatTime(item.at)} · {item.identificationMethod}</span>
+              </span>
+              <span className="text-brand-700">Abrir entrega</span>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1028,12 +1065,18 @@ function buildCollectionInfo(summary, flow) {
   };
 }
 
-function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date }) {
+function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date, traceability = {} }) {
   const notes = [
     'Entrega registrada desde Entregas Inteligentes.',
+    `Numero de entrega: ${traceability.deliveryNumber || '-'}.`,
     `Codigo beneficiario: ${summary.beneficiary.code || '-'}.`,
     `Credencial utilizada: ${summary.credentialCode || '-'}.`,
     `Usuario autenticado: ${registeredBy}.`,
+    `Rol usuario: ${traceability.registeredRole || '-'}.`,
+    `Fecha registro: ${formatDate(date)}.`,
+    `Hora registro: ${formatTime(date)}.`,
+    `Dispositivo: ${traceability.device || '-'}.`,
+    `Metodo identificacion: ${traceability.identificationMethod || '-'}.`,
     `Recoge: ${collection.label}.`,
     flow.collectorType === 'authorized' ? `Nombre autorizado: ${collection.receiverName}.` : '',
     flow.collectorType === 'authorized' ? `Relacion autorizada: ${collection.relation}.` : '',
@@ -1042,6 +1085,29 @@ function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date
     `Hora de recepcion: ${formatTime(date)}.`
   ];
   return notes.filter(Boolean).join(' ');
+}
+
+function nextSmartDeliveryNumber(deliveries = [], date = new Date()) {
+  const year = new Date(date).getFullYear();
+  const highest = deliveries.reduce((max, delivery) => {
+    const match = String(delivery.receipt_number || '').match(/^ENT-(\d{4})-(\d{6})$/);
+    if (!match || Number(match[1]) !== year) return max;
+    return Math.max(max, Number(match[2]));
+  }, 0);
+  return `ENT-${year}-${String(highest + 1).padStart(6, '0')}`;
+}
+
+function currentUserRole(user = {}) {
+  return String(user?.role_label || user?.role_name || user?.role || user?.profile || 'Usuario autorizado').trim() || 'Usuario autorizado';
+}
+
+function deliveryDeviceLabel() {
+  if (typeof navigator === 'undefined') return 'No disponible';
+  const userAgent = navigator.userAgent || '';
+  const browser = /Edg\//.test(userAgent) ? 'Edge' : /Chrome\//.test(userAgent) ? 'Chrome' : /Safari\//.test(userAgent) ? 'Safari' : 'Navegador';
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  const mode = Number(navigator.maxTouchPoints || 0) > 1 ? 'pantalla tactil' : 'escritorio';
+  return [browser, platform, mode].filter(Boolean).join(' · ') || 'No disponible';
 }
 
 function buildCannotSignAttestationDataUrl({ summary, flow, registeredBy, date }) {
@@ -1114,7 +1180,16 @@ function buildRepartoActa(session = {}) {
     incidents: incidents.map((item) => item.detail || item.title).filter(Boolean).join('; '),
     duplicates: duplicates.length,
     cancelled: (session.cancelled || []).length,
-    signatures: deliveries.reduce((total, item) => total + Number(item.signatureCount || 0), 0)
+    signatures: deliveries.reduce((total, item) => total + Number(item.signatureCount || 0), 0),
+    deliveryRows: deliveries.map((item) => ({
+      id: item.id,
+      deliveryId: item.deliveryId || '',
+      deliveryNumber: item.deliveryNumber || 'Entrega sin numero',
+      beneficiaryName: item.beneficiaryName || 'Beneficiario',
+      peopleCount: item.peopleCount || 1,
+      identificationMethod: item.identificationMethod || 'Busqueda manual',
+      at: item.at
+    }))
   };
 }
 
@@ -1165,6 +1240,7 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     todayDeliveryResponsible: deliveryResponsible(todayDelivery),
     lastDeliveryLabel: lastDelivery ? `${formatDate(lastDelivery.delivered_at || lastDelivery.created_at)} · ${lastDelivery.help_type || 'Ayuda'}` : 'Sin entregas',
     sourceLabel: source === 'qr' && credentialEntry?.credentialId ? 'Credencial oficial' : 'Busqueda manual',
+    identificationMethod: source === 'qr' ? 'QR' : 'Busqueda manual',
     credentialCode: credentialEntry?.credentialId || credentialEntry?.legacyCredentialId || ''
   };
 }

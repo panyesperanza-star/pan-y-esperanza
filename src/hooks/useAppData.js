@@ -2203,8 +2203,9 @@ export function useAppData(enabled = true, currentUser = null) {
       return result;
     },
     createDelivery: async (payload) => {
-      await entregaService.create(payload);
+      const result = await entregaService.create(payload);
       await reload();
+      return result;
     },
     createSmartDelivery: async (payload) => {
       const smartDeliveryService = createEntregaService({
@@ -2213,8 +2214,9 @@ export function useAppData(enabled = true, currentUser = null) {
           assertPermission(moduleId, actionId);
         }
       });
-      await smartDeliveryService.create(payload);
+      const result = await smartDeliveryService.create(payload);
       await reload();
+      return result;
     },
     deleteDelivery: async (id) => {
       await entregaService.remove(id);
