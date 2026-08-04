@@ -1,5 +1,6 @@
 import { AlertTriangle, Ban, Download, Eraser, Mail, MessageCircle, PackagePlus, PenLine, Trash2 } from 'lucide-react';
-import { Component, useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { BeneficiaryQuickSearch } from '../components/BeneficiaryQuickSearch';
 import { Button } from '../components/Button';
 import { DeletionRequestForm } from '../components/DeletionRequestForm';
 import { DirectDeletionForm } from '../components/DirectDeletionForm';
@@ -74,8 +75,13 @@ function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState('');
+  const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
   const deliveries = Array.isArray(data.deliveries) ? data.deliveries : [];
   const beneficiaries = Array.isArray(data.beneficiaries) ? data.beneficiaries : [];
+  const visibleDeliveries = useMemo(
+    () => selectedBeneficiary ? deliveries.filter((item) => item.beneficiary_id === selectedBeneficiary.id) : deliveries,
+    [deliveries, selectedBeneficiary]
+  );
   const canCreate = canDo(currentUser, 'deliveries', 'create');
   const canCancel = canDo(currentUser, 'deliveries', 'edit') || canCreate;
   const organization = data.organization_settings?.[0] || {};
@@ -83,6 +89,12 @@ function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
   const canDeleteDirectly = canDeleteDefinitively(currentUser, 'deliveries', organization);
   const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'deliveries', organization);
   const highlightedDeliveryId = navigationTarget?.moduleId === 'deliveries' ? navigationTarget.itemId : '';
+
+  useEffect(() => {
+    if (selectedBeneficiary && !beneficiaries.some((item) => item.id === selectedBeneficiary.id)) {
+      setSelectedBeneficiary(null);
+    }
+  }, [beneficiaries, selectedBeneficiary]);
 
   function requestDeletePermanently(item) {
     setDeleteTarget({
@@ -201,6 +213,25 @@ function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
         </div>
       )}
 
+      <BeneficiaryQuickSearch
+        className="mb-5"
+        data={data}
+        selectedBeneficiaryId={selectedBeneficiary?.id || ''}
+        onSelect={(beneficiary) => setSelectedBeneficiary(beneficiary)}
+      />
+
+      {selectedBeneficiary && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm font-semibold text-brand-800">
+          <span>
+            Mostrando {visibleDeliveries.length} entrega(s) de {selectedBeneficiary.full_name}
+            {selectedBeneficiary.code ? ` - ${selectedBeneficiary.code}` : ''}
+          </span>
+          <Button type="button" variant="secondary" onClick={() => setSelectedBeneficiary(null)}>
+            Ver todas las entregas
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-panel">
         <table className="w-full min-w-[1320px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -221,7 +252,7 @@ function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {deliveries.map((item) => {
+            {visibleDeliveries.map((item) => {
               const beneficiary = beneficiaries.find((entry) => entry.id === item.beneficiary_id);
               const isCancelled = item.status === 'Anulada';
               return (
@@ -277,6 +308,13 @@ function DeliveriesContent({ data, actions, currentUser, navigationTarget }) {
                 </tr>
               );
             })}
+            {!visibleDeliveries.length && (
+              <tr>
+                <td colSpan={13} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                  {selectedBeneficiary ? 'Este beneficiario no tiene entregas con los filtros actuales.' : 'No hay entregas registradas.'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
