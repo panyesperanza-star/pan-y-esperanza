@@ -324,7 +324,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
         time: formatTime(now),
         peopleCount: summary.peopleCount,
-        registeredBy
+        registeredBy,
+        collectorType: flow.collectorType,
+        collectorName: flow.collectorType === 'authorized' ? collection.receiverName : '',
+        collectorRelation: flow.collectorType === 'authorized' ? String(flow.authorizedRelation || '').trim() : '',
+        receiverSignatureLabel: flow.collectorType === 'authorized' ? 'Persona autorizada' : 'Beneficiario',
+        responsibleSignatureLabel: 'Usuario que realizo la entrega'
       });
       appendRepartoEvent('delivery', {
         beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
@@ -852,6 +857,16 @@ function DeliveryFeedbackOverlay({ feedback, onAccept }) {
               <InfoLineLight label="Personas atendidas" value={feedback.peopleCount || 1} />
               <InfoLineLight label="Hora" value={feedback.time || '-'} />
               <InfoLineLight label="Registrada por" value={feedback.registeredBy || '-'} />
+              {feedback.collectorType === 'authorized' && (
+                <>
+                  <InfoLineLight label="Recogida por" value={feedback.collectorName || '-'} />
+                  <InfoLineLight label="Relacion" value={feedback.collectorRelation || '-'} />
+                </>
+              )}
+              <SignatureLinesLight
+                receiver={feedback.receiverSignatureLabel || 'Beneficiario o persona autorizada'}
+                responsible={feedback.responsibleSignatureLabel || 'Usuario que realizo la entrega'}
+              />
             </>
           )}
         </div>
@@ -865,6 +880,16 @@ function DeliveryFeedbackOverlay({ feedback, onAccept }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function SignatureLinesLight({ receiver, responsible }) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs font-black uppercase tracking-[0.16em] text-white/75">Firmas</span>
+      <span className="text-lg font-black text-white">✔ {receiver}</span>
+      <span className="text-lg font-black text-white">✔ {responsible}</span>
     </div>
   );
 }
@@ -991,21 +1016,27 @@ function buildCollectionInfo(summary, flow) {
     return {
       receiverName: String(flow.authorizedName || '').trim(),
       receiverDocument: '',
-      label: `Persona autorizada (${String(flow.authorizedRelation || '').trim()})`
+      label: `Persona autorizada (${String(flow.authorizedRelation || '').trim()})`,
+      relation: String(flow.authorizedRelation || '').trim()
     };
   }
   return {
     receiverName: summary.beneficiary.full_name || '',
     receiverDocument: beneficiaryDocument(summary.beneficiary),
-    label: 'Titular'
+    label: 'Titular',
+    relation: ''
   };
 }
 
 function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date }) {
   const notes = [
     'Entrega registrada desde Entregas Inteligentes.',
+    `Codigo beneficiario: ${summary.beneficiary.code || '-'}.`,
+    `Credencial utilizada: ${summary.credentialCode || '-'}.`,
+    `Usuario autenticado: ${registeredBy}.`,
     `Recoge: ${collection.label}.`,
     flow.collectorType === 'authorized' ? `Nombre autorizado: ${collection.receiverName}.` : '',
+    flow.collectorType === 'authorized' ? `Relacion autorizada: ${collection.relation}.` : '',
     summary.preparedBatch ? `Lote preparado: ${summary.preparedBatch.label}.` : 'Sin lote preparado previo.',
     flow.cannotSign ? `No puede firmar. Motivo: ${flow.noSignReason}. Testigo: ${registeredBy}.` : '',
     `Hora de recepcion: ${formatTime(date)}.`
@@ -1133,7 +1164,8 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     todayDeliveryDateTime: deliveryDisplayDateTime(todayDelivery),
     todayDeliveryResponsible: deliveryResponsible(todayDelivery),
     lastDeliveryLabel: lastDelivery ? `${formatDate(lastDelivery.delivered_at || lastDelivery.created_at)} · ${lastDelivery.help_type || 'Ayuda'}` : 'Sin entregas',
-    sourceLabel: source === 'qr' && credentialEntry?.credentialId ? 'Credencial oficial' : 'Busqueda manual'
+    sourceLabel: source === 'qr' && credentialEntry?.credentialId ? 'Credencial oficial' : 'Busqueda manual',
+    credentialCode: credentialEntry?.credentialId || credentialEntry?.legacyCredentialId || ''
   };
 }
 

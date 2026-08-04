@@ -230,6 +230,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
   const orgName = organization.name || 'Asociación Pan y Esperanza';
   const beneficiaryName = beneficiary?.full_name || delivery.beneficiary_name || '-';
   const familyLabel = receiptFamilyLabel(beneficiary, delivery);
+  const operationalData = receiptOperationalData(delivery, beneficiary);
   const qrDataUrl = await QRCode.toDataURL(receiptQrPayload({ receiptNumber, delivery, beneficiary, orgName }), { margin: 1, width: 140 });
 
   await drawOfficialReceiptHeader(doc, { orgName, receiptNumber, generatedAt, organization, qrDataUrl });
@@ -239,10 +240,14 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
     startY: 63,
     body: [
       ['Número de justificante', receiptNumber],
-      ['Fecha de entrega', formatDateTime(delivery.reception_at || delivery.delivered_at)],
+      ['Fecha y hora', formatDateTime(delivery.reception_at || delivery.delivered_at)],
       ['Beneficiario', beneficiaryName],
+      ['Codigo del beneficiario', operationalData.beneficiaryCode],
+      ['Codigo de la credencial', operationalData.credentialCode],
       ['Unidad familiar', familyLabel],
-      ['Responsable', delivery.responsible || '-']
+      ['Recogida por', operationalData.receiverLabel],
+      ...(operationalData.authorizedRelation ? [['Relacion', operationalData.authorizedRelation]] : []),
+      ['Usuario que registro la entrega', operationalData.registeredBy]
     ],
     theme: 'plain',
     styles: { fontSize: 9, cellPadding: 2.2, textColor: [23, 33, 27] },
@@ -404,8 +409,8 @@ async function drawReceiptSignatures(doc, delivery, y) {
   const rightX = 112;
   doc.setFontSize(9);
   doc.setTextColor(23, 33, 27);
-  doc.text('Firma del beneficiario', leftX, y + 10);
-  doc.text('Firma del responsable', rightX, y + 10);
+  doc.text('Firma del beneficiario o persona autorizada', leftX, y + 10);
+  doc.text('Firma del usuario que realizo la entrega', rightX, y + 10);
   doc.setDrawColor(180, 190, 185);
   doc.roundedRect(leftX, y + 14, 80, 36, 2, 2);
   doc.roundedRect(rightX, y + 14, 80, 36, 2, 2);
@@ -457,6 +462,30 @@ function getReceiptProductRows(delivery) {
   ]];
 }
 
+function receiptOperationalData(delivery, beneficiary) {
+  const notes = delivery.notes || '';
+  const beneficiaryCode = matchReceiptNoteValue(notes, 'Codigo beneficiario') || beneficiary?.code || delivery.beneficiary_code || '-';
+  const credentialCode = matchReceiptNoteValue(notes, 'Credencial utilizada') || delivery.credential_uid || delivery.credential_id || '-';
+  const authorizedName = matchReceiptNoteValue(notes, 'Nombre autorizado');
+  const authorizedRelation = matchReceiptNoteValue(notes, 'Relacion autorizada');
+  const registeredBy = matchReceiptNoteValue(notes, 'Usuario autenticado') || delivery.responsible || '-';
+  return {
+    beneficiaryCode,
+    credentialCode,
+    authorizedRelation,
+    registeredBy,
+    receiverLabel: authorizedName
+      ? authorizedName
+      : (delivery.receiver_name || beneficiary?.full_name || delivery.beneficiary_name || '-')
+  };
+}
+
+function matchReceiptNoteValue(notes, label) {
+  const pattern = new RegExp(`${label}:\\s*([^\\.\\n]+)`, 'i');
+  const match = String(notes || '').match(pattern);
+  return match ? match[1].trim() : '';
+}
+
 function receiptFamilyLabel(beneficiary, delivery) {
   if (delivery.family_name) return delivery.family_name;
   const total = Number(beneficiary?.family_members || 0);
@@ -466,12 +495,15 @@ function receiptFamilyLabel(beneficiary, delivery) {
 }
 
 function receiptQrPayload({ receiptNumber, delivery, beneficiary, orgName }) {
+  const operationalData = receiptOperationalData(delivery, beneficiary);
   return [
     `Justificante: ${receiptNumber}`,
     `Asociación: ${orgName}`,
     `Fecha: ${formatDateTime(delivery.reception_at || delivery.delivered_at)}`,
     `Beneficiario: ${beneficiary?.full_name || delivery.beneficiary_name || '-'}`,
-    `Responsable: ${delivery.responsible || '-'}`
+    `Codigo beneficiario: ${operationalData.beneficiaryCode}`,
+    `Credencial: ${operationalData.credentialCode}`,
+    `Usuario que registro: ${operationalData.registeredBy}`
   ].join('\n');
 }
 
