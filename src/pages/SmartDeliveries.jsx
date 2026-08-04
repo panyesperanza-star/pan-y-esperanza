@@ -31,7 +31,9 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [repartoSession, setRepartoSession] = useState(() => createRepartoSession(currentUser));
   const [deliveryCustomization, setDeliveryCustomization] = useState(null);
   const [customizeTarget, setCustomizeTarget] = useState(null);
+  const [batchConfig, setBatchConfig] = useState(() => createDefaultRepartoBatchConfig());
   const directory = useMemo(() => buildBeneficiaryCredentialDirectory(data || {}), [data]);
+  const currentRepartoBatch = useMemo(() => buildCurrentRepartoBatch(data?.inventory_items || [], batchConfig), [data?.inventory_items, batchConfig]);
   const canScan = canDo(currentUser, 'smart-deliveries', 'view');
   const canRegister = canDo(currentUser, 'smart-deliveries', 'create') || canDo(currentUser, 'deliveries', 'create');
 
@@ -39,6 +41,10 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     stopCamera();
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    setBatchConfig((current) => ensureBatchConfigRules(current, data?.inventory_items || []));
+  }, [data?.inventory_items]);
 
   useEffect(() => {
     const profileId = navigationTarget?.moduleId === 'smart-deliveries' ? navigationTarget.profileId : '';
@@ -332,6 +338,15 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         notes: buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date: now, traceability, deliveryPlan })
       };
       const createdDelivery = await (actions.createSmartDelivery || actions.createDelivery)(payload);
+      const inventoryResult = await registerSmartDeliveryInventoryMovements({
+        actions,
+        deliveryPlan,
+        primaryItem: preparedBatch,
+        deliveryNumber,
+        registeredBy,
+        date: now
+      });
+      const inventoryIncident = inventoryResult.error ? `Inventario: ${inventoryResult.error}` : '';
       setRecentDeliveries((current) => [
         { id: createdDelivery?.id || `smart-${Date.now()}`, ...payload, ...createdDelivery, created_at: createdDelivery?.created_at || now.toISOString(), status: createdDelivery?.status || 'Completada' },
         ...current
@@ -360,10 +375,13 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         changeReason: deliveryPlan.reason,
         modifiedBy: deliveryPlan.modifiedBy,
         modifiedAt: deliveryPlan.modifiedAt,
+        deliveredItems: deliveryPlan.deliveredItems,
+        recommendedItems: deliveryPlan.recommendedItems,
+        inventoryMovements: inventoryResult.movements,
         identificationMethod: traceability.identificationMethod,
         signatureCount: flow.cannotSign ? 1 : 2,
         cannotSign: flow.cannotSign,
-        incident: flow.cannotSign ? `No puede firmar: ${flow.noSignReason}` : '',
+        incident: [flow.cannotSign ? `No puede firmar: ${flow.noSignReason}` : '', ...(deliveryPlan.incidents || []), inventoryIncident].filter(Boolean).join('; '),
         registeredBy,
         at: now.toISOString()
       });
@@ -404,7 +422,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       data,
       recentDeliveries,
       credentialEntry: result.entry,
-      source: result.source
+      source: result.source,
+      repartoBatch: currentRepartoBatch
     })
     : null;
   const activeCustomization = summary ? customizationForSummary(summary, deliveryCustomization) : null;
@@ -491,6 +510,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
                 <ScanLine size={14} /> {isCameraActive ? 'Activo' : 'En espera'}
               </span>
             </div>
+
+            <RepartoBatchPanel
+              batch={currentRepartoBatch}
+              onRuleChange={(itemId, quantityPerPerson) => setBatchConfig((current) => updateBatchRule(current, itemId, quantityPerPerson))}
+            />
 
             <div className="relative mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-950">
               <div id={scannerRegionId} className="min-h-[19rem] w-full" />
@@ -642,6 +666,52 @@ function RevokedPanel({ result }) {
   );
 }
 
+function RepartoBatchPanel({ batch, onRuleChange }) {
+  const hasProducts = batch.items.length > 0;
+  return (
+    <section className="mt-4 rounded-[1.5rem] border border-brand-100 bg-brand-50/80 p-4 text-brand-950">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-brand-700">Lote del reparto</p>
+          <h3 className="mt-1 text-xl font-black text-ink">{batch.name}</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-600">
+            {hasProducts ? `${batch.items.length} producto(s) configurados automaticamente desde inventario.` : 'No hay productos activos en inventario para calcular el lote.'}
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-brand-700">{batch.totalStock} uds.</span>
+      </div>
+      {hasProducts && (
+        <details className="mt-3 rounded-2xl bg-white/80 p-3">
+          <summary className="cursor-pointer text-sm font-black text-brand-800">Reglas automaticas por persona</summary>
+          <div className="mt-3 grid gap-2">
+            {batch.items.map((item) => (
+              <div key={item.id} className="grid grid-cols-[1fr_6.5rem] items-center gap-2 rounded-xl bg-slate-50 p-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-ink">{item.name}</p>
+                  <p className={`text-xs font-semibold ${item.stock > 0 ? 'text-slate-500' : 'text-red-700'}`}>
+                    Stock: {formatBatchStock(item)}
+                  </p>
+                </div>
+                <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                  Por persona
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={item.quantityPerPerson}
+                    onChange={(event) => onRuleChange(item.id, event.target.value)}
+                    className="mt-1 h-9 w-full rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-black text-ink outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, onCustomize, onRegister }) {
   const disabled = registering || summary.receivedToday || summary.blocked || !canRegister;
   return (
@@ -721,6 +791,14 @@ function PreparedBatchCard({ batch, customization, onCustomize }) {
               <p className="mt-1 text-xs font-semibold text-slate-600">Motivo: {customization.reason}</p>
             </div>
           )}
+          {batch?.shortages?.length > 0 && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+              <p className="text-xs font-black uppercase tracking-wide">Producto agotado o insuficiente</p>
+              {batch.shortages.slice(0, 3).map((item) => (
+                <p key={item.product} className="mt-1">{item.message}</p>
+              ))}
+            </div>
+          )}
         </div>
         <Button type="button" variant="secondary" onClick={onCustomize} className="h-10 shrink-0 px-3 text-xs">
           <Pencil size={15} /> Personalizar entrega
@@ -732,13 +810,14 @@ function PreparedBatchCard({ batch, customization, onCustomize }) {
 
 function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel, onReset, onSave }) {
   const recommendedItems = recommendedItemsForSummary(summary);
-  const [items, setItems] = useState(() => (customization?.items?.length ? customization.items : recommendedItems).map(cloneDeliveryItem));
+  const defaultDeliveredItems = deliveredItemsForSummary(summary);
+  const [items, setItems] = useState(() => (customization?.items?.length ? customization.items : defaultDeliveredItems).map(cloneDeliveryItem));
   const [reason, setReason] = useState(customization?.reason || '');
   const [error, setError] = useState('');
-  const changed = hasDeliveryItemChanges(recommendedItems, items);
+  const changed = hasDeliveryItemChanges(defaultDeliveredItems, items);
 
   function updateQuantity(itemId, nextQuantity) {
-    setItems((current) => current.map((item) => item.id === itemId ? { ...item, quantity: sanitizeDeliveryQuantity(nextQuantity) } : item));
+    setItems((current) => current.map((item) => item.id === itemId ? { ...item, quantity: sanitizeDeliveryQuantity(nextQuantity, item.availableStock) } : item));
   }
 
   function saveCustomization() {
@@ -787,7 +866,8 @@ function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel,
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-base font-black text-ink">{item.name}</p>
-                    <p className="text-xs font-semibold text-slate-500">Recomendado: {formatDeliveryItemQuantity(recommended)}</p>
+                    <p className="text-xs font-semibold text-slate-500">Recomendado: {formatDeliveryItemQuantity(recommended)} · Disponible: {formatBatchStock(item)}</p>
+                    {item.shortageMessage && <p className="mt-1 text-xs font-bold text-amber-700">{item.shortageMessage}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="secondary" onClick={() => updateQuantity(item.id, Number(item.quantity || 0) - 1)} className="h-10 w-10 px-0">
@@ -796,6 +876,7 @@ function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel,
                     <input
                       type="number"
                       min="0"
+                      max={Number.isFinite(Number(item.availableStock)) ? item.availableStock : undefined}
                       step="1"
                       value={item.quantity}
                       onChange={(event) => updateQuantity(item.id, event.target.value)}
@@ -1234,6 +1315,7 @@ function buildSmartDeliveryNotes({ summary, flow, collection, registeredBy, date
     flow.collectorType === 'authorized' ? `Relacion autorizada: ${collection.relation}.` : '',
     `Lote recomendado: ${deliveryPlan?.recommendedLabel || 'Sin lote preparado previo'}.`,
     `Lote entregado: ${deliveryPlan?.deliveredLabel || 'Ayuda general x 1'}.`,
+    deliveryPlan?.incidents?.length ? `Incidencias lote: ${deliveryPlan.incidents.join('; ')}.` : '',
     deliveryPlan?.changed ? `Motivo cambio lote: ${deliveryPlan.reason}.` : '',
     deliveryPlan?.changed ? `Modificado por: ${deliveryPlan.modifiedBy || registeredBy}.` : '',
     deliveryPlan?.changed ? `Fecha modificacion lote: ${formatDate(deliveryPlan.modifiedAt || date)} ${formatTime(deliveryPlan.modifiedAt || date)}.` : '',
@@ -1254,15 +1336,17 @@ function buildDeliveryPlan(summary, customization) {
     : recommendedItemsForSummary(summary);
   const deliveredItems = activeCustomization?.items?.length
     ? activeCustomization.items.map(cloneDeliveryItem)
-    : recommendedItems.map(cloneDeliveryItem);
+    : deliveredItemsForSummary(summary);
   const positiveItems = deliveredItems.filter((item) => Number(item.quantity || 0) > 0);
-  const primaryItem = positiveItems[0] || deliveredItems[0] || recommendedItems[0] || defaultDeliveryItem();
-  const changed = Boolean(activeCustomization) && hasDeliveryItemChanges(recommendedItems, deliveredItems);
+  const primaryItem = positiveItems[0] || defaultDeliveryItem();
+  const changed = Boolean(activeCustomization) && hasDeliveryItemChanges(deliveredItemsForSummary(summary), deliveredItems);
+  const incidents = [...(summary?.preparedBatch?.shortages || []).map((item) => item.message)];
   return {
     recommendedItems,
     deliveredItems,
     primaryItem,
     changed,
+    incidents,
     reason: changed ? activeCustomization.reason : '',
     modifiedBy: changed ? activeCustomization.modifiedBy : '',
     modifiedAt: changed ? activeCustomization.modifiedAt : '',
@@ -1287,6 +1371,12 @@ function recommendedItemsForSummary(summary) {
   return [defaultDeliveryItem()];
 }
 
+function deliveredItemsForSummary(summary) {
+  const batch = summary?.preparedBatch || summary;
+  if (Array.isArray(batch?.deliveredItems) && batch.deliveredItems.length) return batch.deliveredItems.map(cloneDeliveryItem);
+  return recommendedItemsForSummary(summary);
+}
+
 function defaultDeliveryItem() {
   return {
     id: 'general',
@@ -1294,25 +1384,35 @@ function defaultDeliveryItem() {
     name: 'Ayuda general',
     helpType: 'Alimentos',
     quantity: 1,
-    unit: 'unidad(es)'
+    unit: 'unidad(es)',
+    availableStock: null
   };
 }
 
 function cloneDeliveryItem(item = {}) {
+  const availableStock = item.availableStock ?? item.stock ?? null;
   return {
     id: String(item.id || item.inventoryItemId || item.inventory_item_id || item.name || 'general'),
     inventoryItemId: item.inventoryItemId || item.inventory_item_id || null,
     name: item.name || item.inventory_item_name || item.product || item.helpType || 'Ayuda general',
     helpType: item.helpType || item.help_type || item.name || 'Alimentos',
-    quantity: sanitizeDeliveryQuantity(item.quantity || 1),
-    unit: item.unit || 'unidad(es)'
+    quantity: sanitizeDeliveryQuantity(item.quantity ?? 1, availableStock),
+    unit: item.unit || 'unidad(es)',
+    availableStock,
+    recommendedQuantity: Number(item.recommendedQuantity ?? item.quantity ?? 1),
+    quantityPerPerson: Number(item.quantityPerPerson || 0),
+    shortageMessage: item.shortageMessage || ''
   };
 }
 
-function sanitizeDeliveryQuantity(value) {
+function sanitizeDeliveryQuantity(value, max = null) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.round(parsed * 100) / 100;
+  const rounded = Math.round(parsed * 100) / 100;
+  if (max === null || max === undefined || max === '') return rounded;
+  const limit = Number(max);
+  if (Number.isFinite(limit) && limit >= 0) return Math.min(rounded, limit);
+  return rounded;
 }
 
 function hasDeliveryItemChanges(recommendedItems = [], deliveredItems = []) {
@@ -1329,8 +1429,13 @@ function formatDeliveryItems(items = []) {
 
 function formatDeliveryItemQuantity(item = {}) {
   const quantity = Number(item.quantity || 0);
-  const quantityLabel = Number.isInteger(quantity) ? String(quantity) : String(quantity).replace('.', ',');
+  const quantityLabel = formatQuantity(quantity);
   return `${item.name || 'Ayuda general'} x ${quantityLabel}${item.unit ? ` ${item.unit}` : ''}`;
+}
+
+function formatQuantity(value) {
+  const quantity = Number(value || 0);
+  return Number.isInteger(quantity) ? String(quantity) : String(quantity).replace('.', ',');
 }
 
 function nextSmartDeliveryNumber(deliveries = [], date = new Date()) {
@@ -1354,6 +1459,125 @@ function deliveryDeviceLabel() {
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
   const mode = Number(navigator.maxTouchPoints || 0) > 1 ? 'pantalla tactil' : 'escritorio';
   return [browser, platform, mode].filter(Boolean).join(' · ') || 'No disponible';
+}
+
+async function registerSmartDeliveryInventoryMovements({ actions, deliveryPlan, primaryItem, deliveryNumber, registeredBy, date }) {
+  const primaryInventoryId = primaryItem?.inventoryItemId || null;
+  const movements = (deliveryPlan.deliveredItems || [])
+    .filter((item) => item.inventoryItemId && Number(item.quantity || 0) > 0)
+    .filter((item) => item.inventoryItemId !== primaryInventoryId)
+    .map((item) => ({
+      item_id: item.inventoryItemId,
+      movement_type: 'Salida',
+      quantity: Number(item.quantity || 0),
+      moved_at: todayISO(),
+      responsible: registeredBy,
+      notes: [
+        `Salida automatica por Smart Deliveries ${deliveryNumber}.`,
+        `Producto entregado: ${formatDeliveryItemQuantity(item)}.`,
+        `Lote recomendado: ${deliveryPlan.recommendedLabel}.`,
+        deliveryPlan.changed ? `Motivo del cambio: ${deliveryPlan.reason}.` : '',
+        `Fecha y hora: ${formatDate(date)} ${formatTime(date)}.`
+      ].filter(Boolean).join(' ')
+    }));
+
+  if (!movements.length) return { movements: [], error: '' };
+  try {
+    const results = actions.createInventoryMovements
+      ? await actions.createInventoryMovements(movements)
+      : await createInventoryMovementsSequentially(actions, movements);
+    return { movements: results || [], error: '' };
+  } catch (error) {
+    console.error('[Entregas inteligentes] No se pudieron registrar todos los movimientos de inventario', error);
+    return { movements: [], error: error.message || 'No se pudieron registrar todos los movimientos.' };
+  }
+}
+
+async function createInventoryMovementsSequentially(actions, movements) {
+  const results = [];
+  for (const movement of movements) {
+    results.push(await actions.createInventoryMovement(movement));
+  }
+  return results;
+}
+
+function createDefaultRepartoBatchConfig() {
+  return {
+    name: `Reparto ${formatDate(new Date())}`,
+    rules: {}
+  };
+}
+
+function ensureBatchConfigRules(config = createDefaultRepartoBatchConfig(), inventoryItems = []) {
+  const rules = { ...(config.rules || {}) };
+  let changed = false;
+  buildBatchInventoryItems(inventoryItems).forEach((item) => {
+    if (rules[item.id] === undefined) {
+      rules[item.id] = defaultQuantityPerPerson(item);
+      changed = true;
+    }
+  });
+  return changed ? { ...config, rules } : config;
+}
+
+function updateBatchRule(config, itemId, quantityPerPerson) {
+  return {
+    ...config,
+    rules: {
+      ...(config.rules || {}),
+      [itemId]: sanitizeRuleQuantity(quantityPerPerson)
+    }
+  };
+}
+
+function buildCurrentRepartoBatch(inventoryItems = [], config = createDefaultRepartoBatchConfig()) {
+  const items = buildBatchInventoryItems(inventoryItems).map((item) => ({
+    ...item,
+    quantityPerPerson: Number(config.rules?.[item.id] ?? defaultQuantityPerPerson(item))
+  }));
+  return {
+    name: config.name || `Reparto ${formatDate(new Date())}`,
+    items,
+    totalStock: items.reduce((total, item) => total + Number(item.stock || 0), 0)
+  };
+}
+
+function buildBatchInventoryItems(inventoryItems = []) {
+  return (inventoryItems || [])
+    .filter((item) => item?.id && item.name)
+    .filter((item) => !normalize(`${item.status || ''} ${item.state || ''}`).includes('archiv'))
+    .map((item) => ({
+      id: item.id,
+      inventoryItemId: item.id,
+      name: item.name,
+      category: item.category || '',
+      unit: item.unit || 'unidad(es)',
+      stock: Number(item.stock || 0),
+      helpType: item.name || 'Alimentos'
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
+function defaultQuantityPerPerson(item = {}) {
+  const label = normalize(`${item.name || ''} ${item.category || ''}`);
+  if (label.includes('yogur')) return 2;
+  if (label.includes('leche')) return 1;
+  if (label.includes('pan')) return 1;
+  if (label.includes('queso')) return 1;
+  if (label.includes('kefir') || label.includes('kéfir')) return 1;
+  return 1;
+}
+
+function sanitizeRuleQuantity(value) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity < 0) return 0;
+  return Math.round(quantity * 100) / 100;
+}
+
+function formatBatchStock(item = {}) {
+  const stock = Number(item.availableStock ?? item.stock ?? 0);
+  const label = Number.isInteger(stock) ? String(stock) : String(stock).replace('.', ',');
+  return `${label} ${item.unit || 'unidad(es)'}`;
 }
 
 function buildCannotSignAttestationDataUrl({ summary, flow, registeredBy, date }) {
@@ -1447,20 +1671,38 @@ function buildRepartoActa(session = {}) {
 function summarizeProducts(deliveries = []) {
   const counts = new Map();
   deliveries.forEach((item) => {
-    const key = item.productLabel || 'Ayuda general';
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const deliveredItems = Array.isArray(item.deliveredItems) && item.deliveredItems.length
+      ? item.deliveredItems
+      : parseDeliveryItemsFromLabel(item.deliveredLabel || item.productLabel || 'Ayuda general x 1');
+    deliveredItems.forEach((product) => {
+      const key = product.name || 'Ayuda general';
+      counts.set(key, (counts.get(key) || 0) + Number(product.quantity || 0));
+    });
   });
-  return [...counts.entries()].map(([name, count]) => `${name} (${count})`).join(', ');
+  return [...counts.entries()].map(([name, count]) => `${name} (${formatQuantity(count)})`).join(', ');
+}
+
+function parseDeliveryItemsFromLabel(value = '') {
+  return String(value || '')
+    .split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(.*?)\s+x\s+([\d,.]+)/i);
+      return {
+        name: match ? match[1].trim() : item,
+        quantity: match ? Number(match[2].replace(',', '.')) || 0 : 1
+      };
+    });
 }
 
 function uniqueValues(values = []) {
   return [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))];
 }
 
-function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credentialEntry, source }) {
+function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credentialEntry, source, repartoBatch }) {
   const allDeliveries = [...recentDeliveries, ...(data.deliveries || [])];
   const deliveries = allDeliveries.filter((delivery) => delivery.beneficiary_id === beneficiary.id && isActiveDelivery(delivery));
-  const preparedBatch = findPreparedBatch(beneficiary, data, deliveries);
   const receivedDeliveries = deliveries.filter((delivery) => isReceivedDelivery(delivery));
   const todayDeliveries = receivedDeliveries.filter((delivery) => sameDay(delivery.delivered_at || delivery.reception_at || delivery.created_at, new Date()));
   const todayDelivery = latestDeliveryRecord(todayDeliveries);
@@ -1472,6 +1714,8 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     : [beneficiary];
   const minors = members.filter((item) => isMinor(item)).length;
   const adults = Math.max(members.length - minors, 0);
+  const peopleCount = Math.max(adults + minors, 1);
+  const preparedBatch = buildRecommendedBatchForReparto(repartoBatch, peopleCount) || findPreparedBatch(beneficiary, data, deliveries);
   const status = beneficiaryStatus(beneficiary);
   const blocked = normalize(status).includes('inactiv') || normalize(status).includes('suspend') || normalize(status).includes('archiv');
   return {
@@ -1481,7 +1725,7 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     receivedToday,
     adults,
     minors,
-    peopleCount: Math.max(adults + minors, 1),
+    peopleCount,
     familyLabel: family?.family_code || family?.name || family?.address || (beneficiary.family_id ? 'Unidad familiar' : 'Sin unidad familiar'),
     preparedBatch,
     lastDelivery,
@@ -1494,6 +1738,75 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     identificationMethod: source === 'qr' ? 'QR' : 'Busqueda manual',
     credentialCode: credentialEntry?.credentialId || credentialEntry?.legacyCredentialId || ''
   };
+}
+
+function buildRecommendedBatchForReparto(repartoBatch, peopleCount = 1) {
+  if (!repartoBatch?.items?.length) return null;
+  const recommendedItems = [];
+  const deliveredItems = [];
+  const shortages = [];
+
+  repartoBatch.items.forEach((item) => {
+    const requested = Math.max(0, Math.round(Number(item.quantityPerPerson || 0) * Number(peopleCount || 1) * 100) / 100);
+    if (requested <= 0) return;
+    const available = Number(item.stock || 0);
+    const delivered = Math.min(requested, Math.max(available, 0));
+    const substitute = delivered < requested ? findBatchSubstitute(repartoBatch.items, item) : null;
+    const shortageMessage = delivered < requested
+      ? `${item.name}: recomendado ${formatQuantity(requested)} ${item.unit || ''}, disponible ${formatQuantity(available)}${substitute ? `; sustitucion propuesta: ${substitute.name}` : '; sin sustitucion disponible'}`
+      : '';
+
+    recommendedItems.push(cloneDeliveryItem({
+      ...item,
+      quantity: requested,
+      recommendedQuantity: requested,
+      availableStock: available,
+      shortageMessage
+    }));
+
+    deliveredItems.push(cloneDeliveryItem({
+      ...item,
+      quantity: delivered,
+      recommendedQuantity: requested,
+      availableStock: available,
+      shortageMessage
+    }));
+
+    if (shortageMessage) {
+      shortages.push({
+        product: item.name,
+        requested,
+        available,
+        substitute: substitute?.name || '',
+        message: shortageMessage
+      });
+    }
+  });
+
+  const positiveDelivered = deliveredItems.filter((item) => Number(item.quantity || 0) > 0);
+  const primary = positiveDelivered[0] || deliveredItems[0] || recommendedItems[0] || defaultDeliveryItem();
+
+  return {
+    source: 'Lote del reparto',
+    label: formatDeliveryItems(deliveredItems),
+    detail: `${repartoBatch.name} · ${peopleCount} persona(s) · ${positiveDelivered.length} producto(s) entregables`,
+    helpType: primary.helpType || primary.name || 'Alimentos',
+    quantity: Number(primary.quantity || 1),
+    inventoryItemId: primary.inventoryItemId || null,
+    items: recommendedItems,
+    deliveredItems,
+    shortages
+  };
+}
+
+function findBatchSubstitute(items = [], unavailableItem = {}) {
+  const sameCategory = items.find((item) => (
+    item.id !== unavailableItem.id
+    && Number(item.stock || 0) > 0
+    && normalize(item.category || '') === normalize(unavailableItem.category || '')
+  ));
+  if (sameCategory) return sameCategory;
+  return items.find((item) => item.id !== unavailableItem.id && Number(item.stock || 0) > 0) || null;
 }
 
 function findPreparedBatch(beneficiary, data = {}, deliveries = []) {

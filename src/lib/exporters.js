@@ -253,6 +253,7 @@ export async function createDeliveryReceiptPdf(delivery, beneficiary, deliveries
       ['Dispositivo', operationalData.device],
       ['Lote recomendado', operationalData.recommendedBatch],
       ['Lote realmente entregado', operationalData.deliveredBatch],
+      ...(operationalData.batchIncidents ? [['Incidencias del lote', operationalData.batchIncidents]] : []),
       ...(operationalData.changeReason ? [['Motivo del cambio', operationalData.changeReason]] : []),
       ...(operationalData.modifiedBy ? [['Modificado por', operationalData.modifiedBy]] : []),
       ...(operationalData.modifiedAt ? [['Fecha modificacion', operationalData.modifiedAt]] : [])
@@ -485,6 +486,7 @@ function receiptOperationalData(delivery, beneficiary) {
   const device = matchReceiptNoteValue(notes, 'Dispositivo') || '-';
   const recommendedBatch = matchReceiptNoteValue(notes, 'Lote recomendado') || '-';
   const deliveredBatch = matchReceiptNoteValue(notes, 'Lote entregado') || '-';
+  const batchIncidents = matchReceiptNoteValue(notes, 'Incidencias lote');
   const changeReason = matchReceiptNoteValue(notes, 'Motivo cambio lote');
   const modifiedBy = matchReceiptNoteValue(notes, 'Modificado por');
   const modifiedAt = matchReceiptNoteValue(notes, 'Fecha modificacion lote');
@@ -498,6 +500,7 @@ function receiptOperationalData(delivery, beneficiary) {
     device,
     recommendedBatch,
     deliveredBatch,
+    batchIncidents,
     changeReason,
     modifiedBy,
     modifiedAt,

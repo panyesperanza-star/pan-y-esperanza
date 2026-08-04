@@ -2267,8 +2267,17 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createInventoryMovement: async (payload) => {
-      await inventarioService.createMovement(payload);
+      const result = await inventarioService.createMovement(payload);
       await reload();
+      return result;
+    },
+    createInventoryMovements: async (payloads = []) => {
+      const results = [];
+      for (const payload of payloads) {
+        results.push(await inventarioService.createMovement(payload));
+      }
+      await reload();
+      return results;
     },
     createDonorContact: async (payload) => {
       const contact = await donacionService.createDonorContact(payload);
