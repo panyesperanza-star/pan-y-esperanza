@@ -260,7 +260,7 @@ export default function App() {
     communications: <Communications data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     families: <Families data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     deliveries: <Deliveries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
-    'smart-deliveries': <SmartDeliveries data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
+    'smart-deliveries': <SmartDeliveries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     'credential-scanner': <CredentialScanner data={sorted} currentUser={currentUser} onNavigate={navigateTo} />,
     receipts: <Receipts data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,
     inventory: <Inventory data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} />,

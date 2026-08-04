@@ -7,11 +7,12 @@ import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
 
-export function SmartDeliveries({ data, actions, currentUser, onNavigate }) {
+export function SmartDeliveries({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const scannerRegionId = useRef(`smart-delivery-reader-${Math.random().toString(36).slice(2)}`).current;
   const scannerRef = useRef(null);
   const scanLockedRef = useRef(false);
   const resetTimerRef = useRef(null);
+  const prefilledProfileRef = useRef('');
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
@@ -32,6 +33,31 @@ export function SmartDeliveries({ data, actions, currentUser, onNavigate }) {
     stopCamera();
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    const profileId = navigationTarget?.moduleId === 'smart-deliveries' ? navigationTarget.profileId : '';
+    if (!profileId || prefilledProfileRef.current === profileId) return;
+
+    const beneficiary = (data?.beneficiaries || []).find((item) => item.id === profileId);
+    if (!beneficiary) {
+      if ((data?.beneficiaries || []).length) {
+        prefilledProfileRef.current = profileId;
+        setResult({
+          type: 'invalid',
+          title: 'Beneficiario no localizado',
+          message: 'No se ha encontrado el beneficiario seleccionado para el modo reparto.'
+        });
+        setScanStatus('Beneficiario no localizado.');
+        onNavigate?.({ moduleId: 'smart-deliveries' });
+      }
+      return;
+    }
+
+    prefilledProfileRef.current = profileId;
+    void stopCamera({ silent: true });
+    selectBeneficiary(beneficiary, 'qr');
+    onNavigate?.({ moduleId: 'smart-deliveries' });
+  }, [data?.beneficiaries, navigationTarget?.moduleId, navigationTarget?.profileId]);
 
   async function startCamera(cameraId = selectedCameraId) {
     if (!canScan) {
@@ -164,7 +190,8 @@ export function SmartDeliveries({ data, actions, currentUser, onNavigate }) {
     const entry = directory.find((item) => item.record?.id === beneficiary.id) || toBeneficiaryDirectoryEntry(beneficiary);
     setResult({ type: 'beneficiary', source, entry, beneficiary });
     setManualMatches([]);
-    setScanStatus('Beneficiario identificado por busqueda manual.');
+    setManualQuery('');
+    setScanStatus(source === 'qr' ? 'Beneficiario identificado desde credencial.' : 'Beneficiario identificado por busqueda manual.');
   }
 
   async function registerDelivery(summary) {

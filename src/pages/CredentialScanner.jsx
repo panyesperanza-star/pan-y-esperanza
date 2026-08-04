@@ -303,7 +303,7 @@ function BeneficiaryScanResult({ result, data, canRegisterDelivery, onNavigate }
             {receivedToday ? (
               <p className="mt-2 text-sm font-semibold text-emerald-700">Entrega ya registrada hoy. No se permite registrar otra desde el escaneo.</p>
             ) : (
-              <Button className="mt-3 w-full sm:w-auto" disabled={!canRegisterDelivery} onClick={() => onNavigate?.({ moduleId: 'deliveries', filter: 'registrar-entrega', profileId: beneficiary.id })}>
+              <Button className="mt-3 w-full sm:w-auto" disabled={!canRegisterDelivery} onClick={() => onNavigate?.({ moduleId: 'smart-deliveries', profileId: beneficiary.id })}>
                 <PackageCheck size={16} /> Registrar entrega
               </Button>
             )}
