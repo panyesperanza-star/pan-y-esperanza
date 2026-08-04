@@ -21,7 +21,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [manualQuery, setManualQuery] = useState('');
   const [manualMatches, setManualMatches] = useState([]);
   const [result, setResult] = useState(null);
-  const [notice, setNotice] = useState('');
+  const [feedback, setFeedback] = useState(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState('');
   const [recentDeliveries, setRecentDeliveries] = useState([]);
@@ -67,7 +67,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     }
     setCameraError('');
     setRegisterError('');
-    setNotice('');
+    setFeedback(null);
     setScanStatus('Activando camara...');
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError('Este dispositivo no permite abrir la camara desde el navegador.');
@@ -172,7 +172,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   function searchBeneficiary(event) {
     event.preventDefault();
     setRegisterError('');
-    setNotice('');
+    setFeedback(null);
     const matches = findBeneficiaryMatches(manualQuery, data?.beneficiaries || []);
     setManualMatches(matches);
     if (!matches.length) {
@@ -198,7 +198,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     if (!summary?.beneficiary || summary.receivedToday || summary.blocked) return;
     setRegistering(true);
     setRegisterError('');
-    setNotice('');
+    setFeedback(null);
     try {
       const now = new Date();
       const payload = {
@@ -218,15 +218,17 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         { id: `smart-${Date.now()}`, ...payload, created_at: now.toISOString(), status: 'Completada' },
         ...current
       ]);
-      setNotice('ENTREGA REGISTRADA');
+      setFeedback({
+        type: 'success',
+        beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
+        time: formatTime(now),
+        peopleCount: summary.peopleCount
+      });
       setResult(null);
       setManualQuery('');
       setManualMatches([]);
       setScanStatus('Entrega registrada. Preparando siguiente lectura...');
-      resetTimerRef.current = window.setTimeout(() => {
-        setNotice('');
-        startCamera();
-      }, 1000);
+      scheduleReturnToScanner(1000);
     } catch (error) {
       console.error('[Entregas inteligentes] Error al registrar entrega', error);
       setRegisterError(error.message || 'No se pudo registrar la entrega.');
@@ -245,6 +247,29 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     })
     : null;
 
+  useEffect(() => {
+    if (!summary?.receivedToday) return;
+    setFeedback({
+      type: 'duplicate',
+      beneficiaryName: summary.beneficiary.full_name || 'Beneficiario',
+      time: summary.lastDeliveryTime,
+      volunteer: summary.lastDeliveryResponsible
+    });
+    setResult(null);
+    setManualQuery('');
+    setManualMatches([]);
+    setScanStatus('Entrega ya registrada hoy. Preparando siguiente lectura...');
+    scheduleReturnToScanner(2000);
+  }, [summary?.beneficiary?.id, summary?.receivedToday]);
+
+  function scheduleReturnToScanner(delayMs) {
+    if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => {
+      setFeedback(null);
+      startCamera();
+    }, delayMs);
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e7f5ee_0,#f8faf8_34%,#eef4f1_100%)] text-ink">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
@@ -259,14 +284,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
           </Button>
         </header>
 
-        {notice && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/80 px-4 text-center text-white">
-            <div className="rounded-[2rem] bg-emerald-600 px-8 py-7 shadow-2xl">
-              <CheckCircle2 className="mx-auto" size={76} />
-              <p className="mt-4 text-4xl font-black tracking-tight">{notice}</p>
-            </div>
-          </div>
-        )}
+        {feedback && <DeliveryFeedbackOverlay feedback={feedback} />}
 
         <section className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(28rem,1.18fr)]">
           <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
@@ -468,6 +486,38 @@ function BeneficiaryFastPanel({ summary, canRegister, registering, error, onRegi
   );
 }
 
+function DeliveryFeedbackOverlay({ feedback }) {
+  const isDuplicate = feedback.type === 'duplicate';
+  return (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center px-4 text-center text-white ${isDuplicate ? 'bg-red-950/90' : 'bg-emerald-950/85'}`}>
+      <div className={`w-full max-w-xl rounded-[2rem] px-8 py-8 shadow-2xl ${isDuplicate ? 'bg-red-600' : 'bg-emerald-600'}`}>
+        {isDuplicate ? <XCircle className="mx-auto" size={82} /> : <CheckCircle2 className="mx-auto" size={82} />}
+        <p className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
+          {isDuplicate ? 'ESTE BENEFICIARIO YA HA RECIBIDO LA AYUDA HOY' : 'ENTREGA REGISTRADA'}
+        </p>
+        <p className="mt-4 text-2xl font-black">{feedback.beneficiaryName}</p>
+        <div className="mx-auto mt-5 grid max-w-md gap-3 rounded-2xl bg-white/15 p-4 text-left text-base font-bold">
+          <InfoLineLight label={isDuplicate ? 'Ultima entrega' : 'Hora'} value={feedback.time || '-'} />
+          {isDuplicate ? (
+            <InfoLineLight label="Voluntario" value={feedback.volunteer || '-'} />
+          ) : (
+            <InfoLineLight label="Personas atendidas" value={feedback.peopleCount || 1} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoLineLight({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs font-black uppercase tracking-[0.16em] text-white/75">{label}</span>
+      <span className="text-right text-lg font-black text-white">{value}</span>
+    </div>
+  );
+}
+
 function Metric({ icon: Icon, label, value, tone = 'slate' }) {
   const toneClass = tone === 'red' ? 'text-red-700 bg-red-50' : tone === 'green' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-700 bg-slate-50';
   return (
@@ -537,7 +587,11 @@ function buildBeneficiarySummary({ beneficiary, data, recentDeliveries, credenti
     receivedToday,
     adults,
     minors,
+    peopleCount: Math.max(adults + minors, 1),
     familyLabel: family?.family_code || family?.name || family?.address || (beneficiary.family_id ? 'Unidad familiar' : 'Sin unidad familiar'),
+    lastDelivery,
+    lastDeliveryTime: deliveryDisplayTime(lastDelivery),
+    lastDeliveryResponsible: deliveryResponsible(lastDelivery),
     lastDeliveryLabel: lastDelivery ? `${formatDate(lastDelivery.delivered_at || lastDelivery.created_at)} · ${lastDelivery.help_type || 'Ayuda'}` : 'Sin entregas',
     sourceLabel: source === 'qr' && credentialEntry?.credentialId ? 'Credencial oficial' : 'Busqueda manual'
   };
@@ -672,6 +726,23 @@ function beneficiaryPhone(beneficiary = {}) {
 
 function currentUserName(user = {}) {
   return [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.email || 'Usuario';
+}
+
+function formatTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+
+function deliveryDisplayTime(delivery = null) {
+  if (!delivery) return '-';
+  if (delivery.delivered_time) return String(delivery.delivered_time).slice(0, 5);
+  return formatTime(delivery.reception_at || delivery.created_at || delivery.delivered_at);
+}
+
+function deliveryResponsible(delivery = null) {
+  if (!delivery) return '-';
+  return delivery.responsible || delivery.volunteer_name || delivery.delivered_by || delivery.created_by || '-';
 }
 
 function invalidCredentialMessage(status, reason = '') {
