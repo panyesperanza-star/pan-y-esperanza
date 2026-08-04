@@ -30,6 +30,10 @@ const KIND_CODES = {
 const PDF_WIDTH_MM = 110;
 const PDF_HEIGHT_MM = 80;
 const PDF_SIDES = ['front', 'back'];
+const PRINT_MODES = {
+  duplex: 'duplex',
+  separate: 'separate'
+};
 const CREDENTIAL_REVOCATION_REASONS = [
   'Pérdida',
   'Robo',
@@ -65,6 +69,7 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [localCredential, setLocalCredential] = useState(credential);
+  const [printMode, setPrintMode] = useState(PRINT_MODES.duplex);
   const photoUrl = useCredentialPhotoUrl(localCredential);
   const qrDataUrl = useCredentialQr(localCredential);
 
@@ -122,7 +127,7 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
     let printHost = null;
     try {
       await waitForAssets(printArea);
-      printHost = createCredentialCloneHost(printArea, 'official-credential-v2-print-host');
+      printHost = createCredentialCloneHost(printArea, 'official-credential-v2-print-host', { printMode });
       document.body.appendChild(printHost);
       document.body.classList.add('official-credential-v2-printing');
       await waitForAssets(printHost);
@@ -192,6 +197,28 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
           <p className="text-xs font-semibold text-slate-500">{localCredential.typeLabel} - {localCredential.code}</p>
           <p className="text-xs font-semibold text-brand-700">ID: {shortCredentialDisplayId(localCredential)}</p>
         </div>
+        <fieldset className="official-credential-v2-print-options" aria-label="Opciones de impresion">
+          <label className="official-credential-v2-print-option">
+            <input
+              type="radio"
+              name="official-credential-v2-print-mode"
+              value={PRINT_MODES.duplex}
+              checked={printMode === PRINT_MODES.duplex}
+              onChange={() => setPrintMode(PRINT_MODES.duplex)}
+            />
+            <span>Imprimir a doble cara <strong>(recomendado)</strong></span>
+          </label>
+          <label className="official-credential-v2-print-option">
+            <input
+              type="radio"
+              name="official-credential-v2-print-mode"
+              value={PRINT_MODES.separate}
+              checked={printMode === PRINT_MODES.separate}
+              onChange={() => setPrintMode(PRINT_MODES.separate)}
+            />
+            <span>Imprimir caras por separado</span>
+          </label>
+        </fieldset>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={printCredential} disabled={busy}>
             <Printer size={16} /> Imprimir
@@ -244,7 +271,9 @@ function OfficialCredentialV2Preview({ credential, actions = null }) {
       </div>
 
       <p className="official-credential-v2-note">
-        El PDF genera dos paginas independientes: pagina 1 anverso y pagina 2 reverso, preparadas para A7 de 110 x 80 mm.
+        {printMode === PRINT_MODES.duplex
+          ? 'Documento unico: pagina 1 anverso y pagina 2 reverso, alineadas para imprimir a doble cara por el borde largo.'
+          : 'Para imprimir por separado, usa el selector de paginas del navegador: pagina 1 anverso y pagina 2 reverso.'}
       </p>
 
       <CredentialHistoryV2 history={localCredential.credentialHistory} currentCredentialUid={localCredential.credentialUid || localCredential.credentialId} />
@@ -773,12 +802,13 @@ async function waitForAssets(root) {
   }));
 }
 
-function createCredentialCloneHost(printArea, className) {
+function createCredentialCloneHost(printArea, className, options = {}) {
   const pages = printArea.querySelector('[data-official-credential-v2-pages]');
   if (!pages) throw new Error('No se ha encontrado el area de credenciales para imprimir.');
   const host = document.createElement('div');
   host.className = className;
   host.setAttribute('aria-hidden', 'true');
+  host.dataset.printMode = options.printMode || PRINT_MODES.duplex;
   host.appendChild(pages.cloneNode(true));
   return host;
 }
