@@ -37,6 +37,7 @@
     { "source": "/debug/admin", "destination": "/erp/index.html" },
     { "source": "/portal-beneficiario", "destination": "/erp/index.html" },
     { "source": "/portal-colaboradores", "destination": "/erp/index.html" },
-    { "source": "/portal-donaciones", "destination": "/erp/index.html" }
+    { "source": "/portal-donaciones", "destination": "/erp/index.html" },
+    { "source": "/restablecer-contrasena", "destination": "/erp/index.html" }
   ]
 }

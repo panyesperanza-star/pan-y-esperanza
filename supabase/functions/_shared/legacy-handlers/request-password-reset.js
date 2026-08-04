@@ -47,8 +47,7 @@ export default async function handler(request, response) {
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(token);
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60).toISOString();
-    const origin = getOrigin(request, body.origin);
-    const resetUrl = `${origin}/?reset_token=${encodeURIComponent(token)}`;
+    const resetUrl = buildResetUrl(request, body, token);
 
     const { error: insertError } = await admin.from('password_reset_tokens').insert({
       user_id: profile.id,
@@ -116,6 +115,25 @@ function getOrigin(request, origin) {
   const host = request.headers['x-forwarded-host'] || request.headers.host;
   const proto = request.headers['x-forwarded-proto'] || 'https';
   return `${proto}://${host}`;
+}
+
+function buildResetUrl(request, body, token) {
+  const origin = getOrigin(request, process.env.PUBLIC_SITE_URL || body.origin);
+  const fallbackUrl = `${origin}/restablecer-contrasena`;
+  const candidate = String(body.redirectTo || fallbackUrl).trim();
+  let resetUrl;
+
+  try {
+    resetUrl = new URL(candidate, origin);
+    if (resetUrl.origin !== new URL(origin).origin) {
+      resetUrl = new URL(fallbackUrl);
+    }
+  } catch {
+    resetUrl = new URL(fallbackUrl);
+  }
+
+  resetUrl.searchParams.set('reset_token', token);
+  return resetUrl.toString();
 }
 
 function buildHtml(profile, resetUrl, logoUrl) {

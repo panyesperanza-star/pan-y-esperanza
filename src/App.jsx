@@ -25,6 +25,7 @@ import { Families } from './pages/Families';
 import { Inventory } from './pages/Inventory';
 import { Login } from './pages/Login';
 import { Notifications } from './pages/Notifications';
+import { PasswordReset } from './pages/PasswordReset';
 import { PlatformTools } from './pages/PlatformTools';
 import { ProviderPanel } from './pages/ProviderPanel';
 import { Receipts } from './pages/Receipts';
@@ -50,6 +51,7 @@ export default function App() {
   const isCollaboratorPortalRoute = normalizePath(pathname) === '/portal-colaboradores';
   const isDonorPortalRoute = normalizePath(pathname) === '/portal-donaciones';
   const isLoginRoute = normalizePath(pathname) === '/acceso';
+  const isPasswordResetRoute = normalizePath(pathname) === '/restablecer-contrasena';
   const isCredentialVerificationRoute = normalizePath(pathname).startsWith('/verificar-credencial');
   const isPortalRoute = isBeneficiaryPortalRoute || isCollaboratorPortalRoute || isDonorPortalRoute;
   const [active, setActive] = useState(() => getModuleByPath(window.location.pathname));
@@ -59,7 +61,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(true);
   const portalActions = useMemo(() => createPortalApiActions(), []);
   const isPlatformOwnerUser = isPlatformOwner(currentUser);
-  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isCredentialVerificationRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
+  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isPasswordResetRoute && !isCredentialVerificationRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -73,7 +75,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function validateStoredSession() {
-      if (isLoginRoute || isCredentialVerificationRoute) {
+      if (isLoginRoute || isPasswordResetRoute || isCredentialVerificationRoute) {
         if (!cancelled) setAuthReady(true);
         return;
       }
@@ -103,13 +105,14 @@ export default function App() {
     }
     validateStoredSession();
     return () => { cancelled = true; };
-  }, [currentUser?.id, currentUser?.email, hasResetToken, isCredentialVerificationRoute, isLoginRoute, skipInitialSessionValidation]);
+  }, [currentUser?.id, currentUser?.email, hasResetToken, isCredentialVerificationRoute, isLoginRoute, isPasswordResetRoute, skipInitialSessionValidation]);
 
   const firstAccessibleModule = getFirstAccessibleModule(currentUser);
 
   useEffect(() => {
     if (!currentUser) return;
     if (isLoginRoute) return;
+    if (isPasswordResetRoute) return;
     if (isBeneficiaryPortalRoute) return;
     if (isCollaboratorPortalRoute) return;
     if (isDonorPortalRoute) return;
@@ -137,7 +140,7 @@ export default function App() {
     setPathname(nextPath);
     setNavigationTarget({ moduleId: firstAccessibleModule, key: Date.now() });
     setActive(firstAccessibleModule);
-  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, isCredentialVerificationRoute, isLoginRoute, pathname]);
+  }, [currentUser, firstAccessibleModule, isDebugAdminRoute, isBeneficiaryPortalRoute, isCollaboratorPortalRoute, isDonorPortalRoute, isCredentialVerificationRoute, isLoginRoute, isPasswordResetRoute, pathname]);
 
   function navigateTo(destination) {
     const target = normalizeNavigationTarget(destination);
@@ -199,7 +202,11 @@ export default function App() {
   }, [data, isPlatformOwnerUser]);
 
   if (hasResetToken) {
-    return <Login onAccess={handleLoginAccess} />;
+    return <PasswordReset />;
+  }
+
+  if (isPasswordResetRoute) {
+    return <PasswordReset />;
   }
 
   if (isLoginRoute) {

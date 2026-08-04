@@ -19,7 +19,8 @@ export function Login({ onAccess }) {
     setMessage('');
     try {
       const logoUrl = new URL(officialLogoUrl, window.location.origin).toString();
-      const payload = await callEdgeJson('request-password-reset', { email, logoUrl, origin: window.location.origin });
+      const redirectTo = new URL('/restablecer-contrasena', window.location.origin).toString();
+      const payload = await callEdgeJson('request-password-reset', { email, logoUrl, origin: window.location.origin, redirectTo });
       setMessage(payload.message || 'Revise su correo para continuar.');
     } catch (err) {
       setError(err.message || 'No se pudo solicitar la recuperación.');

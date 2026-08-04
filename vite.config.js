@@ -36,6 +36,7 @@ const erpRoutes = new Set([
   '/portal-beneficiario',
   '/portal-colaboradores',
   '/portal-donaciones',
+  '/restablecer-contrasena',
 ]);
 
 const rewriteAppRoutes = (middlewares) => {

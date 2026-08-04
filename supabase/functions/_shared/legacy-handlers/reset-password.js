@@ -17,11 +17,12 @@ export default async function handler(request, response) {
     const body = parseBody(request.body);
     const token = String(body.token || '').trim();
     const password = String(body.password || '').trim();
+    const validateOnly = body.validateOnly === true;
 
     if (!url || !serviceRoleKey) {
       return sendJson(response, 503, { ok: false, code: 'SUPABASE_ADMIN_NOT_CONFIGURED', error: 'Servicio de usuarios no configurado. Añada SUPABASE_SERVICE_ROLE_KEY en Supabase Edge Functions.' });
     }
-    if (!token || password.length < 8) {
+    if (!token || (!validateOnly && password.length < 8)) {
       return sendJson(response, 400, { ok: false, code: 'INVALID_RESET', error: 'El enlace no es válido o la contraseña tiene menos de 8 caracteres.' });
     }
 
@@ -43,6 +44,10 @@ export default async function handler(request, response) {
 
     if (!resetToken.auth_user_id) {
       return sendJson(response, 400, { ok: false, code: 'NO_AUTH_USER', error: 'El usuario no está vinculado a Supabase Auth.' });
+    }
+
+    if (validateOnly) {
+      return sendJson(response, 200, { ok: true, message: 'Enlace validado correctamente.' });
     }
 
     const { error: authError } = await admin.auth.admin.updateUserById(resetToken.auth_user_id, { password });
