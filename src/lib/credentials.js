@@ -25,17 +25,17 @@ export function parseOfficialCredentialQr(value) {
 function parseCredentialVerificationUrl(value) {
   try {
     const url = new URL(value);
-    const match = url.pathname.match(/\/verificar-credencial\/([^/]+)/);
+    const match = url.pathname.match(/\/verificar-credencial\/([^/]+)/i);
     if (!match) return null;
     return {
       type: 'official-credential',
       credential_id: decodeURIComponent(match[1]),
-      qr_version: readQrVersion(url.searchParams.get('v'))
+      qr_version: readQrVersion(url.searchParams.get('v') || url.searchParams.get('V'))
     };
   } catch {
-    const match = value.match(/\/verificar-credencial\/([^/?#]+)/);
+    const match = value.match(/\/verificar-credencial\/([^/?#]+)/i);
     if (!match) return null;
-    const queryMatch = value.match(/[?&]v=(\d+)/);
+    const queryMatch = value.match(/[?&]v=(\d+)/i);
     return {
       type: 'official-credential',
       credential_id: decodeURIComponent(match[1]),
