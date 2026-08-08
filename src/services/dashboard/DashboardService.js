@@ -1,6 +1,7 @@
 import { getUserStatus } from '../../lib/auth';
 import { documentAttentionItems, documentExpiryWarningDays, intelligentDocumentStatus } from '../../lib/documentAutomation';
 import { formatDate, normalize, todayISO } from '../../lib/formatters';
+import { buildSocialResourceMonitoring } from '../../lib/socialResourceRecommendations';
 import { PriorityEngineService } from '../priorities/PriorityEngineService';
 
 const STALE_HELP_DAYS = 30;
@@ -202,6 +203,13 @@ function buildOperations(data, today, pendingPasswordResets) {
   const criticalProducts = [...outOfStock, ...lowStock, ...expiringSoon]
     .filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index)
     .slice(0, 8);
+  const socialResourceMonitoring = buildSocialResourceMonitoring({
+    resources: data.social_resources || [],
+    beneficiaries: data.beneficiaries || [],
+    documents: data.beneficiary_documents || [],
+    links: data.beneficiary_social_resources || [],
+    today
+  });
 
   const operations = {
     activeDeliveries,
@@ -233,6 +241,7 @@ function buildOperations(data, today, pendingPasswordResets) {
     unreadNotifications,
     todayAgenda,
     recentActivity,
+    socialResourceMonitoring,
     pendingLoans,
     pendingLoanAmount: pendingLoans.reduce((total, loan) => total + Number(loan.outstanding || 0), 0),
     pendingDebts,

@@ -14,7 +14,7 @@ export const SOCIAL_RESOURCE_CATEGORIES = [
   'Otros'
 ];
 
-export const SOCIAL_RESOURCE_STATUSES = ['Activo', 'Proximamente', 'Cerrado'];
+export const SOCIAL_RESOURCE_STATUSES = ['Activo', 'Proximamente', 'Cerrado', 'Pendiente de verificar'];
 export const SOCIAL_RESOURCE_SCOPES = ['municipal', 'autonomico', 'estatal', 'privado'];
 
 export const BENEFICIARY_RESOURCE_STATUSES = [
@@ -27,6 +27,19 @@ export const BENEFICIARY_RESOURCE_STATUSES = [
   'denied',
   'not_applicable'
 ];
+
+const RESOURCE_HISTORY_FIELDS = {
+  requirements: 'Requisitos',
+  deadline_at: 'Plazo',
+  benefit: 'Importe/beneficio',
+  required_documents: 'Documentacion',
+  status: 'Estado',
+  official_url: 'URL oficial',
+  last_verified_at: 'Fecha de comprobacion',
+  organization_name: 'Organismo responsable',
+  target_audience: 'A quien va dirigido',
+  opens_at: 'Fecha de apertura'
+};
 
 function cleanText(value) {
   return String(value || '').trim();
@@ -61,6 +74,13 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
   const status = pickAllowed(cleanText(payload.status ?? current.status), SOCIAL_RESOURCE_STATUSES, 'Activo');
   const scope = pickAllowed(cleanText(payload.scope ?? current.scope), SOCIAL_RESOURCE_SCOPES, 'municipal');
   const now = context.now || nowISO();
+  const officialUrl = cleanText(payload.official_url ?? current.official_url);
+  const lastVerifiedAt = cleanDate(payload.last_verified_at ?? current.last_verified_at);
+  const shouldStampVerifier = Boolean(officialUrl && lastVerifiedAt) && (
+    cleanText(current.official_url) !== officialUrl
+    || cleanDate(current.last_verified_at) !== lastVerifiedAt
+    || !current.verified_by
+  );
 
   return {
     name,
@@ -78,10 +98,13 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
     phone: cleanText(payload.phone ?? current.phone),
     email: cleanText(payload.email ?? current.email),
     web_url: cleanText(payload.web_url ?? current.web_url),
+    official_url: officialUrl,
     application_method: cleanText(payload.application_method ?? current.application_method),
     status,
     scope,
-    last_verified_at: cleanDate(payload.last_verified_at ?? current.last_verified_at),
+    last_verified_at: lastVerifiedAt,
+    verified_by: shouldStampVerifier ? context.userId || null : payload.verified_by || current.verified_by || null,
+    verified_by_name: shouldStampVerifier ? context.userName || '' : cleanText(payload.verified_by_name ?? current.verified_by_name),
     age_min: cleanInteger(payload.age_min ?? current.age_min),
     age_max: cleanInteger(payload.age_max ?? current.age_max),
     family_situation: cleanText(payload.family_situation ?? current.family_situation),
@@ -134,7 +157,9 @@ export class SocialResourceService {
 
   async createResource(payload) {
     this.assertPermission('social-resources', 'create');
-    const created = await this.repository.createResource(sanitizeSocialResourcePayload(payload, {}, this.context()));
+    const context = this.context();
+    const created = await this.repository.createResource(sanitizeSocialResourcePayload(payload, {}, context));
+    await this.recordHistory(created.id, 'created', {}, created, Object.keys(RESOURCE_HISTORY_FIELDS), context);
     await this.audit(`Centro de Recursos Sociales: creo recurso ${created.name}`.trim());
     return created;
   }
@@ -143,7 +168,13 @@ export class SocialResourceService {
     this.assertPermission('social-resources', 'edit');
     const current = this.findResource(id);
     if (!current) throw new Error('El recurso no existe.');
-    const updated = await this.repository.updateResource(id, sanitizeSocialResourcePayload(payload, current, this.context()));
+    const context = this.context();
+    const nextPayload = sanitizeSocialResourcePayload(payload, current, context);
+    const changedFields = changedResourceFields(current, nextPayload);
+    const updated = await this.repository.updateResource(id, nextPayload);
+    if (changedFields.length) {
+      await this.recordHistory(id, 'updated', current, updated, changedFields, context, cleanText(payload.change_reason));
+    }
     await this.audit(`Centro de Recursos Sociales: actualizo recurso ${updated.name || current.name}`.trim());
     return updated;
   }
@@ -199,6 +230,7 @@ export class SocialResourceService {
   context() {
     return {
       userId: this.currentUser?.id || null,
+      userName: actorName(this.currentUser),
       now: nowISO()
     };
   }
@@ -206,4 +238,29 @@ export class SocialResourceService {
   findResource(id) {
     return this.resources.find((resource) => resource.id === id);
   }
+
+  async recordHistory(resourceId, changeType, previousData, newData, changedFields, context, reason = '') {
+    await this.repository.createHistory({
+      resource_id: resourceId,
+      changed_by: context.userId,
+      changed_by_name: context.userName,
+      change_type: changeType,
+      changed_fields: changedFields.map((field) => ({ field, label: RESOURCE_HISTORY_FIELDS[field] || field })),
+      previous_data: pickResourceFields(previousData, changedFields),
+      new_data: pickResourceFields(newData, changedFields),
+      reason: cleanText(reason),
+      created_at: context.now
+    });
+  }
+}
+
+function changedResourceFields(current, next) {
+  return Object.keys(RESOURCE_HISTORY_FIELDS).filter((field) => String(current?.[field] ?? '') !== String(next?.[field] ?? ''));
+}
+
+function pickResourceFields(resource = {}, fields = []) {
+  return fields.reduce((acc, field) => {
+    acc[field] = resource?.[field] ?? null;
+    return acc;
+  }, {});
 }

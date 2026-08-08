@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileText,
   Filter,
+  History,
   Landmark,
   Mail,
   MapPin,
@@ -24,7 +25,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
-import { buildSocialResourceRecommendations } from '../lib/socialResourceRecommendations';
+import { buildSocialResourceMonitoring, buildSocialResourceRecommendations, isResourceOfficiallyVerified } from '../lib/socialResourceRecommendations';
 import {
   BENEFICIARY_RESOURCE_STATUSES,
   SOCIAL_RESOURCE_CATEGORIES,
@@ -48,6 +49,7 @@ const emptyResource = {
   phone: '',
   email: '',
   web_url: '',
+  official_url: '',
   application_method: '',
   status: 'Activo',
   scope: 'municipal',
@@ -74,7 +76,8 @@ const trackingLabels = {
 const statusStyles = {
   Activo: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   Proximamente: 'border-amber-200 bg-amber-50 text-amber-800',
-  Cerrado: 'border-slate-200 bg-slate-100 text-slate-700'
+  Cerrado: 'border-slate-200 bg-slate-100 text-slate-700',
+  'Pendiente de verificar': 'border-amber-200 bg-amber-50 text-amber-800'
 };
 
 const trackingStyles = {
@@ -100,6 +103,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const resources = data.social_resources || [];
   const links = data.beneficiary_social_resources || [];
   const followups = data.social_resource_followups || [];
+  const history = data.social_resource_history || [];
   const beneficiaries = data.beneficiaries || [];
   const canCreate = canDo(currentUser, 'social-resources', 'create');
   const canEdit = canDo(currentUser, 'social-resources', 'edit');
@@ -135,7 +139,17 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
 
   const selectedBeneficiary = beneficiaries.find((item) => item.id === selectedBeneficiaryId) || null;
   const selectedResource = resources.find((item) => item.id === selectedResourceId) || null;
+  const selectedResourceHistory = history.filter((item) => item.resource_id === selectedResourceId);
   const selectedLinks = links.filter((link) => link.beneficiary_id === selectedBeneficiaryId);
+  const monitoring = useMemo(() => buildSocialResourceMonitoring({
+    resources,
+    beneficiaries,
+    documents: data.beneficiary_documents || [],
+    links
+  }), [resources, beneficiaries, data.beneficiary_documents, links]);
+  const alertsByResourceId = useMemo(() => new Map(
+    monitoring.alerts.map((item) => [item.resource.id, item])
+  ), [monitoring]);
   const recommendationAnalysis = useMemo(() => buildSocialResourceRecommendations({
     beneficiary: selectedBeneficiary,
     resources,
@@ -172,11 +186,11 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   }, [resources, filters]);
 
   const summary = useMemo(() => ({
-    active: resources.filter((resource) => resource.status === 'Activo').length,
-    expiring: resources.filter((resource) => isNext30(resource.deadline_at)).length,
+    active: monitoring.open.length,
+    expiring: monitoring.closingSoon.length,
     linked: selectedLinks.length,
     openTracking: selectedLinks.filter((link) => !['granted', 'denied', 'not_applicable'].includes(link.status)).length
-  }), [resources, selectedLinks]);
+  }), [monitoring, selectedLinks]);
 
   function updateFilter(name, value) {
     setFilters((current) => ({ ...current, [name]: value }));
@@ -229,7 +243,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
     <div className="space-y-5">
       <PageHeader
         title="Centro de Recursos Sociales"
-        description="Busca, filtra y vincula ayudas reales al expediente del beneficiario sin recomendaciones automaticas."
+        description="Mantiene recursos verificados, detecta convocatorias relevantes y recomienda por reglas explicables."
         actions={canCreate && (
           <Button onClick={() => setEditing({ ...emptyResource })}>
             <Plus size={16} /> Nuevo recurso
@@ -241,11 +255,21 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
       {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
       <section className="grid gap-4 md:grid-cols-4">
-        <SummaryCard label="Recursos activos" value={summary.active} icon={Landmark} tone="brand" />
-        <SummaryCard label="Vencen pronto" value={summary.expiring} icon={CalendarClock} tone="amber" />
+        <SummaryCard label="Convocatorias abiertas" value={summary.active} icon={Landmark} tone="brand" />
+        <SummaryCard label="Cierran pronto" value={summary.expiring} icon={CalendarClock} tone="red" />
         <SummaryCard label="Guardados en expediente" value={summary.linked} icon={Save} tone="blue" />
         <SummaryCard label="Seguimientos abiertos" value={summary.openTracking} icon={Clock3} tone="red" />
       </section>
+
+      <ResourceAlertsCenter
+        monitoring={monitoring}
+        onView={(resource) => setSelectedResourceId(resource.id)}
+        onOpenAffected={(alert) => onNavigate?.({
+          moduleId: 'beneficiaries',
+          beneficiaryIds: alert.beneficiaries.map((beneficiary) => beneficiary.id),
+          label: `${alert.resource.name}: ${alert.affectedCount} posibles beneficiarios`
+        })}
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
@@ -322,6 +346,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
               key={resource.id}
               resource={resource}
               recommendation={recommendationsByResourceId.get(resource.id)}
+              alert={alertsByResourceId.get(resource.id)}
               selected={selectedResourceId === resource.id}
               link={selectedBeneficiary ? findLink(links, selectedBeneficiary.id, resource.id) : null}
               canEdit={canEdit}
@@ -351,10 +376,10 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
             onOpenBeneficiary={() => selectedBeneficiary && onNavigate?.({ moduleId: 'beneficiaries', profileId: selectedBeneficiary.id })}
             onTrack={(resource) => setTrackingTarget(resource)}
           />
-          <ResourceDetail resource={selectedResource} />
+          <ResourceDetail resource={selectedResource} history={selectedResourceHistory} alert={selectedResource ? alertsByResourceId.get(selectedResource.id) : null} />
           <section className="rounded-xl border border-dashed border-brand-200 bg-brand-50/60 p-4 text-sm text-brand-800">
             <p className="font-bold">Integracion futura preparada</p>
-            <p className="mt-1 text-brand-700">El Copiloto podra leer estos datos estructurados mas adelante, pero en esta fase no realiza recomendaciones automaticas.</p>
+            <p className="mt-1 text-brand-700">La vigilancia automatica queda preparada para fuentes oficiales verificadas. No se hace scraping ni se envian datos personales fuera del ERP.</p>
           </section>
         </aside>
       </section>
@@ -388,6 +413,63 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
       )}
     </div>
   );
+}
+
+function ResourceAlertsCenter({ monitoring, onView, onOpenAffected }) {
+  const alertCards = [
+    { label: 'Cierra proximamente', value: monitoring.closingSoon.length, tone: 'red', items: monitoring.closingSoon },
+    { label: 'Necesita revision', value: monitoring.needsReview.length, tone: 'amber', items: monitoring.needsReview },
+    { label: 'Convocatoria abierta', value: monitoring.open.length, tone: 'emerald', items: monitoring.open },
+    { label: 'Nueva convocatoria', value: monitoring.newlyCreated.length, tone: 'blue', items: monitoring.affectedByNewResource }
+  ];
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Centro de alertas de recursos">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Centro de alertas</p>
+          <h2 className="mt-1 text-xl font-bold text-ink">Vigencia, verificacion y convocatorias nuevas</h2>
+          <p className="mt-1 text-sm text-slate-500">Solo se considera verificada una ayuda con URL oficial, fecha de comprobacion y usuario verificador.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+          {alertCards.map((card) => <MetricPill key={card.label} label={card.label} value={card.value} tone={card.tone} />)}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-4">
+        {alertCards.map((card) => (
+          <article key={card.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className={`text-xs font-bold uppercase tracking-wide ${alertTextTone(card.tone)}`}>{card.label}</p>
+            <div className="mt-3 space-y-2">
+              {card.items.slice(0, 3).map((alert) => (
+                <div key={`${card.label}-${alert.resource.id}`} className="rounded-md bg-white p-2 text-sm">
+                  <button type="button" className="focus-ring text-left font-bold text-ink hover:text-brand-700" onClick={() => onView(alert.resource)}>
+                    {alert.resource.name}
+                  </button>
+                  <p className="mt-1 text-xs text-slate-500">{alert.resource.organization_name || 'Organismo no indicado'}</p>
+                  {card.tone === 'blue' && (
+                    <button type="button" className="focus-ring mt-2 text-xs font-bold text-brand-700 hover:text-brand-900" onClick={() => onOpenAffected(alert)} disabled={!alert.affectedCount}>
+                      Ver beneficiarios ({alert.affectedCount || 0})
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!card.items.length && <p className="rounded-md bg-white p-2 text-sm text-slate-500">Sin alertas.</p>}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function alertTextTone(tone) {
+  const tones = {
+    red: 'text-red-700',
+    amber: 'text-amber-700',
+    emerald: 'text-emerald-700',
+    blue: 'text-blue-700'
+  };
+  return tones[tone] || tones.emerald;
 }
 
 function RecommendationsPanel({ analysis, onView, onTrack }) {
@@ -446,7 +528,8 @@ function MetricPill({ label, value, tone }) {
     emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
     amber: 'border-amber-200 bg-amber-50 text-amber-800',
     slate: 'border-slate-200 bg-slate-50 text-slate-700',
-    red: 'border-red-200 bg-red-50 text-red-800'
+    red: 'border-red-200 bg-red-50 text-red-800',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800'
   };
   return (
     <div className={`rounded-lg border px-3 py-2 font-bold ${tones[tone] || tones.slate}`}>
@@ -513,7 +596,8 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function ResourceCard({ resource, recommendation, selected, link, canEdit, canDelete, onSelect, onEdit, onDelete, onTrack, beneficiarySelected }) {
+function ResourceCard({ resource, recommendation, alert, selected, link, canEdit, canDelete, onSelect, onEdit, onDelete, onTrack, beneficiarySelected }) {
+  const verified = isResourceOfficiallyVerified(resource);
   return (
     <article className={`rounded-xl border bg-white p-5 shadow-sm transition ${selected ? 'border-brand-400 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -521,6 +605,10 @@ function ResourceCard({ resource, recommendation, selected, link, canEdit, canDe
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusStyles[resource.status] || statusStyles.Activo}`}>{resource.status || 'Activo'}</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{resource.scope || 'municipal'}</span>
+            {alert && <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert.tone}`}>{alert.label}</span>}
+            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+              {verified ? 'Fuente verificada' : 'Fuente pendiente'}
+            </span>
             {link && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${trackingStyles[link.status] || trackingStyles.saved}`}>{trackingLabels[link.status] || 'Guardado'}</span>}
             {recommendation && (
               <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${recommendation.level.badge}`}>
@@ -610,7 +698,7 @@ function BeneficiaryPanel({ beneficiary, links, resources, followups, onOpenBene
   );
 }
 
-function ResourceDetail({ resource }) {
+function ResourceDetail({ resource, history = [], alert = null }) {
   if (!resource) {
     return (
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -620,11 +708,23 @@ function ResourceDetail({ resource }) {
       </section>
     );
   }
+  const verified = isResourceOfficiallyVerified(resource);
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-bold text-ink">{resource.name}</h3>
-      <p className="text-sm font-semibold text-brand-700">{resource.organization_name}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-bold text-ink">{resource.name}</h3>
+          <p className="text-sm font-semibold text-brand-700">{resource.organization_name}</p>
+        </div>
+        {alert && <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert.tone}`}>{alert.label}</span>}
+      </div>
       <div className="mt-4 space-y-4 text-sm">
+        <div className={`rounded-lg border p-3 ${verified ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          <p className="font-bold">{verified ? 'Fuente oficial verificada' : 'Fuente oficial pendiente de verificar'}</p>
+          <p className="mt-1">URL oficial: {resource.official_url || 'No indicada'}</p>
+          <p>Ultima comprobacion: {resource.last_verified_at ? formatDate(resource.last_verified_at) : 'Pendiente'}</p>
+          <p>Verificado por: {resource.verified_by_name || 'Pendiente'}</p>
+        </div>
         <DetailBlock title="Descripcion" value={resource.description} />
         <DetailBlock title="Requisitos" value={resource.requirements} />
         <DetailBlock title="A quien va dirigido" value={resource.target_audience} />
@@ -634,10 +734,40 @@ function ResourceDetail({ resource }) {
         <div className="grid gap-2">
           {resource.phone && <ContactLink icon={Phone} href={`tel:${resource.phone}`} label={resource.phone} />}
           {resource.email && <ContactLink icon={Mail} href={`mailto:${resource.email}`} label={resource.email} />}
-          {resource.web_url && <ContactLink icon={ExternalLink} href={resource.web_url} label="Abrir web" external />}
+          {resource.web_url && <ContactLink icon={ExternalLink} href={resource.web_url} label="Abrir web informativa" external />}
+          {resource.official_url && <ContactLink icon={BadgeCheck} href={resource.official_url} label="Abrir fuente oficial" external />}
         </div>
+        <ResourceHistory history={history} />
       </div>
     </section>
+  );
+}
+
+function ResourceHistory({ history }) {
+  if (!history.length) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500"><History size={14} /> Historial de cambios</p>
+        <p className="mt-1 text-sm text-slate-500">Sin cambios relevantes registrados.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500"><History size={14} /> Historial de cambios</p>
+      <div className="mt-3 space-y-2">
+        {history.slice(0, 4).map((entry) => (
+          <article key={entry.id} className="rounded-md bg-white p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-ink">{entry.change_type === 'created' ? 'Recurso creado' : 'Recurso actualizado'}</p>
+              <time className="text-xs font-semibold text-slate-500">{formatDate(entry.created_at)}</time>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{entry.changed_by_name || 'Usuario no registrado'}</p>
+            <p className="mt-1 text-xs text-slate-600">{formatChangedFields(entry.changed_fields)}</p>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -701,6 +831,8 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
       <div className="grid gap-4 md:grid-cols-2">
         <FormField label="Email"><input type="email" className={inputClass} value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
         <FormField label="Web"><input type="url" className={inputClass} value={form.web_url} onChange={(event) => update('web_url', event.target.value)} /></FormField>
+        <FormField label="URL oficial"><input type="url" className={inputClass} value={form.official_url || ''} onChange={(event) => update('official_url', event.target.value)} placeholder="Fuente oficial del organismo" /></FormField>
+        <FormField label="Fuente verificada por"><input className={inputClass} value={form.verified_by_name || 'Se actualizara al guardar'} disabled /></FormField>
         <FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField>
         <FormField label="A quien va dirigido"><input className={inputClass} value={form.target_audience} onChange={(event) => update('target_audience', event.target.value)} /></FormField>
       </div>
@@ -711,6 +843,7 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
         <TextAreaField label="Como solicitarlo" value={form.application_method} onChange={(value) => update('application_method', value)} />
       </div>
       <TextAreaField label="Observaciones internas" value={form.notes} onChange={(value) => update('notes', value)} />
+      {initial.id && <TextAreaField label="Motivo del cambio" value={form.change_reason || ''} onChange={(value) => update('change_reason', value)} />}
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar recurso'}</Button>
@@ -835,8 +968,21 @@ function isNext30(deadline) {
   return diffDays >= 0 && diffDays <= 30;
 }
 
+function formatChangedFields(value) {
+  let fields = value;
+  if (typeof fields === 'string') {
+    try {
+      fields = JSON.parse(fields);
+    } catch {
+      fields = [];
+    }
+  }
+  fields = Array.isArray(fields) ? fields : [];
+  return fields.map((item) => item.label || item.field || item).filter(Boolean).join(', ') || 'Cambio registrado';
+}
+
 function compareResourcePriority(a, b) {
-  const statusOrder = { Activo: 0, Proximamente: 1, Cerrado: 2 };
+  const statusOrder = { Activo: 0, Proximamente: 1, 'Pendiente de verificar': 2, Cerrado: 3 };
   const byStatus = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
   if (byStatus !== 0) return byStatus;
   const aDeadline = a.deadline_at || '9999-12-31';

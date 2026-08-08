@@ -199,6 +199,7 @@ export default function App() {
       social_resources: [...(data.social_resources || [])].sort((a, b) => String(a.deadline_at || '9999-12-31').localeCompare(String(b.deadline_at || '9999-12-31')) || String(a.name || '').localeCompare(String(b.name || ''), 'es')),
       beneficiary_social_resources: [...(data.beneficiary_social_resources || [])].sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''))),
       social_resource_followups: [...(data.social_resource_followups || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      social_resource_history: [...(data.social_resource_history || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))

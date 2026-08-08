@@ -254,6 +254,18 @@ function IntelligentOperationsCenter({
         <SystemPrioritiesPanel priorities={operations.systemPriorities} onOpen={onOpen} />
       </CommandPanel>
 
+      {canAccess(currentUser, 'social-resources') && (
+        <CommandPanel
+          title="Recursos Sociales"
+          subtitle="Convocatorias, verificaciones y beneficiarios potencialmente afectados."
+          icon={Landmark}
+          action="Abrir centro"
+          onAction={() => onOpen({ moduleId: 'social-resources' })}
+        >
+          <SocialResourcesOperationsBlock monitoring={operations.socialResourceMonitoring} onOpen={onOpen} />
+        </CommandPanel>
+      )}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
         <CommandPanel
           title="Agenda Operativa"
@@ -665,6 +677,74 @@ function ResourceFocusList({ items }) {
           <span className="mt-2 inline-flex rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">{item.status || item.estado || 'pendiente'}</span>
         </article>
       ))}
+    </div>
+  );
+}
+
+function SocialResourcesOperationsBlock({ monitoring = {}, onOpen }) {
+  const closingThisWeek = (monitoring.closingSoon || []).filter((item) => Number(item.deadline?.daysRemaining) <= 7);
+  const metricItems = [
+    { label: 'Convocatorias nuevas', value: (monitoring.newlyCreated || []).length, tone: 'bg-blue-50 text-blue-700' },
+    { label: 'Cierran esta semana', value: closingThisWeek.length, tone: 'bg-red-50 text-red-700' },
+    { label: 'Beneficiarios pendientes', value: monitoring.pendingBeneficiaryCount || 0, tone: 'bg-brand-50 text-brand-700' }
+  ];
+  const focusItems = [
+    ...(monitoring.affectedByNewResource || []).slice(0, 2).map((item) => ({
+      id: `new-${item.resource.id}`,
+      title: item.resource.name,
+      detail: `${item.affectedCount || 0} posibles beneficiarios compatibles.`,
+      tone: 'bg-blue-50 text-blue-700',
+      destination: { moduleId: 'social-resources', resourceId: item.resource.id },
+      beneficiaryDestination: item.affectedCount ? {
+        moduleId: 'beneficiaries',
+        beneficiaryIds: item.beneficiaries.map((beneficiary) => beneficiary.id),
+        label: `${item.resource.name}: ${item.affectedCount} posibles beneficiarios`
+      } : null
+    })),
+    ...(monitoring.closingSoon || []).slice(0, 2).map((item) => ({
+      id: `closing-${item.resource.id}`,
+      title: item.resource.name,
+      detail: `Finaliza en ${item.deadline.daysRemaining} dia${item.deadline.daysRemaining === 1 ? '' : 's'}.`,
+      tone: 'bg-red-50 text-red-700',
+      destination: { moduleId: 'social-resources', resourceId: item.resource.id }
+    })),
+    ...(monitoring.needsReview || []).slice(0, 2).map((item) => ({
+      id: `review-${item.resource.id}`,
+      title: item.resource.name,
+      detail: 'Fuente oficial o fecha de comprobacion pendiente.',
+      tone: 'bg-amber-50 text-amber-800',
+      destination: { moduleId: 'social-resources', resourceId: item.resource.id }
+    }))
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        {metricItems.map((item) => (
+          <article key={item.label} className={`rounded-md px-3 py-2 ${item.tone}`}>
+            <p className="text-2xl font-bold">{formatNumber(item.value)}</p>
+            <p className="text-xs font-bold uppercase tracking-wide">{item.label}</p>
+          </article>
+        ))}
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {focusItems.slice(0, 4).map((item) => (
+          <article key={item.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-ink">{item.title}</h4>
+                <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+              </div>
+              <span className={`rounded-md px-2 py-1 text-xs font-bold ${item.tone}`}>Recursos</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => onOpen(item.destination)}>Ver recurso</Button>
+              {item.beneficiaryDestination && <Button variant="secondary" onClick={() => onOpen(item.beneficiaryDestination)}>Ver beneficiarios</Button>}
+            </div>
+          </article>
+        ))}
+        {!focusItems.length && <EmptyState title="Recursos sociales al dia." text="No hay convocatorias nuevas, cierres urgentes ni revisiones pendientes." />}
+      </div>
     </div>
   );
 }
@@ -1329,6 +1409,22 @@ function buildTasks(operations, currentUser, familyModule) {
       moduleId: 'beneficiaries',
       destination: buildDocumentDestination([...operations.pendingDocuments, ...operations.renewalDocuments, ...operations.expiringDocuments], operations.documentAttention)
     },
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.closingSoon?.length > 0 && {
+      title: 'Revisar convocatorias que cierran pronto',
+      detail: pluralSummary(operations.socialResourceMonitoring.closingSoon.length, 'recurso social cierra pronto', 'recursos sociales cierran pronto'),
+      priority: 'Alta',
+      action: 'Abrir recursos',
+      moduleId: 'social-resources',
+      destination: { moduleId: 'social-resources' }
+    },
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.needsReview?.length > 0 && {
+      title: 'Verificar fuentes oficiales',
+      detail: pluralSummary(operations.socialResourceMonitoring.needsReview.length, 'recurso necesita revision', 'recursos necesitan revision'),
+      priority: 'Media',
+      action: 'Abrir centro',
+      moduleId: 'social-resources',
+      destination: { moduleId: 'social-resources' }
+    },
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && {
       title: 'Revisar stock bajo',
       detail: pluralSummary(operations.criticalStock.length, 'producto esta bajo minimo', 'productos estan bajo minimo'),
@@ -1400,6 +1496,8 @@ function buildAssistantState(operations, currentUser, familyModule) {
     canAccess(currentUser, 'inventory') && operations.expiringSoon.length > 0 && pluralLabel(operations.expiringSoon.length, 'producto proximo a caducar', 'productos proximos a caducar'),
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
     canAccess(currentUser, 'beneficiaries') && uniqueDocumentIssueCount(operations) > 0 && pluralLabel(uniqueDocumentIssueCount(operations), 'documento pendiente', 'documentos pendientes'),
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.newlyCreated?.length > 0 && pluralLabel(operations.socialResourceMonitoring.newlyCreated.length, 'convocatoria nueva', 'convocatorias nuevas'),
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.closingSoon?.length > 0 && pluralLabel(operations.socialResourceMonitoring.closingSoon.length, 'convocatoria proxima a cerrar', 'convocatorias proximas a cerrar'),
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
     canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
     canAccess(currentUser, 'accounting') && operations.pendingLoans.length > 0 && pluralLabel(operations.pendingLoans.length, 'préstamo pendiente', 'préstamos pendientes'),
@@ -1438,6 +1536,12 @@ function getPrimaryAction(operations, currentUser, familyModule) {
     return {
       destination: { moduleId: 'inventory', filter: 'expiring-soon' },
       recommendation: 'Prioriza los productos proximos a caducar para evitar perdidas.'
+    };
+  }
+  if (canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.closingSoon?.length > 0) {
+    return {
+      destination: { moduleId: 'social-resources' },
+      recommendation: 'Revisa primero las convocatorias sociales que cierran pronto.'
     };
   }
   if (canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0) {

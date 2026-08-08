@@ -32,4 +32,8 @@ export class SocialResourceRepository {
   async createFollowup(payload) {
     return this.repository.create('social_resource_followups', payload);
   }
+
+  async createHistory(payload) {
+    return this.repository.create('social_resource_history', payload);
+  }
 }

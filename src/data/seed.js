@@ -368,6 +368,7 @@ export const seedData = {
   social_resources: [],
   beneficiary_social_resources: [],
   social_resource_followups: [],
+  social_resource_history: [],
   notificaciones: [
     {
       id: crypto.randomUUID(),

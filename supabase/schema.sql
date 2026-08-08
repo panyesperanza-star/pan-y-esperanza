@@ -723,10 +723,13 @@ create table if not exists public.social_resources (
   phone text not null default '',
   email text not null default '',
   web_url text not null default '',
+  official_url text not null default '',
   application_method text not null default '',
   status text not null default 'Activo',
   scope text not null default 'municipal',
   last_verified_at date,
+  verified_by uuid references public.app_users(id) on delete set null,
+  verified_by_name text not null default '',
   age_min integer,
   age_max integer,
   family_situation text not null default '',
@@ -737,13 +740,26 @@ create table if not exists public.social_resources (
   updated_by uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint social_resources_status_check check (status in ('Activo', 'Proximamente', 'Cerrado')),
+  constraint social_resources_status_check check (status in ('Activo', 'Proximamente', 'Cerrado', 'Pendiente de verificar')),
   constraint social_resources_scope_check check (scope in ('municipal', 'autonomico', 'estatal', 'privado')),
   constraint social_resources_age_check check (
     (age_min is null or age_min >= 0)
     and (age_max is null or age_max >= 0)
     and (age_min is null or age_max is null or age_min <= age_max)
   )
+);
+
+create table if not exists public.social_resource_history (
+  id uuid primary key default gen_random_uuid(),
+  resource_id uuid not null references public.social_resources(id) on delete cascade,
+  changed_by uuid references public.app_users(id) on delete set null,
+  changed_by_name text not null default '',
+  change_type text not null default 'updated',
+  changed_fields jsonb not null default '[]'::jsonb,
+  previous_data jsonb not null default '{}'::jsonb,
+  new_data jsonb not null default '{}'::jsonb,
+  reason text not null default '',
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.beneficiary_social_resources (
@@ -995,6 +1011,7 @@ alter table public.recursos enable row level security;
 alter table public.social_resources enable row level security;
 alter table public.beneficiary_social_resources enable row level security;
 alter table public.social_resource_followups enable row level security;
+alter table public.social_resource_history enable row level security;
 alter table public.campanas enable row level security;
 alter table public.agenda_operativa enable row level security;
 alter table public.campana_beneficiarios enable row level security;
@@ -1088,6 +1105,15 @@ for insert to authenticated with check (public.can_module_action('social-resourc
 create policy "social_resource_followups_update_by_permission" on public.social_resource_followups
 for update to authenticated using (public.can_module_action('social-resources', 'edit')) with check (public.can_module_action('social-resources', 'edit'));
 create policy "social_resource_followups_delete_by_permission" on public.social_resource_followups
+for delete to authenticated using (public.can_module_action('social-resources', 'delete'));
+
+create policy "social_resource_history_select_by_permission" on public.social_resource_history
+for select to authenticated using (public.can_module_action('social-resources', 'view'));
+create policy "social_resource_history_insert_by_permission" on public.social_resource_history
+for insert to authenticated with check (public.can_module_action('social-resources', 'edit'));
+create policy "social_resource_history_update_by_permission" on public.social_resource_history
+for update to authenticated using (public.can_module_action('social-resources', 'edit')) with check (public.can_module_action('social-resources', 'edit'));
+create policy "social_resource_history_delete_by_permission" on public.social_resource_history
 for delete to authenticated using (public.can_module_action('social-resources', 'delete'));
 create policy "authenticated_read_campanas" on public.campanas for select to authenticated using (
   public.is_app_admin() or public.can_app_permission('agenda', 'view')
@@ -2107,6 +2133,7 @@ create index if not exists beneficiary_social_resources_beneficiary_idx on publi
 create index if not exists beneficiary_social_resources_resource_idx on public.beneficiary_social_resources(resource_id);
 create index if not exists social_resource_followups_link_idx on public.social_resource_followups(beneficiary_resource_id);
 create index if not exists social_resource_followups_beneficiary_idx on public.social_resource_followups(beneficiary_id);
+create index if not exists social_resource_history_resource_idx on public.social_resource_history(resource_id, created_at desc);
 
 create trigger collaborators_updated_at before update on public.collaborators for each row execute function public.set_updated_at();
 create trigger collaborators_set_official_credential_uid before insert or update of credential_uid on public.collaborators for each row execute function public.set_official_credential_uid();

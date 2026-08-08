@@ -87,6 +87,53 @@ export function buildSocialResourceRecommendations({
   };
 }
 
+export function buildSocialResourceMonitoring({
+  resources = [],
+  beneficiaries = [],
+  documents = [],
+  links = [],
+  today = todayISO()
+} = {}) {
+  const resourceAlerts = resources.map((resource) => buildResourceAlert(resource, today));
+  const closingSoon = resourceAlerts.filter((item) => item.flags.closingSoon);
+  const needsReview = resourceAlerts.filter((item) => item.flags.needsReview);
+  const open = resourceAlerts.filter((item) => item.flags.open);
+  const newlyCreated = resourceAlerts.filter((item) => item.flags.new);
+  const activeBeneficiaries = beneficiaries.filter((beneficiary) => beneficiary.is_active !== false);
+  const pendingBeneficiaryIds = new Set();
+  const affectedByNewResource = newlyCreated.map((alert) => {
+    const affected = activeBeneficiaries.filter((beneficiary) => {
+      const analysis = analyzeResourceCompatibility(
+        alert.resource,
+        beneficiary,
+        documents.filter((document) => document.beneficiary_id === beneficiary.id),
+        new Set(links.filter((link) => link.beneficiary_id === beneficiary.id).map((link) => link.resource_id))
+      );
+      const compatible = ['high', 'possible'].includes(analysis.level.id);
+      if (compatible && !analysis.isLinked) pendingBeneficiaryIds.add(beneficiary.id);
+      return compatible;
+    });
+    return { ...alert, affectedCount: affected.length, beneficiaries: affected };
+  });
+
+  activeBeneficiaries.forEach((beneficiary) => {
+    const analysis = buildSocialResourceRecommendations({ beneficiary, resources, documents, links });
+    if (analysis.recommendations.some((item) => ['high', 'possible'].includes(item.level.id) && !item.isLinked)) {
+      pendingBeneficiaryIds.add(beneficiary.id);
+    }
+  });
+
+  return {
+    alerts: resourceAlerts,
+    closingSoon,
+    needsReview,
+    open,
+    newlyCreated,
+    affectedByNewResource,
+    pendingBeneficiaryCount: pendingBeneficiaryIds.size
+  };
+}
+
 export function analyzeResourceCompatibility(resource = {}, beneficiary = {}, documents = [], linkedResourceIds = new Set()) {
   const checks = [];
   const missing = [];
@@ -98,11 +145,14 @@ export function analyzeResourceCompatibility(resource = {}, beneficiary = {}, do
   const resourceText = resourceSearchText(resource);
   const age = calculateAge(beneficiary.birth_date);
 
+  const lifecycle = buildResourceAlert(resource);
   if (resource.status === 'Cerrado') blockers.push('El recurso figura como cerrado.');
   if (deadline.isExpired) blockers.push('El plazo de solicitud ha finalizado.');
   if (deadline.isSoon) priorities.push(`Finaliza en ${deadline.daysRemaining} dia${deadline.daysRemaining === 1 ? '' : 's'}.`);
-  if (resource.status === 'Activo') checks.push('Convocatoria abierta.');
+  if (resource.status === 'Activo' && lifecycle.verified && !deadline.isExpired) checks.push('Convocatoria abierta y verificada.');
   if (resource.status === 'Proximamente') missing.push('Convocatoria marcada como proximamente.');
+  if (resource.status === 'Pendiente de verificar') missing.push('Convocatoria pendiente de verificar.');
+  if (!lifecycle.verified) missing.push('Fuente oficial pendiente de verificar.');
 
   if (hasValue(resource.age_min)) {
     if (age === null) missing.push('Edad no verificada en el expediente.');
@@ -183,11 +233,72 @@ export function analyzeResourceCompatibility(resource = {}, beneficiary = {}, do
     priorities: unique(priorities),
     documentation,
     deadline,
+    lifecycle,
     isLinked,
     phrase: level.id === 'incompatible'
       ? 'No parece compatible con los datos actuales.'
       : 'Podria cumplir los requisitos, pendiente de validacion por el organismo correspondiente.'
   };
+}
+
+export function buildResourceAlert(resource = {}, today = todayISO()) {
+  const deadline = analyzeDeadline(resource.deadline_at, today);
+  const createdDays = daysBetween(resource.created_at, today);
+  const verified = isResourceOfficiallyVerified(resource);
+  const verificationDays = daysBetween(resource.last_verified_at, today);
+  const closed = deadline.isExpired || resource.status === 'Cerrado';
+  const closingSoon = !closed && deadline.isSoon;
+  const isNew = Number.isFinite(createdDays) && createdDays >= 0 && createdDays <= 14;
+  const needsVerification = resource.status === 'Pendiente de verificar'
+    || !verified
+    || !resource.last_verified_at
+    || (Number.isFinite(verificationDays) && verificationDays > 30);
+  const open = resource.status === 'Activo' && verified && !closed;
+  let kind = 'open';
+  let label = 'Convocatoria abierta';
+  let tone = 'border-emerald-200 bg-emerald-50 text-emerald-800';
+
+  if (closed) {
+    kind = 'closed';
+    label = deadline.isExpired ? 'Plazo finalizado' : 'Convocatoria cerrada';
+    tone = 'border-slate-200 bg-slate-100 text-slate-700';
+  } else if (closingSoon) {
+    kind = 'closing-soon';
+    label = 'Cierra proximamente';
+    tone = 'border-red-200 bg-red-50 text-red-800';
+  } else if (isNew) {
+    kind = 'new';
+    label = 'Nueva convocatoria';
+    tone = 'border-blue-200 bg-blue-50 text-blue-800';
+  } else if (needsVerification) {
+    kind = 'needs-review';
+    label = 'Necesita revision';
+    tone = 'border-amber-200 bg-amber-50 text-amber-800';
+  }
+
+  return {
+    resource,
+    kind,
+    label,
+    tone,
+    verified,
+    flags: {
+      closed,
+      closingSoon,
+      needsReview,
+      open,
+      new: isNew
+    },
+    deadline,
+    daysSinceCreated: createdDays,
+    daysSinceVerification: verificationDays,
+    sourceLabel: resource.official_url || '',
+    verifiedBy: resource.verified_by_name || resource.verified_by || ''
+  };
+}
+
+export function isResourceOfficiallyVerified(resource = {}) {
+  return Boolean(String(resource.official_url || '').trim() && resource.last_verified_at && (resource.verified_by || resource.verified_by_name));
 }
 
 function resolveCompatibilityLevel({ checks, missing, blockers }) {
@@ -220,9 +331,9 @@ function buildRecommendationSummary(recommendations, endingSoon) {
   return `${resourceLabel} ${deadlineLabel}`;
 }
 
-function analyzeDeadline(deadline) {
+function analyzeDeadline(deadline, todayValue = todayISO()) {
   if (!deadline) return { hasDeadline: false, isExpired: false, isSoon: false, daysRemaining: null };
-  const today = new Date(`${todayISO()}T00:00:00`);
+  const today = new Date(`${todayValue}T00:00:00`);
   const target = new Date(`${String(deadline).slice(0, 10)}T00:00:00`);
   const daysRemaining = Math.ceil((target.getTime() - today.getTime()) / 86400000);
   return {
@@ -231,6 +342,14 @@ function analyzeDeadline(deadline) {
     isSoon: daysRemaining >= 0 && daysRemaining <= 15,
     daysRemaining
   };
+}
+
+function daysBetween(start, end) {
+  if (!start || !end) return null;
+  const startDate = new Date(`${String(start).slice(0, 10)}T00:00:00`);
+  const endDate = new Date(`${String(end).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86400000);
 }
 
 function analyzeRequiredDocumentation(resource, documents) {

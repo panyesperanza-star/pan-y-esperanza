@@ -106,6 +106,7 @@ const OPTIONAL_TABLES = new Set([
   'social_resources',
   'beneficiary_social_resources',
   'social_resource_followups',
+  'social_resource_history',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
@@ -114,7 +115,8 @@ const OPTIONAL_TABLES = new Set([
 const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'social_resources',
   'beneficiary_social_resources',
-  'social_resource_followups'
+  'social_resource_followups',
+  'social_resource_history'
 ]);
 
 const SECURITY_TABLES = new Set([

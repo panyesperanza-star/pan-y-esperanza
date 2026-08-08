@@ -105,6 +105,7 @@ const EMPTY_APP_DATA = Object.freeze({
   social_resources: EMPTY_TABLE,
   beneficiary_social_resources: EMPTY_TABLE,
   social_resource_followups: EMPTY_TABLE,
+  social_resource_history: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,

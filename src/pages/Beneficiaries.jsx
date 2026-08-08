@@ -2099,6 +2099,7 @@ function CompactCopilotPreview({ summary, onShowFull, expanded }) {
 function BeneficiarySocialResourcesBlock({ analysis, onOpenResources }) {
   const recommendations = analysis.recommendations.slice(0, 3);
   const topRecommendation = analysis.topRecommendation;
+  const newRecommendation = analysis.recommendations.find((item) => item.lifecycle?.flags?.new);
   const deadlineText = analysis.endingSoonCount
     ? `${analysis.endingSoonCount} convocatoria${analysis.endingSoonCount === 1 ? '' : 's'} finaliza${analysis.endingSoonCount === 1 ? '' : 'n'} pronto.`
     : 'Sin convocatorias urgentes detectadas.';
@@ -2111,6 +2112,13 @@ function BeneficiarySocialResourcesBlock({ analysis, onOpenResources }) {
           <h3 className="mt-1 text-xl font-black text-ink">{analysis.summaryText}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-600">{deadlineText}</p>
           <p className="mt-2 text-xs font-bold text-slate-500">Recomendacion basada en reglas del ERP. La decision final corresponde al organismo que concede la ayuda.</p>
+          {newRecommendation && (
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="font-black">Nueva convocatoria potencialmente compatible con este expediente.</p>
+              <p className="mt-1">{newRecommendation.resource.name}</p>
+              <p className="mt-1 text-blue-800">Por que: {newRecommendation.checks.slice(0, 2).join(' ') || 'coincide con datos objetivos del expediente.'}</p>
+            </div>
+          )}
         </div>
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:min-w-[280px]">
           <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
