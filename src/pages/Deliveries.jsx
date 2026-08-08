@@ -630,6 +630,7 @@ function SignatureModal({ title, initialValue, required, onClose, onConfirm }) {
 function SignatureCanvas({ value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
+  const [pointerDiagnostic, setPointerDiagnostic] = useState(() => createSignaturePointerDiagnostic());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -656,10 +657,35 @@ function SignatureCanvas({ value, onChange }) {
     };
   }
 
+  function updatePointerDiagnostic(event) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const finalPoint = point(event);
+    setPointerDiagnostic({
+      pointerType: event.pointerType || '-',
+      clientX: formatPointerNumber(event.clientX),
+      clientY: formatPointerNumber(event.clientY),
+      screenX: formatPointerNumber(event.screenX),
+      screenY: formatPointerNumber(event.screenY),
+      offsetX: formatPointerNumber(event.nativeEvent?.offsetX ?? event.offsetX),
+      offsetY: formatPointerNumber(event.nativeEvent?.offsetY ?? event.offsetY),
+      pressure: formatPointerNumber(event.pressure, 3),
+      viewport: `${formatPointerNumber(viewport?.width || window.innerWidth)} x ${formatPointerNumber(viewport?.height || window.innerHeight)}`,
+      canvasRect: `left ${formatPointerNumber(rect.left)} | top ${formatPointerNumber(rect.top)} | width ${formatPointerNumber(rect.width)} | height ${formatPointerNumber(rect.height)}`,
+      canvasPoint: `x ${formatPointerNumber(finalPoint.x)} | y ${formatPointerNumber(finalPoint.y)}`,
+      pointerId: String(event.pointerId ?? '-'),
+      buttons: String(event.buttons ?? '-'),
+      updatedAt: new Date().toLocaleTimeString()
+    });
+  }
+
   function start(event) {
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     drawingRef.current = true;
+    updatePointerDiagnostic(event);
     const context = canvasRef.current.getContext('2d');
     const current = point(event);
     context.beginPath();
@@ -667,6 +693,7 @@ function SignatureCanvas({ value, onChange }) {
   }
 
   function draw(event) {
+    updatePointerDiagnostic(event);
     if (!drawingRef.current) return;
     event.preventDefault();
     const context = canvasRef.current.getContext('2d');
@@ -676,6 +703,7 @@ function SignatureCanvas({ value, onChange }) {
   }
 
   function stop(event) {
+    updatePointerDiagnostic(event);
     if (!drawingRef.current) return;
     drawingRef.current = false;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
@@ -696,8 +724,64 @@ function SignatureCanvas({ value, onChange }) {
         onPointerLeave={stop}
       />
       <p className="mt-2 text-xs text-slate-500">Firma con raton o pantalla tactil dentro del recuadro.</p>
+      <SignaturePointerDiagnosticPanel diagnostic={pointerDiagnostic} />
     </div>
   );
+}
+
+function SignaturePointerDiagnosticPanel({ diagnostic }) {
+  return (
+    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+      <p className="font-black uppercase tracking-[0.16em] text-amber-800">Diagnostico temporal XP-Pen</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <SignatureDiagnosticLine label="pointerType" value={diagnostic.pointerType} />
+        <SignatureDiagnosticLine label="pointerId / buttons" value={`${diagnostic.pointerId} / ${diagnostic.buttons}`} />
+        <SignatureDiagnosticLine label="clientX / clientY" value={`${diagnostic.clientX} / ${diagnostic.clientY}`} />
+        <SignatureDiagnosticLine label="screenX / screenY" value={`${diagnostic.screenX} / ${diagnostic.screenY}`} />
+        <SignatureDiagnosticLine label="offsetX / offsetY" value={`${diagnostic.offsetX} / ${diagnostic.offsetY}`} />
+        <SignatureDiagnosticLine label="pressure" value={diagnostic.pressure} />
+        <SignatureDiagnosticLine label="viewport" value={diagnostic.viewport} />
+        <SignatureDiagnosticLine label="boundingRect canvas" value={diagnostic.canvasRect} />
+        <SignatureDiagnosticLine label="X/Y enviados al canvas" value={diagnostic.canvasPoint} />
+        <SignatureDiagnosticLine label="actualizado" value={diagnostic.updatedAt} />
+      </div>
+      <p className="mt-2 font-semibold text-amber-800">Mueve el lapiz por las 4 esquinas y el centro de la XP-Pen. Este panel no cambia la logica; solo muestra las coordenadas recibidas.</p>
+    </div>
+  );
+}
+
+function SignatureDiagnosticLine({ label, value }) {
+  return (
+    <div className="rounded-lg bg-white/75 px-2 py-1">
+      <span className="block font-black uppercase tracking-wide text-amber-700">{label}</span>
+      <span className="break-all font-mono text-[0.72rem] font-bold text-slate-900">{value || '-'}</span>
+    </div>
+  );
+}
+
+function createSignaturePointerDiagnostic() {
+  return {
+    pointerType: '-',
+    pointerId: '-',
+    buttons: '-',
+    clientX: '-',
+    clientY: '-',
+    screenX: '-',
+    screenY: '-',
+    offsetX: '-',
+    offsetY: '-',
+    pressure: '-',
+    viewport: '-',
+    canvasRect: '-',
+    canvasPoint: '-',
+    updatedAt: 'Esperando movimiento del lapiz.'
+  };
+}
+
+function formatPointerNumber(value, digits = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '-';
+  return number.toFixed(digits);
 }
 
 function toDateTimeLocal(value) {
