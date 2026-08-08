@@ -294,7 +294,7 @@ export function buildResourceAlert(resource = {}, today = todayISO()) {
     flags: {
       closed,
       closingSoon,
-      needsReview,
+      needsReview: needsVerification,
       open,
       new: isNew
     },
