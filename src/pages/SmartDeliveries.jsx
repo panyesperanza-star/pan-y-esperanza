@@ -17,6 +17,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const scannerRegionId = useRef(`smart-delivery-reader-${Math.random().toString(36).slice(2)}`).current;
   const scannerRef = useRef(null);
   const scanLockedRef = useRef(false);
+  const usbReaderInputRef = useRef(null);
+  const usbReaderBufferRef = useRef('');
+  const usbReaderTimerRef = useRef(null);
+  const usbReaderFocusTimerRef = useRef(null);
+  const usbReaderReadyRef = useRef(false);
   const resetTimerRef = useRef(null);
   const prefilledProfileRef = useRef('');
   const duplicateLogRef = useRef('');
@@ -28,6 +33,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [result, setResult] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [signatureFlow, setSignatureFlow] = useState(null);
+  const [, setManualQuery] = useState('');
+  const [, setManualMatches] = useState([]);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState('');
   const [recentDeliveries, setRecentDeliveries] = useState([]);
@@ -47,11 +54,26 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const canRegister = canDo(currentUser, 'smart-deliveries', 'create') || canDo(currentUser, 'deliveries', 'create');
   const canReopenReparto = canDo(currentUser, 'smart-deliveries', 'edit') || canDo(currentUser, 'deliveries', 'edit') || canDo(currentUser, 'settings', 'edit');
   const repartoClosed = Boolean(repartoSession.endedAt || repartoSession.locked);
+  const usbReaderReady = canScan
+    && !repartoClosed
+    && !feedback
+    && !signatureFlow
+    && !registering
+    && !customizeTarget
+    && !closeDialogOpen
+    && result?.type !== 'beneficiary';
 
   useEffect(() => () => {
     stopCamera();
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
+    if (usbReaderFocusTimerRef.current) window.clearTimeout(usbReaderFocusTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    usbReaderReadyRef.current = usbReaderReady;
+    if (usbReaderReady) focusUsbReader();
+  }, [usbReaderReady]);
 
   useEffect(() => {
     setBatchConfig((current) => ensureBatchConfigRules(current, data?.inventory_items || []));
@@ -159,6 +181,96 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     } finally {
       setIsCameraActive(false);
     }
+  }
+
+  function focusUsbReader() {
+    if (usbReaderFocusTimerRef.current) window.clearTimeout(usbReaderFocusTimerRef.current);
+    usbReaderFocusTimerRef.current = window.setTimeout(() => {
+      if (!usbReaderReadyRef.current) return;
+      const active = document.activeElement;
+      if (isTextEditingElement(active)) return;
+      usbReaderInputRef.current?.focus({ preventScroll: true });
+    }, 40);
+  }
+
+  function handleUsbReaderBlur() {
+    focusUsbReader();
+  }
+
+  function handleUsbReaderKeyDown(event) {
+    if (!usbReaderReadyRef.current) return;
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      const consumed = consumeUsbReaderBuffer();
+      if (consumed) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+
+    if (event.key.length !== 1) return;
+    usbReaderBufferRef.current += event.key;
+    if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
+    usbReaderTimerRef.current = window.setTimeout(() => {
+      consumeUsbReaderBuffer();
+    }, 120);
+  }
+
+  function handleUsbReaderInput(event) {
+    const value = event.currentTarget.value || '';
+    usbReaderBufferRef.current = value;
+    if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
+    usbReaderTimerRef.current = window.setTimeout(() => {
+      consumeUsbReaderBuffer();
+    }, 120);
+  }
+
+  function handleUsbReaderPaste(event) {
+    const value = event.clipboardData?.getData('text') || '';
+    if (!parseOfficialCredentialQr(normalizeUsbReaderValue(value))) return;
+    event.preventDefault();
+    usbReaderBufferRef.current = value;
+    consumeUsbReaderBuffer();
+  }
+
+  function consumeUsbReaderBuffer() {
+    const rawValue = normalizeUsbReaderValue(usbReaderBufferRef.current);
+    usbReaderBufferRef.current = '';
+    if (usbReaderTimerRef.current) {
+      window.clearTimeout(usbReaderTimerRef.current);
+      usbReaderTimerRef.current = null;
+    }
+    if (usbReaderInputRef.current) usbReaderInputRef.current.value = '';
+    if (!rawValue || !parseOfficialCredentialQr(rawValue)) return false;
+    processUsbCredential(rawValue);
+    return true;
+  }
+
+  function processUsbCredential(rawValue) {
+    if (!usbReaderReadyRef.current) return;
+    if (repartoClosed) {
+      setCameraError('El reparto esta cerrado. Reabre el acta con un usuario autorizado para volver a escanear.');
+      setScanStatus('Reparto cerrado.');
+      focusUsbReader();
+      return;
+    }
+    if (!canScan) {
+      setCameraError('Tu usuario no tiene permiso para usar el modo reparto.');
+      setScanStatus('Escaneo no autorizado.');
+      focusUsbReader();
+      return;
+    }
+
+    setCameraError('');
+    setRegisterError('');
+    setFeedback(null);
+    setSignatureFlow(null);
+    setScanStatus('QR leido. Identificando beneficiario...');
+    void stopCamera({ silent: true });
+    handleCredential(rawValue);
+    focusUsbReader();
   }
 
   function handleCredential(rawValue) {
@@ -545,6 +657,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     resetTimerRef.current = window.setTimeout(() => {
       setFeedback(null);
       startCamera();
+      focusUsbReader();
     }, delayMs);
   }
 
@@ -552,6 +665,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
     setFeedback(null);
     startCamera();
+    focusUsbReader();
   }
 
   return (
@@ -599,6 +713,20 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
         <section className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(28rem,1.18fr)]">
           <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
+            <input
+              ref={usbReaderInputRef}
+              type="text"
+              aria-label="Entrada del lector USB de credenciales"
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              tabIndex={-1}
+              className="sr-only"
+              onBlur={handleUsbReaderBlur}
+              onInput={handleUsbReaderInput}
+              onKeyDown={handleUsbReaderKeyDown}
+              onPaste={handleUsbReaderPaste}
+            />
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-700">Identificacion</p>
@@ -2581,6 +2709,19 @@ function cameraErrorMessage(error) {
     return 'El navegador solo permite usar la camara en HTTPS.';
   }
   return error?.message || 'No se ha podido iniciar la camara. Revisa permisos y vuelve a intentarlo.';
+}
+
+function normalizeUsbReaderValue(value) {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, '')
+    .trim();
+}
+
+function isTextEditingElement(element) {
+  if (!element || element === document.body) return false;
+  if (element.isContentEditable) return true;
+  const tagName = String(element.tagName || '').toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
 }
 
 function sameDay(value, date) {
