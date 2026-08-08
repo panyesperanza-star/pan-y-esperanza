@@ -50,6 +50,7 @@ import { BENEFICIARY_SITUATIONS, DOCUMENT_TYPES, HELP_TYPES } from '../lib/const
 import { EMAIL_TEMPLATES, normalizeEmailError, saveEmailLog, sendEmailViaApi } from '../lib/emailClient';
 import { printBeneficiaryPdf, printDeliveryReceiptPdf, printPortalAccessPdf, printSocialAttentionReportPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, nextBeneficiaryCode, normalize, normalizeDocument, todayISO } from '../lib/formatters';
+import { buildSocialResourceRecommendations } from '../lib/socialResourceRecommendations';
 import { findDuplicateBeneficiaryCode, findDuplicateBeneficiaryDocument } from '../services/beneficiaries/BeneficiarioService';
 import { buildWhatsAppUrl, normalizeWhatsAppPhone } from './Communications';
 import { DeliveryForm } from './Deliveries';
@@ -375,7 +376,12 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
               onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
               onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
               onCreateCampaign={() => onNavigate?.({ moduleId: 'agenda', filter: 'campaigns', profileId: profile.id })}
-              onSearchResources={canSearchResources ? () => onNavigate?.({ moduleId: 'social-resources', profileId: profile.id }) : undefined}
+              onSearchResources={canSearchResources ? (resourceId = '', resourceAction = '') => onNavigate?.({
+                moduleId: 'social-resources',
+                profileId: profile.id,
+                resourceId: typeof resourceId === 'string' ? resourceId : '',
+                resourceAction: typeof resourceAction === 'string' ? resourceAction : ''
+              }) : undefined}
               onAddFamilyMember={(familyId) => {
                 setProfileId(null);
                 setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(safeRows(data.beneficiaries)), family_id: familyId });
@@ -1372,6 +1378,12 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
   const documentIssue = beneficiaryDocumentIssue(documents);
   const intelligentSummary = buildBeneficiaryIntelligentSummary({ beneficiary, documents, deliveries: activeDeliveries, history, requests: portalRequests, notices: portalNotices });
   const documentIntelligenceSummary = buildDocumentIntelligenceSummary(documents);
+  const socialResourceAnalysis = buildSocialResourceRecommendations({
+    beneficiary,
+    resources: safeRows(data?.social_resources),
+    documents,
+    links: safeRows(data?.beneficiary_social_resources)
+  });
 
   useEffect(() => {
     setTemporaryPortalPin('');
@@ -1649,6 +1661,11 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           <CompactCopilotPreview summary={intelligentSummary} onShowFull={() => setShowFullCopilot((value) => !value)} expanded={showFullCopilot} />
           <ProfessionalTimeline entries={timeline} onShowAll={() => setTab('social')} />
         </section>
+
+        <BeneficiarySocialResourcesBlock
+          analysis={socialResourceAnalysis}
+          onOpenResources={onSearchResources}
+        />
 
         {showFullCopilot && (
           <IntelligentCaseBlock
@@ -2076,6 +2093,89 @@ function CompactCopilotPreview({ summary, onShowFull, expanded }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function BeneficiarySocialResourcesBlock({ analysis, onOpenResources }) {
+  const recommendations = analysis.recommendations.slice(0, 3);
+  const topRecommendation = analysis.topRecommendation;
+  const deadlineText = analysis.endingSoonCount
+    ? `${analysis.endingSoonCount} convocatoria${analysis.endingSoonCount === 1 ? '' : 's'} finaliza${analysis.endingSoonCount === 1 ? '' : 'n'} pronto.`
+    : 'Sin convocatorias urgentes detectadas.';
+
+  return (
+    <section className="rounded-2xl border border-brand-100 bg-white p-5 shadow-sm" aria-label="Recursos sociales recomendados">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-brand-700">Recursos Sociales</p>
+          <h3 className="mt-1 text-xl font-black text-ink">{analysis.summaryText}</h3>
+          <p className="mt-1 text-sm font-semibold text-slate-600">{deadlineText}</p>
+          <p className="mt-2 text-xs font-bold text-slate-500">Recomendacion basada en reglas del ERP. La decision final corresponde al organismo que concede la ayuda.</p>
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:min-w-[280px]">
+          <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
+          <p className="mt-1 text-sm font-black text-ink">{topRecommendation ? `Revisar ${topRecommendation.resource.name}` : 'Mantener busqueda manual de recursos'}</p>
+          <Button className="mt-3 w-full" variant="secondary" onClick={() => onOpenResources?.(topRecommendation?.resource?.id || '')} disabled={!onOpenResources}>
+            <Search size={16} /> Abrir Centro de Recursos
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        {recommendations.map((item) => (
+          <article key={item.resource.id} className={`rounded-xl border p-4 ${item.level.card}`}>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${item.level.badge}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${item.level.dot}`} /> {item.level.label}
+            </span>
+            <h4 className="mt-3 line-clamp-2 text-base font-black text-ink">{item.resource.name}</h4>
+            <p className="text-sm font-semibold text-brand-700">{item.resource.organization_name}</p>
+            <p className="mt-2 text-sm text-slate-700">{item.phrase}</p>
+            <ResourceEvidence title="Por que" items={item.checks} empty="Sin coincidencias verificadas." />
+            <ResourceEvidence title="Falta comprobar" items={item.missing} empty="Sin faltantes principales." muted />
+            <ResourceDocumentStatus documentation={item.documentation} />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => onOpenResources?.(item.resource.id)} disabled={!onOpenResources}>Ver recurso</Button>
+              <Button onClick={() => onOpenResources?.(item.resource.id, 'track')} disabled={!onOpenResources}>Iniciar seguimiento</Button>
+            </div>
+          </article>
+        ))}
+        {!recommendations.length && (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm font-semibold text-slate-600 xl:col-span-3">
+            No hay recomendaciones suficientes con los datos actuales. El trabajador social puede abrir el Centro de Recursos y buscar manualmente.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ResourceEvidence({ title, items, empty, muted = false }) {
+  return (
+    <div className="mt-3">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{title}</p>
+      <ul className="mt-1 space-y-1 text-sm text-slate-700">
+        {(items.length ? items.slice(0, 3) : [empty]).map((item) => (
+          <li key={item} className="flex gap-2">
+            <span className={`font-black ${muted ? 'text-amber-700' : 'text-brand-700'}`}>{items.length ? '+' : '-'}</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ResourceDocumentStatus({ documentation }) {
+  if (!documentation.required.length) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-3 text-xs">
+      <p className="font-black uppercase tracking-wide text-slate-500">Documentacion</p>
+      <div className="mt-2 grid gap-1">
+        <p><span className="font-black text-brand-700">Disponibles:</span> {documentation.available.map((item) => item.label).join(', ') || '-'}</p>
+        <p><span className="font-black text-amber-700">Pendientes:</span> {documentation.pending.map((item) => item.label).join(', ') || '-'}</p>
+        <p><span className="font-black text-red-700">Caducados:</span> {documentation.expired.map((item) => item.label).join(', ') || '-'}</p>
+      </div>
+    </div>
   );
 }
 

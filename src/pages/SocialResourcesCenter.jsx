@@ -24,6 +24,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
+import { buildSocialResourceRecommendations } from '../lib/socialResourceRecommendations';
 import {
   BENEFICIARY_RESOURCE_STATUSES,
   SOCIAL_RESOURCE_CATEGORIES,
@@ -125,11 +126,25 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
 
   useEffect(() => {
     if (navigationTarget?.profileId) setSelectedBeneficiaryId(navigationTarget.profileId);
-  }, [navigationTarget?.profileId, navigationTarget?.key]);
+    if (navigationTarget?.resourceId) setSelectedResourceId(navigationTarget.resourceId);
+    if (navigationTarget?.resourceAction === 'track' && navigationTarget?.resourceId) {
+      const resource = resources.find((item) => item.id === navigationTarget.resourceId);
+      if (resource) setTrackingTarget(resource);
+    }
+  }, [navigationTarget?.profileId, navigationTarget?.resourceId, navigationTarget?.resourceAction, navigationTarget?.key, resources]);
 
   const selectedBeneficiary = beneficiaries.find((item) => item.id === selectedBeneficiaryId) || null;
   const selectedResource = resources.find((item) => item.id === selectedResourceId) || null;
   const selectedLinks = links.filter((link) => link.beneficiary_id === selectedBeneficiaryId);
+  const recommendationAnalysis = useMemo(() => buildSocialResourceRecommendations({
+    beneficiary: selectedBeneficiary,
+    resources,
+    documents: data.beneficiary_documents || [],
+    links
+  }), [selectedBeneficiary, resources, data.beneficiary_documents, links]);
+  const recommendationsByResourceId = useMemo(() => new Map(
+    recommendationAnalysis.results.map((item) => [item.resource.id, item])
+  ), [recommendationAnalysis]);
 
   const municipalities = useMemo(() => {
     return [...new Set(resources.map((resource) => resource.municipality).filter(Boolean))]
@@ -292,12 +307,21 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
         </div>
       </section>
 
+      {selectedBeneficiary && (
+        <RecommendationsPanel
+          analysis={recommendationAnalysis}
+          onView={(resource) => setSelectedResourceId(resource.id)}
+          onTrack={(resource) => setTrackingTarget(resource)}
+        />
+      )}
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-4 lg:grid-cols-2">
           {filteredResources.map((resource) => (
             <ResourceCard
               key={resource.id}
               resource={resource}
+              recommendation={recommendationsByResourceId.get(resource.id)}
               selected={selectedResourceId === resource.id}
               link={selectedBeneficiary ? findLink(links, selectedBeneficiary.id, resource.id) : null}
               canEdit={canEdit}
@@ -366,6 +390,111 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   );
 }
 
+function RecommendationsPanel({ analysis, onView, onTrack }) {
+  const recommendations = analysis.recommendations.slice(0, 3);
+  return (
+    <section className="rounded-xl border border-brand-100 bg-white p-5 shadow-sm" aria-label="Recursos recomendados">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Recursos recomendados</p>
+          <h2 className="mt-1 text-xl font-bold text-ink">{analysis.summaryText}</h2>
+          <p className="mt-1 text-sm text-slate-500">Calculo interno por reglas objetivas del ERP. No decide la concesion de ninguna ayuda.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:min-w-[420px]">
+          <MetricPill label="Alta" value={analysis.counts.high} tone="emerald" />
+          <MetricPill label="Posible" value={analysis.counts.possible} tone="amber" />
+          <MetricPill label="Insuficiente" value={analysis.counts.insufficient} tone="slate" />
+          <MetricPill label="No compatible" value={analysis.counts.incompatible} tone="red" />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        {recommendations.map((item) => (
+          <article key={item.resource.id} className={`rounded-xl border p-4 ${item.level.card}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${item.level.badge}`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${item.level.dot}`} /> {item.level.label}
+              </span>
+              {item.deadline?.isSoon && <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-700">Finaliza en {item.deadline.daysRemaining} dias</span>}
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-ink">{item.resource.name}</h3>
+            <p className="text-sm font-semibold text-brand-700">{item.resource.organization_name}</p>
+            <p className="mt-2 text-sm text-slate-700">{item.phrase}</p>
+
+            <EvidenceList title="Por que" items={item.checks} empty="Sin coincidencias verificadas." tone="brand" />
+            <EvidenceList title="Falta comprobar" items={item.missing} empty="Sin faltantes principales." tone="amber" />
+            <DocumentEvidence documentation={item.documentation} />
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => onView(item.resource)}>Ver recurso</Button>
+              <Button onClick={() => onTrack(item.resource)}>Iniciar seguimiento</Button>
+            </div>
+          </article>
+        ))}
+        {!recommendations.length && (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600 xl:col-span-3">
+            No hay recursos recomendados con los datos actuales del expediente. Puedes seguir usando el buscador manual.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MetricPill({ label, value, tone }) {
+  const tones = {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+    red: 'border-red-200 bg-red-50 text-red-800'
+  };
+  return (
+    <div className={`rounded-lg border px-3 py-2 font-bold ${tones[tone] || tones.slate}`}>
+      <p className="text-lg leading-none">{value}</p>
+      <p className="mt-1">{label}</p>
+    </div>
+  );
+}
+
+function EvidenceList({ title, items, empty, tone }) {
+  const marker = tone === 'amber' ? 'text-amber-700' : 'text-brand-700';
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{title}</p>
+      <ul className="mt-1 space-y-1 text-sm text-slate-700">
+        {(items.length ? items.slice(0, 3) : [empty]).map((item) => (
+          <li key={item} className="flex gap-2">
+            <span className={`font-bold ${marker}`}>{items.length ? '+' : '-'}</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DocumentEvidence({ documentation }) {
+  const groups = [
+    { label: 'Disponibles', items: documentation.available, tone: 'text-brand-700' },
+    { label: 'Pendientes', items: documentation.pending, tone: 'text-amber-700' },
+    { label: 'Caducados', items: documentation.expired, tone: 'text-red-700' }
+  ];
+  if (!documentation.required.length) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 p-3 text-xs">
+      <p className="font-bold uppercase tracking-wide text-slate-500">Documentacion</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <p className={`font-bold ${group.tone}`}>{group.label}</p>
+            <p className="mt-0.5 text-slate-600">{group.items.map((item) => item.label).join(', ') || '-'}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SummaryCard({ label, value, icon: Icon, tone }) {
   const tones = {
     brand: 'bg-brand-50 text-brand-700',
@@ -384,7 +513,7 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function ResourceCard({ resource, selected, link, canEdit, canDelete, onSelect, onEdit, onDelete, onTrack, beneficiarySelected }) {
+function ResourceCard({ resource, recommendation, selected, link, canEdit, canDelete, onSelect, onEdit, onDelete, onTrack, beneficiarySelected }) {
   return (
     <article className={`rounded-xl border bg-white p-5 shadow-sm transition ${selected ? 'border-brand-400 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -393,6 +522,11 @@ function ResourceCard({ resource, selected, link, canEdit, canDelete, onSelect, 
             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusStyles[resource.status] || statusStyles.Activo}`}>{resource.status || 'Activo'}</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{resource.scope || 'municipal'}</span>
             {link && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${trackingStyles[link.status] || trackingStyles.saved}`}>{trackingLabels[link.status] || 'Guardado'}</span>}
+            {recommendation && (
+              <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${recommendation.level.badge}`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${recommendation.level.dot}`} /> {recommendation.level.label}
+              </span>
+            )}
           </div>
           <h3 className="mt-3 text-lg font-bold text-ink">{resource.name}</h3>
           <p className="text-sm font-semibold text-brand-700">{resource.organization_name}</p>
