@@ -103,9 +103,18 @@ const OPTIONAL_TABLES = new Set([
   'campana_agenda_eventos',
   'categorias_recursos',
   'recursos',
+  'social_resources',
+  'beneficiary_social_resources',
+  'social_resource_followups',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
+]);
+
+const NEW_MODULE_OPTIONAL_TABLES = new Set([
+  'social_resources',
+  'beneficiary_social_resources',
+  'social_resource_followups'
 ]);
 
 const SECURITY_TABLES = new Set([
@@ -156,7 +165,7 @@ export class SupabaseRepository {
       registerSupabaseRepositoryError('list', table, error);
       throw error;
     }
-    if (this.allowMissingOptionalTables && OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [];
+    if (canIgnoreMissingTable(table, error, this.allowMissingOptionalTables)) return [];
     if (this.fallbackStore) return this.fallbackStore.list(table);
     registerSupabaseRepositoryError('list', table, error);
     throw error;
@@ -167,7 +176,7 @@ export class SupabaseRepository {
       try {
         return [table, await this.list(table)];
       } catch (error) {
-        if (this.allowMissingOptionalTables && OPTIONAL_TABLES.has(table) && isMissingTableError(error)) return [table, []];
+        if (canIgnoreMissingTable(table, error, this.allowMissingOptionalTables)) return [table, []];
         error.table = table;
         throw error;
       }
@@ -238,6 +247,12 @@ export class SupabaseRepository {
   async resetLocalDemo() {
     throw new Error('El reinicio demo local no esta disponible con Supabase.');
   }
+}
+
+function canIgnoreMissingTable(table, error, allowMissingOptionalTables) {
+  if (!isMissingTableError(error)) return false;
+  if (NEW_MODULE_OPTIONAL_TABLES.has(table)) return true;
+  return allowMissingOptionalTables && OPTIONAL_TABLES.has(table);
 }
 
 function registerSupabaseRepositoryError(operation, table, error) {

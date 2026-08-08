@@ -365,6 +365,9 @@ export const seedData = {
     { slug: 'alimentacion', nombre: 'Alimentacion', icono: 'utensils', descripcion: '', orden: 80, sort_order: 80, activa: true, estado: 'active' }
   ],
   recursos: [],
+  social_resources: [],
+  beneficiary_social_resources: [],
+  social_resource_followups: [],
   notificaciones: [
     {
       id: crypto.randomUUID(),

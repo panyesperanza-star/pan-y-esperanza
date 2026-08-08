@@ -39,6 +39,8 @@ import { PlatformMaintenanceService } from '../services/platform/PlatformMainten
 import { createRepositoryAdapter } from '../services/repositories/RepositoryProvider';
 import { RecursoRepository } from '../services/resources/RecursoRepository';
 import { RecursoService } from '../services/resources/RecursoService';
+import { SocialResourceRepository } from '../services/socialResources/SocialResourceRepository';
+import { SocialResourceService } from '../services/socialResources/SocialResourceService';
 import { UsuarioRepository } from '../services/users/UsuarioRepository';
 import { UsuarioService } from '../services/users/UsuarioService';
 import { VoluntarioRepository } from '../services/volunteers/VoluntarioRepository';
@@ -100,6 +102,9 @@ const EMPTY_APP_DATA = Object.freeze({
   campana_agenda_eventos: EMPTY_TABLE,
   categorias_recursos: EMPTY_TABLE,
   recursos: EMPTY_TABLE,
+  social_resources: EMPTY_TABLE,
+  beneficiary_social_resources: EMPTY_TABLE,
+  social_resource_followups: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
@@ -343,6 +348,17 @@ export function useAppData(enabled = true, currentUser = null) {
       audit,
       assertPermission,
       notificacionService,
+      currentUser
+    });
+  }
+
+  function createSocialResourceService(repositoryAdapter = createRepository()) {
+    return new SocialResourceService({
+      repository: new SocialResourceRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
+      resources: appData.social_resources || [],
+      links: appData.beneficiary_social_resources || [],
+      audit,
+      assertPermission,
       currentUser
     });
   }
@@ -1793,6 +1809,7 @@ export function useAppData(enabled = true, currentUser = null) {
     });
     const donacionService = createDonacionService(inventarioService, dashboardService, repositoryAdapter, notificacionService);
     const recursoService = createRecursoService(repositoryAdapter, notificacionService);
+    const socialResourceService = createSocialResourceService(repositoryAdapter);
     const colaboradorService = createColaboradorService({
       repositoryAdapter,
       donacionService,
@@ -2322,6 +2339,29 @@ export function useAppData(enabled = true, currentUser = null) {
       const updated = await recursoService.archive(id);
       await reload();
       return updated;
+    },
+    createSocialResource: async (payload) => {
+      const created = await socialResourceService.createResource(payload);
+      await reload();
+      return created;
+    },
+    updateSocialResource: async (id, payload) => {
+      const updated = await socialResourceService.updateResource(id, payload);
+      await reload();
+      return updated;
+    },
+    deleteSocialResource: async (id) => {
+      await socialResourceService.deleteResource(id);
+      await reload();
+    },
+    saveBeneficiarySocialResource: async (resourceId, beneficiaryId, payload) => {
+      const linked = await socialResourceService.saveForBeneficiary(resourceId, beneficiaryId, payload);
+      await reload();
+      return linked;
+    },
+    deleteBeneficiarySocialResourceLink: async (id) => {
+      await socialResourceService.deleteBeneficiaryLink(id);
+      await reload();
     },
     createFinancialAccount: async (payload) => {
       assertPermission('accounting', 'create');

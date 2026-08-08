@@ -111,6 +111,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
   const canGenerateCredential = canDo(currentUser, 'beneficiaries', 'generate-credential');
   const canPrint = canDo(currentUser, 'beneficiaries', 'print');
   const canSend = canDo(currentUser, 'beneficiaries', 'send');
+  const canSearchResources = canDo(currentUser, 'social-resources', 'view');
   const organization = data.organization_settings?.[0] || {};
   const canDeleteDirectly = canDeleteDefinitively(currentUser, 'beneficiaries', organization);
   const canRequestDeletion = canRequestDefinitiveDeletion(currentUser, 'beneficiaries', organization);
@@ -374,6 +375,7 @@ export function Beneficiaries({ data, actions, currentUser, navigationTarget, on
               onNewAppointment={() => onNavigate?.({ moduleId: 'communications', filter: 'agenda', profileId: profile.id })}
               onOpenAgenda={() => onNavigate?.({ moduleId: 'agenda', profileId: profile.id })}
               onCreateCampaign={() => onNavigate?.({ moduleId: 'agenda', filter: 'campaigns', profileId: profile.id })}
+              onSearchResources={canSearchResources ? () => onNavigate?.({ moduleId: 'social-resources', profileId: profile.id }) : undefined}
               onAddFamilyMember={(familyId) => {
                 setProfileId(null);
                 setEditing({ ...emptyBeneficiary, code: nextBeneficiaryCode(safeRows(data.beneficiaries)), family_id: familyId });
@@ -1315,7 +1317,7 @@ function formatBeneficiaryMatch(item) {
   return [item.code, item.full_name].filter(Boolean).join(' - ') || item.id || 'Expediente sin identificar';
 }
 
-function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, beneficiary, deliveries, canEdit, canDelete, canActivate, canGenerateCredential, canPrint, canSend, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onAddFamilyMember }) {
+function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, beneficiary, deliveries, canEdit, canDelete, canActivate, canGenerateCredential, canPrint, canSend, onEdit, onNewAppointment, onOpenAgenda, onCreateCampaign, onSearchResources, onAddFamilyMember }) {
   const [tab, setTab] = useState('overview');
   const [emailOpen, setEmailOpen] = useState(false);
   const [whatsAppOpen, setWhatsAppOpen] = useState(false);
@@ -1626,6 +1628,7 @@ function BeneficiaryProfile({ data, actions, currentUser, navigationTarget, bene
           onEmail={() => { setNotice(''); setEmailOpen(true); }}
           onCreateCampaign={onCreateCampaign}
           onOpenAgenda={onOpenAgenda || onNewAppointment}
+          onSearchResources={onSearchResources}
           onNotice={() => { setNotice(''); setPortalNoticeOpen(true); }}
         />
         <input ref={quickDocumentInputRef} className="hidden" type="file" onChange={uploadQuickDocument} />
@@ -1864,12 +1867,13 @@ function CasePriorityPanel({ summary, beneficiary, onPrimaryAction }) {
   );
 }
 
-function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, onManageDocuments, onUploadDocument, onNote, onEmail, onCreateCampaign, onOpenAgenda, onNotice }) {
+function QuickCaseActions({ canCreateDelivery, canEdit, onDelivery, onContact, onManageDocuments, onUploadDocument, onNote, onEmail, onCreateCampaign, onOpenAgenda, onSearchResources, onNotice }) {
   const [showMore, setShowMore] = useState(false);
   const primaryActions = [
     { label: 'Nueva entrega', icon: PackagePlus, onClick: onDelivery, enabled: canCreateDelivery, primary: true },
     { label: 'Gestionar documentacion', icon: Paperclip, onClick: onManageDocuments, enabled: Boolean(onManageDocuments) },
-    { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) }
+    { label: 'Contactar', icon: MessageCircle, onClick: onContact, enabled: Boolean(onContact) },
+    { label: 'Buscar recursos', icon: Search, onClick: onSearchResources, enabled: Boolean(onSearchResources) }
   ];
   const secondaryActions = [
     { label: 'Nueva nota', icon: NotebookTabs, onClick: onNote, enabled: canEdit },

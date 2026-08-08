@@ -33,6 +33,7 @@ import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { SmartDeliveries } from './pages/SmartDeliveries';
 import { SocialCareCenter } from './pages/SocialCareCenter';
+import { SocialResourcesCenter } from './pages/SocialResourcesCenter';
 import { Volunteers } from './pages/Volunteers';
 import { createPortalApiActions } from './services/portalAuth/PortalApiService';
 
@@ -195,6 +196,9 @@ export default function App() {
       agenda_operativa: [...(data.agenda_operativa || [])].sort((a, b) => String(a.event_at || a.created_at).localeCompare(String(b.event_at || b.created_at))),
       campanas: [...(data.campanas || [])].sort((a, b) => String(a.start_date || a.created_at).localeCompare(String(b.start_date || b.created_at))),
       donors: [...(data.donors || [])].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'es', { numeric: true })),
+      social_resources: [...(data.social_resources || [])].sort((a, b) => String(a.deadline_at || '9999-12-31').localeCompare(String(b.deadline_at || '9999-12-31')) || String(a.name || '').localeCompare(String(b.name || ''), 'es')),
+      beneficiary_social_resources: [...(data.beneficiary_social_resources || [])].sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''))),
+      social_resource_followups: [...(data.social_resource_followups || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -261,6 +265,7 @@ export default function App() {
     dashboard: <Dashboard data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     notifications: <Notifications data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     'social-care': <SocialCareCenter data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
+    'social-resources': <SocialResourcesCenter data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     agenda: <AgendaOperativa data={sorted} actions={actions} currentUser={currentUser} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
