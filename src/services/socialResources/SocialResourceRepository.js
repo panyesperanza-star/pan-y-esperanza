@@ -36,4 +36,24 @@ export class SocialResourceRepository {
   async createHistory(payload) {
     return this.repository.create('social_resource_history', payload);
   }
+
+  async createSource(payload) {
+    return this.repository.create('social_resource_sources', payload);
+  }
+
+  async updateSource(id, payload) {
+    return this.repository.update('social_resource_sources', id, payload);
+  }
+
+  async deleteSource(id) {
+    return this.repository.remove('social_resource_sources', id);
+  }
+
+  async createDetection(payload) {
+    return this.repository.create('social_resource_detections', payload);
+  }
+
+  async updateDetection(id, payload) {
+    return this.repository.update('social_resource_detections', id, payload);
+  }
 }

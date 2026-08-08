@@ -13,7 +13,6 @@ import {
   Pencil,
   Phone,
   Plus,
-  Save,
   Search,
   Trash2,
   UserRound
@@ -29,6 +28,10 @@ import { buildSocialResourceMonitoring, buildSocialResourceRecommendations, isRe
 import {
   BENEFICIARY_RESOURCE_STATUSES,
   SOCIAL_RESOURCE_CATEGORIES,
+  SOCIAL_RESOURCE_DETECTION_TYPES,
+  SOCIAL_RESOURCE_SOURCE_ACCESS_METHODS,
+  SOCIAL_RESOURCE_SOURCE_STATUSES,
+  SOCIAL_RESOURCE_SOURCE_TYPES,
   SOCIAL_RESOURCE_SCOPES,
   SOCIAL_RESOURCE_STATUSES
 } from '../services/socialResources/SocialResourceService';
@@ -60,6 +63,35 @@ const emptyResource = {
   employment_situation: '',
   housing_situation: '',
   notes: ''
+};
+
+const emptySource = {
+  name: '',
+  organization_name: '',
+  source_type: 'organismo_publico',
+  scope: 'municipal',
+  official_url: '',
+  feed_url: '',
+  access_method: 'web_oficial',
+  check_frequency_days: 7,
+  status: 'Activa',
+  last_checked_at: '',
+  last_check_status: '',
+  notes: ''
+};
+
+const emptyDetection = {
+  source_id: '',
+  duplicate_resource_id: '',
+  detection_type: 'Nueva convocatoria',
+  title: '',
+  official_url: '',
+  detected_at: '',
+  change_summary: '',
+  changed_fields: [],
+  previous_data: {},
+  new_data: {},
+  review_notes: ''
 };
 
 const trackingLabels = {
@@ -104,6 +136,8 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const links = data.beneficiary_social_resources || [];
   const followups = data.social_resource_followups || [];
   const history = data.social_resource_history || [];
+  const sources = data.social_resource_sources || [];
+  const detections = data.social_resource_detections || [];
   const beneficiaries = data.beneficiaries || [];
   const canCreate = canDo(currentUser, 'social-resources', 'create');
   const canEdit = canDo(currentUser, 'social-resources', 'edit');
@@ -123,6 +157,9 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState(navigationTarget?.profileId || '');
   const [selectedResourceId, setSelectedResourceId] = useState('');
   const [editing, setEditing] = useState(null);
+  const [editingSource, setEditingSource] = useState(null);
+  const [editingDetection, setEditingDetection] = useState(null);
+  const [reviewingDetection, setReviewingDetection] = useState(null);
   const [trackingTarget, setTrackingTarget] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [notice, setNotice] = useState('');
@@ -131,11 +168,15 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   useEffect(() => {
     if (navigationTarget?.profileId) setSelectedBeneficiaryId(navigationTarget.profileId);
     if (navigationTarget?.resourceId) setSelectedResourceId(navigationTarget.resourceId);
+    if (navigationTarget?.detectionId) {
+      const detection = detections.find((item) => item.id === navigationTarget.detectionId);
+      if (detection) setReviewingDetection(detection);
+    }
     if (navigationTarget?.resourceAction === 'track' && navigationTarget?.resourceId) {
       const resource = resources.find((item) => item.id === navigationTarget.resourceId);
       if (resource) setTrackingTarget(resource);
     }
-  }, [navigationTarget?.profileId, navigationTarget?.resourceId, navigationTarget?.resourceAction, navigationTarget?.key, resources]);
+  }, [navigationTarget?.profileId, navigationTarget?.resourceId, navigationTarget?.detectionId, navigationTarget?.resourceAction, navigationTarget?.key, resources, detections]);
 
   const selectedBeneficiary = beneficiaries.find((item) => item.id === selectedBeneficiaryId) || null;
   const selectedResource = resources.find((item) => item.id === selectedResourceId) || null;
@@ -145,8 +186,10 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
     resources,
     beneficiaries,
     documents: data.beneficiary_documents || [],
-    links
-  }), [resources, beneficiaries, data.beneficiary_documents, links]);
+    links,
+    sources,
+    detections
+  }), [resources, beneficiaries, data.beneficiary_documents, links, sources, detections]);
   const alertsByResourceId = useMemo(() => new Map(
     monitoring.alerts.map((item) => [item.resource.id, item])
   ), [monitoring]);
@@ -188,6 +231,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const summary = useMemo(() => ({
     active: monitoring.open.length,
     expiring: monitoring.closingSoon.length,
+    pendingDetections: monitoring.pendingDetections.length,
     linked: selectedLinks.length,
     openTracking: selectedLinks.filter((link) => !['granted', 'denied', 'not_applicable'].includes(link.status)).length
   }), [monitoring, selectedLinks]);
@@ -210,6 +254,60 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
       setEditing(null);
     } catch (saveError) {
       setError(saveError.message || 'No se pudo guardar el recurso.');
+    }
+  }
+
+  async function handleSaveSource(payload) {
+    setError('');
+    setNotice('');
+    try {
+      if (payload.id) {
+        await actions.updateSocialResourceSource(payload.id, payload);
+        setNotice('Fuente vigilada actualizada correctamente.');
+      } else {
+        await actions.createSocialResourceSource(payload);
+        setNotice('Fuente oficial añadida a vigilancia.');
+      }
+      setEditingSource(null);
+    } catch (saveError) {
+      setError(saveError.message || 'No se pudo guardar la fuente vigilada.');
+    }
+  }
+
+  async function handleSaveDetection(payload) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.createSocialResourceDetection(payload);
+      setNotice('Deteccion registrada en la bandeja de revision.');
+      setEditingDetection(null);
+    } catch (saveError) {
+      setError(saveError.message || 'No se pudo registrar la deteccion.');
+    }
+  }
+
+  async function handleApproveDetection(detection, payload = {}) {
+    setError('');
+    setNotice('');
+    try {
+      const result = await actions.approveSocialResourceDetection(detection.id, payload);
+      setNotice(`Deteccion aprobada. ${result?.compatibilityCount || 0} beneficiarios podrian ser compatibles.`);
+      setReviewingDetection(null);
+      if (result?.resource?.id) setSelectedResourceId(result.resource.id);
+    } catch (approveError) {
+      setError(approveError.message || 'No se pudo aprobar la deteccion.');
+    }
+  }
+
+  async function handleDiscardDetection(detection, payload = {}) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.discardSocialResourceDetection(detection.id, payload);
+      setNotice('Deteccion descartada y auditada.');
+      setReviewingDetection(null);
+    } catch (discardError) {
+      setError(discardError.message || 'No se pudo descartar la deteccion.');
     }
   }
 
@@ -245,9 +343,17 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
         title="Centro de Recursos Sociales"
         description="Mantiene recursos verificados, detecta convocatorias relevantes y recomienda por reglas explicables."
         actions={canCreate && (
-          <Button onClick={() => setEditing({ ...emptyResource })}>
-            <Plus size={16} /> Nuevo recurso
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setEditingSource({ ...emptySource })}>
+              <BadgeCheck size={16} /> Nueva fuente
+            </Button>
+            <Button variant="secondary" onClick={() => setEditingDetection({ ...emptyDetection })}>
+              <History size={16} /> Registrar deteccion
+            </Button>
+            <Button onClick={() => setEditing({ ...emptyResource })}>
+              <Plus size={16} /> Nuevo recurso
+            </Button>
+          </div>
         )}
       />
 
@@ -257,7 +363,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
       <section className="grid gap-4 md:grid-cols-4">
         <SummaryCard label="Convocatorias abiertas" value={summary.active} icon={Landmark} tone="brand" />
         <SummaryCard label="Cierran pronto" value={summary.expiring} icon={CalendarClock} tone="red" />
-        <SummaryCard label="Guardados en expediente" value={summary.linked} icon={Save} tone="blue" />
+        <SummaryCard label="Pendientes de revision" value={summary.pendingDetections} icon={History} tone="amber" />
         <SummaryCard label="Seguimientos abiertos" value={summary.openTracking} icon={Clock3} tone="red" />
       </section>
 
@@ -270,6 +376,22 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
           label: `${alert.resource.name}: ${alert.affectedCount} posibles beneficiarios`
         })}
       />
+
+      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <WatchedSourcesPanel
+          sources={sources}
+          sourceAlerts={monitoring.sourceReviewItems}
+          canEdit={canEdit}
+          onEdit={(source) => setEditingSource(source)}
+          onCreate={() => setEditingSource({ ...emptySource })}
+        />
+        <DetectionInboxPanel
+          detections={detections}
+          sources={sources}
+          resources={resources}
+          onReview={(detection) => setReviewingDetection(detection)}
+        />
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
@@ -390,6 +512,37 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
         </Modal>
       )}
 
+      {editingSource && (
+        <Modal wide title={editingSource.id ? 'Editar fuente vigilada' : 'Nueva fuente vigilada'} onClose={() => setEditingSource(null)}>
+          <SocialResourceSourceForm initial={editingSource} onSubmit={handleSaveSource} onCancel={() => setEditingSource(null)} />
+        </Modal>
+      )}
+
+      {editingDetection && (
+        <Modal wide title="Registrar deteccion oficial" onClose={() => setEditingDetection(null)}>
+          <SocialResourceDetectionForm
+            initial={editingDetection}
+            sources={sources}
+            resources={resources}
+            onSubmit={handleSaveDetection}
+            onCancel={() => setEditingDetection(null)}
+          />
+        </Modal>
+      )}
+
+      {reviewingDetection && (
+        <Modal wide title="Revisar deteccion oficial" onClose={() => setReviewingDetection(null)}>
+          <DetectionReviewForm
+            detection={reviewingDetection}
+            source={sources.find((item) => item.id === reviewingDetection.source_id)}
+            resources={resources}
+            onApprove={(payload) => handleApproveDetection(reviewingDetection, payload)}
+            onDiscard={(payload) => handleDiscardDetection(reviewingDetection, payload)}
+            onCancel={() => setReviewingDetection(null)}
+          />
+        </Modal>
+      )}
+
       {trackingTarget && selectedBeneficiary && (
         <Modal title="Guardar recurso en expediente" onClose={() => setTrackingTarget(null)}>
           <TrackingForm
@@ -470,6 +623,95 @@ function alertTextTone(tone) {
     blue: 'text-blue-700'
   };
   return tones[tone] || tones.emerald;
+}
+
+function WatchedSourcesPanel({ sources, sourceAlerts, canEdit, onEdit, onCreate }) {
+  const alertBySource = new Map(sourceAlerts.map((item) => [item.source.id, item]));
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Fuentes vigiladas</p>
+          <h2 className="mt-1 text-xl font-bold text-ink">Registro configurable de fuentes oficiales</h2>
+          <p className="mt-1 text-sm text-slate-500">APIs, feeds o paginas oficiales. No se incorporan recursos sin revision humana.</p>
+        </div>
+        {canEdit && <Button variant="secondary" onClick={onCreate}><Plus size={16} /> Fuente</Button>}
+      </div>
+      <div className="mt-4 space-y-3">
+        {sources.slice(0, 4).map((source) => {
+          const alert = alertBySource.get(source.id);
+          return (
+            <article key={source.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-ink">{source.name}</p>
+                  <p className="text-sm text-slate-500">{source.organization_name || 'Organismo oficial'} · {source.scope || 'municipal'}</p>
+                </div>
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert?.tone || 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{alert?.label || source.status}</span>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Ultima comprobacion: {source.last_checked_at ? formatDate(source.last_checked_at) : 'Pendiente'}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <ContactLink icon={ExternalLink} href={source.official_url} label="Abrir fuente" external />
+                {canEdit && <Button variant="secondary" onClick={() => onEdit(source)}>Editar</Button>}
+              </div>
+            </article>
+          );
+        })}
+        {!sources.length && <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Todavia no hay fuentes vigiladas. Anade ministerios, Comunidad de Madrid, Ayuntamiento u organismos oficiales.</p>}
+      </div>
+    </section>
+  );
+}
+
+function DetectionInboxPanel({ detections, sources, resources, onReview }) {
+  const pending = detections.filter((item) => item.status === 'Pendiente de revision');
+  const reviewed = detections.filter((item) => item.status !== 'Pendiente de revision').slice(0, 3);
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Bandeja de revision</p>
+          <h2 className="mt-1 text-xl font-bold text-ink">Detecciones oficiales pendientes</h2>
+          <p className="mt-1 text-sm text-slate-500">Nada se publica automaticamente. El equipo aprueba, edita o descarta cada cambio.</p>
+        </div>
+        <MetricPill label="Pendientes" value={pending.length} tone={pending.length ? 'amber' : 'emerald'} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {pending.slice(0, 4).map((detection) => (
+          <DetectionCard key={detection.id} detection={detection} source={sources.find((item) => item.id === detection.source_id)} resource={resources.find((item) => item.id === detection.duplicate_resource_id || item.id === detection.resource_id)} onReview={() => onReview(detection)} />
+        ))}
+        {!pending.length && <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 lg:col-span-2">Sin detecciones pendientes de revision.</div>}
+      </div>
+      {reviewed.length > 0 && (
+        <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Ultimas decisiones</p>
+          <div className="mt-2 space-y-2">
+            {reviewed.map((item) => <p key={item.id} className="text-sm text-slate-600">{item.title} · <strong>{item.status}</strong> · {item.reviewed_at ? formatDate(item.reviewed_at) : 'Sin fecha'}</p>)}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DetectionCard({ detection, source, resource, onReview }) {
+  return (
+    <article className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-800">{detection.detection_type}</span>
+          <h3 className="mt-3 font-bold text-ink">{detection.title}</h3>
+          <p className="mt-1 text-sm text-slate-600">{source?.name || 'Fuente oficial'} · {formatDate(detection.detected_at)}</p>
+        </div>
+        <Button onClick={onReview}>Revisar</Button>
+      </div>
+      <p className="mt-3 text-sm text-slate-700">{detection.change_summary || 'Cambio detectado pendiente de revisar.'}</p>
+      {resource && <p className="mt-2 text-xs font-bold text-amber-800">Posible duplicado: {resource.name}</p>}
+      <div className="mt-3">
+        <ContactLink icon={ExternalLink} href={detection.official_url} label="Fuente oficial" external />
+      </div>
+    </article>
+  );
 }
 
 function RecommendationsPanel({ analysis, onView, onTrack }) {
@@ -808,7 +1050,7 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
 
   return (
     <form className="space-y-5" onSubmit={submit}>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div id="detection-resource-editor" className="grid gap-4 md:grid-cols-2">
         <FormField label="Nombre" required><input className={inputClass} value={form.name} onChange={(event) => update('name', event.target.value)} required /></FormField>
         <FormField label="Organismo / entidad" required><input className={inputClass} value={form.organization_name} onChange={(event) => update('organization_name', event.target.value)} required /></FormField>
         <FormField label="Categoria"><select className={inputClass} value={form.category} onChange={(event) => update('category', event.target.value)}>{SOCIAL_RESOURCE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
@@ -849,6 +1091,185 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
         <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar recurso'}</Button>
       </div>
     </form>
+  );
+}
+
+function SocialResourceSourceForm({ initial, onSubmit, onCancel }) {
+  const [form, setForm] = useState({ ...emptySource, ...initial });
+  const [saving, setSaving] = useState(false);
+
+  function update(name, value) {
+    setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit(form);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={submit}>
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField label="Nombre de la fuente" required><input className={inputClass} value={form.name} onChange={(event) => update('name', event.target.value)} required /></FormField>
+        <FormField label="Organismo responsable"><input className={inputClass} value={form.organization_name || ''} onChange={(event) => update('organization_name', event.target.value)} /></FormField>
+        <FormField label="Tipo de fuente"><select className={inputClass} value={form.source_type} onChange={(event) => update('source_type', event.target.value)}>{SOCIAL_RESOURCE_SOURCE_TYPES.map((item) => <option key={item} value={item}>{sourceTypeLabel(item)}</option>)}</select></FormField>
+        <FormField label="Ambito"><select className={inputClass} value={form.scope} onChange={(event) => update('scope', event.target.value)}>{SOCIAL_RESOURCE_SCOPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        <FormField label="Metodo"><select className={inputClass} value={form.access_method} onChange={(event) => update('access_method', event.target.value)}>{SOCIAL_RESOURCE_SOURCE_ACCESS_METHODS.map((item) => <option key={item} value={item}>{sourceAccessLabel(item)}</option>)}</select></FormField>
+        <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{SOCIAL_RESOURCE_SOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        <FormField label="URL oficial" required><input type="url" className={inputClass} value={form.official_url || ''} onChange={(event) => update('official_url', event.target.value)} required /></FormField>
+        <FormField label="API o feed oficial"><input type="url" className={inputClass} value={form.feed_url || ''} onChange={(event) => update('feed_url', event.target.value)} /></FormField>
+        <FormField label="Frecuencia de comprobacion"><input type="number" min="1" className={inputClass} value={form.check_frequency_days || 7} onChange={(event) => update('check_frequency_days', event.target.value)} /></FormField>
+        <FormField label="Ultima comprobacion"><input type="datetime-local" className={inputClass} value={toLocalInput(form.last_checked_at)} onChange={(event) => update('last_checked_at', event.target.value)} /></FormField>
+      </div>
+      <TextAreaField label="Resultado de ultima comprobacion" value={form.last_check_status || ''} onChange={(value) => update('last_check_status', value)} />
+      <TextAreaField label="Notas internas" value={form.notes || ''} onChange={(value) => update('notes', value)} />
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        ALTHEMON solo debe vigilar informacion publica oficial. No se envian datos personales a fuentes externas.
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar fuente'}</Button>
+      </div>
+    </form>
+  );
+}
+
+function SocialResourceDetectionForm({ initial, sources, resources, onSubmit, onCancel }) {
+  const [form, setForm] = useState({ ...emptyDetection, ...initial });
+  const [previousText, setPreviousText] = useState(prettyJson(form.previous_data));
+  const [newText, setNewText] = useState(prettyJson(form.new_data));
+  const [jsonError, setJsonError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const selectedSource = sources.find((item) => item.id === form.source_id);
+
+  function update(name, value) {
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === 'source_id' && !current.official_url ? { official_url: sources.find((item) => item.id === value)?.official_url || '' } : {})
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setJsonError('');
+    try {
+      await onSubmit({
+        ...form,
+        official_url: form.official_url || selectedSource?.official_url || '',
+        changed_fields: splitFields(form.changed_fields),
+        previous_data: parseJsonText(previousText, {}),
+        new_data: parseJsonText(newText, {})
+      });
+    } catch (error) {
+      if (error instanceof SyntaxError) setJsonError('Revisa el formato JSON de informacion anterior/nueva.');
+      else throw error;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={submit}>
+      {jsonError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{jsonError}</div>}
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField label="Fuente oficial"><select className={inputClass} value={form.source_id || ''} onChange={(event) => update('source_id', event.target.value)}><option value="">Sin fuente vinculada</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></FormField>
+        <FormField label="Tipo de deteccion"><select className={inputClass} value={form.detection_type} onChange={(event) => update('detection_type', event.target.value)}>{SOCIAL_RESOURCE_DETECTION_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        <FormField label="Titulo" required><input className={inputClass} value={form.title} onChange={(event) => update('title', event.target.value)} required /></FormField>
+        <FormField label="Posible recurso existente"><select className={inputClass} value={form.duplicate_resource_id || ''} onChange={(event) => update('duplicate_resource_id', event.target.value)}><option value="">Crear nuevo si se aprueba</option>{resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></FormField>
+        <FormField label="URL oficial" required><input type="url" className={inputClass} value={form.official_url || ''} onChange={(event) => update('official_url', event.target.value)} required /></FormField>
+        <FormField label="Fecha detectada"><input type="datetime-local" className={inputClass} value={toLocalInput(form.detected_at)} onChange={(event) => update('detected_at', event.target.value)} /></FormField>
+      </div>
+      <TextAreaField label="Que ha cambiado" value={form.change_summary || ''} onChange={(value) => update('change_summary', value)} />
+      <FormField label="Campos cambiados"><input className={inputClass} value={Array.isArray(form.changed_fields) ? form.changed_fields.join(', ') : form.changed_fields || ''} onChange={(event) => update('changed_fields', event.target.value)} placeholder="requisitos, plazo, importe, documentacion..." /></FormField>
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextAreaField label="Informacion anterior (JSON opcional)" value={previousText} onChange={setPreviousText} />
+        <TextAreaField label="Informacion nueva (JSON opcional)" value={newText} onChange={setNewText} />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Enviar a revision'}</Button>
+      </div>
+    </form>
+  );
+}
+
+function DetectionReviewForm({ detection, source, resources, onApprove, onDiscard, onCancel }) {
+  const baseData = cleanObject(detection.new_data);
+  const [resource, setResource] = useState({
+    ...emptyResource,
+    ...baseData,
+    name: baseData.name || detection.title,
+    organization_name: baseData.organization_name || source?.organization_name || source?.name || '',
+    official_url: baseData.official_url || detection.official_url,
+    web_url: baseData.web_url || detection.official_url,
+    status: baseData.status || (detection.detection_type === 'Cierre/caducidad' ? 'Cerrado' : 'Activo'),
+    scope: baseData.scope || source?.scope || 'municipal'
+  });
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function update(name, value) {
+    setResource((current) => ({ ...current, [name]: value }));
+  }
+
+  async function approve() {
+    setSaving(true);
+    try {
+      await onApprove({ resource, review_notes: reviewNotes });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function discard() {
+    setSaving(true);
+    try {
+      await onDiscard({ review_notes: reviewNotes });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const possibleDuplicate = resources.find((item) => item.id === detection.duplicate_resource_id || item.id === detection.resource_id);
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="font-bold">{detection.detection_type}: {detection.title}</p>
+        <p className="mt-1">{detection.change_summary || 'Sin resumen del cambio.'}</p>
+        <p className="mt-1">Fuente: {source?.name || 'Fuente oficial'} · {formatDate(detection.detected_at)}</p>
+        {possibleDuplicate && <p className="mt-1 font-bold">Posible duplicado: {possibleDuplicate.name}</p>}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField label="Nombre"><input className={inputClass} value={resource.name || ''} onChange={(event) => update('name', event.target.value)} /></FormField>
+        <FormField label="Organismo"><input className={inputClass} value={resource.organization_name || ''} onChange={(event) => update('organization_name', event.target.value)} /></FormField>
+        <FormField label="Categoria"><select className={inputClass} value={resource.category || 'Otros'} onChange={(event) => update('category', event.target.value)}>{SOCIAL_RESOURCE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        <FormField label="Estado"><select className={inputClass} value={resource.status || 'Activo'} onChange={(event) => update('status', event.target.value)}>{SOCIAL_RESOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        <FormField label="Fecha apertura"><input type="date" className={inputClass} value={resource.opens_at || ''} onChange={(event) => update('opens_at', event.target.value)} /></FormField>
+        <FormField label="Fecha limite"><input type="date" className={inputClass} value={resource.deadline_at || ''} onChange={(event) => update('deadline_at', event.target.value)} /></FormField>
+        <FormField label="Importe / beneficio"><input className={inputClass} value={resource.benefit || ''} onChange={(event) => update('benefit', event.target.value)} /></FormField>
+        <FormField label="URL oficial"><input type="url" className={inputClass} value={resource.official_url || ''} onChange={(event) => update('official_url', event.target.value)} /></FormField>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextAreaField label="Requisitos" value={resource.requirements || ''} onChange={(value) => update('requirements', value)} />
+        <TextAreaField label="Documentacion" value={resource.required_documents || ''} onChange={(value) => update('required_documents', value)} />
+      </div>
+      <TextAreaField label="Notas de revision" value={reviewNotes} onChange={setReviewNotes} />
+      <JsonDiffBlock previousData={detection.previous_data} newData={detection.new_data} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button variant="secondary" onClick={() => document.getElementById('detection-resource-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Editar antes de incorporar</Button>
+        <Button variant="danger" onClick={discard} disabled={saving}>Descartar</Button>
+        <Button onClick={approve} disabled={saving}>Aprobar e incorporar</Button>
+      </div>
+    </div>
   );
 }
 
@@ -894,6 +1315,21 @@ function TextAreaField({ label, value, onChange }) {
     <FormField label={label}>
       <textarea className={`${inputClass} min-h-28 resize-y`} value={value || ''} onChange={(event) => onChange(event.target.value)} />
     </FormField>
+  );
+}
+
+function JsonDiffBlock({ previousData, newData }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Informacion anterior</p>
+        <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap text-xs text-slate-600">{prettyJson(previousData)}</pre>
+      </div>
+      <div className="rounded-lg border border-brand-100 bg-brand-50 p-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Informacion nueva</p>
+        <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap text-xs text-brand-800">{prettyJson(newData)}</pre>
+      </div>
+    </div>
   );
 }
 
@@ -966,6 +1402,59 @@ function isNext30(deadline) {
   const target = new Date(`${deadline}T00:00:00`);
   const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
   return diffDays >= 0 && diffDays <= 30;
+}
+
+function cleanObject(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) || {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === 'object' ? value : {};
+}
+
+function prettyJson(value) {
+  const object = cleanObject(value);
+  return Object.keys(object).length ? JSON.stringify(object, null, 2) : '';
+}
+
+function parseJsonText(value, fallback) {
+  if (!String(value || '').trim()) return fallback;
+  return JSON.parse(value);
+}
+
+function splitFields(value) {
+  if (Array.isArray(value)) return value;
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function toLocalInput(value) {
+  if (!value) return '';
+  return String(value).slice(0, 16);
+}
+
+function sourceTypeLabel(value) {
+  const labels = {
+    estado_ministerio: 'Estado / ministerios',
+    comunidad_madrid: 'Comunidad de Madrid',
+    ayuntamiento_madrid: 'Ayuntamiento de Madrid',
+    organismo_publico: 'Organismo publico',
+    otra_fuente_oficial: 'Otra fuente oficial'
+  };
+  return labels[value] || value;
+}
+
+function sourceAccessLabel(value) {
+  const labels = {
+    api: 'API oficial',
+    feed: 'Feed oficial',
+    web_oficial: 'Pagina oficial',
+    manual: 'Comprobacion manual'
+  };
+  return labels[value] || value;
 }
 
 function formatChangedFields(value) {

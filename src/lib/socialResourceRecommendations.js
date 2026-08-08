@@ -92,9 +92,16 @@ export function buildSocialResourceMonitoring({
   beneficiaries = [],
   documents = [],
   links = [],
+  sources = [],
+  detections = [],
   today = todayISO()
 } = {}) {
   const resourceAlerts = resources.map((resource) => buildResourceAlert(resource, today));
+  const pendingDetections = detections.filter((item) => item.status === 'Pendiente de revision');
+  const sourceReviewItems = sources
+    .filter((source) => source.status === 'Activa')
+    .map((source) => buildSourceAlert(source, today))
+    .filter((item) => item.needsReview);
   const closingSoon = resourceAlerts.filter((item) => item.flags.closingSoon);
   const needsReview = resourceAlerts.filter((item) => item.flags.needsReview);
   const open = resourceAlerts.filter((item) => item.flags.open);
@@ -129,6 +136,8 @@ export function buildSocialResourceMonitoring({
     needsReview,
     open,
     newlyCreated,
+    pendingDetections,
+    sourceReviewItems,
     affectedByNewResource,
     pendingBeneficiaryCount: pendingBeneficiaryIds.size
   };
@@ -299,6 +308,19 @@ export function buildResourceAlert(resource = {}, today = todayISO()) {
 
 export function isResourceOfficiallyVerified(resource = {}) {
   return Boolean(String(resource.official_url || '').trim() && resource.last_verified_at && (resource.verified_by || resource.verified_by_name));
+}
+
+export function buildSourceAlert(source = {}, today = todayISO()) {
+  const daysSinceCheck = daysBetween(source.last_checked_at, today);
+  const frequency = Number(source.check_frequency_days || 7);
+  const needsReview = !source.last_checked_at || (Number.isFinite(daysSinceCheck) && daysSinceCheck > frequency);
+  return {
+    source,
+    daysSinceCheck,
+    needsReview,
+    label: needsReview ? 'Necesita comprobacion' : 'Fuente al dia',
+    tone: needsReview ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  };
 }
 
 function resolveCompatibilityLevel({ checks, missing, blockers }) {

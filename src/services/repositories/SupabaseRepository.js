@@ -61,6 +61,8 @@ const DATE_FIELDS = new Set([
   'signature_signed_at',
   'responsible_signature_signed_at',
   'attendance_confirmed_at',
+  'last_checked_at',
+  'detected_at',
   'created_at',
   'updated_at'
 ]);
@@ -107,6 +109,8 @@ const OPTIONAL_TABLES = new Set([
   'beneficiary_social_resources',
   'social_resource_followups',
   'social_resource_history',
+  'social_resource_sources',
+  'social_resource_detections',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
@@ -116,7 +120,9 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'social_resources',
   'beneficiary_social_resources',
   'social_resource_followups',
-  'social_resource_history'
+  'social_resource_history',
+  'social_resource_sources',
+  'social_resource_detections'
 ]);
 
 const SECURITY_TABLES = new Set([

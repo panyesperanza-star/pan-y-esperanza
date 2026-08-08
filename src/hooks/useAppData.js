@@ -106,6 +106,8 @@ const EMPTY_APP_DATA = Object.freeze({
   beneficiary_social_resources: EMPTY_TABLE,
   social_resource_followups: EMPTY_TABLE,
   social_resource_history: EMPTY_TABLE,
+  social_resource_sources: EMPTY_TABLE,
+  social_resource_detections: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
@@ -358,6 +360,10 @@ export function useAppData(enabled = true, currentUser = null) {
       repository: new SocialResourceRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
       resources: appData.social_resources || [],
       links: appData.beneficiary_social_resources || [],
+      sources: appData.social_resource_sources || [],
+      detections: appData.social_resource_detections || [],
+      beneficiaries: appData.beneficiaries || [],
+      documents: appData.beneficiary_documents || [],
       audit,
       assertPermission,
       currentUser
@@ -2363,6 +2369,35 @@ export function useAppData(enabled = true, currentUser = null) {
     deleteBeneficiarySocialResourceLink: async (id) => {
       await socialResourceService.deleteBeneficiaryLink(id);
       await reload();
+    },
+    createSocialResourceSource: async (payload) => {
+      const created = await socialResourceService.createSource(payload);
+      await reload();
+      return created;
+    },
+    updateSocialResourceSource: async (id, payload) => {
+      const updated = await socialResourceService.updateSource(id, payload);
+      await reload();
+      return updated;
+    },
+    deleteSocialResourceSource: async (id) => {
+      await socialResourceService.deleteSource(id);
+      await reload();
+    },
+    createSocialResourceDetection: async (payload) => {
+      const created = await socialResourceService.createDetection(payload);
+      await reload();
+      return created;
+    },
+    approveSocialResourceDetection: async (id, payload) => {
+      const result = await socialResourceService.approveDetection(id, payload);
+      await reload();
+      return result;
+    },
+    discardSocialResourceDetection: async (id, payload) => {
+      const discarded = await socialResourceService.discardDetection(id, payload);
+      await reload();
+      return discarded;
     },
     createFinancialAccount: async (payload) => {
       assertPermission('accounting', 'create');

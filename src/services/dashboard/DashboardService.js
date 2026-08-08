@@ -208,6 +208,8 @@ function buildOperations(data, today, pendingPasswordResets) {
     beneficiaries: data.beneficiaries || [],
     documents: data.beneficiary_documents || [],
     links: data.beneficiary_social_resources || [],
+    sources: data.social_resource_sources || [],
+    detections: data.social_resource_detections || [],
     today
   });
 

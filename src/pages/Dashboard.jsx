@@ -686,6 +686,7 @@ function SocialResourcesOperationsBlock({ monitoring = {}, onOpen }) {
   const metricItems = [
     { label: 'Convocatorias nuevas', value: (monitoring.newlyCreated || []).length, tone: 'bg-blue-50 text-blue-700' },
     { label: 'Cierran esta semana', value: closingThisWeek.length, tone: 'bg-red-50 text-red-700' },
+    { label: 'Pendientes de revision', value: (monitoring.pendingDetections || []).length, tone: 'bg-amber-50 text-amber-800' },
     { label: 'Beneficiarios pendientes', value: monitoring.pendingBeneficiaryCount || 0, tone: 'bg-brand-50 text-brand-700' }
   ];
   const focusItems = [
@@ -714,12 +715,19 @@ function SocialResourcesOperationsBlock({ monitoring = {}, onOpen }) {
       detail: 'Fuente oficial o fecha de comprobacion pendiente.',
       tone: 'bg-amber-50 text-amber-800',
       destination: { moduleId: 'social-resources', resourceId: item.resource.id }
+    })),
+    ...(monitoring.pendingDetections || []).slice(0, 2).map((item) => ({
+      id: `detection-${item.id}`,
+      title: item.title,
+      detail: `${item.detection_type || 'Deteccion'} pendiente de revision humana.`,
+      tone: 'bg-amber-50 text-amber-800',
+      destination: { moduleId: 'social-resources', detectionId: item.id }
     }))
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         {metricItems.map((item) => (
           <article key={item.label} className={`rounded-md px-3 py-2 ${item.tone}`}>
             <p className="text-2xl font-bold">{formatNumber(item.value)}</p>
@@ -1425,6 +1433,14 @@ function buildTasks(operations, currentUser, familyModule) {
       moduleId: 'social-resources',
       destination: { moduleId: 'social-resources' }
     },
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.pendingDetections?.length > 0 && {
+      title: 'Revisar detecciones oficiales',
+      detail: pluralSummary(operations.socialResourceMonitoring.pendingDetections.length, 'deteccion pendiente', 'detecciones pendientes'),
+      priority: 'Alta',
+      action: 'Abrir bandeja',
+      moduleId: 'social-resources',
+      destination: { moduleId: 'social-resources' }
+    },
     canAccess(currentUser, 'inventory') && operations.criticalStock.length > 0 && {
       title: 'Revisar stock bajo',
       detail: pluralSummary(operations.criticalStock.length, 'producto esta bajo minimo', 'productos estan bajo minimo'),
@@ -1497,6 +1513,7 @@ function buildAssistantState(operations, currentUser, familyModule) {
     canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0 && pluralLabel(operations.pendingReceipts.length, 'justificante pendiente', 'justificantes pendientes'),
     canAccess(currentUser, 'beneficiaries') && uniqueDocumentIssueCount(operations) > 0 && pluralLabel(uniqueDocumentIssueCount(operations), 'documento pendiente', 'documentos pendientes'),
     canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.newlyCreated?.length > 0 && pluralLabel(operations.socialResourceMonitoring.newlyCreated.length, 'convocatoria nueva', 'convocatorias nuevas'),
+    canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.pendingDetections?.length > 0 && pluralLabel(operations.socialResourceMonitoring.pendingDetections.length, 'deteccion oficial pendiente', 'detecciones oficiales pendientes'),
     canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.closingSoon?.length > 0 && pluralLabel(operations.socialResourceMonitoring.closingSoon.length, 'convocatoria proxima a cerrar', 'convocatorias proximas a cerrar'),
     canAccess(currentUser, 'accounting') && operations.overdueDebts.length > 0 && pluralLabel(operations.overdueDebts.length, 'deuda vencida', 'deudas vencidas'),
     canAccess(currentUser, 'accounting') && operations.upcomingDebtPayments.length > 0 && pluralLabel(operations.upcomingDebtPayments.length, 'pago proximo', 'pagos proximos'),
@@ -1542,6 +1559,12 @@ function getPrimaryAction(operations, currentUser, familyModule) {
     return {
       destination: { moduleId: 'social-resources' },
       recommendation: 'Revisa primero las convocatorias sociales que cierran pronto.'
+    };
+  }
+  if (canAccess(currentUser, 'social-resources') && operations.socialResourceMonitoring?.pendingDetections?.length > 0) {
+    return {
+      destination: { moduleId: 'social-resources' },
+      recommendation: 'Revisa la bandeja de detecciones oficiales antes de incorporar nuevas ayudas.'
     };
   }
   if (canAccess(currentUser, 'receipts') && operations.pendingReceipts.length > 0) {

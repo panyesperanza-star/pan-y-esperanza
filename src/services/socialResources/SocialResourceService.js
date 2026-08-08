@@ -1,3 +1,5 @@
+import { analyzeResourceCompatibility } from '../../lib/socialResourceRecommendations';
+
 export const SOCIAL_RESOURCE_CATEGORIES = [
   'Alimentación',
   'Vivienda',
@@ -16,6 +18,19 @@ export const SOCIAL_RESOURCE_CATEGORIES = [
 
 export const SOCIAL_RESOURCE_STATUSES = ['Activo', 'Proximamente', 'Cerrado', 'Pendiente de verificar'];
 export const SOCIAL_RESOURCE_SCOPES = ['municipal', 'autonomico', 'estatal', 'privado'];
+export const SOCIAL_RESOURCE_SOURCE_TYPES = ['estado_ministerio', 'comunidad_madrid', 'ayuntamiento_madrid', 'organismo_publico', 'otra_fuente_oficial'];
+export const SOCIAL_RESOURCE_SOURCE_STATUSES = ['Activa', 'Pausada', 'Archivada'];
+export const SOCIAL_RESOURCE_SOURCE_ACCESS_METHODS = ['api', 'feed', 'web_oficial', 'manual'];
+export const SOCIAL_RESOURCE_DETECTION_TYPES = [
+  'Nueva convocatoria',
+  'Apertura de plazo',
+  'Cambio de requisitos',
+  'Cambio de importe',
+  'Cambio de documentacion',
+  'Ampliacion de plazo',
+  'Cierre/caducidad'
+];
+export const SOCIAL_RESOURCE_DETECTION_STATUSES = ['Pendiente de revision', 'Aprobada', 'Descartada'];
 
 export const BENEFICIARY_RESOURCE_STATUSES = [
   'saved',
@@ -49,6 +64,10 @@ function cleanDate(value) {
   return value ? String(value).slice(0, 10) : null;
 }
 
+function cleanDateTime(value) {
+  return value ? String(value) : null;
+}
+
 function cleanInteger(value) {
   if (value === '' || value === null || value === undefined) return null;
   const number = Number(value);
@@ -57,6 +76,10 @@ function cleanInteger(value) {
 
 function pickAllowed(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
+}
+
+function cleanUuid(value) {
+  return value ? String(value) : null;
 }
 
 function nowISO() {
@@ -137,11 +160,84 @@ function actorName(user) {
   return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email || 'Usuario';
 }
 
+function cleanJson(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return value;
+}
+
+export function sanitizeSocialResourceSourcePayload(payload = {}, current = {}, context = {}) {
+  const name = cleanText(payload.name ?? current.name);
+  if (name.length < 3) throw new Error('El nombre de la fuente oficial es obligatorio.');
+  const officialUrl = cleanText(payload.official_url ?? current.official_url);
+  if (!officialUrl) throw new Error('La URL oficial es obligatoria para vigilar una fuente.');
+  const now = context.now || nowISO();
+  return {
+    name,
+    organization_name: cleanText(payload.organization_name ?? current.organization_name),
+    source_type: pickAllowed(cleanText(payload.source_type ?? current.source_type), SOCIAL_RESOURCE_SOURCE_TYPES, 'organismo_publico'),
+    scope: pickAllowed(cleanText(payload.scope ?? current.scope), SOCIAL_RESOURCE_SCOPES, 'municipal'),
+    official_url: officialUrl,
+    feed_url: cleanText(payload.feed_url ?? current.feed_url),
+    access_method: pickAllowed(cleanText(payload.access_method ?? current.access_method), SOCIAL_RESOURCE_SOURCE_ACCESS_METHODS, 'web_oficial'),
+    check_frequency_days: cleanInteger(payload.check_frequency_days ?? current.check_frequency_days) || 7,
+    status: pickAllowed(cleanText(payload.status ?? current.status), SOCIAL_RESOURCE_SOURCE_STATUSES, 'Activa'),
+    last_checked_at: cleanDateTime(payload.last_checked_at ?? current.last_checked_at),
+    last_check_status: cleanText(payload.last_check_status ?? current.last_check_status),
+    notes: cleanText(payload.notes ?? current.notes),
+    created_by: current.created_by || payload.created_by || context.userId || null,
+    updated_by: context.userId || payload.updated_by || current.updated_by || null,
+    created_at: current.created_at || payload.created_at || now,
+    updated_at: now
+  };
+}
+
+export function sanitizeSocialResourceDetectionPayload(payload = {}, current = {}, context = {}) {
+  const title = cleanText(payload.title ?? current.title);
+  if (title.length < 3) throw new Error('El titulo de la deteccion es obligatorio.');
+  const officialUrl = cleanText(payload.official_url ?? current.official_url);
+  if (!officialUrl) throw new Error('La deteccion necesita una URL oficial.');
+  const now = context.now || nowISO();
+  return {
+    source_id: cleanUuid(payload.source_id ?? current.source_id),
+    resource_id: cleanUuid(payload.resource_id ?? current.resource_id),
+    duplicate_resource_id: cleanUuid(payload.duplicate_resource_id ?? current.duplicate_resource_id),
+    detection_type: pickAllowed(cleanText(payload.detection_type ?? current.detection_type), SOCIAL_RESOURCE_DETECTION_TYPES, 'Nueva convocatoria'),
+    status: pickAllowed(cleanText(payload.status ?? current.status), SOCIAL_RESOURCE_DETECTION_STATUSES, 'Pendiente de revision'),
+    title,
+    official_url: officialUrl,
+    detected_at: cleanDateTime(payload.detected_at ?? current.detected_at) || now,
+    detected_by: cleanText(payload.detected_by ?? current.detected_by) || 'Vigilancia oficial',
+    change_summary: cleanText(payload.change_summary ?? current.change_summary),
+    changed_fields: cleanJson(payload.changed_fields ?? current.changed_fields, []),
+    previous_data: cleanJson(payload.previous_data ?? current.previous_data, {}),
+    new_data: cleanJson(payload.new_data ?? current.new_data, {}),
+    compatibility_count: cleanInteger(payload.compatibility_count ?? current.compatibility_count) || 0,
+    reviewed_by: cleanUuid(payload.reviewed_by ?? current.reviewed_by),
+    reviewed_by_name: cleanText(payload.reviewed_by_name ?? current.reviewed_by_name),
+    reviewed_at: cleanDateTime(payload.reviewed_at ?? current.reviewed_at),
+    decision: cleanText(payload.decision ?? current.decision),
+    review_notes: cleanText(payload.review_notes ?? current.review_notes),
+    created_at: current.created_at || payload.created_at || now,
+    updated_at: now
+  };
+}
+
 export class SocialResourceService {
   constructor({
     repository,
     resources = [],
     links = [],
+    sources = [],
+    detections = [],
+    beneficiaries = [],
+    documents = [],
     audit = async () => {},
     assertPermission = () => {},
     currentUser = null
@@ -150,6 +246,10 @@ export class SocialResourceService {
     this.repository = repository;
     this.resources = resources;
     this.links = links;
+    this.sources = sources;
+    this.detections = detections;
+    this.beneficiaries = beneficiaries;
+    this.documents = documents;
     this.audit = audit;
     this.assertPermission = assertPermission;
     this.currentUser = currentUser;
@@ -227,6 +327,92 @@ export class SocialResourceService {
     return true;
   }
 
+  async createSource(payload) {
+    this.assertPermission('social-resources', 'create');
+    const created = await this.repository.createSource(sanitizeSocialResourceSourcePayload(payload, {}, this.context()));
+    await this.audit(`Centro de Recursos Sociales: creo fuente vigilada ${created.name}`.trim());
+    return created;
+  }
+
+  async updateSource(id, payload) {
+    this.assertPermission('social-resources', 'edit');
+    const current = this.findSource(id);
+    if (!current) throw new Error('La fuente vigilada no existe.');
+    const updated = await this.repository.updateSource(id, sanitizeSocialResourceSourcePayload(payload, current, this.context()));
+    await this.audit(`Centro de Recursos Sociales: actualizo fuente vigilada ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async deleteSource(id) {
+    this.assertPermission('social-resources', 'delete');
+    const source = this.findSource(id);
+    if (!source) throw new Error('La fuente vigilada no existe.');
+    await this.repository.deleteSource(id);
+    await this.audit(`Centro de Recursos Sociales: elimino fuente vigilada ${source.name}`.trim());
+    return true;
+  }
+
+  async createDetection(payload) {
+    this.assertPermission('social-resources', 'edit');
+    const source = payload.source_id ? this.findSource(payload.source_id) : null;
+    const created = await this.repository.createDetection(sanitizeSocialResourceDetectionPayload({
+      ...payload,
+      official_url: payload.official_url || source?.official_url || '',
+      detected_by: payload.detected_by || 'Registro manual de vigilancia'
+    }, {}, this.context()));
+    await this.audit(`Centro de Recursos Sociales: registro deteccion pendiente ${created.title}`.trim());
+    return created;
+  }
+
+  async approveDetection(id, payload = {}) {
+    this.assertPermission('social-resources', 'edit');
+    const detection = this.findDetection(id);
+    if (!detection) throw new Error('La deteccion no existe.');
+    if (detection.status !== 'Pendiente de revision') throw new Error('La deteccion ya fue revisada.');
+
+    const context = this.context();
+    const source = this.findSource(detection.source_id);
+    const resourcePayload = detectionToResourcePayload(detection, source, payload.resource || {});
+    const duplicate = this.findDuplicateResource(detection, resourcePayload);
+    const resource = duplicate
+      ? await this.updateResource(duplicate.id, { ...resourcePayload, change_reason: detection.change_summary || 'Vigilancia oficial aprobada.' })
+      : await this.createResource(resourcePayload);
+    const compatibilityCount = this.countCompatibleBeneficiaries(resource);
+    const reviewed = await this.repository.updateDetection(id, {
+      ...sanitizeSocialResourceDetectionPayload(detection, detection, context),
+      status: 'Aprobada',
+      resource_id: resource.id,
+      duplicate_resource_id: duplicate?.id || detection.duplicate_resource_id || null,
+      compatibility_count: compatibilityCount,
+      reviewed_by: context.userId,
+      reviewed_by_name: context.userName,
+      reviewed_at: context.now,
+      decision: duplicate ? 'Aprobada y actualizada' : 'Aprobada e incorporada',
+      review_notes: cleanText(payload.review_notes)
+    });
+    await this.audit(`Centro de Recursos Sociales: aprobo deteccion ${detection.title}`.trim());
+    return { detection: reviewed, resource, compatibilityCount };
+  }
+
+  async discardDetection(id, payload = {}) {
+    this.assertPermission('social-resources', 'edit');
+    const detection = this.findDetection(id);
+    if (!detection) throw new Error('La deteccion no existe.');
+    if (detection.status !== 'Pendiente de revision') throw new Error('La deteccion ya fue revisada.');
+    const context = this.context();
+    const discarded = await this.repository.updateDetection(id, {
+      ...sanitizeSocialResourceDetectionPayload(detection, detection, context),
+      status: 'Descartada',
+      reviewed_by: context.userId,
+      reviewed_by_name: context.userName,
+      reviewed_at: context.now,
+      decision: 'Descartada',
+      review_notes: cleanText(payload.review_notes)
+    });
+    await this.audit(`Centro de Recursos Sociales: descarto deteccion ${detection.title}`.trim());
+    return discarded;
+  }
+
   context() {
     return {
       userId: this.currentUser?.id || null,
@@ -237,6 +423,41 @@ export class SocialResourceService {
 
   findResource(id) {
     return this.resources.find((resource) => resource.id === id);
+  }
+
+  findSource(id) {
+    return this.sources.find((source) => source.id === id);
+  }
+
+  findDetection(id) {
+    return this.detections.find((detection) => detection.id === id);
+  }
+
+  findDuplicateResource(detection, resourcePayload) {
+    const explicitId = detection.duplicate_resource_id || detection.resource_id;
+    if (explicitId) {
+      const explicit = this.findResource(explicitId);
+      if (explicit) return explicit;
+    }
+    const officialUrl = cleanText(resourcePayload.official_url || detection.official_url).toLowerCase();
+    if (officialUrl) {
+      const byUrl = this.resources.find((resource) => cleanText(resource.official_url || resource.web_url).toLowerCase() === officialUrl);
+      if (byUrl) return byUrl;
+    }
+    const name = cleanText(resourcePayload.name).toLowerCase();
+    const organization = cleanText(resourcePayload.organization_name).toLowerCase();
+    return this.resources.find((resource) => cleanText(resource.name).toLowerCase() === name && cleanText(resource.organization_name).toLowerCase() === organization) || null;
+  }
+
+  countCompatibleBeneficiaries(resource) {
+    return this.beneficiaries
+      .filter((beneficiary) => beneficiary.is_active !== false)
+      .filter((beneficiary) => {
+        const beneficiaryDocuments = this.documents.filter((document) => document.beneficiary_id === beneficiary.id);
+        const linkedResourceIds = new Set(this.links.filter((link) => link.beneficiary_id === beneficiary.id).map((link) => link.resource_id));
+        const analysis = analyzeResourceCompatibility(resource, beneficiary, beneficiaryDocuments, linkedResourceIds);
+        return ['high', 'possible'].includes(analysis.level.id);
+      }).length;
   }
 
   async recordHistory(resourceId, changeType, previousData, newData, changedFields, context, reason = '') {
@@ -252,6 +473,39 @@ export class SocialResourceService {
       created_at: context.now
     });
   }
+}
+
+function detectionToResourcePayload(detection, source, overrides = {}) {
+  const data = cleanJson(detection.new_data, {});
+  return {
+    name: data.name || detection.title,
+    organization_name: data.organization_name || source?.organization_name || source?.name || 'Organismo oficial',
+    category: data.category || 'Otros',
+    description: data.description || detection.change_summary || '',
+    requirements: data.requirements || '',
+    target_audience: data.target_audience || '',
+    required_documents: data.required_documents || '',
+    benefit: data.benefit || '',
+    opens_at: data.opens_at || '',
+    deadline_at: data.deadline_at || '',
+    address: data.address || '',
+    municipality: data.municipality || '',
+    phone: data.phone || '',
+    email: data.email || '',
+    web_url: data.web_url || detection.official_url || source?.official_url || '',
+    official_url: data.official_url || detection.official_url || source?.official_url || '',
+    application_method: data.application_method || '',
+    status: data.status || (detection.detection_type === 'Cierre/caducidad' ? 'Cerrado' : 'Activo'),
+    scope: data.scope || source?.scope || 'municipal',
+    last_verified_at: data.last_verified_at || nowISO().slice(0, 10),
+    age_min: data.age_min ?? '',
+    age_max: data.age_max ?? '',
+    family_situation: data.family_situation || '',
+    employment_situation: data.employment_situation || '',
+    housing_situation: data.housing_situation || '',
+    notes: data.notes || `Incorporado desde vigilancia oficial: ${source?.name || detection.detected_by || 'fuente oficial'}`,
+    ...overrides
+  };
 }
 
 function changedResourceFields(current, next) {

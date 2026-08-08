@@ -60,6 +60,8 @@ const TABLES = [
   'beneficiary_social_resources',
   'social_resource_followups',
   'social_resource_history',
+  'social_resource_sources',
+  'social_resource_detections',
   'roles',
   'audit_logs',
   'platform_maintenance_logs',
@@ -109,6 +111,8 @@ const OPTIONAL_TABLES = new Set([
   'beneficiary_social_resources',
   'social_resource_followups',
   'social_resource_history',
+  'social_resource_sources',
+  'social_resource_detections',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
