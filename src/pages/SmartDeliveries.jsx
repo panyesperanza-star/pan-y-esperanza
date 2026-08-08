@@ -17,11 +17,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const scannerRegionId = useRef(`smart-delivery-reader-${Math.random().toString(36).slice(2)}`).current;
   const scannerRef = useRef(null);
   const scanLockedRef = useRef(false);
-  const usbReaderInputRef = useRef(null);
   const usbReaderBufferRef = useRef('');
   const usbReaderTimerRef = useRef(null);
-  const usbReaderFocusTimerRef = useRef(null);
   const usbReaderReadyRef = useRef(false);
+  const usbReaderProcessedEventsRef = useRef(new WeakSet());
+  const usbReaderProcessorRef = useRef(null);
   const resetTimerRef = useRef(null);
   const prefilledProfileRef = useRef('');
   const duplicateLogRef = useRef('');
@@ -46,6 +46,7 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
   const [closeConfirmation, setCloseConfirmation] = useState('');
   const [closeRepartoError, setCloseRepartoError] = useState('');
   const [closingReparto, setClosingReparto] = useState(false);
+  const [usbDiagnostic, setUsbDiagnostic] = useState(() => createUsbDiagnostic());
   const directory = useMemo(() => buildBeneficiaryCredentialDirectory(data || {}), [data]);
   const currentRepartoBatch = useMemo(() => buildCurrentRepartoBatch(data?.inventory_items || [], batchConfig), [data?.inventory_items, batchConfig]);
   const organization = data?.organization_settings?.[0] || {};
@@ -62,18 +63,74 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     && !customizeTarget
     && !closeDialogOpen
     && result?.type !== 'beneficiary';
+  usbReaderProcessorRef.current = processUsbCredential;
 
   useEffect(() => () => {
     stopCamera();
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
     if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
-    if (usbReaderFocusTimerRef.current) window.clearTimeout(usbReaderFocusTimerRef.current);
   }, []);
 
   useEffect(() => {
     usbReaderReadyRef.current = usbReaderReady;
-    if (usbReaderReady) focusUsbReader();
+    updateUsbDiagnostic({
+      listening: usbReaderReady,
+      result: usbReaderReady ? 'Escucha USB activa. Escanee una credencial.' : 'Escucha USB pausada por flujo activo.'
+    });
   }, [usbReaderReady]);
+
+  useEffect(() => {
+    function handleGlobalUsbKeyDown(event) {
+      if (usbReaderProcessedEventsRef.current.has(event)) return;
+      usbReaderProcessedEventsRef.current.add(event);
+
+      if (isTextEditingElement(event.target)) {
+        updateUsbDiagnostic({
+          ignoredReason: 'Ignorado: usuario escribiendo en un campo manual.',
+          lastKey: describeUsbKey(event)
+        });
+        return;
+      }
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      if (!usbReaderReadyRef.current && !usbReaderBufferRef.current) return;
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        updateUsbDiagnostic({ enterReceived: true, lastKey: 'Enter' });
+        consumeUsbReaderBuffer();
+        return;
+      }
+
+      if (event.key.length !== 1) {
+        updateUsbDiagnostic({ lastKey: describeUsbKey(event) });
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      usbReaderBufferRef.current += event.key;
+      updateUsbDiagnostic({
+        lastKey: describeUsbKey(event),
+        keyCount: usbReaderBufferRef.current.length,
+        buffer: usbReaderBufferRef.current,
+        enterReceived: false,
+        ignoredReason: '',
+        result: 'USB recibido. Acumulando lectura...'
+      });
+      if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
+      usbReaderTimerRef.current = window.setTimeout(() => {
+        consumeUsbReaderBuffer();
+      }, 350);
+    }
+
+    window.addEventListener('keydown', handleGlobalUsbKeyDown, true);
+    document.addEventListener('keydown', handleGlobalUsbKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalUsbKeyDown, true);
+      document.removeEventListener('keydown', handleGlobalUsbKeyDown, true);
+    };
+  }, []);
 
   useEffect(() => {
     setBatchConfig((current) => ensureBatchConfigRules(current, data?.inventory_items || []));
@@ -183,56 +240,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     }
   }
 
-  function focusUsbReader() {
-    if (usbReaderFocusTimerRef.current) window.clearTimeout(usbReaderFocusTimerRef.current);
-    usbReaderFocusTimerRef.current = window.setTimeout(() => {
-      if (!usbReaderReadyRef.current) return;
-      const active = document.activeElement;
-      if (isTextEditingElement(active)) return;
-      usbReaderInputRef.current?.focus({ preventScroll: true });
-    }, 40);
-  }
-
-  function handleUsbReaderBlur() {
-    focusUsbReader();
-  }
-
-  function handleUsbReaderKeyDown(event) {
-    if (!usbReaderReadyRef.current) return;
-    if (event.ctrlKey || event.altKey || event.metaKey) return;
-
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      const consumed = consumeUsbReaderBuffer();
-      if (consumed) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      return;
-    }
-
-    if (event.key.length !== 1) return;
-    usbReaderBufferRef.current += event.key;
-    if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
-    usbReaderTimerRef.current = window.setTimeout(() => {
-      consumeUsbReaderBuffer();
-    }, 120);
-  }
-
-  function handleUsbReaderInput(event) {
-    const value = event.currentTarget.value || '';
-    usbReaderBufferRef.current = value;
-    if (usbReaderTimerRef.current) window.clearTimeout(usbReaderTimerRef.current);
-    usbReaderTimerRef.current = window.setTimeout(() => {
-      consumeUsbReaderBuffer();
-    }, 120);
-  }
-
-  function handleUsbReaderPaste(event) {
-    const value = event.clipboardData?.getData('text') || '';
-    if (!parseOfficialCredentialQr(normalizeUsbReaderValue(value))) return;
-    event.preventDefault();
-    usbReaderBufferRef.current = value;
-    consumeUsbReaderBuffer();
+  function updateUsbDiagnostic(patch = {}) {
+    setUsbDiagnostic((current) => ({
+      ...current,
+      ...patch,
+      updatedAt: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    }));
   }
 
   function consumeUsbReaderBuffer() {
@@ -242,24 +255,31 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
       window.clearTimeout(usbReaderTimerRef.current);
       usbReaderTimerRef.current = null;
     }
-    if (usbReaderInputRef.current) usbReaderInputRef.current.value = '';
-    if (!rawValue || !parseOfficialCredentialQr(rawValue)) return false;
-    processUsbCredential(rawValue);
+    if (!rawValue) return false;
+    usbReaderProcessorRef.current?.(rawValue);
     return true;
   }
 
   function processUsbCredential(rawValue) {
+    const payload = parseOfficialCredentialQr(rawValue);
+    const extractedId = normalizeCredentialIdentifier(payload?.credential_id || payload?.credential_uid || '');
+    updateUsbDiagnostic({
+      finalText: rawValue,
+      extractedId: extractedId || 'No extraido',
+      result: payload ? 'Texto final recibido. Enviando a handleCredential().' : 'Texto final recibido, pero no es un QR oficial reconocido.'
+    });
+
     if (!usbReaderReadyRef.current) return;
     if (repartoClosed) {
       setCameraError('El reparto esta cerrado. Reabre el acta con un usuario autorizado para volver a escanear.');
       setScanStatus('Reparto cerrado.');
-      focusUsbReader();
+      updateUsbDiagnostic({ result: 'Bloqueado: reparto cerrado.' });
       return;
     }
     if (!canScan) {
       setCameraError('Tu usuario no tiene permiso para usar el modo reparto.');
       setScanStatus('Escaneo no autorizado.');
-      focusUsbReader();
+      updateUsbDiagnostic({ result: 'Bloqueado: usuario sin permiso para Smart Deliveries.' });
       return;
     }
 
@@ -269,14 +289,18 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     setSignatureFlow(null);
     setScanStatus('QR leido. Identificando beneficiario...');
     void stopCamera({ silent: true });
-    handleCredential(rawValue);
-    focusUsbReader();
+    const outcome = handleCredential(rawValue);
+    updateUsbDiagnostic({
+      extractedId: outcome.credentialId || extractedId || 'No extraido',
+      result: outcome.message || 'handleCredential() ejecutado.'
+    });
   }
 
   function handleCredential(rawValue) {
     setManualMatches([]);
     setRegisterError('');
     const payload = parseOfficialCredentialQr(rawValue);
+    const scannedCredentialId = normalizeCredentialIdentifier(payload?.credential_id || payload?.credential_uid || '');
     if (!payload) {
       setResult({
         type: 'invalid',
@@ -284,7 +308,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         message: 'Esta lectura no corresponde a una credencial oficial de ALTHEMON.'
       });
       setScanStatus('QR no reconocido.');
-      return;
+      return {
+        ok: false,
+        credentialId: '',
+        message: 'handleCredential(): QR no reconocido.'
+      };
     }
     const match = findBeneficiaryCredentialMatch(payload, directory);
     if (!match) {
@@ -294,7 +322,11 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         message: 'No se ha encontrado una credencial activa asociada a un beneficiario.'
       });
       setScanStatus('Credencial no localizada.');
-      return;
+      return {
+        ok: false,
+        credentialId: scannedCredentialId,
+        message: `ID extraido: ${scannedCredentialId || 'sin ID'} -> Credencial no localizada.`
+      };
     }
     if (match.invalidCredential) {
       appendRepartoEvent('incident', {
@@ -309,12 +341,21 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         message: match.credentialStatusReason || match.message || 'Esta credencial no esta activa.'
       });
       setScanStatus('Credencial anulada.');
-      return;
+      return {
+        ok: false,
+        credentialId: match.credentialId || scannedCredentialId,
+        message: `ID extraido: ${match.credentialId || scannedCredentialId || 'sin ID'} -> Credencial encontrada pero anulada/no activa.`
+      };
     }
     setDeliveryCustomization(null);
     setCustomizeTarget(null);
     setResult({ type: 'beneficiary', source: 'qr', entry: match, beneficiary: match.record });
     setScanStatus('Beneficiario identificado.');
+    return {
+      ok: true,
+      credentialId: match.credentialId || scannedCredentialId,
+      message: `ID extraido: ${match.credentialId || scannedCredentialId || 'sin ID'} -> Credencial encontrada -> Beneficiario identificado: ${match.record?.full_name || 'Beneficiario'}.`
+    };
   }
 
   function selectBeneficiary(beneficiary, source = 'manual', entryOverride = null) {
@@ -657,7 +698,6 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     resetTimerRef.current = window.setTimeout(() => {
       setFeedback(null);
       startCamera();
-      focusUsbReader();
     }, delayMs);
   }
 
@@ -665,7 +705,6 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
     setFeedback(null);
     startCamera();
-    focusUsbReader();
   }
 
   return (
@@ -713,20 +752,6 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
 
         <section className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(28rem,1.18fr)]">
           <div className="rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-2xl shadow-brand-900/10 backdrop-blur">
-            <input
-              ref={usbReaderInputRef}
-              type="text"
-              aria-label="Entrada del lector USB de credenciales"
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              tabIndex={-1}
-              className="sr-only"
-              onBlur={handleUsbReaderBlur}
-              onInput={handleUsbReaderInput}
-              onKeyDown={handleUsbReaderKeyDown}
-              onPaste={handleUsbReaderPaste}
-            />
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-700">Identificacion</p>
@@ -784,6 +809,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
                 <Button variant="danger" className="mt-3" onClick={() => startCamera()}><RefreshCw size={16} /> Reintentar</Button>
               </div>
             )}
+
+            <UsbReaderDiagnosticPanel diagnostic={usbDiagnostic} />
 
             <BeneficiaryQuickSearch
               className="mt-5"
@@ -847,6 +874,41 @@ function ReadyPanel() {
       <IdCard className="text-brand-600" size={68} />
       <h2 className="mt-5 text-3xl font-black text-ink">Esperando beneficiario</h2>
       <p className="mt-3 max-w-md text-base font-semibold text-slate-600">Escanea una credencial oficial o busca por nombre, codigo PYE, DNI o telefono.</p>
+    </div>
+  );
+}
+
+function UsbReaderDiagnosticPanel({ diagnostic }) {
+  return (
+    <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Diagnostico temporal lector USB</p>
+          <h3 className="mt-1 text-lg font-black">Eyoyo HID / teclado</h3>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-black ${diagnostic.listening ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+          {diagnostic.listening ? 'Escucha activa' : 'Pausado'}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <UsbDiagnosticLine label="Tecla recibida" value={diagnostic.lastKey || '-'} />
+        <UsbDiagnosticLine label="Buffer acumulado" value={diagnostic.buffer || '-'} mono />
+        <UsbDiagnosticLine label="Evento Enter" value={diagnostic.enterReceived ? 'Recibido' : 'Pendiente'} />
+        <UsbDiagnosticLine label="Texto final recibido" value={diagnostic.finalText || '-'} mono />
+        <UsbDiagnosticLine label="ID extraido" value={diagnostic.extractedId || '-'} mono />
+        <UsbDiagnosticLine label="Resultado handleCredential()" value={diagnostic.result || '-'} />
+        {diagnostic.ignoredReason && <UsbDiagnosticLine label="Ignorado" value={diagnostic.ignoredReason} />}
+        <UsbDiagnosticLine label="Ultima actualizacion" value={diagnostic.updatedAt || '-'} />
+      </div>
+    </section>
+  );
+}
+
+function UsbDiagnosticLine({ label, value, mono = false }) {
+  return (
+    <div className="rounded-xl bg-white/75 p-2">
+      <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-amber-700">{label}</p>
+      <p className={`mt-0.5 break-words text-sm font-bold text-slate-900 ${mono ? 'font-mono' : ''}`}>{truncateDiagnostic(value)}</p>
     </div>
   );
 }
@@ -2715,6 +2777,32 @@ function normalizeUsbReaderValue(value) {
   return String(value || '')
     .replace(/[\r\n\t]+/g, '')
     .trim();
+}
+
+function createUsbDiagnostic() {
+  return {
+    listening: false,
+    lastKey: '',
+    keyCount: 0,
+    buffer: '',
+    enterReceived: false,
+    finalText: '',
+    extractedId: '',
+    result: 'Esperando activacion del modo escucha USB.',
+    ignoredReason: '',
+    updatedAt: ''
+  };
+}
+
+function describeUsbKey(event) {
+  if (!event) return '';
+  if (event.key === ' ') return 'Espacio';
+  return event.key || event.code || '';
+}
+
+function truncateDiagnostic(value) {
+  const text = String(value || '');
+  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
 }
 
 function isTextEditingElement(element) {
