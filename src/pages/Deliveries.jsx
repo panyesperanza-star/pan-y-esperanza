@@ -551,14 +551,14 @@ function DeliverySignatureForm({ delivery, beneficiary, signatureRequired, busy,
         <p><strong>Beneficiario:</strong> {beneficiary?.full_name || delivery.beneficiary_name || '-'}</p>
       </div>
       <SignatureCaptureField
-        label="Firma digital del receptor"
+        label="Firma de quien recoge"
         value={signature}
         required={signatureRequired}
         onChange={setSignature}
         description="Se guardara como PNG y quedara asociada a la entrega, al beneficiario y al justificante."
       />
       <SignatureCaptureField
-        label="Firma digital del responsable"
+        label="Firma del usuario que entrega"
         value={responsibleSignature}
         onChange={setResponsibleSignature}
       />
@@ -604,48 +604,82 @@ function SignatureModal({ title, initialValue, required, onClose, onConfirm }) {
   const [draft, setDraft] = useState(initialValue || '');
   const [error, setError] = useState('');
 
-  function confirm() {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.userSelect = 'none';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.touchAction = previousTouchAction;
+    };
+  }, []);
+
+  async function confirm() {
     setError('');
     if (required && !draft) {
       setError('La firma digital es obligatoria.');
       return;
     }
-    onConfirm(draft);
+    const optimized = draft ? await cropSignatureDataUrl(draft).catch(() => draft) : '';
+    onConfirm(optimized);
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
-      <div className="space-y-4">
-        <SignatureCanvas value={draft} onChange={setDraft} />
-        {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
-        <div className="flex flex-wrap justify-between gap-2">
-          <Button type="button" variant="secondary" onClick={() => setDraft('')}><Eraser size={16} /> Limpiar firma</Button>
-          <Button type="button" onClick={confirm}><PenLine size={16} /> Confirmar firma</Button>
+    <div className="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-white text-ink">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-6">
+        <h3 className="text-xl font-black tracking-tight sm:text-2xl">{title}</h3>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={() => setDraft('')}><Eraser size={16} /> LIMPIAR</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>CANCELAR</Button>
+          <Button type="button" onClick={confirm}><PenLine size={16} /> CONFIRMAR FIRMA</Button>
         </div>
       </div>
-    </Modal>
+      {error && <p className="mx-4 mt-3 shrink-0 rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700 sm:mx-6">{error}</p>}
+      <SignatureCanvas value={draft} onChange={setDraft} />
+    </div>
   );
 }
 
 function SignatureCanvas({ value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
-  const [pointerDiagnostic, setPointerDiagnostic] = useState(() => createSignaturePointerDiagnostic());
+  const lastPointRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.lineWidth = 2;
-    context.strokeStyle = '#17211b';
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    if (value) {
-      const image = new Image();
-      image.onload = () => context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      image.src = value;
+    if (!canvas) return undefined;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(rect.width * ratio));
+      canvas.height = Math.max(1, Math.round(rect.height * ratio));
+      const context = canvas.getContext('2d');
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      context.lineWidth = Math.max(3, 3.2 * ratio);
+      context.strokeStyle = '#17211b';
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const source = value ? value : null;
+      if (source) {
+        const image = new Image();
+        image.onload = () => context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        image.src = source;
+      }
     }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    window.visualViewport?.addEventListener('resize', resizeCanvas);
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+      window.visualViewport?.removeEventListener('resize', resizeCanvas);
+    };
   }, [value]);
 
   function point(event) {
@@ -657,131 +691,127 @@ function SignatureCanvas({ value, onChange }) {
     };
   }
 
-  function updatePointerDiagnostic(event) {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const viewport = window.visualViewport;
-    const finalPoint = point(event);
-    setPointerDiagnostic({
-      pointerType: event.pointerType || '-',
-      clientX: formatPointerNumber(event.clientX),
-      clientY: formatPointerNumber(event.clientY),
-      screenX: formatPointerNumber(event.screenX),
-      screenY: formatPointerNumber(event.screenY),
-      offsetX: formatPointerNumber(event.nativeEvent?.offsetX ?? event.offsetX),
-      offsetY: formatPointerNumber(event.nativeEvent?.offsetY ?? event.offsetY),
-      pressure: formatPointerNumber(event.pressure, 3),
-      viewport: `${formatPointerNumber(viewport?.width || window.innerWidth)} x ${formatPointerNumber(viewport?.height || window.innerHeight)}`,
-      canvasRect: `left ${formatPointerNumber(rect.left)} | top ${formatPointerNumber(rect.top)} | width ${formatPointerNumber(rect.width)} | height ${formatPointerNumber(rect.height)}`,
-      canvasPoint: `x ${formatPointerNumber(finalPoint.x)} | y ${formatPointerNumber(finalPoint.y)}`,
-      pointerId: String(event.pointerId ?? '-'),
-      buttons: String(event.buttons ?? '-'),
-      updatedAt: new Date().toLocaleTimeString()
-    });
-  }
-
   function start(event) {
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     drawingRef.current = true;
-    updatePointerDiagnostic(event);
     const context = canvasRef.current.getContext('2d');
     const current = point(event);
+    lastPointRef.current = current;
     context.beginPath();
     context.moveTo(current.x, current.y);
   }
 
   function draw(event) {
-    updatePointerDiagnostic(event);
     if (!drawingRef.current) return;
     event.preventDefault();
     const context = canvasRef.current.getContext('2d');
-    const current = point(event);
-    context.lineTo(current.x, current.y);
-    context.stroke();
+    const pointerEvent = event.nativeEvent || event;
+    const events = typeof pointerEvent.getCoalescedEvents === 'function'
+      ? pointerEvent.getCoalescedEvents()
+      : [pointerEvent];
+    events.forEach((coalescedEvent) => {
+      const current = point(coalescedEvent);
+      const previous = lastPointRef.current || current;
+      const midPoint = {
+        x: (previous.x + current.x) / 2,
+        y: (previous.y + current.y) / 2
+      };
+      context.quadraticCurveTo(previous.x, previous.y, midPoint.x, midPoint.y);
+      context.stroke();
+      lastPointRef.current = current;
+    });
   }
 
   function stop(event) {
-    updatePointerDiagnostic(event);
     if (!drawingRef.current) return;
     drawingRef.current = false;
+    lastPointRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     onChange(canvasRef.current.toDataURL('image/png'));
   }
 
   return (
-    <div className="rounded-md border border-slate-300 bg-white p-3">
+    <div className="min-h-0 flex-1 bg-slate-50 p-3 sm:p-4">
       <canvas
         ref={canvasRef}
-        width="720"
-        height="220"
-        className="h-44 w-full touch-none rounded-md border border-dashed border-slate-300 bg-white"
+        className="h-full min-h-[calc(100vh-6.5rem)] w-full touch-none select-none rounded-2xl border-2 border-dashed border-brand-200 bg-white shadow-inner"
         onPointerDown={start}
         onPointerMove={draw}
         onPointerUp={stop}
         onPointerCancel={stop}
-        onPointerLeave={stop}
       />
-      <p className="mt-2 text-xs text-slate-500">Firma con raton o pantalla tactil dentro del recuadro.</p>
-      <SignaturePointerDiagnosticPanel diagnostic={pointerDiagnostic} />
     </div>
   );
 }
 
-function SignaturePointerDiagnosticPanel({ diagnostic }) {
-  return (
-    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
-      <p className="font-black uppercase tracking-[0.16em] text-amber-800">Diagnostico temporal XP-Pen</p>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <SignatureDiagnosticLine label="pointerType" value={diagnostic.pointerType} />
-        <SignatureDiagnosticLine label="pointerId / buttons" value={`${diagnostic.pointerId} / ${diagnostic.buttons}`} />
-        <SignatureDiagnosticLine label="clientX / clientY" value={`${diagnostic.clientX} / ${diagnostic.clientY}`} />
-        <SignatureDiagnosticLine label="screenX / screenY" value={`${diagnostic.screenX} / ${diagnostic.screenY}`} />
-        <SignatureDiagnosticLine label="offsetX / offsetY" value={`${diagnostic.offsetX} / ${diagnostic.offsetY}`} />
-        <SignatureDiagnosticLine label="pressure" value={diagnostic.pressure} />
-        <SignatureDiagnosticLine label="viewport" value={diagnostic.viewport} />
-        <SignatureDiagnosticLine label="boundingRect canvas" value={diagnostic.canvasRect} />
-        <SignatureDiagnosticLine label="X/Y enviados al canvas" value={diagnostic.canvasPoint} />
-        <SignatureDiagnosticLine label="actualizado" value={diagnostic.updatedAt} />
-      </div>
-      <p className="mt-2 font-semibold text-amber-800">Mueve el lapiz por las 4 esquinas y el centro de la XP-Pen. Este panel no cambia la logica; solo muestra las coordenadas recibidas.</p>
-    </div>
-  );
+async function cropSignatureDataUrl(dataUrl) {
+  const image = await loadSignatureImage(dataUrl);
+  const source = document.createElement('canvas');
+  source.width = image.naturalWidth || image.width;
+  source.height = image.naturalHeight || image.height;
+  const context = source.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, source.width, source.height);
+  context.drawImage(image, 0, 0, source.width, source.height);
+  const imageData = context.getImageData(0, 0, source.width, source.height);
+  const bounds = findSignatureBounds(imageData);
+  if (!bounds) return dataUrl;
+
+  const padding = Math.max(12, Math.round(Math.max(bounds.width, bounds.height) * 0.08));
+  const sx = Math.max(0, bounds.left - padding);
+  const sy = Math.max(0, bounds.top - padding);
+  const sw = Math.min(source.width - sx, bounds.width + padding * 2);
+  const sh = Math.min(source.height - sy, bounds.height + padding * 2);
+  const output = document.createElement('canvas');
+  output.width = sw;
+  output.height = sh;
+  const outputContext = output.getContext('2d');
+  outputContext.fillStyle = '#ffffff';
+  outputContext.fillRect(0, 0, output.width, output.height);
+  outputContext.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh);
+  return output.toDataURL('image/png');
 }
 
-function SignatureDiagnosticLine({ label, value }) {
-  return (
-    <div className="rounded-lg bg-white/75 px-2 py-1">
-      <span className="block font-black uppercase tracking-wide text-amber-700">{label}</span>
-      <span className="break-all font-mono text-[0.72rem] font-bold text-slate-900">{value || '-'}</span>
-    </div>
-  );
+function loadSignatureImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
 }
 
-function createSignaturePointerDiagnostic() {
+function findSignatureBounds(imageData) {
+  const { data, width, height } = imageData;
+  let left = width;
+  let right = 0;
+  let top = height;
+  let bottom = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const alpha = data[index + 3];
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+      if (alpha > 20 && (red < 245 || green < 245 || blue < 245)) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (left > right || top > bottom) return null;
   return {
-    pointerType: '-',
-    pointerId: '-',
-    buttons: '-',
-    clientX: '-',
-    clientY: '-',
-    screenX: '-',
-    screenY: '-',
-    offsetX: '-',
-    offsetY: '-',
-    pressure: '-',
-    viewport: '-',
-    canvasRect: '-',
-    canvasPoint: '-',
-    updatedAt: 'Esperando movimiento del lapiz.'
+    left,
+    right,
+    top,
+    bottom,
+    width: right - left + 1,
+    height: bottom - top + 1
   };
-}
-
-function formatPointerNumber(value, digits = 1) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '-';
-  return number.toFixed(digits);
 }
 
 function toDateTimeLocal(value) {
