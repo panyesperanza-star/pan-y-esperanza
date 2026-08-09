@@ -415,6 +415,8 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
     financial_account_id: accounts[0]?.id || '',
     payment_method: 'Transferencia',
     reference: initialType === 'donation_money' ? nextAccountingDonationReference(data, initialOperationAt) : '',
+    donor_id: '',
+    donor_selection_id: '',
     contact_name: '',
     supplier_name: '',
     donor_contact_id: '',
@@ -1106,7 +1108,7 @@ function ContactFields({ form, update, beneficiaries, data, actions }) {
     );
   }
   if (form.operation_type === 'donation_money' || form.operation_type === 'donation_in_kind') {
-    return <DonorSelector form={form} update={update} contacts={data.accounting_contacts || []} actions={actions} />;
+    return <DonorSelector form={form} update={update} contacts={data.accounting_contacts || []} donors={data.donors || []} actions={actions} />;
   }
   if (form.operation_type === 'loan_received') {
     return (
@@ -1132,30 +1134,57 @@ function ContactFields({ form, update, beneficiaries, data, actions }) {
   return null;
 }
 
-function DonorSelector({ form, update, contacts, actions }) {
+function DonorSelector({ form, update, contacts, donors: crmDonors = [], actions }) {
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [createdDonors, setCreatedDonors] = useState([]);
-  const donors = useMemo(() => {
-    const byId = new Map();
+  const donorOptions = useMemo(() => {
+    const byKey = new Map();
+    const crmByEmail = new Map((crmDonors || []).filter((donor) => donor.email || donor.access_email).map((donor) => [normalize(donor.email || donor.access_email), donor]));
+    const crmByName = new Map((crmDonors || []).filter((donor) => donor.name).map((donor) => [normalize(donor.name), donor]));
     [...(contacts || []), ...createdDonors]
       .filter((contact) => normalize(contact.contact_type) === 'donor')
-      .forEach((contact) => byId.set(contact.id, contact));
-    return [...byId.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  }, [contacts, createdDonors]);
-  const filteredDonors = donors.filter((donor) => normalize([
+      .forEach((contact) => {
+        const linkedDonor = crmByEmail.get(normalize(contact.email)) || crmByName.get(normalize(contact.name)) || null;
+        byKey.set(`contact:${contact.id}`, {
+          ...contact,
+          optionId: `contact:${contact.id}`,
+          source: 'contact',
+          donor_id: linkedDonor?.id || ''
+        });
+      });
+    (crmDonors || []).forEach((donor) => {
+      const duplicatedByContact = [...byKey.values()].some((option) => (
+        (donor.email && option.email && normalize(option.email) === normalize(donor.email))
+        || normalize(option.name) === normalize(donor.name)
+      ));
+      if (duplicatedByContact) return;
+      byKey.set(`donor:${donor.id}`, {
+        ...donor,
+        optionId: `donor:${donor.id}`,
+        source: 'donor',
+        donor_id: donor.id,
+        contact_type: 'donor'
+      });
+    });
+    return [...byKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }, [contacts, createdDonors, crmDonors]);
+  const filteredDonors = donorOptions.filter((donor) => normalize([
     donor.name,
-    donor.email,
+    donor.email || donor.access_email,
     donor.phone,
     donor.address,
+    donor.code,
     donor.notes
   ].join(' ')).includes(normalize(query)));
-  const selectedDonor = donors.find((donor) => donor.id === form.donor_contact_id) || null;
+  const selectedDonor = donorOptions.find((donor) => donor.optionId === (form.donor_selection_id || `contact:${form.donor_contact_id}`)) || null;
 
-  function selectDonor(donorId) {
-    const donor = donors.find((item) => item.id === donorId);
+  function selectDonor(optionId) {
+    const donor = donorOptions.find((item) => item.optionId === optionId);
     if (!donor) {
       update({
+        donor_id: '',
+        donor_selection_id: '',
         donor_contact_id: '',
         donor_name: '',
         donor_kind: 'Particular',
@@ -1168,11 +1197,13 @@ function DonorSelector({ form, update, contacts, actions }) {
     }
     const meta = accountingDonorMetadata(donor);
     update({
-      donor_contact_id: donor.id,
+      donor_id: donor.donor_id || '',
+      donor_selection_id: donor.optionId,
+      donor_contact_id: donor.source === 'contact' ? donor.id : '',
       donor_name: donor.name || '',
-      donor_kind: meta.kind || inferAccountingDonorKind(donor.name),
+      donor_kind: donor.type || meta.kind || inferAccountingDonorKind(donor.name),
       contact_document_id: donor.document_id || '',
-      contact_email: donor.email || '',
+      contact_email: donor.email || donor.access_email || '',
       contact_phone: donor.phone || '',
       contact_address: donor.address || ''
     });
@@ -1202,6 +1233,8 @@ function DonorSelector({ form, update, contacts, actions }) {
   function selectCreatedDonor(donor) {
     const meta = accountingDonorMetadata(donor);
     update({
+      donor_id: '',
+      donor_selection_id: `contact:${donor.id}`,
       donor_contact_id: donor.id,
       donor_name: donor.name || '',
       donor_kind: meta.kind || inferAccountingDonorKind(donor.name),
@@ -1219,9 +1252,9 @@ function DonorSelector({ form, update, contacts, actions }) {
           <input className={inputClass} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, teléfono, email o dirección" />
         </FormField>
         <FormField label="Seleccionar" required>
-          <select className={inputClass} required value={form.donor_contact_id || ''} onChange={(event) => selectDonor(event.target.value)}>
+          <select className={inputClass} required value={form.donor_selection_id || (form.donor_contact_id ? `contact:${form.donor_contact_id}` : '')} onChange={(event) => selectDonor(event.target.value)}>
             <option value="">Selecciona un donante</option>
-            {filteredDonors.map((donor) => <option key={donor.id} value={donor.id}>{donor.name}</option>)}
+            {filteredDonors.map((donor) => <option key={donor.optionId} value={donor.optionId}>{donor.name}{donor.source === 'donor' ? ' (CRM)' : ''}</option>)}
           </select>
         </FormField>
         <Button className="h-10 px-3" onClick={() => setCreating(true)} title="Nuevo donante"><Plus size={18} /><span className="sr-only">Nuevo donante</span></Button>
