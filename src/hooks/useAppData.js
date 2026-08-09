@@ -74,6 +74,7 @@ const EMPTY_APP_DATA = Object.freeze({
   inventory_items: EMPTY_TABLE,
   inventory_movements: EMPTY_TABLE,
   donations: EMPTY_TABLE,
+  donation_products: EMPTY_TABLE,
   accounting_events: EMPTY_TABLE,
   financial_accounts: EMPTY_TABLE,
   cash_bank_movements: EMPTY_TABLE,
@@ -1269,7 +1270,7 @@ export function useAppData(enabled = true, currentUser = null) {
           : payload.document_number || reference,
         reference
       }, amount, date, contact?.id || null, true);
-      const { donation, inventoryMovement } = await createDonacionService().recordInKindDonation({
+      const { donation, donationProduct, inventoryMovement } = await createDonacionService().recordInKindDonation({
         payload,
         item,
         quantity,
@@ -1288,6 +1289,8 @@ export function useAppData(enabled = true, currentUser = null) {
         currency: 'EUR',
         source_module: 'donations',
         source_record_id: donation.id,
+        donation_id: donation.id,
+        donation_product_id: donationProduct?.id || null,
         inventory_item_id: item.id,
         contact_id: contact?.id || null,
         quantity,
@@ -1297,6 +1300,20 @@ export function useAppData(enabled = true, currentUser = null) {
         ...userMeta()
       });
       await accountingAuditTrail('social_value_events', socialEvent.id, 'create', null, socialEvent);
+      if (donationProduct?.id) {
+        await repositoryUpdate('donation_products', donationProduct.id, {
+          accounting_event_id: event.id,
+          social_value_event_id: socialEvent.id,
+          updated_at: new Date().toISOString()
+        });
+      }
+      await repositoryUpdate('donations', donation.id, {
+        accounting_event_id: event.id,
+        accounting_contact_id: contact?.id || null,
+        inventory_item_id: item.id,
+        inventory_movement_id: inventoryMovement?.id || null,
+        updated_at: new Date().toISOString()
+      });
       await updateAccountingEventSource(event, 'donations', donation.id);
       return;
     }

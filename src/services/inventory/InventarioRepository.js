@@ -30,7 +30,12 @@ export class InventarioRepository {
         p_quantity: movement.quantity,
         p_moved_at: String(movement.moved_at || new Date().toISOString()).slice(0, 10),
         p_responsible: movement.responsible,
-        p_notes: movement.notes
+        p_notes: movement.notes,
+        p_donation_id: movement.donation_id || null,
+        p_donation_product_id: movement.donation_product_id || null,
+        p_delivery_id: movement.delivery_id || null,
+        p_source_module: movement.source_module || null,
+        p_source_record_id: movement.source_record_id || null
       });
     }
 

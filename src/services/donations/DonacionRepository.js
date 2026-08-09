@@ -17,6 +17,14 @@ export class DonacionRepository {
     return this.repository.remove('donations', id);
   }
 
+  async createDonationProduct(payload) {
+    return this.repository.create('donation_products', payload);
+  }
+
+  async updateDonationProduct(id, payload) {
+    return this.repository.update('donation_products', id, payload);
+  }
+
   async listDonorContacts() {
     return this.repository.list('accounting_contacts');
   }

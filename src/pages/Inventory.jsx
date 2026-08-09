@@ -1380,12 +1380,13 @@ function buildInventoryRelationWarnings(item, data) {
   const deliveries = (data.deliveries || []).filter((delivery) => delivery.inventory_item_id === item.id);
   const socialEvents = (data.social_value_events || []).filter((event) => event.inventory_item_id === item.id);
   const donations = (data.donations || []).filter((donation) => donation.inventory_item_id === item.id);
+  const donationProducts = (data.donation_products || []).filter((relation) => relation.inventory_item_id === item.id);
 
   if (normalizeInventoryStockNumber(item.stock) > 0) relations.push(`Stock actual: ${formatInventoryStockLabel(item, { prefix: '' })}`.trim());
   if (movements.length) relations.push(`Movimientos de inventario: ${movements.length}`);
   if (deliveries.length) relations.push(`Entregas vinculadas: ${deliveries.length}`);
   if (socialEvents.length) relations.push(`Valor social: ${socialEvents.length} evento${socialEvents.length === 1 ? '' : 's'}`);
-  if (donations.length) relations.push(`Donaciones vinculadas: ${donations.length}`);
+  if (donations.length || donationProducts.length) relations.push(`Donaciones vinculadas: ${Math.max(donations.length, donationProducts.length)}`);
   return relations;
 }
 
@@ -1409,7 +1410,10 @@ function buildInventoryDeletionBlockers(item, data) {
       plural: 'eventos de valor social'
     },
     {
-      count: (data.donations || []).filter((donation) => donation.inventory_item_id === id).length,
+      count: Math.max(
+        (data.donations || []).filter((donation) => donation.inventory_item_id === id).length,
+        (data.donation_products || []).filter((relation) => relation.inventory_item_id === id).length
+      ),
       singular: 'donación vinculada',
       plural: 'donaciones vinculadas'
     },

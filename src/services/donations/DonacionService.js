@@ -307,9 +307,14 @@ export class DonacionService {
       this.syncCollaboratorPortalAccess(contact, payload),
       this.syncDonorPortalAccess(contact, payload)
     ]);
+    const safeQuantity = Number(quantity || 0);
+    const safeTotal = safeAmount(amount);
+    const unitValue = safeQuantity > 0 ? Math.round((safeTotal / safeQuantity) * 10000) / 10000 : 0;
     const donation = await this.repository.createDonation({
       donor_id: donor?.id || payload.donor_id || null,
       collaborator_id: collaborator?.id || payload.collaborator_id || null,
+      accounting_contact_id: cleanText(payload.donor_contact_id || payload.contact_id) || null,
+      inventory_item_id: item.id,
       donor: donor?.name || cleanDonorName || 'Donante',
       donor_email: donor?.email || cleanText(payload.contact_email || payload.donor_email),
       donor_kind: payload.donor_kind || 'Particular',
@@ -317,11 +322,33 @@ export class DonacionService {
       status: payload.status || 'Recibida',
       state: payload.state || payload.status || 'Recibida',
       donated_at: date,
-      estimated_value: safeAmount(amount),
-      amount: safeAmount(amount),
+      estimated_value: safeTotal,
+      amount: safeTotal,
       quantity: quantity ? String(quantity) : '',
+      reference,
+      unit_value: unitValue,
       payment_method: cleanText(payload.payment_method),
       notes: compactNotes(`Referencia: ${reference}`, payload.notes || title),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    const donationProduct = await this.repository.createDonationProduct({
+      donation_id: donation.id,
+      donor_id: donation.donor_id || null,
+      accounting_contact_id: donation.accounting_contact_id || null,
+      inventory_item_id: item.id,
+      product_name: item.name,
+      category: item.category || payload.inventory_category || '',
+      lot: item.lot || payload.inventory_lot || '',
+      unit: item.unit || payload.inventory_unit || '',
+      quantity_received: safeQuantity,
+      estimated_unit_value: unitValue,
+      estimated_total_value: safeTotal,
+      expires_at: item.expires_at || payload.inventory_expires_at || null,
+      received_at: date,
+      status: 'received',
+      notes: compactNotes(payload.notes, title),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
@@ -332,8 +359,23 @@ export class DonacionService {
       quantity,
       moved_at: date,
       responsible: cleanText(payload.responsible) || this.currentUserName(),
-      notes: `Donacion en especie: ${title}`
+      notes: `Donacion en especie: ${title}`,
+      donation_id: donation.id,
+      donation_product_id: donationProduct.id,
+      source_module: 'donations',
+      source_record_id: donation.id
     }, { requirePermission: false });
+
+    await Promise.all([
+      this.repository.updateDonation(donation.id, {
+        inventory_movement_id: inventoryMovement?.id || null,
+        updated_at: new Date().toISOString()
+      }),
+      this.repository.updateDonationProduct(donationProduct.id, {
+        inventory_movement_id: inventoryMovement?.id || null,
+        updated_at: new Date().toISOString()
+      })
+    ]);
 
     await this.audit(`Contabilidad: donacion en especie ${cleanDonorName || item.name}`.trim());
     await this.dashboardService?.notifyDonationChanged?.({
@@ -353,7 +395,7 @@ export class DonacionService {
       amount
     });
 
-    return { donation, inventoryMovement };
+    return { donation, donationProduct, inventoryMovement };
   }
 
   async removeDonation(id) {
@@ -370,7 +412,7 @@ export class DonacionService {
   async syncDonorPortalAccess(contact = {}, payload = {}, previous = {}, options = {}) {
     const email = cleanText(contact.email || payload.email || payload.contact_email || payload.donor_email).toLowerCase();
     const name = cleanText(contact.name || payload.name || payload.donor_name || payload.contact_name || payload.donor);
-    if (!email || !name) return null;
+    if (!name) return null;
 
     const kind = resolveDonorKind(payload, contact) || resolveDonorKind(payload, previous) || 'Particular';
     if (isAnonymousKind(kind)) return null;
@@ -379,7 +421,11 @@ export class DonacionService {
       this.repository.listDonors().catch(() => this.data.donors || []),
       this.repository.listCollaborators().catch(() => this.data.collaborators || [])
     ]);
-    const existing = (donors || []).find((item) => lower(item.email) === lower(email));
+    const existing = (donors || []).find((item) => (
+      (email && (lower(item.email) === lower(email) || lower(item.access_email) === lower(email)))
+      || normalize(item.name) === normalize(name)
+    ));
+    if (!email) return existing || null;
     const linkedCollaborator = (collaborators || []).find((item) => lower(item.email) === lower(email) || lower(item.access_email) === lower(email));
     const shouldBeActive = contact.is_active !== false && payload.is_active !== false;
 

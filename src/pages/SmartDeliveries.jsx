@@ -501,7 +501,8 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
         primaryItem: preparedBatch,
         deliveryNumber,
         registeredBy,
-        date: now
+        date: now,
+        deliveryId: createdDelivery?.id || ''
       });
       const stockNotices = await createSmartDeliveryLowStockNotices({
         actions,
@@ -1955,7 +1956,7 @@ function deliveryDeviceLabel() {
   return [browser, platform, mode].filter(Boolean).join(' · ') || 'No disponible';
 }
 
-async function registerSmartDeliveryInventoryMovements({ actions, deliveryPlan, primaryItem, deliveryNumber, registeredBy, date }) {
+async function registerSmartDeliveryInventoryMovements({ actions, deliveryPlan, primaryItem, deliveryNumber, registeredBy, date, deliveryId }) {
   const primaryInventoryId = primaryItem?.inventoryItemId || null;
   const movements = (deliveryPlan.deliveredItems || [])
     .filter((item) => item.inventoryItemId && Number(item.quantity || 0) > 0)
@@ -1966,6 +1967,9 @@ async function registerSmartDeliveryInventoryMovements({ actions, deliveryPlan, 
       quantity: Number(item.quantity || 0),
       moved_at: todayISO(),
       responsible: registeredBy,
+      delivery_id: deliveryId || null,
+      source_module: 'deliveries',
+      source_record_id: deliveryId || null,
       notes: [
         `Salida automatica por Smart Deliveries ${deliveryNumber}.`,
         `Producto entregado: ${formatDeliveryItemQuantity(item)}.`,

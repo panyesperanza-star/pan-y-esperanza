@@ -1,4 +1,4 @@
-import { CalendarDays, Edit3, Eye, FileText, Heart, Mail, MapPin, Phone, Plus, Power, PowerOff, Printer, Search } from 'lucide-react';
+import { CalendarDays, Edit3, Eye, FileText, Heart, Mail, MapPin, PackageCheck, Phone, Plus, Power, PowerOff, Printer, Search, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { CredentialPhotoPicker, CredentialPhotoPreview } from '../components/CredentialPhotoPicker';
@@ -205,7 +205,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'detail' && (
         <Modal title={`Ficha del donante - ${modal.donor.code || modal.donor.name}`} onClose={() => setModal(null)} wide>
-          <DonorDetail donor={modal.donor} actions={actions} organization={data.organization_settings?.[0]} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
+          <DonorDetail donor={modal.donor} data={data} actions={actions} organization={data.organization_settings?.[0]} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
         </Modal>
       )}
     </>
@@ -298,7 +298,8 @@ function DonorForm({ initial = null, onSubmit }) {
   );
 }
 
-function DonorDetail({ donor, actions, organization, canGenerateCredential, canPrint, onPrint }) {
+function DonorDetail({ donor, data, actions, organization, canGenerateCredential, canPrint, onPrint }) {
+  const traceability = buildDonorTraceability(donor, data);
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-2">
@@ -351,6 +352,67 @@ function DonorDetail({ donor, actions, organization, canGenerateCredential, canP
           </table>
         </div>
       </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4 shadow-panel">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="font-bold text-ink">Trazabilidad e impacto</h3>
+            <p className="mt-1 text-sm text-slate-500">Cadena donante - donacion - lote - inventario - entrega - beneficiario.</p>
+          </div>
+          <div className="grid gap-2 text-sm sm:grid-cols-4">
+            <TraceMetric label="Recibido" value={formatQuantity(traceability.unitsReceived)} />
+            <TraceMetric label="Entregado" value={formatQuantity(traceability.unitsDelivered)} />
+            <TraceMetric label="Restante" value={formatQuantity(traceability.unitsRemaining)} />
+            <TraceMetric label="Impacto" value={`${traceability.familiesBenefited} familias / ${traceability.peopleBenefited} personas`} />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3">
+          {traceability.rows.map((row) => (
+            <article key={row.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="font-bold text-ink">{row.productName}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatDate(row.date)} - {row.lot ? `Lote ${row.lot}` : 'Sin lote'} - {row.reference || 'Sin referencia'}
+                  </p>
+                </div>
+                <div className="grid gap-2 text-sm sm:grid-cols-3">
+                  <TraceMetric label="Recibido" value={`${formatQuantity(row.received)} ${row.unit}`.trim()} />
+                  <TraceMetric label="Entregado" value={`${formatQuantity(row.delivered)} ${row.unit}`.trim()} />
+                  <TraceMetric label="Restante" value={`${formatQuantity(row.remaining)} ${row.unit}`.trim()} />
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                <InfoLine icon={PackageCheck} label="Inventario" value={row.inventoryLabel} />
+                <InfoLine icon={Users} label="Beneficiarios" value={row.beneficiaryLabel} />
+              </div>
+              {row.deliveries.length > 0 && (
+                <div className="mt-3 rounded-md bg-white p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Entregas relacionadas</p>
+                  <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                    {row.deliveries.slice(0, 5).map((delivery) => (
+                      <p key={delivery.id}>{delivery.receipt_number || delivery.id} - {formatDate(delivery.delivered_at || delivery.created_at)} - {delivery.beneficiary_name || 'Beneficiario'}</p>
+                    ))}
+                    {row.deliveries.length > 5 && <p className="font-semibold text-slate-500">+{row.deliveries.length - 5} entregas mas</p>}
+                  </div>
+                </div>
+              )}
+            </article>
+          ))}
+          {!traceability.rows.length && (
+            <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No hay donaciones en especie trazables para este donante.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TraceMetric({ label, value }) {
+  return (
+    <div className="rounded-md border border-slate-100 bg-white px-3 py-2">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-bold text-ink">{value || '-'}</p>
     </div>
   );
 }
@@ -396,6 +458,113 @@ function PortalBadge({ active }) {
       {active ? 'Activo' : 'Inactivo'}
     </span>
   );
+}
+
+function buildDonorTraceability(donor, data = {}) {
+  const donations = donor?.donations || [];
+  const donationIds = new Set(donations.map((donation) => donation.id).filter(Boolean));
+  const inventoryItemsById = new Map((data.inventory_items || []).map((item) => [item.id, item]));
+  const deliveriesById = new Map((data.deliveries || []).map((delivery) => [delivery.id, delivery]));
+  const beneficiariesById = new Map((data.beneficiaries || []).map((beneficiary) => [beneficiary.id, beneficiary]));
+  const familiesById = new Map((data.families || []).map((family) => [family.id, family]));
+  const relatedProducts = (data.donation_products || []).filter((product) => donationIds.has(product.donation_id));
+  const productRows = relatedProducts.length
+    ? relatedProducts
+    : donations
+      .filter((donation) => donation.inventory_item_id)
+      .map((donation) => {
+        const item = inventoryItemsById.get(donation.inventory_item_id);
+        return {
+          id: `fallback-${donation.id}`,
+          donation_id: donation.id,
+          donor_id: donation.donor_id,
+          inventory_item_id: donation.inventory_item_id,
+          product_name: item?.name || donation.donation_type || 'Producto donado',
+          category: item?.category || donation.donation_type || '',
+          lot: item?.lot || '',
+          unit: item?.unit || '',
+          quantity_received: Number(donation.quantity || 0),
+          estimated_unit_value: Number(donation.unit_value || 0),
+          estimated_total_value: Number(donation.estimated_value || donation.amount || 0),
+          received_at: donation.donated_at || donation.created_at,
+          reference: donation.reference
+        };
+      });
+  const donationsById = new Map(donations.map((donation) => [donation.id, donation]));
+  const totalFamilyKeys = new Set();
+  const totalDeliveryIds = new Set();
+  let peopleBenefited = 0;
+
+  const rows = productRows.map((product) => {
+    const donation = donationsById.get(product.donation_id) || {};
+    const item = inventoryItemsById.get(product.inventory_item_id);
+    const movements = (data.inventory_movements || []).filter((movement) => (
+      movement.donation_product_id === product.id
+      || (product.id?.startsWith?.('fallback-') && movement.donation_id === product.donation_id)
+    ));
+    const deliveredMovements = movements.filter((movement) => movement.movement_type === 'Salida');
+    const deliveries = deliveredMovements
+      .map((movement) => deliveriesById.get(movement.delivery_id))
+      .filter(Boolean);
+    const uniqueDeliveries = [...new Map(deliveries.map((delivery) => [delivery.id, delivery])).values()];
+    const familyKeys = new Set();
+    let rowPeople = 0;
+
+    uniqueDeliveries.forEach((delivery) => {
+      const familyKey = delivery.family_id || `beneficiary:${delivery.beneficiary_id || delivery.id}`;
+      familyKeys.add(familyKey);
+      totalFamilyKeys.add(familyKey);
+      const deliveryPeople = peopleCountForDelivery(delivery, beneficiariesById, familiesById);
+      rowPeople += deliveryPeople;
+      if (!totalDeliveryIds.has(delivery.id)) {
+        peopleBenefited += deliveryPeople;
+        totalDeliveryIds.add(delivery.id);
+      }
+    });
+
+    const received = Number(product.quantity_received || donation.quantity || 0);
+    const delivered = deliveredMovements.reduce((sum, movement) => sum + Number(movement.quantity || 0), 0);
+    const remaining = Math.max(received - delivered, 0);
+
+    return {
+      id: product.id,
+      productName: product.product_name || item?.name || donation.donation_type || 'Producto donado',
+      date: product.received_at || donation.donated_at || donation.created_at,
+      lot: product.lot || item?.lot || '',
+      unit: product.unit || item?.unit || '',
+      reference: donation.reference || product.reference || '',
+      received,
+      delivered,
+      remaining,
+      estimatedValue: Number(product.estimated_total_value || donation.estimated_value || donation.amount || 0),
+      inventoryLabel: item ? `${item.name}${item.lot ? ` - lote ${item.lot}` : ''} - stock actual ${formatQuantity(item.stock)} ${item.unit || ''}` : 'Producto no localizado',
+      beneficiaryLabel: uniqueDeliveries.length
+        ? `${familyKeys.size} familia(s), ${rowPeople} persona(s)`
+        : 'Sin entregas vinculadas',
+      deliveries: uniqueDeliveries
+    };
+  }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  return {
+    rows,
+    unitsReceived: rows.reduce((sum, row) => sum + Number(row.received || 0), 0),
+    unitsDelivered: rows.reduce((sum, row) => sum + Number(row.delivered || 0), 0),
+    unitsRemaining: rows.reduce((sum, row) => sum + Number(row.remaining || 0), 0),
+    estimatedValue: rows.reduce((sum, row) => sum + Number(row.estimatedValue || 0), 0),
+    familiesBenefited: totalFamilyKeys.size,
+    peopleBenefited
+  };
+}
+
+function peopleCountForDelivery(delivery, beneficiariesById, familiesById) {
+  const family = familiesById.get(delivery.family_id);
+  if (family) return Math.max(1, Number(family.dependents_count || 0) + 1);
+  const beneficiary = beneficiariesById.get(delivery.beneficiary_id);
+  return Math.max(1, Number(beneficiary?.family_members || beneficiary?.household_size || 1));
+}
+
+function formatQuantity(value) {
+  return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(Number(value || 0));
 }
 
 function enrichDonors(donors, data) {

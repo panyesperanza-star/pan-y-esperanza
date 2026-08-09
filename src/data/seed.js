@@ -264,6 +264,7 @@ export const seedData = {
     { id: crypto.randomUUID(), name: 'Gel de ducha', category: 'Higiene', lot: 'HG-2026-02', expires_at: '', donor: 'Donación particular', location: 'Estantería H', unit: 'unidades', stock: 40, low_stock_threshold: 15, notes: '' }
   ],
   inventory_movements: [],
+  donation_products: [],
   donations: [
     { id: crypto.randomUUID(), collaborator_id: demoCollaboratorId, donor: 'Empresa Solidaria SL', donor_email: 'colaborador@example.org', donor_kind: 'Empresa', donation_type: 'Productos', status: 'Recibida', donated_at: todayISO(), estimated_value: 450, quantity: '120 kg', notes: 'Entrega mensual de productos no perecederos.' },
     { id: crypto.randomUUID(), donor_id: demoDonorId, donor: 'Laura Martin', donor_email: 'donante@example.org', donor_kind: 'Particular', donation_type: 'Economica', status: 'Recibida', donated_at: todayISO(), estimated_value: 25, amount: 25, payment_method: 'Bizum', notes: 'Donacion economica puntual.' }

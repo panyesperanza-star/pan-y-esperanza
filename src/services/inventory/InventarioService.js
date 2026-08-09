@@ -67,7 +67,12 @@ export function sanitizeInventoryMovement(payload, items = []) {
       quantity,
       moved_at: payload.moved_at || new Date().toISOString().slice(0, 10),
       responsible,
-      notes: String(payload.notes || '').trim()
+      notes: String(payload.notes || '').trim(),
+      donation_id: payload.donation_id || null,
+      donation_product_id: payload.donation_product_id || null,
+      delivery_id: payload.delivery_id || null,
+      source_module: String(payload.source_module || '').trim(),
+      source_record_id: payload.source_record_id || null
     }
   };
 }
