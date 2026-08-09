@@ -62,6 +62,8 @@ const emptyResource = {
   portal_visibility_scope: 'none',
   visible_to_all_beneficiaries: false,
   publish_in_beneficiary_portal: false,
+  publish_in_public_web: false,
+  public_web_featured: false,
   last_verified_at: '',
   age_min: '',
   age_max: '',
@@ -919,6 +921,7 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
 function ResourceCard({ resource, recommendation, alert, selected, link, canEdit, canDelete, portalAudienceCount = 0, onSelect, onEdit, onDelete, onTrack, onPublish, onUnpublish, beneficiarySelected }) {
   const verified = isResourceOfficiallyVerified(resource);
   const publication = portalPublicationState(resource, portalAudienceCount);
+  const publicWeb = publicWebPublicationState(resource);
   return (
     <article className={`rounded-xl border bg-white p-5 shadow-sm transition ${selected ? 'border-brand-400 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -928,6 +931,7 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{resource.scope || 'municipal'}</span>
             {alert && <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert.tone}`}>{alert.label}</span>}
             <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${publication.badgeClass}`}>{publication.shortLabel}</span>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${publicWeb.badgeClass}`}>{publicWeb.shortLabel}</span>
             <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
               {verified ? 'Fuente verificada' : 'Fuente pendiente'}
             </span>
@@ -971,6 +975,16 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
           </div>
         </div>
       </div>
+      <div className={`mt-3 rounded-xl border p-4 ${publicWeb.panelClass}`}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide"><Globe2 size={15} /> Web publica</p>
+            <p className="mt-1 text-sm font-black">{publicWeb.title}</p>
+            <p className="mt-1 text-xs font-semibold opacity-80">{publicWeb.description}</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${publicWeb.badgeClass}`}>{publicWeb.shortLabel}</span>
+        </div>
+      </div>
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="secondary" onClick={onSelect}>Ver ficha</Button>
         <Button variant="subtle" onClick={onTrack} disabled={!beneficiarySelected}>Guardar para beneficiario</Button>
@@ -979,6 +993,27 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
       </div>
     </article>
   );
+}
+
+function publicWebPublicationState(resource = {}) {
+  if (resource.publish_in_public_web) {
+    return {
+      shortLabel: resource.public_web_featured ? 'Web destacada' : 'Web publicada',
+      title: 'Estado: Publicado',
+      description: resource.public_web_featured
+        ? 'Visible en panyesperanza.org/recursos como recurso destacado.'
+        : 'Visible en panyesperanza.org/recursos.',
+      badgeClass: 'bg-brand-50 text-brand-700',
+      panelClass: 'border-brand-100 bg-brand-50 text-brand-800'
+    };
+  }
+  return {
+    shortLabel: 'Web no publicada',
+    title: 'Estado: No publicado',
+    description: 'No aparece en la web publica.',
+    badgeClass: 'bg-slate-100 text-slate-700',
+    panelClass: 'border-slate-200 bg-slate-50 text-slate-700'
+  };
 }
 
 function portalPublicationScope(resource = {}) {
@@ -1336,6 +1371,14 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
     setForm((current) => ({ ...current, [name]: value }));
   }
 
+  function updatePublicWebPublication(value) {
+    setForm((current) => ({
+      ...current,
+      publish_in_public_web: value,
+      public_web_featured: value ? current.public_web_featured : false
+    }));
+  }
+
   async function submit(event) {
     event.preventDefault();
     setSaving(true);
@@ -1375,6 +1418,26 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
         <FormField label="Fuente verificada por"><input className={inputClass} value={form.verified_by_name || 'Se actualizara al guardar'} disabled /></FormField>
         <FormField label="Direccion"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField>
         <FormField label="A quien va dirigido"><input className={inputClass} value={form.target_audience} onChange={(event) => update('target_audience', event.target.value)} /></FormField>
+      </div>
+      <div className="rounded-xl border border-brand-100 bg-brand-50 p-4">
+        <p className="flex items-center gap-2 text-sm font-black text-brand-800"><Globe2 size={16} /> Publicacion en web publica</p>
+        <p className="mt-1 text-sm font-semibold text-brand-700">Estas opciones alimentan panyesperanza.org/recursos sin duplicar el recurso.</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="flex items-start gap-3 rounded-lg border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700">
+            <input type="checkbox" className="mt-1 h-4 w-4 accent-brand-700" checked={Boolean(form.publish_in_public_web)} onChange={(event) => updatePublicWebPublication(event.target.checked)} />
+            <span>
+              <span className="block font-black text-ink">Publicar tambien en web publica</span>
+              <span className="mt-1 block text-xs text-slate-500">Muestra solo informacion publica del recurso.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 rounded-lg border border-brand-100 bg-white p-3 text-sm font-semibold text-slate-700">
+            <input type="checkbox" className="mt-1 h-4 w-4 accent-brand-700" checked={Boolean(form.public_web_featured)} disabled={!form.publish_in_public_web} onChange={(event) => update('public_web_featured', event.target.checked)} />
+            <span>
+              <span className="block font-black text-ink">Destacar en web publica</span>
+              <span className="mt-1 block text-xs text-slate-500">Aparece en el bloque de recursos destacados.</span>
+            </span>
+          </label>
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <TextAreaField label="Descripcion" value={form.description} onChange={(value) => update('description', value)} />

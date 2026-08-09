@@ -90,9 +90,9 @@
               Encuentra formaci&oacute;n, empleo, ayudas p&uacute;blicas, recursos para familias y oportunidades seleccionadas para ayudarte a avanzar.
             </p>
             <ul class="resources-hero__meta" aria-label="Caracteristicas del centro de recursos">
-              <li>&#128269; Buscar recursos</li>
-              <li>ðŸ“š Explorar categor&iacute;as</li>
-              <li>&#11088; Recursos destacados</li>
+              <li>Buscar recursos oficiales</li>
+              <li>Explorar categor&iacute;as</li>
+              <li>Nuevas convocatorias</li>
             </ul>
           </div>
         </div>
@@ -127,11 +127,17 @@
               <button class="resources-category" type="button" aria-pressed="false" data-filter="formacion">&#127891; Formaci&oacute;n</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="empleo">&#128188; Empleo</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="ayudas">&#127963; Ayudas</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="ayudas-economicas">Ayudas econ&oacute;micas</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="familias">&#128104;&#8205;&#128105;&#8205;&#128103; Familias</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="personas-mayores">Personas mayores</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="discapacidad">Discapacidad</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="extranjeria">Extranjer&iacute;a</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="asesoramiento-juridico">Asesoramiento jur&iacute;dico</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="salud">&#127973; Salud</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="vivienda">&#127968; Vivienda</button>
-              <button class="resources-category" type="button" aria-pressed="false" data-filter="tramites">&#9878; Tr&aacute;mites</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="recursos-municipales">Recursos municipales</button>
               <button class="resources-category" type="button" aria-pressed="false" data-filter="alimentacion">&#127869; Alimentaci&oacute;n</button>
+              <button class="resources-category" type="button" aria-pressed="false" data-filter="otros">Otros</button>
             </div>
           </div>
 
@@ -149,7 +155,23 @@
 
               <div class="resources-sidebar__block resources-sponsored-reserve" data-sponsored-ready>
                 <h3>Recursos destacados</h3>
-                <p>Selecci&oacute;n de ayudas, cursos y oportunidades &uacute;tiles para consultar en un solo lugar.</p>
+                <div data-resource-featured>
+                  <p>Selecci&oacute;n de ayudas, cursos y oportunidades &uacute;tiles para consultar en un solo lugar.</p>
+                </div>
+              </div>
+
+              <div class="resources-sidebar__block">
+                <h3>Nuevas convocatorias</h3>
+                <div data-resource-new>
+                  <p>Los recursos nuevos publicados desde el ERP aparecer&aacute;n aqu&iacute;.</p>
+                </div>
+              </div>
+
+              <div class="resources-sidebar__block">
+                <h3>Pr&oacute;ximas a cerrar</h3>
+                <div data-resource-closing>
+                  <p>Las convocatorias con plazo cercano aparecer&aacute;n aqu&iacute;.</p>
+                </div>
               </div>
             </aside>
 
@@ -255,6 +277,15 @@
               </div>
             </section>
           </div>
+
+          <aside class="resources-portal-cta" aria-labelledby="resources-portal-cta-title">
+            <div>
+              <p class="resources-portal-cta__eyebrow">Portal del Beneficiario</p>
+              <h3 id="resources-portal-cta-title">&iquest;Eres beneficiario de Pan y Esperanza?</h3>
+              <p>Accede a tu portal para consultar recursos recomendados para ti y hacer seguimiento.</p>
+            </div>
+            <a class="button button--primary" href="/portal-beneficiario">Acceder al portal</a>
+          </aside>
         </div>
       </section>
     </main>

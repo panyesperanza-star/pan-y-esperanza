@@ -2085,6 +2085,82 @@
   line-height: 1.58;
 }
 
+.resource-card__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.42rem var(--space-sm);
+  margin: 0;
+  color: rgb(37 33 29 / 76%);
+  font-size: 0.93rem;
+  line-height: 1.45;
+}
+
+.resource-card__details dt {
+  color: var(--color-olive-deep);
+  font-weight: 800;
+}
+
+.resource-card__details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.resource-card__status {
+  width: fit-content;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-olive-deep);
+  background: rgb(47 74 58 / 10%);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.resources-insight-list {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resources-insight-list li {
+  color: rgb(37 33 29 / 76%);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.resources-portal-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: clamp(var(--space-lg), 3vw, var(--space-2xl));
+  border: 1px solid rgb(47 74 58 / 14%);
+  border-radius: var(--radius-md);
+  background: var(--color-olive-deep);
+  color: var(--color-white-warm);
+  box-shadow: var(--shadow-soft);
+}
+
+.resources-portal-cta__eyebrow {
+  margin: 0 0 var(--space-xs);
+  color: var(--color-terracotta);
+  font-weight: 800;
+}
+
+.resources-portal-cta h3 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  line-height: 1.15;
+}
+
+.resources-portal-cta p:not(.resources-portal-cta__eyebrow) {
+  max-width: 48rem;
+  margin: var(--space-sm) 0 0;
+  color: rgb(255 249 241 / 84%);
+  line-height: 1.58;
+}
+
 .resource-card .button {
   width: fit-content;
   margin-top: auto;
@@ -2396,6 +2472,15 @@
 
   .resources-search__field .button {
     width: 100%;
+  }
+
+  .resources-portal-cta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .resource-card__details {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content-photo-slot--portrait {

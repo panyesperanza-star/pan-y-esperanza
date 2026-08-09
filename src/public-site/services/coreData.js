@@ -8,16 +8,24 @@ export const resourceFallbackUrl = "/#contacto";
 export const resourceCategoryLabels = {
   ayuda: "Ayuda social",
   ayudas: "Ayudas",
+  "ayudas-economicas": "Ayudas economicas",
   alimentacion: "Alimentacion",
+  "asesoramiento-juridico": "Asesoramiento juridico",
+  discapacidad: "Discapacidad",
   donaciones: "Donaciones",
   empresas: "Empresas",
   empleo: "Empleo",
+  extranjeria: "Extranjeria",
   familias: "Familias",
   formacion: "Formacion",
+  "infancia-familia": "Infancia y familia",
+  "personas-mayores": "Personas mayores",
+  "recursos-municipales": "Recursos municipales",
   salud: "Salud",
   tramites: "Tramites",
   vivienda: "Vivienda",
   voluntariado: "Voluntariado",
+  otros: "Otros",
 };
 
 export const resourceProvinceLabels = {

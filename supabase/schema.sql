@@ -730,6 +730,8 @@ create table if not exists public.social_resources (
   portal_visibility_scope text not null default 'none',
   visible_to_all_beneficiaries boolean not null default false,
   publish_in_beneficiary_portal boolean not null default false,
+  publish_in_public_web boolean not null default false,
+  public_web_featured boolean not null default false,
   last_verified_at date,
   verified_by uuid references public.app_users(id) on delete set null,
   verified_by_name text not null default '',
@@ -2238,6 +2240,7 @@ create index if not exists social_resources_category_idx on public.social_resour
 create index if not exists social_resources_status_idx on public.social_resources(status);
 create index if not exists social_resources_portal_publication_idx on public.social_resources(publish_in_beneficiary_portal, visible_to_all_beneficiaries, status, deadline_at);
 create index if not exists social_resources_portal_visibility_idx on public.social_resources(portal_visibility_scope, status, deadline_at);
+create index if not exists social_resources_public_web_idx on public.social_resources(publish_in_public_web, public_web_featured, status, deadline_at, created_at);
 create index if not exists social_resources_deadline_idx on public.social_resources(deadline_at);
 create index if not exists social_resources_municipality_idx on public.social_resources(municipality);
 create index if not exists beneficiary_social_resources_beneficiary_idx on public.beneficiary_social_resources(beneficiary_id);
@@ -2254,6 +2257,33 @@ create index if not exists social_resource_detections_status_idx on public.socia
 create index if not exists social_resource_detections_source_idx on public.social_resource_detections(source_id, detected_at desc);
 create index if not exists social_resource_detections_resource_idx on public.social_resource_detections(resource_id, detected_at desc);
 create unique index if not exists social_resource_detections_dedupe_key_uidx on public.social_resource_detections(dedupe_key) where dedupe_key <> '';
+
+create or replace view public.public_social_resources as
+select
+  id,
+  name,
+  organization_name,
+  category,
+  description,
+  requirements,
+  opens_at,
+  deadline_at,
+  municipality,
+  web_url,
+  official_url,
+  application_method,
+  status,
+  scope,
+  last_verified_at,
+  created_at,
+  updated_at,
+  public_web_featured
+from public.social_resources
+where publish_in_public_web = true
+  and status in ('Activo', 'Proximamente')
+  and (deadline_at is null or deadline_at >= current_date);
+
+grant select on public.public_social_resources to anon, authenticated;
 
 create trigger collaborators_updated_at before update on public.collaborators for each row execute function public.set_updated_at();
 create trigger collaborators_set_official_credential_uid before insert or update of credential_uid on public.collaborators for each row execute function public.set_official_credential_uid();

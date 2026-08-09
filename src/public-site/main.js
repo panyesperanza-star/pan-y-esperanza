@@ -611,6 +611,9 @@ const createPublishedResourceCard = (resource, provider) => {
   card.className = "resource-card";
   card.dataset.resourceCard = "";
   card.dataset.category = resource.category || "ayudas";
+  card.dataset.featured = String(Boolean(resource.featured));
+  card.dataset.new = String(Boolean(resource.isNew));
+  card.dataset.closing = String(Boolean(resource.isClosingSoon));
 
   const title = document.createElement("h4");
   title.textContent = resource.title;
@@ -618,19 +621,91 @@ const createPublishedResourceCard = (resource, provider) => {
   const description = document.createElement("p");
   description.textContent = resource.description;
 
+  const details = document.createElement("dl");
+  details.className = "resource-card__details";
+
+  [
+    ["Organismo", resource.organization || resource.typeLabel],
+    ["Requisitos", resource.requirements || "Consulta los requisitos en la fuente oficial."],
+    ["Plazo", resource.deadlineLabel || "Sin fecha limite"],
+    ["Ambito", resource.scopeLabel || resource.provinceLabel],
+    ["Como solicitar", resource.applicationMethod || "Consulta la fuente oficial."],
+  ]
+    .filter(([, value]) => Boolean(value))
+    .forEach(([label, value]) => {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const descriptionItem = document.createElement("dd");
+      descriptionItem.textContent = value;
+      details.append(term, descriptionItem);
+    });
+
+  const status = document.createElement("p");
+  status.className = "resource-card__status";
+  status.textContent = resource.statusLabel || "Activo";
+
   const link = document.createElement("a");
   link.className = "button button--olive";
-  const linkUrl = provider.normalizeUrl(resource.url) || provider.getFallbackUrl();
+  const linkUrl = provider.normalizeUrl(resource.officialUrl || resource.url) || provider.getFallbackUrl();
   link.href = linkUrl;
-  link.textContent = "Consultar";
+  link.textContent = resource.officialUrl ? "Ver fuente oficial" : "Consultar";
 
   if (/^https?:\/\//.test(linkUrl)) {
     link.target = "_blank";
     link.rel = "noopener";
   }
 
-  card.append(createResourceMeta(resource), title, description, link);
+  card.append(createResourceMeta(resource), title, description, details, status, link);
   return card;
+};
+
+const updateResourceInsight = (selector, resources, predicate, emptyText) => {
+  const container = document.querySelector(selector);
+  if (!container) {
+    return;
+  }
+
+  container.textContent = "";
+  const matches = resources.filter(predicate).slice(0, 4);
+
+  if (matches.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = emptyText;
+    container.append(empty);
+    return;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "resources-insight-list";
+  matches.forEach((resource) => {
+    const item = document.createElement("li");
+    item.textContent = resource.deadlineLabel
+      ? `${resource.title} - ${resource.deadlineLabel}`
+      : resource.title;
+    list.append(item);
+  });
+  container.append(list);
+};
+
+const updateResourceInsights = (resources) => {
+  updateResourceInsight(
+    "[data-resource-featured]",
+    resources,
+    (resource) => resource.featured,
+    "No hay recursos destacados publicados ahora mismo.",
+  );
+  updateResourceInsight(
+    "[data-resource-new]",
+    resources,
+    (resource) => resource.isNew,
+    "No hay nuevas convocatorias publicadas ahora mismo.",
+  );
+  updateResourceInsight(
+    "[data-resource-closing]",
+    resources,
+    (resource) => resource.isClosingSoon,
+    "No hay convocatorias proximas a cerrar.",
+  );
 };
 
 const getResourceSearchTerm = () => resourceSearchInput?.value.trim().toLowerCase() || "";
@@ -679,10 +754,12 @@ const renderPublishedResources = async () => {
 
     resourceList.append(fragment);
     resourceCards = [...resourceList.querySelectorAll("[data-resource-card]")];
+    updateResourceInsights(resources);
     applyResourceFilters();
   } catch {
     resourceList.querySelectorAll("[data-resource-card]").forEach((resource) => resource.remove());
     resourceCards = [];
+    updateResourceInsights([]);
     applyResourceFilters();
   }
 };
