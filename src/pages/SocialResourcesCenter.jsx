@@ -13,6 +13,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   UserRound
@@ -162,6 +163,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const [reviewingDetection, setReviewingDetection] = useState(null);
   const [trackingTarget, setTrackingTarget] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [checkingSourceId, setCheckingSourceId] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -286,6 +288,23 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
     }
   }
 
+  async function handleCheckSource(source) {
+    setError('');
+    setNotice('');
+    setCheckingSourceId(source.id);
+    try {
+      const result = await actions.checkSocialResourceSource(source.id);
+      const sourceResult = result?.sources?.[0];
+      const created = sourceResult?.createdDetections ?? result?.createdDetections ?? 0;
+      const duplicates = sourceResult?.duplicatedDetections ?? result?.duplicatedDetections ?? 0;
+      setNotice(`Fuente comprobada. ${created} detecciones nuevas, ${duplicates} duplicadas.`);
+    } catch (checkError) {
+      setError(checkError.message || 'No se pudo comprobar la fuente vigilada.');
+    } finally {
+      setCheckingSourceId('');
+    }
+  }
+
   async function handleApproveDetection(detection, payload = {}) {
     setError('');
     setNotice('');
@@ -382,8 +401,10 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
           sources={sources}
           sourceAlerts={monitoring.sourceReviewItems}
           canEdit={canEdit}
+          checkingSourceId={checkingSourceId}
           onEdit={(source) => setEditingSource(source)}
           onCreate={() => setEditingSource({ ...emptySource })}
+          onCheck={handleCheckSource}
         />
         <DetectionInboxPanel
           detections={detections}
@@ -625,7 +646,7 @@ function alertTextTone(tone) {
   return tones[tone] || tones.emerald;
 }
 
-function WatchedSourcesPanel({ sources, sourceAlerts, canEdit, onEdit, onCreate }) {
+function WatchedSourcesPanel({ sources, sourceAlerts, canEdit, checkingSourceId, onEdit, onCreate, onCheck }) {
   const alertBySource = new Map(sourceAlerts.map((item) => [item.source.id, item]));
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -649,9 +670,19 @@ function WatchedSourcesPanel({ sources, sourceAlerts, canEdit, onEdit, onCreate 
                 </div>
                 <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert?.tone || 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{alert?.label || source.status}</span>
               </div>
-              <p className="mt-2 text-xs text-slate-500">Ultima comprobacion: {source.last_checked_at ? formatDate(source.last_checked_at) : 'Pendiente'}</p>
+              <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+                <p>Ultima comprobacion: {source.last_checked_at ? formatDate(source.last_checked_at) : 'Pendiente'}</p>
+                <p>Proxima comprobacion: {source.next_check_at ? formatDate(source.next_check_at) : 'Pendiente'}</p>
+              </div>
+              {source.last_check_status && <p className="mt-2 text-xs font-semibold text-slate-600">{source.last_check_status}</p>}
+              {source.last_check_error && <p className="mt-2 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">{source.last_check_error}</p>}
               <div className="mt-3 flex flex-wrap gap-2">
                 <ContactLink icon={ExternalLink} href={source.official_url} label="Abrir fuente" external />
+                {canEdit && (
+                  <Button variant="secondary" onClick={() => onCheck(source)} disabled={checkingSourceId === source.id}>
+                    <RefreshCw size={16} /> {checkingSourceId === source.id ? 'Comprobando...' : 'Comprobar ahora'}
+                  </Button>
+                )}
                 {canEdit && <Button variant="secondary" onClick={() => onEdit(source)}>Editar</Button>}
               </div>
             </article>

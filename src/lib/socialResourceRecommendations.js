@@ -313,10 +313,15 @@ export function isResourceOfficiallyVerified(resource = {}) {
 export function buildSourceAlert(source = {}, today = todayISO()) {
   const daysSinceCheck = daysBetween(source.last_checked_at, today);
   const frequency = Number(source.check_frequency_days || 7);
-  const needsReview = !source.last_checked_at || (Number.isFinite(daysSinceCheck) && daysSinceCheck > frequency);
+  const nextCheckDays = daysBetween(today, source.next_check_at);
+  const hasNextCheck = Boolean(source.next_check_at);
+  const needsReview = hasNextCheck
+    ? Number.isFinite(nextCheckDays) && nextCheckDays <= 0
+    : !source.last_checked_at || (Number.isFinite(daysSinceCheck) && daysSinceCheck > frequency);
   return {
     source,
     daysSinceCheck,
+    nextCheckDays,
     needsReview,
     label: needsReview ? 'Necesita comprobacion' : 'Fuente al dia',
     tone: needsReview ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'

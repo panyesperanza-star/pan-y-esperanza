@@ -4,6 +4,7 @@ import { dataStore } from '../lib/dataStore';
 import { buildDocumentNotesWithAutomationMeta, readDocumentAutomationMeta } from '../lib/documentAutomation';
 import { sendEmailViaApi } from '../lib/emailClient';
 import { normalize } from '../lib/formatters';
+import { runSocialResourceWatchdog } from '../lib/socialResourceWatchdogClient';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import { AgendaOperativaRepository } from '../services/agenda/AgendaOperativaRepository';
 import { AgendaOperativaService } from '../services/agenda/AgendaOperativaService';
@@ -2527,6 +2528,12 @@ export function useAppData(enabled = true, currentUser = null) {
       const discarded = await socialResourceService.discardDetection(id, payload);
       await reload();
       return discarded;
+    },
+    checkSocialResourceSource: async (sourceId) => {
+      assertPermission('social-resources', 'edit');
+      const result = await runSocialResourceWatchdog({ sourceId });
+      await reload();
+      return result;
     },
     createFinancialAccount: async (payload) => {
       assertPermission('accounting', 'create');

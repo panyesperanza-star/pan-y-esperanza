@@ -34,5 +34,8 @@ verify_jwt = false
 [functions.operations-summary]
 verify_jwt = false
 
+[functions.social-resource-watchdog]
+verify_jwt = true
+
 [functions.send-justificantes]
 verify_jwt = false

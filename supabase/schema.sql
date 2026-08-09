@@ -774,7 +774,11 @@ create table if not exists public.social_resource_sources (
   check_frequency_days integer not null default 7,
   status text not null default 'Activa',
   last_checked_at timestamptz,
+  next_check_at timestamptz,
+  last_check_started_at timestamptz,
+  last_check_finished_at timestamptz,
   last_check_status text not null default '',
+  last_check_error text not null default '',
   notes text not null default '',
   created_by uuid references public.app_users(id) on delete set null,
   updated_by uuid references public.app_users(id) on delete set null,
@@ -800,6 +804,8 @@ create table if not exists public.social_resource_detections (
   changed_fields jsonb not null default '[]'::jsonb,
   previous_data jsonb not null default '{}'::jsonb,
   new_data jsonb not null default '{}'::jsonb,
+  raw_payload jsonb not null default '{}'::jsonb,
+  dedupe_key text not null default '',
   compatibility_count integer not null default 0,
   reviewed_by uuid references public.app_users(id) on delete set null,
   reviewed_by_name text not null default '',
@@ -2216,9 +2222,11 @@ create index if not exists social_resource_followups_beneficiary_idx on public.s
 create index if not exists social_resource_history_resource_idx on public.social_resource_history(resource_id, created_at desc);
 create index if not exists social_resource_sources_status_idx on public.social_resource_sources(status);
 create index if not exists social_resource_sources_next_check_idx on public.social_resource_sources(status, last_checked_at);
+create index if not exists social_resource_sources_due_check_idx on public.social_resource_sources(status, next_check_at, last_checked_at);
 create index if not exists social_resource_detections_status_idx on public.social_resource_detections(status, detected_at desc);
 create index if not exists social_resource_detections_source_idx on public.social_resource_detections(source_id, detected_at desc);
 create index if not exists social_resource_detections_resource_idx on public.social_resource_detections(resource_id, detected_at desc);
+create unique index if not exists social_resource_detections_dedupe_key_uidx on public.social_resource_detections(dedupe_key) where dedupe_key <> '';
 
 create trigger collaborators_updated_at before update on public.collaborators for each row execute function public.set_updated_at();
 create trigger collaborators_set_official_credential_uid before insert or update of credential_uid on public.collaborators for each row execute function public.set_official_credential_uid();

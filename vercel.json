@@ -2,6 +2,9 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "crons": [
+    { "path": "/api/social-resource-watchdog", "schedule": "0 4 * * *" }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/acceder", "destination": "/acceder/" },
