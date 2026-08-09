@@ -47,6 +47,39 @@ export class SocialResourceRepository {
     return this.repository.remove('beneficiary_social_resources', id);
   }
 
+  async replacePortalAudience(resourceId, beneficiaryIds = [], context = {}) {
+    const rows = [...new Set((beneficiaryIds || []).filter(Boolean))].map((beneficiaryId) => ({
+      resource_id: resourceId,
+      beneficiary_id: beneficiaryId,
+      created_by: context.userId || null,
+      created_at: context.now || new Date().toISOString()
+    }));
+
+    if (this.repository.supabase) {
+      const deleteResult = await this.repository.supabase
+        .from('social_resource_portal_beneficiaries')
+        .delete()
+        .eq('resource_id', resourceId);
+      if (deleteResult.error) throw deleteResult.error;
+      if (!rows.length) return [];
+      const { data, error } = await this.repository.supabase
+        .from('social_resource_portal_beneficiaries')
+        .insert(rows)
+        .select();
+      if (error) throw error;
+      return data || [];
+    }
+
+    const currentRows = await this.repository.list('social_resource_portal_beneficiaries');
+    const resourceRows = currentRows.filter((item) => item.resource_id === resourceId);
+    await Promise.all(resourceRows.map((item) => this.repository.remove('social_resource_portal_beneficiaries', item.id)));
+    const created = [];
+    for (const row of rows) {
+      created.push(await this.repository.create('social_resource_portal_beneficiaries', row));
+    }
+    return created;
+  }
+
   async createFollowup(payload) {
     return this.repository.create('social_resource_followups', payload);
   }

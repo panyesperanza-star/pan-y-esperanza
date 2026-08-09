@@ -1149,13 +1149,12 @@ async function listBy(supabase, table, column, value) {
 
 async function listPublishedResources(supabase, beneficiary) {
   const today = new Date().toISOString().slice(0, 10);
-  const resourceSelect = 'id,name,organization_name,category,description,requirements,target_audience,required_documents,benefit,opens_at,deadline_at,address,municipality,phone,email,web_url,official_url,application_method,status,scope,created_at,updated_at,publish_in_beneficiary_portal,visible_to_all_beneficiaries';
-  const [globalResult, linkResult] = await Promise.all([
+  const resourceSelect = 'id,name,organization_name,category,description,requirements,target_audience,required_documents,benefit,opens_at,deadline_at,address,municipality,phone,email,web_url,official_url,application_method,status,scope,age_min,age_max,family_situation,employment_situation,housing_situation,created_at,updated_at,publish_in_beneficiary_portal,visible_to_all_beneficiaries,portal_visibility_scope';
+  const [publishedResult, linkResult, audienceResult, documentResult] = await Promise.all([
     supabase
       .from('social_resources')
       .select(resourceSelect)
       .eq('publish_in_beneficiary_portal', true)
-      .eq('visible_to_all_beneficiaries', true)
       .in('status', ['Activo', 'Proximamente'])
       .or(`deadline_at.is.null,deadline_at.gte.${today}`)
       .order('created_at', { ascending: false }),
@@ -1163,10 +1162,20 @@ async function listPublishedResources(supabase, beneficiary) {
       .from('beneficiary_social_resources')
       .select('id,resource_id,status,observations,linked_at,updated_at')
       .eq('beneficiary_id', beneficiary.id)
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false }),
+    supabase
+      .from('social_resource_portal_beneficiaries')
+      .select('resource_id')
+      .eq('beneficiary_id', beneficiary.id),
+    supabase
+      .from('beneficiary_documents')
+      .select('*')
+      .eq('beneficiary_id', beneficiary.id)
   ]);
-  if (globalResult.error) throw globalResult.error;
+  if (publishedResult.error) throw publishedResult.error;
   if (linkResult.error) throw linkResult.error;
+  if (audienceResult.error) throw audienceResult.error;
+  if (documentResult.error) throw documentResult.error;
 
   const linkedRows = linkResult.data || [];
   const linkedIds = [...new Set(linkedRows.map((item) => item.resource_id).filter(Boolean))];
@@ -1176,7 +1185,6 @@ async function listPublishedResources(supabase, beneficiary) {
       .from('social_resources')
       .select(resourceSelect)
       .in('id', linkedIds)
-      .eq('publish_in_beneficiary_portal', true)
       .in('status', ['Activo', 'Proximamente'])
       .or(`deadline_at.is.null,deadline_at.gte.${today}`);
     if (assignedResult.error) throw assignedResult.error;
@@ -1184,9 +1192,18 @@ async function listPublishedResources(supabase, beneficiary) {
   }
 
   const linkByResource = new Map(linkedRows.map((item) => [item.resource_id, item]));
+  const selectedResourceIds = new Set((audienceResult.data || []).map((item) => item.resource_id).filter(Boolean));
+  const beneficiaryDocuments = documentResult.data || [];
   const resourcesById = new Map();
-  (globalResult.data || []).forEach((resource) => {
-    resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'global'));
+  (publishedResult.data || []).forEach((resource) => {
+    const scope = resolvePortalResourceScope(resource);
+    if (scope === 'all') {
+      resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'global'));
+    } else if (scope === 'compatible' && isPortalCompatibleResource(resource, beneficiary, beneficiaryDocuments)) {
+      resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'compatible'));
+    } else if (scope === 'selected' && selectedResourceIds.has(resource.id)) {
+      resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'selected'));
+    }
   });
   assignedResources.forEach((resource) => {
     resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'individual'));
@@ -1232,6 +1249,76 @@ function sanitizePortalSocialResource(resource = {}, link = null, portalScope = 
     is_new: Number.isFinite(daysSinceCreated) && daysSinceCreated <= 30,
     is_closing_soon: Number.isFinite(daysUntilDeadline) && daysUntilDeadline >= 0 && daysUntilDeadline <= 15
   };
+}
+
+function resolvePortalResourceScope(resource = {}) {
+  const scope = cleanText(resource.portal_visibility_scope);
+  if (['all', 'compatible', 'selected', 'none'].includes(scope)) return scope;
+  if (resource.publish_in_beneficiary_portal && resource.visible_to_all_beneficiaries) return 'all';
+  if (resource.publish_in_beneficiary_portal) return 'selected';
+  return 'none';
+}
+
+function isPortalCompatibleResource(resource = {}, beneficiary = {}, documents = []) {
+  const age = calculateAge(beneficiary.birth_date || beneficiary.date_of_birth || beneficiary.fecha_nacimiento);
+  if (Number.isFinite(Number(resource.age_min)) && Number.isFinite(age) && age < Number(resource.age_min)) return false;
+  if (Number.isFinite(Number(resource.age_max)) && Number.isFinite(age) && age > Number(resource.age_max)) return false;
+
+  const resourceMunicipality = normalizeText(resource.municipality);
+  const beneficiaryText = normalizeText([
+    beneficiary.municipality,
+    beneficiary.city,
+    beneficiary.address,
+    beneficiary.address_full,
+    beneficiary.postal_code,
+    beneficiary.requested_help,
+    beneficiary.situation
+  ].filter(Boolean).join(' '));
+  if (resourceMunicipality && beneficiaryText && !beneficiaryText.includes(resourceMunicipality)) return false;
+
+  const resourceText = normalizeText([
+    resource.name,
+    resource.description,
+    resource.requirements,
+    resource.target_audience,
+    resource.required_documents,
+    resource.family_situation,
+    resource.employment_situation,
+    resource.housing_situation
+  ].filter(Boolean).join(' '));
+  const profileText = normalizeText([
+    beneficiary.situation,
+    beneficiary.family_situation,
+    beneficiary.employment_situation,
+    beneficiary.housing_situation,
+    beneficiary.requested_help,
+    beneficiary.notes
+  ].filter(Boolean).join(' '));
+
+  let positiveSignals = 0;
+  if (resourceMunicipality && beneficiaryText.includes(resourceMunicipality)) positiveSignals += 1;
+  if (hasAny(resourceText, ['menor', 'infancia', 'familia']) && Number(beneficiary.minors_count || beneficiary.children_count || 0) > 0) positiveSignals += 1;
+  if (hasAny(resourceText, ['desemple', 'empleo', 'trabajo']) && hasAny(profileText, ['desemple', 'empleo', 'trabajo'])) positiveSignals += 1;
+  if (hasAny(resourceText, ['vivienda', 'alquiler', 'hogar']) && hasAny(profileText, ['vivienda', 'alquiler', 'hogar'])) positiveSignals += 1;
+  if (hasAny(resourceText, ['discapacidad', 'dependencia']) && hasAny(profileText, ['discapacidad', 'dependencia'])) positiveSignals += 1;
+  if (resource.required_documents && documents.length) positiveSignals += 1;
+  if (!resourceMunicipality && !resource.age_min && !resource.age_max) positiveSignals += 1;
+
+  return positiveSignals > 0;
+}
+
+function hasAny(text = '', fragments = []) {
+  return fragments.some((fragment) => text.includes(fragment));
+}
+
+function calculateAge(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) age -= 1;
+  return age;
 }
 
 function daysBetween(start, end) {

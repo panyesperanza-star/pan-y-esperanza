@@ -1,4 +1,5 @@
 import { normalize } from '../../lib/formatters';
+import { analyzeResourceCompatibility } from '../../lib/socialResourceRecommendations';
 import { sendEmailViaApi } from '../../lib/emailClient';
 import { callPortalApi } from '../../lib/portalOtpClient';
 import {
@@ -44,6 +45,14 @@ function isPublishedResource(resource) {
   return resource?.publish_in_beneficiary_portal === true
     && ['activo', 'proximamente'].includes(status)
     && (!deadline || deadline >= todayISO());
+}
+
+function portalResourceScope(resource = {}) {
+  const scope = normalize(resource.portal_visibility_scope);
+  if (['all', 'compatible', 'selected', 'none'].includes(scope)) return scope;
+  if (resource?.publish_in_beneficiary_portal === true && resource?.visible_to_all_beneficiaries === true) return 'all';
+  if (resource?.publish_in_beneficiary_portal === true) return 'selected';
+  return 'none';
 }
 
 function sortByDateAsc(a, b, field) {
@@ -263,6 +272,8 @@ export class BeneficiarioPortalService {
     documents = [],
     socialHistory = [],
     resources = [],
+    resourceLinks = [],
+    portalAudience = [],
     notifications = [],
     organizationSettings = {},
     audit = async () => {},
@@ -278,6 +289,8 @@ export class BeneficiarioPortalService {
     this.documents = documents;
     this.socialHistory = socialHistory;
     this.resources = resources;
+    this.resourceLinks = resourceLinks;
+    this.portalAudience = portalAudience;
     this.notifications = notifications;
     this.organizationSettings = organizationSettings;
     this.audit = audit;
@@ -706,16 +719,40 @@ export class BeneficiarioPortalService {
   async getPersonalizedResources(beneficiaryId) {
     const beneficiary = await this.requireBeneficiary(beneficiaryId);
     const resources = await this.readResources();
-    const profileSignals = [
-      beneficiary.situation,
-      beneficiary.requested_help,
-      beneficiary.address_full,
-      beneficiary.postal_code
-    ].map(normalize).filter(Boolean);
+    const documents = await this.getDocuments(beneficiaryId);
+    const selectedIds = new Set(this.portalAudience
+      .filter((item) => item.beneficiary_id === beneficiaryId)
+      .map((item) => item.resource_id)
+      .filter(Boolean));
+    const linkByResource = new Map(this.resourceLinks
+      .filter((item) => item.beneficiary_id === beneficiaryId)
+      .map((item) => [item.resource_id, item]));
 
     return resources
-      .filter(isPublishedResource)
-      .filter((resource) => this.resourceMatchesBeneficiary(resource, profileSignals))
+      .filter((resource) => isPublishedResource(resource) || linkByResource.has(resource.id))
+      .map((resource) => {
+        const link = linkByResource.get(resource.id);
+        const scope = portalResourceScope(resource);
+        return {
+          resource,
+          link,
+          scope,
+          compatible: ['high', 'possible'].includes(analyzeResourceCompatibility(resource, beneficiary, documents, new Set()).level.id)
+        };
+      })
+      .filter(({ link, scope, compatible, resource }) => {
+        if (link) return true;
+        if (!isPublishedResource(resource)) return false;
+        if (scope === 'all') return true;
+        if (scope === 'compatible') return compatible;
+        if (scope === 'selected') return selectedIds.has(resource.id);
+        return false;
+      })
+      .map(({ resource, link, scope }) => ({
+        ...resource,
+        portal_scope: link ? 'individual' : scope,
+        assigned_status: link?.status || ''
+      }))
       .sort((a, b) => Number(b.destacado === true) - Number(a.destacado === true)
         || Number(b.sort_order || 0) - Number(a.sort_order || 0)
         || sortByDateDesc(a, b, 'published_at'));

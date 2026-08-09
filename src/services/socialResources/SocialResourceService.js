@@ -31,6 +31,7 @@ export const SOCIAL_RESOURCE_DETECTION_TYPES = [
   'Cierre/caducidad'
 ];
 export const SOCIAL_RESOURCE_DETECTION_STATUSES = ['Pendiente de revision', 'Aprobada', 'Descartada'];
+export const SOCIAL_RESOURCE_PORTAL_SCOPES = ['none', 'all', 'compatible', 'selected'];
 
 export const BENEFICIARY_RESOURCE_STATUSES = [
   'saved',
@@ -51,6 +52,7 @@ const RESOURCE_HISTORY_FIELDS = {
   status: 'Estado',
   publish_in_beneficiary_portal: 'Publicacion en portal',
   visible_to_all_beneficiaries: 'Visible para todos los beneficiarios',
+  portal_visibility_scope: 'Visibilidad en portal',
   official_url: 'URL oficial',
   last_verified_at: 'Fecha de comprobacion',
   organization_name: 'Organismo responsable',
@@ -94,6 +96,20 @@ function nowISO() {
   return new Date().toISOString();
 }
 
+function safeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function portalScopeLabel(scope) {
+  const labels = {
+    all: 'todos los beneficiarios',
+    compatible: 'solo beneficiarios compatibles',
+    selected: 'beneficiarios seleccionados',
+    none: 'no publicado'
+  };
+  return labels[scope] || 'no publicado';
+}
+
 export function sanitizeSocialResourcePayload(payload = {}, current = {}, context = {}) {
   const name = cleanText(payload.name ?? current.name);
   if (name.length < 3) throw new Error('El nombre del recurso es obligatorio.');
@@ -104,6 +120,7 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
   const category = pickAllowed(cleanText(payload.category ?? current.category), SOCIAL_RESOURCE_CATEGORIES, 'Otros');
   const status = pickAllowed(cleanText(payload.status ?? current.status), SOCIAL_RESOURCE_STATUSES, 'Activo');
   const scope = pickAllowed(cleanText(payload.scope ?? current.scope), SOCIAL_RESOURCE_SCOPES, 'municipal');
+  const portalVisibilityScope = resolvePortalVisibilityScope(payload, current);
   const now = context.now || nowISO();
   const officialUrl = cleanText(payload.official_url ?? current.official_url);
   const lastVerifiedAt = cleanDate(payload.last_verified_at ?? current.last_verified_at);
@@ -133,8 +150,9 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
     application_method: cleanText(payload.application_method ?? current.application_method),
     status,
     scope,
-    visible_to_all_beneficiaries: cleanBoolean(payload.visible_to_all_beneficiaries ?? current.visible_to_all_beneficiaries, false),
-    publish_in_beneficiary_portal: cleanBoolean(payload.publish_in_beneficiary_portal ?? current.publish_in_beneficiary_portal, false),
+    portal_visibility_scope: portalVisibilityScope,
+    visible_to_all_beneficiaries: portalVisibilityScope === 'all',
+    publish_in_beneficiary_portal: portalVisibilityScope !== 'none',
     last_verified_at: lastVerifiedAt,
     verified_by: shouldStampVerifier ? context.userId || null : payload.verified_by || current.verified_by || null,
     verified_by_name: shouldStampVerifier ? context.userName || '' : cleanText(payload.verified_by_name ?? current.verified_by_name),
@@ -149,6 +167,16 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
     created_at: current.created_at || payload.created_at || now,
     updated_at: now
   };
+}
+
+function resolvePortalVisibilityScope(payload = {}, current = {}) {
+  const explicit = cleanText(payload.portal_visibility_scope ?? current.portal_visibility_scope);
+  if (SOCIAL_RESOURCE_PORTAL_SCOPES.includes(explicit)) return explicit;
+  const published = cleanBoolean(payload.publish_in_beneficiary_portal ?? current.publish_in_beneficiary_portal, false);
+  const visibleToAll = cleanBoolean(payload.visible_to_all_beneficiaries ?? current.visible_to_all_beneficiaries, false);
+  if (!published) return 'none';
+  if (visibleToAll) return 'all';
+  return 'selected';
 }
 
 function sanitizeLinkPayload(payload = {}, current = {}, context = {}) {
@@ -244,6 +272,7 @@ export class SocialResourceService {
     repository,
     resources = [],
     links = [],
+    portalAudience = [],
     sources = [],
     detections = [],
     beneficiaries = [],
@@ -256,6 +285,7 @@ export class SocialResourceService {
     this.repository = repository;
     this.resources = resources;
     this.links = links;
+    this.portalAudience = portalAudience;
     this.sources = sources;
     this.detections = detections;
     this.beneficiaries = beneficiaries;
@@ -286,6 +316,55 @@ export class SocialResourceService {
       await this.recordHistory(id, 'updated', current, updated, changedFields, context, cleanText(payload.change_reason));
     }
     await this.audit(`Centro de Recursos Sociales: actualizo recurso ${updated.name || current.name}`.trim());
+    return updated;
+  }
+
+  async publishResourceToPortal(id, payload = {}) {
+    this.assertPermission('social-resources', 'edit');
+    const current = this.findResource(id);
+    if (!current) throw new Error('El recurso no existe.');
+    const scope = pickAllowed(cleanText(payload.portal_visibility_scope), SOCIAL_RESOURCE_PORTAL_SCOPES, 'all');
+    if (scope === 'none') return this.unpublishResourceFromPortal(id);
+    if (scope === 'selected' && !safeArray(payload.beneficiary_ids).length) {
+      throw new Error('Selecciona al menos un beneficiario para publicar el recurso.');
+    }
+    const context = this.context();
+    const nextPayload = sanitizeSocialResourcePayload({
+      ...current,
+      portal_visibility_scope: scope,
+      publish_in_beneficiary_portal: true,
+      visible_to_all_beneficiaries: scope === 'all',
+      change_reason: payload.change_reason || `Publicacion en Portal: ${portalScopeLabel(scope)}`
+    }, current, context);
+    const changedFields = changedResourceFields(current, nextPayload);
+    const updated = await this.repository.updateResource(id, nextPayload);
+    await this.repository.replacePortalAudience(id, scope === 'selected' ? safeArray(payload.beneficiary_ids) : [], context);
+    if (changedFields.length) {
+      await this.recordHistory(id, 'updated', current, updated, changedFields, context, payload.change_reason || `Publicacion en Portal: ${portalScopeLabel(scope)}`);
+    }
+    await this.audit(`Centro de Recursos Sociales: publico ${updated.name || current.name} en Portal (${portalScopeLabel(scope)})`.trim());
+    return updated;
+  }
+
+  async unpublishResourceFromPortal(id) {
+    this.assertPermission('social-resources', 'edit');
+    const current = this.findResource(id);
+    if (!current) throw new Error('El recurso no existe.');
+    const context = this.context();
+    const nextPayload = sanitizeSocialResourcePayload({
+      ...current,
+      portal_visibility_scope: 'none',
+      publish_in_beneficiary_portal: false,
+      visible_to_all_beneficiaries: false,
+      change_reason: 'Retirado del Portal del Beneficiario'
+    }, current, context);
+    const changedFields = changedResourceFields(current, nextPayload);
+    const updated = await this.repository.updateResource(id, nextPayload);
+    await this.repository.replacePortalAudience(id, [], context);
+    if (changedFields.length) {
+      await this.recordHistory(id, 'updated', current, updated, changedFields, context, 'Retirado del Portal del Beneficiario');
+    }
+    await this.audit(`Centro de Recursos Sociales: retiro ${updated.name || current.name} del Portal`.trim());
     return updated;
   }
 

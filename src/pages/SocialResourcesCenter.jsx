@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileText,
   Filter,
+  Globe2,
   History,
   Landmark,
   Mail,
@@ -15,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Target,
   Trash2,
   UserRound
 } from 'lucide-react';
@@ -25,7 +27,7 @@ import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
-import { buildSocialResourceMonitoring, buildSocialResourceRecommendations, isResourceOfficiallyVerified } from '../lib/socialResourceRecommendations';
+import { analyzeResourceCompatibility, buildSocialResourceMonitoring, buildSocialResourceRecommendations, isResourceOfficiallyVerified } from '../lib/socialResourceRecommendations';
 import {
   BENEFICIARY_RESOURCE_STATUSES,
   SOCIAL_RESOURCE_CATEGORIES,
@@ -57,6 +59,7 @@ const emptyResource = {
   application_method: '',
   status: 'Activo',
   scope: 'municipal',
+  portal_visibility_scope: 'none',
   visible_to_all_beneficiaries: false,
   publish_in_beneficiary_portal: false,
   last_verified_at: '',
@@ -137,6 +140,7 @@ const deadlineFilters = [
 export function SocialResourcesCenter({ data, actions, currentUser, navigationTarget, onNavigate }) {
   const resources = data.social_resources || [];
   const links = data.beneficiary_social_resources || [];
+  const portalAudience = data.social_resource_portal_beneficiaries || [];
   const followups = data.social_resource_followups || [];
   const history = data.social_resource_history || [];
   const sources = data.social_resource_sources || [];
@@ -164,6 +168,7 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
   const [editingDetection, setEditingDetection] = useState(null);
   const [reviewingDetection, setReviewingDetection] = useState(null);
   const [trackingTarget, setTrackingTarget] = useState(null);
+  const [publicationTarget, setPublicationTarget] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [checkingSourceId, setCheckingSourceId] = useState('');
   const [notice, setNotice] = useState('');
@@ -358,6 +363,30 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
     }
   }
 
+  async function handlePublishResource(resource, payload = {}) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.publishSocialResourceToPortal(resource.id, payload);
+      setNotice('Publicacion en Portal Beneficiario actualizada correctamente.');
+      setPublicationTarget(null);
+    } catch (publishError) {
+      setError(publishError.message || 'No se pudo publicar el recurso en el Portal Beneficiario.');
+    }
+  }
+
+  async function handleUnpublishResource(resource) {
+    if (!window.confirm('Retirar este recurso del Portal del Beneficiario?')) return;
+    setError('');
+    setNotice('');
+    try {
+      await actions.unpublishSocialResourceFromPortal(resource.id);
+      setNotice('Recurso retirado del Portal Beneficiario.');
+    } catch (publishError) {
+      setError(publishError.message || 'No se pudo retirar el recurso del Portal Beneficiario.');
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -496,10 +525,13 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
               link={selectedBeneficiary ? findLink(links, selectedBeneficiary.id, resource.id) : null}
               canEdit={canEdit}
               canDelete={canDelete}
+              portalAudienceCount={portalAudience.filter((item) => item.resource_id === resource.id).length}
               onSelect={() => setSelectedResourceId(resource.id)}
               onEdit={() => setEditing(resource)}
               onDelete={() => setDeleting(resource)}
               onTrack={() => setTrackingTarget(resource)}
+              onPublish={() => setPublicationTarget(resource)}
+              onUnpublish={() => handleUnpublishResource(resource)}
               beneficiarySelected={Boolean(selectedBeneficiary)}
             />
           ))}
@@ -574,6 +606,19 @@ export function SocialResourcesCenter({ data, actions, currentUser, navigationTa
             currentLink={findLink(links, selectedBeneficiary.id, trackingTarget.id)}
             onSubmit={(payload) => handleSaveTracking(trackingTarget, payload)}
             onCancel={() => setTrackingTarget(null)}
+          />
+        </Modal>
+      )}
+
+      {publicationTarget && (
+        <Modal wide title="Publicar en Portal Beneficiario" onClose={() => setPublicationTarget(null)}>
+          <PortalPublicationForm
+            resource={publicationTarget}
+            beneficiaries={beneficiaries}
+            audienceRows={portalAudience.filter((item) => item.resource_id === publicationTarget.id)}
+            documents={data.beneficiary_documents || []}
+            onSubmit={(payload) => handlePublishResource(publicationTarget, payload)}
+            onCancel={() => setPublicationTarget(null)}
           />
         </Modal>
       )}
@@ -871,8 +916,9 @@ function SummaryCard({ label, value, icon: Icon, tone }) {
   );
 }
 
-function ResourceCard({ resource, recommendation, alert, selected, link, canEdit, canDelete, onSelect, onEdit, onDelete, onTrack, beneficiarySelected }) {
+function ResourceCard({ resource, recommendation, alert, selected, link, canEdit, canDelete, portalAudienceCount = 0, onSelect, onEdit, onDelete, onTrack, onPublish, onUnpublish, beneficiarySelected }) {
   const verified = isResourceOfficiallyVerified(resource);
+  const publication = portalPublicationState(resource, portalAudienceCount);
   return (
     <article className={`rounded-xl border bg-white p-5 shadow-sm transition ${selected ? 'border-brand-400 ring-2 ring-brand-100' : 'border-slate-200 hover:border-brand-200'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -881,8 +927,7 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusStyles[resource.status] || statusStyles.Activo}`}>{resource.status || 'Activo'}</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{resource.scope || 'municipal'}</span>
             {alert && <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert.tone}`}>{alert.label}</span>}
-            {resource.publish_in_beneficiary_portal && <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">Portal</span>}
-            {resource.visible_to_all_beneficiaries && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Todos los beneficiarios</span>}
+            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${publication.badgeClass}`}>{publication.shortLabel}</span>
             <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
               {verified ? 'Fuente verificada' : 'Fuente pendiente'}
             </span>
@@ -907,6 +952,25 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
         <InfoItem icon={CalendarClock} label="Fecha limite" value={resource.deadline_at ? formatDate(resource.deadline_at) : 'Sin limite'} />
         <InfoItem icon={BadgeCheck} label="Verificado" value={resource.last_verified_at ? formatDate(resource.last_verified_at) : 'Pendiente'} />
       </dl>
+      <div className={`mt-4 rounded-xl border p-4 ${publication.panelClass}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide"><Globe2 size={15} /> Portal Beneficiario</p>
+            <p className="mt-1 text-sm font-black">{publication.title}</p>
+            <p className="mt-1 text-xs font-semibold opacity-80">{publication.description}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {publication.published ? (
+              <>
+                <Button variant="secondary" disabled>✓ Publicado</Button>
+                {canEdit && <Button variant="secondary" onClick={onUnpublish}>Retirar del Portal</Button>}
+              </>
+            ) : (
+              canEdit && <Button onClick={onPublish}>Publicar en Portal</Button>
+            )}
+          </div>
+        </div>
+      </div>
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="secondary" onClick={onSelect}>Ver ficha</Button>
         <Button variant="subtle" onClick={onTrack} disabled={!beneficiarySelected}>Guardar para beneficiario</Button>
@@ -914,6 +978,205 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
         {canDelete && <Button variant="secondary" onClick={onDelete}><Trash2 size={15} /> Eliminar</Button>}
       </div>
     </article>
+  );
+}
+
+function portalPublicationScope(resource = {}) {
+  if (resource.portal_visibility_scope) return resource.portal_visibility_scope;
+  if (resource.publish_in_beneficiary_portal && resource.visible_to_all_beneficiaries) return 'all';
+  if (resource.publish_in_beneficiary_portal) return 'selected';
+  return 'none';
+}
+
+function portalPublicationState(resource = {}, selectedCount = 0) {
+  const scope = portalPublicationScope(resource);
+  if (scope === 'all') {
+    return {
+      published: true,
+      shortLabel: '🌐 Publicado para todos',
+      title: 'Estado: Publicado',
+      description: 'Visible en Ayudas y recursos para todos los beneficiarios del Portal.',
+      badgeClass: 'bg-brand-50 text-brand-700',
+      panelClass: 'border-brand-100 bg-brand-50 text-brand-800'
+    };
+  }
+  if (scope === 'compatible') {
+    return {
+      published: true,
+      shortLabel: '🎯 Solo compatibles',
+      title: 'Estado: Publicado',
+      description: 'Visible solo para beneficiarios compatibles segun reglas objetivas del ERP.',
+      badgeClass: 'bg-amber-50 text-amber-800',
+      panelClass: 'border-amber-100 bg-amber-50 text-amber-900'
+    };
+  }
+  if (scope === 'selected') {
+    return {
+      published: true,
+      shortLabel: '👤 Individual',
+      title: 'Estado: Publicado',
+      description: `${selectedCount || 0} beneficiario${selectedCount === 1 ? '' : 's'} seleccionado${selectedCount === 1 ? '' : 's'} para verlo en el Portal.`,
+      badgeClass: 'bg-blue-50 text-blue-700',
+      panelClass: 'border-blue-100 bg-blue-50 text-blue-900'
+    };
+  }
+  return {
+    published: false,
+    shortLabel: '⚫ No publicado',
+    title: 'Estado: No publicado',
+    description: 'No aparece en el Portal del Beneficiario.',
+    badgeClass: 'bg-slate-100 text-slate-700',
+    panelClass: 'border-slate-200 bg-slate-50 text-slate-700'
+  };
+}
+
+function PortalPublicationForm({ resource, beneficiaries = [], audienceRows = [], documents = [], onSubmit, onCancel }) {
+  const currentScope = portalPublicationScope(resource);
+  const [scope, setScope] = useState(currentScope === 'none' ? 'all' : currentScope);
+  const [query, setQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState(() => new Set(audienceRows.map((item) => item.beneficiary_id).filter(Boolean)));
+  const [saving, setSaving] = useState(false);
+
+  const documentsByBeneficiary = useMemo(() => {
+    const grouped = new Map();
+    documents.forEach((document) => {
+      const beneficiaryId = document.beneficiary_id;
+      if (!beneficiaryId) return;
+      if (!grouped.has(beneficiaryId)) grouped.set(beneficiaryId, []);
+      grouped.get(beneficiaryId).push(document);
+    });
+    return grouped;
+  }, [documents]);
+
+  const compatibilityRows = useMemo(() => beneficiaries.map((beneficiary) => ({
+    beneficiary,
+    analysis: analyzeResourceCompatibility(resource, beneficiary, documentsByBeneficiary.get(beneficiary.id) || [], new Set())
+  })), [beneficiaries, documentsByBeneficiary, resource]);
+
+  const compatibleCount = compatibilityRows.filter(({ analysis }) => ['high', 'possible'].includes(analysis?.level?.id)).length;
+  const filteredBeneficiaries = useMemo(() => {
+    const term = normalize(query);
+    const rows = term
+      ? beneficiaries.filter((beneficiary) => normalize([
+        beneficiary.full_name,
+        beneficiary.code,
+        beneficiary.document_number,
+        beneficiary.phone,
+        beneficiary.email
+      ].filter(Boolean).join(' ')).includes(term))
+      : beneficiaries;
+    return rows.slice(0, term ? 40 : 18);
+  }, [beneficiaries, query]);
+
+  function toggleBeneficiary(beneficiaryId) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(beneficiaryId)) next.delete(beneficiaryId);
+      else next.add(beneficiaryId);
+      return next;
+    });
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit({
+        portal_visibility_scope: scope,
+        beneficiary_ids: scope === 'selected' ? [...selectedIds] : []
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={submit}>
+      <div className="rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900">
+        <p className="font-black">{resource.name}</p>
+        <p className="mt-1">Elige donde aparece este recurso dentro de Ayudas y recursos del Portal Beneficiario.</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <PortalScopeOption
+          active={scope === 'all'}
+          icon={Globe2}
+          title="Todos los beneficiarios"
+          description="Aparece en Disponibles para todos los usuarios del Portal."
+          onClick={() => setScope('all')}
+        />
+        <PortalScopeOption
+          active={scope === 'compatible'}
+          icon={Target}
+          title="Solo beneficiarios compatibles"
+          description={`${compatibleCount} expediente${compatibleCount === 1 ? '' : 's'} con compatibilidad suficiente.`}
+          onClick={() => setScope('compatible')}
+        />
+        <PortalScopeOption
+          active={scope === 'selected'}
+          icon={UserRound}
+          title="Beneficiarios seleccionados"
+          description="Solo aparece para los expedientes elegidos manualmente."
+          onClick={() => setScope('selected')}
+        />
+      </div>
+
+      {scope === 'selected' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-black text-ink">Beneficiarios seleccionados</p>
+              <p className="text-sm text-slate-500">{selectedIds.size} seleccionado{selectedIds.size === 1 ? '' : 's'}</p>
+            </div>
+            <div className="relative md:w-80">
+              <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+              <input
+                className={`${inputClass} pl-9`}
+                placeholder="Buscar por nombre, codigo, documento o telefono..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-4 max-h-80 space-y-2 overflow-auto pr-1">
+            {filteredBeneficiaries.map((beneficiary) => (
+              <label key={beneficiary.id} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                <span>
+                  <span className="block font-bold text-ink">{beneficiary.full_name}</span>
+                  <span className="text-xs font-semibold text-slate-500">{beneficiary.code || 'Sin codigo'} · {beneficiary.document_number || 'Sin documento'} · {beneficiary.phone || 'Sin telefono'}</span>
+                </span>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  checked={selectedIds.has(beneficiary.id)}
+                  onChange={() => toggleBeneficiary(beneficiary.id)}
+                />
+              </label>
+            ))}
+            {filteredBeneficiaries.length === 0 && <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-500">No hay beneficiarios con esa busqueda.</p>}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit" disabled={saving || (scope === 'selected' && selectedIds.size === 0)}>{saving ? 'Publicando...' : 'Publicar en Portal'}</Button>
+      </div>
+    </form>
+  );
+}
+
+function PortalScopeOption({ active, icon: Icon, title, description, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`rounded-xl border p-4 text-left transition ${active ? 'border-brand-300 bg-brand-50 text-brand-900 ring-2 ring-brand-100' : 'border-slate-200 bg-white text-slate-700 hover:border-brand-200'}`}
+      onClick={onClick}
+    >
+      <Icon className={active ? 'text-brand-700' : 'text-slate-400'} size={22} />
+      <span className="mt-3 block font-black">{title}</span>
+      <span className="mt-1 block text-sm font-semibold opacity-80">{description}</span>
+    </button>
   );
 }
 
@@ -1092,18 +1355,6 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
         <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{SOCIAL_RESOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
         <FormField label="Ambito"><select className={inputClass} value={form.scope} onChange={(event) => update('scope', event.target.value)}>{SOCIAL_RESOURCE_SCOPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
         <FormField label="Municipio"><input className={inputClass} value={form.municipality} onChange={(event) => update('municipality', event.target.value)} /></FormField>
-        <ToggleField
-          label="Publicar en Portal del Beneficiario"
-          description="Permite mostrar el recurso en el portal sin exponer notas internas."
-          checked={form.publish_in_beneficiary_portal === true}
-          onChange={(value) => update('publish_in_beneficiary_portal', value)}
-        />
-        <ToggleField
-          label="Visible para todos los beneficiarios"
-          description="Lo publica para todos sin crear vinculaciones individuales."
-          checked={form.visible_to_all_beneficiaries === true}
-          onChange={(value) => update('visible_to_all_beneficiaries', value)}
-        />
         <FormField label="Fecha de apertura"><input type="date" className={inputClass} value={form.opens_at || ''} onChange={(event) => update('opens_at', event.target.value)} /></FormField>
         <FormField label="Fecha limite"><input type="date" className={inputClass} value={form.deadline_at || ''} onChange={(event) => update('deadline_at', event.target.value)} /></FormField>
         <FormField label="Ultima verificacion"><input type="date" className={inputClass} value={form.last_verified_at || ''} onChange={(event) => update('last_verified_at', event.target.value)} /></FormField>
@@ -1362,23 +1613,6 @@ function TextAreaField({ label, value, onChange }) {
     <FormField label={label}>
       <textarea className={`${inputClass} min-h-28 resize-y`} value={value || ''} onChange={(event) => onChange(event.target.value)} />
     </FormField>
-  );
-}
-
-function ToggleField({ label, description, checked, onChange }) {
-  return (
-    <label className="flex min-h-[4.25rem] cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
-      <input
-        type="checkbox"
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-        checked={Boolean(checked)}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span>
-        <span className="block text-sm font-bold text-ink">{label}</span>
-        <span className="mt-1 block text-xs text-slate-500">{description}</span>
-      </span>
-    </label>
   );
 }
 

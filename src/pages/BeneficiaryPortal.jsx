@@ -1357,7 +1357,7 @@ function ResourcesSection({ resources, beneficiary, documents }) {
         isExpired: Number.isFinite(daysUntilDeadline) && daysUntilDeadline < 0,
         isNew: resource.is_new === true || (Number.isFinite(daysSinceCreated) && daysSinceCreated <= 30),
         isClosingSoon: resource.is_closing_soon === true || (Number.isFinite(daysUntilDeadline) && daysUntilDeadline >= 0 && daysUntilDeadline <= 15),
-        isRecommended: ['high', 'possible'].includes(compatibility.level.id)
+        isRecommended: resource.portal_scope === 'compatible' || ['high', 'possible'].includes(compatibility.level.id)
       };
     });
   }, [beneficiary, documents, resources, today]);

@@ -106,6 +106,7 @@ const EMPTY_APP_DATA = Object.freeze({
   recursos: EMPTY_TABLE,
   social_resources: EMPTY_TABLE,
   beneficiary_social_resources: EMPTY_TABLE,
+  social_resource_portal_beneficiaries: EMPTY_TABLE,
   social_resource_followups: EMPTY_TABLE,
   social_resource_history: EMPTY_TABLE,
   social_resource_sources: EMPTY_TABLE,
@@ -362,6 +363,7 @@ export function useAppData(enabled = true, currentUser = null) {
       repository: new SocialResourceRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
       resources: appData.social_resources || [],
       links: appData.beneficiary_social_resources || [],
+      portalAudience: appData.social_resource_portal_beneficiaries || [],
       sources: appData.social_resource_sources || [],
       detections: appData.social_resource_detections || [],
       beneficiaries: appData.beneficiaries || [],
@@ -493,6 +495,8 @@ export function useAppData(enabled = true, currentUser = null) {
       documents: appData.beneficiary_documents || [],
       socialHistory: appData.social_history || [],
       resources: appData.social_resources || [],
+      resourceLinks: appData.beneficiary_social_resources || [],
+      portalAudience: appData.social_resource_portal_beneficiaries || [],
       notifications: appData.notificaciones || [],
       organizationSettings: appData.organization_settings?.[0] || {},
       audit,
@@ -2484,6 +2488,16 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     updateSocialResource: async (id, payload) => {
       const updated = await socialResourceService.updateResource(id, payload);
+      await reload();
+      return updated;
+    },
+    publishSocialResourceToPortal: async (id, payload) => {
+      const updated = await socialResourceService.publishResourceToPortal(id, payload);
+      await reload();
+      return updated;
+    },
+    unpublishSocialResourceFromPortal: async (id) => {
+      const updated = await socialResourceService.unpublishResourceFromPortal(id);
       await reload();
       return updated;
     },

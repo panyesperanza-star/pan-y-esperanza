@@ -112,6 +112,7 @@ const OPTIONAL_TABLES = new Set([
   'recursos',
   'social_resources',
   'beneficiary_social_resources',
+  'social_resource_portal_beneficiaries',
   'social_resource_followups',
   'social_resource_history',
   'social_resource_sources',
@@ -124,6 +125,7 @@ const OPTIONAL_TABLES = new Set([
 const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'social_resources',
   'beneficiary_social_resources',
+  'social_resource_portal_beneficiaries',
   'social_resource_followups',
   'social_resource_history',
   'social_resource_sources',

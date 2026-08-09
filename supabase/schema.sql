@@ -727,6 +727,7 @@ create table if not exists public.social_resources (
   application_method text not null default '',
   status text not null default 'Activo',
   scope text not null default 'municipal',
+  portal_visibility_scope text not null default 'none',
   visible_to_all_beneficiaries boolean not null default false,
   publish_in_beneficiary_portal boolean not null default false,
   last_verified_at date,
@@ -744,6 +745,7 @@ create table if not exists public.social_resources (
   updated_at timestamptz not null default now(),
   constraint social_resources_status_check check (status in ('Activo', 'Proximamente', 'Cerrado', 'Pendiente de verificar')),
   constraint social_resources_scope_check check (scope in ('municipal', 'autonomico', 'estatal', 'privado')),
+  constraint social_resources_portal_visibility_scope_check check (portal_visibility_scope in ('none', 'all', 'compatible', 'selected')),
   constraint social_resources_age_check check (
     (age_min is null or age_min >= 0)
     and (age_max is null or age_max >= 0)
@@ -850,6 +852,15 @@ create table if not exists public.beneficiary_social_resources (
     'not_applicable'
   )),
   constraint beneficiary_social_resources_unique unique (beneficiary_id, resource_id)
+);
+
+create table if not exists public.social_resource_portal_beneficiaries (
+  id uuid primary key default gen_random_uuid(),
+  resource_id uuid not null references public.social_resources(id) on delete cascade,
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  created_by uuid references public.app_users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint social_resource_portal_beneficiaries_unique unique (resource_id, beneficiary_id)
 );
 
 create table if not exists public.social_resource_followups (
@@ -1078,6 +1089,7 @@ alter table public.categorias_recursos enable row level security;
 alter table public.recursos enable row level security;
 alter table public.social_resources enable row level security;
 alter table public.beneficiary_social_resources enable row level security;
+alter table public.social_resource_portal_beneficiaries enable row level security;
 alter table public.social_resource_followups enable row level security;
 alter table public.social_resource_history enable row level security;
 alter table public.social_resource_sources enable row level security;
@@ -1168,6 +1180,15 @@ create policy "beneficiary_social_resources_update_by_permission" on public.bene
 for update to authenticated using (public.can_module_action('social-resources', 'edit')) with check (public.can_module_action('social-resources', 'edit'));
 create policy "beneficiary_social_resources_delete_by_permission" on public.beneficiary_social_resources
 for delete to authenticated using (public.can_module_action('social-resources', 'edit'));
+create policy "social_resource_portal_beneficiaries_select_by_permission" on public.social_resource_portal_beneficiaries
+for select to authenticated using (public.can_module_action('social-resources', 'view'));
+create policy "social_resource_portal_beneficiaries_insert_by_permission" on public.social_resource_portal_beneficiaries
+for insert to authenticated with check (public.can_module_action('social-resources', 'edit'));
+create policy "social_resource_portal_beneficiaries_update_by_permission" on public.social_resource_portal_beneficiaries
+for update to authenticated using (public.can_module_action('social-resources', 'edit')) with check (public.can_module_action('social-resources', 'edit'));
+create policy "social_resource_portal_beneficiaries_delete_by_permission" on public.social_resource_portal_beneficiaries
+for delete to authenticated using (public.can_module_action('social-resources', 'edit'));
+grant select, insert, update, delete on public.social_resource_portal_beneficiaries to authenticated;
 create policy "social_resource_followups_select_by_permission" on public.social_resource_followups
 for select to authenticated using (public.can_module_action('social-resources', 'view'));
 create policy "social_resource_followups_insert_by_permission" on public.social_resource_followups
@@ -2216,10 +2237,13 @@ create index if not exists idx_recursos_collaborator_id on public.recursos(colla
 create index if not exists social_resources_category_idx on public.social_resources(category);
 create index if not exists social_resources_status_idx on public.social_resources(status);
 create index if not exists social_resources_portal_publication_idx on public.social_resources(publish_in_beneficiary_portal, visible_to_all_beneficiaries, status, deadline_at);
+create index if not exists social_resources_portal_visibility_idx on public.social_resources(portal_visibility_scope, status, deadline_at);
 create index if not exists social_resources_deadline_idx on public.social_resources(deadline_at);
 create index if not exists social_resources_municipality_idx on public.social_resources(municipality);
 create index if not exists beneficiary_social_resources_beneficiary_idx on public.beneficiary_social_resources(beneficiary_id);
 create index if not exists beneficiary_social_resources_resource_idx on public.beneficiary_social_resources(resource_id);
+create index if not exists social_resource_portal_beneficiaries_beneficiary_idx on public.social_resource_portal_beneficiaries(beneficiary_id);
+create index if not exists social_resource_portal_beneficiaries_resource_idx on public.social_resource_portal_beneficiaries(resource_id);
 create index if not exists social_resource_followups_link_idx on public.social_resource_followups(beneficiary_resource_id);
 create index if not exists social_resource_followups_beneficiary_idx on public.social_resource_followups(beneficiary_id);
 create index if not exists social_resource_history_resource_idx on public.social_resource_history(resource_id, created_at desc);
