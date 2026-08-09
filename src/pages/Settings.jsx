@@ -99,6 +99,17 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
             </FormField>
             <p className="mt-2 text-sm text-slate-500">Presidencia, Vicepresidencia y Coordinacion General se resuelven desde usuarios/roles. Aqui puedes anadir destinatarios extra.</p>
           </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+            <FormField label="Métodos de donación">
+              <textarea
+                className={`${inputClass} min-h-20`}
+                value={formatRecipientListForSettings(form.donation_payment_methods || ['Efectivo', 'Transferencia', 'Tarjeta', 'Bizum', 'PayPal', 'Otro'])}
+                onChange={(event) => update('donation_payment_methods', parseRecipientListFromSettings(event.target.value))}
+                placeholder="Efectivo, Transferencia, Tarjeta, Bizum, PayPal, Otro"
+              />
+            </FormField>
+            <p className="mt-2 text-sm text-slate-500">Estos métodos alimentan los formularios de donación. No activa conciliación bancaria ni webhooks.</p>
+          </div>
           <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar configuracion</Button></div>
         </form>
       </section>

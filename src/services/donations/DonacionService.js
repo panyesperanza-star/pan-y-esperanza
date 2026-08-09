@@ -233,6 +233,7 @@ export class DonacionService {
     const donation = await this.repository.createDonation({
       donor_id: donor?.id || payload.donor_id || null,
       collaborator_id: collaborator?.id || payload.collaborator_id || null,
+      accounting_contact_id: cleanText(payload.donor_contact_id || payload.contact_id) || null,
       donor: donor?.name || donorName || 'Donante',
       donor_email: donor?.email || donorEmail,
       donor_kind: payload.donor_kind || payload.kind || 'Particular',
@@ -243,6 +244,7 @@ export class DonacionService {
       donated_at: safeDate(payload.donated_at, payload.operation_at, payload.movement_datetime, payload.movement_at, payload.date),
       estimated_value: amount,
       amount,
+      reference: cleanText(payload.reference) || null,
       campaign_id: cleanText(payload.campaign_id) || null,
       frequency: cleanText(payload.frequency || 'Puntual'),
       notes: compactNotes(payload.concept, payload.reference ? `Referencia: ${payload.reference}` : '', payload.notes),
@@ -327,6 +329,7 @@ export class DonacionService {
       quantity: quantity ? String(quantity) : '',
       reference,
       unit_value: unitValue,
+      campaign_id: cleanText(payload.campaign_id) || null,
       payment_method: cleanText(payload.payment_method),
       notes: compactNotes(`Referencia: ${reference}`, payload.notes || title),
       created_at: new Date().toISOString(),

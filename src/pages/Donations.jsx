@@ -28,7 +28,7 @@ import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { printDonationCertificatePdf, printDonorHistoryPdf, printDonorProfilePdf } from '../lib/exporters';
+import { printDonationCertificatePdf, printDonationImpactReportPdf, printDonationReceiptPdf, printDonorHistoryPdf, printDonorProfilePdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 
 const DONOR_KIND_OPTIONS = ['Todos', 'Particular', 'Empresa', 'Iglesia', 'Asociacion', 'Fundacion', 'Administracion', 'Entidad', 'Anonimo'];
@@ -514,6 +514,7 @@ function DonorProfile({ profile, data, tab, setTab, canEdit, isSuperadmin, onEdi
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" onClick={() => printDonorProfilePdf(profile, data.organization_settings?.[0])}><Download size={16} /> Expediente PDF</Button>
               <Button variant="secondary" onClick={() => printDonorHistoryPdf(profile, data.organization_settings?.[0])}><FileText size={16} /> Historial PDF</Button>
+              <Button variant="secondary" onClick={() => printDonationImpactReportPdf({ donor: profile, data, organization: data.organization_settings?.[0] })}><PackageCheck size={16} /> Generar informe de impacto</Button>
               {canEdit && <Button variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
               {canEdit && (profile.archived
                 ? <Button variant="secondary" onClick={onUnarchive}><RotateCcw size={16} /> Desarchivar</Button>
@@ -623,8 +624,10 @@ function DonationHistorySection({ title, icon: Icon, rows, profile, data }) {
               <CompactMetric label="Documento" value={item.documentLabel || '-'} />
             </dl>
             {item.notes && <p className="mt-3 text-sm leading-6 text-slate-600">{item.notes}</p>}
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => printDonationReceiptPdf(donationCertificatePayload(item, profile), profile, data.organization_settings?.[0], data)}><Download size={16} /> Justificante</Button>
               <Button variant="secondary" onClick={() => printDonationCertificatePdf(donationCertificatePayload(item, profile), data.organization_settings?.[0], item)}><Download size={16} /> Certificado</Button>
+              <Button variant="secondary" onClick={() => printDonationImpactReportPdf({ donor: profile, donation: donationCertificatePayload(item, profile), data, organization: data.organization_settings?.[0] })}><PackageCheck size={16} /> Impacto</Button>
             </div>
           </article>
         ))}
@@ -685,7 +688,10 @@ function DonorDocuments({ profile, data }) {
             <p className="font-bold text-ink">Certificado de donación</p>
             <p className="mt-1 text-xs text-slate-500">{formatDate(item.date)} - {item.concept}</p>
           </div>
-          <Button variant="secondary" onClick={() => printDonationCertificatePdf(donationCertificatePayload(item, profile), data.organization_settings?.[0], item)}><Download size={16} /> Descargar</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => printDonationReceiptPdf(donationCertificatePayload(item, profile), profile, data.organization_settings?.[0], data)}><Download size={16} /> Justificante</Button>
+            <Button variant="secondary" onClick={() => printDonationCertificatePdf(donationCertificatePayload(item, profile), data.organization_settings?.[0], item)}><Download size={16} /> Certificado</Button>
+          </div>
         </article>
       ))}
       {!docs.length && !certificates.length && <EmptyState icon={FileText} title="Sin documentos" text="Los justificantes y certificados asociados al donante aparecerán aquí." />}

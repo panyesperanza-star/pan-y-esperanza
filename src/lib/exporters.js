@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { resolveBeneficiaryPhotoUrl } from './beneficiaryPhotos';
+import { buildDonationImpact, buildDonorImpact } from './donationImpact';
 import { formatDate, formatDateTime, nextReceiptNumber } from './formatters';
 
 export function exportExcel(filename, sheets) {
@@ -764,6 +765,194 @@ export async function printDonationCertificatePdf(donation, organization = {}, d
   doc.setTextColor(91, 105, 98);
   doc.text(doc.splitTextToSize('Este certificado acredita la donación registrada por la Asociación Pan y Esperanza en su sistema interno de gestión. El documento se emite con fines justificativos e informativos para el donante y para las entidades que proceda.', 180), 14, 270);
   doc.save(`Certificado-donacion-${safePdfFilename(certificateNumber)}.pdf`);
+}
+
+export async function createDonationReceiptPdf(donation = {}, donor = {}, organization = {}, data = {}) {
+  const rawDonation = donation.rawDonation || donation;
+  const impact = buildDonationImpact(rawDonation, data);
+  const orgName = organization.name || 'Asociacion Pan y Esperanza';
+  const donatedAt = rawDonation.donated_at || donation.date || rawDonation.created_at || new Date().toISOString();
+  const receiptNumber = rawDonation.receipt_number
+    || rawDonation.reference
+    || donation.reference
+    || `DON-${new Date(donatedAt).getFullYear()}-${String(rawDonation.id || donation.id || Date.now()).slice(-6).padStart(6, '0')}`;
+  const donorName = rawDonation.donor || donor.name || donation.donor || '-';
+  const donorEmail = rawDonation.donor_email || donor.email || donor.access_email || '';
+  const qr = await QRCode.toDataURL(JSON.stringify({
+    type: 'justificante-donacion',
+    number: receiptNumber,
+    donation_id: rawDonation.id || donation.id || '',
+    issued_at: new Date().toISOString()
+  }), { margin: 1, width: 130 });
+  const doc = new jsPDF();
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 48, 'F');
+  await addOfficialLogo(doc, 14, 10, 32, 22);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.setTextColor(23, 33, 27);
+  doc.text('JUSTIFICANTE OFICIAL DE DONACION', 52, 20);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(orgName, 52, 28);
+  doc.text(`Emitido: ${formatDateTime(new Date().toISOString())}`, 52, 35);
+  doc.addImage(qr, 'PNG', 174, 11, 24, 24);
+  doc.setDrawColor(36, 126, 80);
+  doc.line(14, 50, 196, 50);
+
+  autoTable(doc, {
+    startY: 60,
+    body: [
+      ['Numero de justificante', receiptNumber],
+      ['Donante', donorName],
+      ['Email', donorEmail || '-'],
+      ['Tipo de donante', rawDonation.donor_kind || donor.type || donor.kind || '-'],
+      ['Fecha de donacion', formatDate(donatedAt)],
+      ['Tipo de donacion', rawDonation.donation_type || donation.concept || '-'],
+      ['Metodo', rawDonation.payment_method || '-'],
+      ['Campana vinculada', donationCampaignLabel(rawDonation, data)],
+      ['Estado', rawDonation.status || rawDonation.state || 'Registrada']
+    ],
+    theme: 'plain',
+    styles: { fontSize: 9, cellPadding: 2.4, textColor: [23, 33, 27] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 52, textColor: [36, 126, 80] }, 1: { cellWidth: 124 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Concepto / producto', 'Cantidad recibida', 'Valor estimado']],
+    body: donationReceiptRows(rawDonation, impact, donation),
+    headStyles: { fillColor: [36, 126, 80] },
+    alternateRowStyles: { fillColor: [247, 250, 246] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    margin: { left: 14, right: 14 }
+  });
+
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Impacto trazable', 'Resultado']],
+    body: [
+      ['Cantidad recibida', formatPlainQuantity(impact.unitsReceived || rawDonation.quantity || 0)],
+      ['Cantidad entregada', formatPlainQuantity(impact.unitsDelivered)],
+      ['Stock restante', formatPlainQuantity(impact.unitsRemaining)],
+      ['Familias beneficiadas', String(impact.familiesBenefited)],
+      ['Personas beneficiadas', String(impact.peopleBenefited)],
+      ['Valor economico/social', formatMoney(impact.estimatedValue)]
+    ],
+    headStyles: { fillColor: [15, 47, 37] },
+    styles: { fontSize: 8.8, cellPadding: 2.8 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 }, 1: { cellWidth: 118 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  const observations = String(rawDonation.notes || donation.notes || '').replace(/^Referencia:\s*.*$/gim, '').trim();
+  if (observations) {
+    const y = doc.lastAutoTable.finalY + 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(36, 126, 80);
+    doc.text('OBSERVACIONES', 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(45, 56, 49);
+    doc.text(doc.splitTextToSize(observations, 178), 14, y + 7);
+  }
+
+  drawDonationReceiptFooter(doc, orgName);
+  return {
+    doc,
+    receiptNumber,
+    filename: `Justificante-donacion-${safePdfFilename(receiptNumber)}.pdf`
+  };
+}
+
+export async function printDonationReceiptPdf(donation = {}, donor = {}, organization = {}, data = {}) {
+  const { doc, filename } = await createDonationReceiptPdf(donation, donor, organization, data);
+  doc.save(filename);
+}
+
+export async function printDonationImpactReportPdf({ donor = null, donation = null, data = {}, organization = {} } = {}) {
+  const doc = new jsPDF();
+  const orgName = organization.name || 'Asociacion Pan y Esperanza';
+  const generatedAt = new Date().toISOString();
+  const targetDonation = donation?.rawDonation || donation;
+  const impact = targetDonation?.id ? buildDonationImpact(targetDonation, data) : buildDonorImpact(donor, data);
+  const title = targetDonation?.id ? 'INFORME DE IMPACTO DE DONACION' : 'INFORME DE IMPACTO DEL DONANTE';
+  const subjectName = targetDonation?.donor || donor?.name || '-';
+
+  doc.setFillColor(246, 249, 246);
+  doc.rect(0, 0, 210, 44, 'F');
+  await addOfficialLogo(doc, 14, 9, 30, 22);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(23, 33, 27);
+  doc.text(title, 50, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(91, 105, 98);
+  doc.text(`${orgName} - ${formatDateTime(generatedAt)}`, 50, 27);
+  doc.text(`Donante: ${subjectName}`, 50, 34);
+  doc.setDrawColor(36, 126, 80);
+  doc.line(14, 46, 196, 46);
+
+  autoTable(doc, {
+    startY: 56,
+    head: [['Indicador', 'Resultado']],
+    body: [
+      ['Cantidad recibida', formatPlainQuantity(impact.unitsReceived)],
+      ['Cantidad entregada', formatPlainQuantity(impact.unitsDelivered)],
+      ['Stock restante', formatPlainQuantity(impact.unitsRemaining)],
+      ['Familias beneficiadas', String(impact.familiesBenefited)],
+      ['Personas beneficiadas', String(impact.peopleBenefited)],
+      ['Valor economico/social', formatMoney(impact.estimatedValue)]
+    ],
+    headStyles: { fillColor: [36, 126, 80] },
+    styles: { fontSize: 9.5, cellPadding: 3 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62 }, 1: { cellWidth: 118 } },
+    margin: { left: 14, right: 14 }
+  });
+
+  const productRows = targetDonation?.id ? impact.products : impact.donations.flatMap((item) => item.products);
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['Producto / donacion', 'Recibido', 'Entregado', 'Restante', 'Valor']],
+    body: productRows.length ? productRows.map((row) => [
+      row.productName,
+      `${formatPlainQuantity(row.received)} ${row.unit || ''}`.trim(),
+      `${formatPlainQuantity(row.delivered)} ${row.unit || ''}`.trim(),
+      `${formatPlainQuantity(row.remaining)} ${row.unit || ''}`.trim(),
+      formatMoney(row.estimatedValue)
+    ]) : [[targetDonation?.donation_type || 'Donacion monetaria', '-', '-', '-', formatMoney(impact.estimatedValue)]],
+    headStyles: { fillColor: [15, 47, 37] },
+    alternateRowStyles: { fillColor: [247, 250, 246] },
+    styles: { fontSize: 8.3, cellPadding: 2.5 },
+    margin: { left: 14, right: 14 }
+  });
+
+  const deliveries = targetDonation?.id ? impact.deliveries : impact.donations.flatMap((item) => item.deliveries);
+  if (deliveries.length) {
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [['Entrega', 'Beneficiario', 'Fecha']],
+      body: deliveries.slice(0, 30).map((delivery) => [
+        delivery.receipt_number || delivery.id,
+        delivery.beneficiary_name || '-',
+        formatDate(delivery.delivered_at || delivery.created_at)
+      ]),
+      headStyles: { fillColor: [36, 126, 80] },
+      styles: { fontSize: 8.2, cellPadding: 2.4 },
+      margin: { left: 14, right: 14 }
+    });
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  doc.text('Informe generado a partir de datos trazables del ERP: donacion, productos, inventario, entregas y beneficiarios.', 14, 280);
+  const filenameBase = targetDonation?.id ? (targetDonation.reference || targetDonation.id) : (donor?.code || donor?.name || 'donante');
+  doc.save(`Informe-impacto-donacion-${safePdfFilename(filenameBase)}.pdf`);
 }
 
 export async function printDonorProfilePdf(profile, organization = {}) {
@@ -1706,6 +1895,33 @@ function buildDonationProductRows(donation = {}, donationView = {}) {
     ? formatMoney(donationView.moneyAmount)
     : formatMoney(donation.estimated_value ?? donationView.socialAmount);
   return [[product, quantity, value]];
+}
+
+function donationReceiptRows(donation = {}, impact = {}, donationView = {}) {
+  if (impact.products?.length) {
+    return impact.products.map((row) => [
+      row.productName || donation.donation_type || '-',
+      `${formatPlainQuantity(row.received)} ${row.unit || ''}`.trim(),
+      formatMoney(row.estimatedValue)
+    ]);
+  }
+  return buildDonationProductRows(donation, donationView);
+}
+
+function donationCampaignLabel(donation = {}, data = {}) {
+  if (!donation.campaign_id) return '-';
+  const campaign = (data.campanas || []).find((item) => item.id === donation.campaign_id);
+  return campaign?.name || donation.campaign_id;
+}
+
+function drawDonationReceiptFooter(doc, orgName) {
+  doc.setDrawColor(219, 229, 220);
+  doc.line(14, 266, 196, 266);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(91, 105, 98);
+  doc.text(doc.splitTextToSize(`Documento emitido por ${orgName} desde ALTHEMON. La informacion procede de los registros internos de donaciones, inventario y entregas.`, 180), 14, 274);
+  doc.setTextColor(23, 33, 27);
 }
 
 function appendDonorHistoryTable(doc, profile, startY, title) {

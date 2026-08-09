@@ -696,6 +696,105 @@ export function useAppData(enabled = true, currentUser = null) {
     }
   }
 
+  async function trySendDonationThankYouEmail(donation, payload = {}, context = {}) {
+    if (!donation?.id) return null;
+    const email = String(donation.donor_email || payload.contact_email || payload.donor_email || '').trim();
+    if (!email) {
+      await audit(`Donaciones: justificante ${donation.id} sin envio automatico porque el donante no tiene email`);
+      return null;
+    }
+    try {
+      const result = await sendDonationThankYouEmail(donation.id, {
+        donation,
+        payload,
+        context
+      });
+      await audit(`Donaciones: agradecimiento enviado a ${email}`);
+      return result;
+    } catch (error) {
+      console.warn('[donaciones] No se pudo enviar el agradecimiento automatico:', error);
+      await repositoryUpdate('donations', donation.id, {
+        receipt_status: 'email_error',
+        updated_at: new Date().toISOString()
+      }).catch(() => null);
+      await audit(`Donaciones: fallo envio agradecimiento ${donation.id}: ${error.message || 'error de correo'}`);
+      return null;
+    }
+  }
+
+  async function sendDonationThankYouEmail(donationId, options = {}) {
+    const donation = options.donation
+      || (appData.donations || []).find((item) => item.id === donationId);
+    if (!donation?.id) throw new Error('No se ha encontrado la donacion.');
+    const donor = findDonationDonor(donation, options.payload || {});
+    const to = String(donation.donor_email || donor?.email || donor?.access_email || options.payload?.contact_email || '').trim();
+    if (!to) throw new Error('El donante no tiene email para enviar el justificante.');
+    const localData = buildDonationEmailData(donation, options.context || {});
+    const { createDonationReceiptPdf } = await import('../lib/exporters');
+    const { doc, filename, receiptNumber } = await createDonationReceiptPdf(
+      donation,
+      donor || { name: donation.donor, email: to },
+      appData.organization_settings?.[0] || {},
+      localData
+    );
+    const blob = doc.output('blob');
+    const response = await sendEmailViaApi({
+      to,
+      subject: 'Gracias por su donacion - Pan y Esperanza',
+      message: [
+        `Estimado/a ${donation.donor || donor?.name || 'donante'},`,
+        '',
+        'Gracias por su colaboracion con Pan y Esperanza.',
+        'Adjuntamos el justificante oficial de la donacion registrada.',
+        '',
+        'Su ayuda queda vinculada al sistema de trazabilidad de la asociacion para poder medir el impacto real generado.',
+        '',
+        'Muchas gracias por seguir llevando esperanza.'
+      ].join('\n'),
+      attachments: [{
+        filename,
+        blob,
+        size: blob.size,
+        contentType: 'application/pdf'
+      }],
+      organization: appData.organization_settings?.[0] || {},
+      logEmail: true
+    });
+    await repositoryUpdate('donations', donation.id, {
+      receipt_number: receiptNumber,
+      receipt_generated_at: new Date().toISOString(),
+      receipt_sent_at: new Date().toISOString(),
+      receipt_status: 'sent',
+      receipt_email_provider_id: response.id || null,
+      receipt_email_log_id: response.emailLog?.id || null,
+      updated_at: new Date().toISOString()
+    });
+    await reload();
+    return response;
+  }
+
+  function findDonationDonor(donation = {}, payload = {}) {
+    return (appData.donors || []).find((donor) => donor.id === donation.donor_id)
+      || (appData.donors || []).find((donor) => normalize(donor.email || donor.access_email) === normalize(donation.donor_email || payload.contact_email))
+      || (appData.donors || []).find((donor) => normalize(donor.name) === normalize(donation.donor || payload.donor_name))
+      || null;
+  }
+
+  function buildDonationEmailData(donation = {}, context = {}) {
+    const donationProduct = context.donationProduct;
+    const inventoryMovement = context.inventoryMovement;
+    return {
+      ...appData,
+      donation_products: donationProduct
+        ? [donationProduct, ...(appData.donation_products || []).filter((item) => item.id !== donationProduct.id)]
+        : appData.donation_products || [],
+      inventory_movements: inventoryMovement
+        ? [inventoryMovement, ...(appData.inventory_movements || []).filter((item) => item.id !== inventoryMovement.id)]
+        : appData.inventory_movements || [],
+      donations: [donation, ...(appData.donations || []).filter((item) => item.id !== donation.id)]
+    };
+  }
+
   async function executeApprovedDeletionRequest(request) {
     const moduleId = request.module;
     const recordId = request.record_id;
@@ -1164,13 +1263,14 @@ export function useAppData(enabled = true, currentUser = null) {
     if (operationType === 'donation_money') {
       const date = operationDate(payload.operation_at);
       const reference = nextDonationReference(date);
-      await registerMonetaryEconomicOperation({
+      const donationPayload = {
         ...payload,
         reference,
         document_number: (isInternalDocumentType(payload.document_type) || isNoDocumentType(payload.document_type))
           ? payload.document_number
           : payload.document_number || reference
-      }, {
+      };
+      const result = await registerMonetaryEconomicOperation(donationPayload, {
         eventType: 'donation_money',
         direction: 'in',
         contactType: 'donor',
@@ -1180,7 +1280,14 @@ export function useAppData(enabled = true, currentUser = null) {
         documentType: 'receipt',
         forceDocument: false
       });
-      await createDonacionService().recordEconomicDonation(payload);
+      const donation = await createDonacionService().recordEconomicDonation(donationPayload);
+      await repositoryUpdate('donations', donation.id, {
+        accounting_event_id: result.event?.id || null,
+        accounting_contact_id: result.contact?.id || donation.accounting_contact_id || null,
+        updated_at: new Date().toISOString()
+      });
+      await updateAccountingEventSource(result.event, 'donations', donation.id);
+      await trySendDonationThankYouEmail(donation, donationPayload);
       return;
     }
     if (operationType === 'economic_help') {
@@ -1315,6 +1422,11 @@ export function useAppData(enabled = true, currentUser = null) {
         updated_at: new Date().toISOString()
       });
       await updateAccountingEventSource(event, 'donations', donation.id);
+      await trySendDonationThankYouEmail(donation, payload, {
+        donationProduct,
+        inventoryMovement,
+        item
+      });
       return;
     }
     if (operationType === 'loan_received') {
@@ -2691,6 +2803,9 @@ export function useAppData(enabled = true, currentUser = null) {
       const result = await donanteService.resendAccess(id);
       await reload();
       return result;
+    },
+    sendDonationThankYouEmail: async (donationId) => {
+      return sendDonationThankYouEmail(donationId);
     },
     deleteVolunteer: async (id) => {
       await voluntarioService.remove(id);

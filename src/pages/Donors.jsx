@@ -7,7 +7,7 @@ import { Modal } from '../components/Modal';
 import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { canDo } from '../lib/auth';
-import { printPortalAccessPdf } from '../lib/exporters';
+import { printDonationImpactReportPdf, printDonationReceiptPdf, printPortalAccessPdf } from '../lib/exporters';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 import { nextDonorCode } from '../services/donors/DonanteService';
 
@@ -62,6 +62,11 @@ export function Donors({ data, actions, currentUser }) {
       organization: data.organization_settings?.[0] || {}
     });
     setNotice(`Documento de acceso generado para ${donor.name}.`);
+  }
+
+  async function sendDonationThankYou(donation) {
+    await actions.sendDonationThankYouEmail(donation.id);
+    setNotice('Agradecimiento y justificante enviados correctamente al donante.');
   }
 
   return (
@@ -205,7 +210,7 @@ export function Donors({ data, actions, currentUser }) {
 
       {modal?.type === 'detail' && (
         <Modal title={`Ficha del donante - ${modal.donor.code || modal.donor.name}`} onClose={() => setModal(null)} wide>
-          <DonorDetail donor={modal.donor} data={data} actions={actions} organization={data.organization_settings?.[0]} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} />
+          <DonorDetail donor={modal.donor} data={data} actions={actions} organization={data.organization_settings?.[0]} canGenerateCredential={canGenerateCredential} canPrint={canPrint} onPrint={() => printAccess(modal.donor)} onSendThankYou={sendDonationThankYou} />
         </Modal>
       )}
     </>
@@ -298,7 +303,7 @@ function DonorForm({ initial = null, onSubmit }) {
   );
 }
 
-function DonorDetail({ donor, data, actions, organization, canGenerateCredential, canPrint, onPrint }) {
+function DonorDetail({ donor, data, actions, organization, canGenerateCredential, canPrint, onPrint, onSendThankYou }) {
   const traceability = buildDonorTraceability(donor, data);
   return (
     <div className="grid gap-5">
@@ -334,6 +339,7 @@ function DonorDetail({ donor, data, actions, organization, canGenerateCredential
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Importe / cantidad</th>
                 <th className="px-3 py-2">Estado</th>
+                <th className="px-3 py-2 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -343,10 +349,17 @@ function DonorDetail({ donor, data, actions, organization, canGenerateCredential
                   <td className="px-3 py-2">{donation.donation_type || donation.concept || '-'}</td>
                   <td className="px-3 py-2">{donation.amount || donation.estimated_value || donation.quantity || '-'}</td>
                   <td className="px-3 py-2">{donation.status || donation.state || '-'}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button variant="secondary" onClick={() => printDonationReceiptPdf(donation, donor, organization, data)}><Printer size={15} /> Justificante</Button>
+                      <Button variant="secondary" onClick={() => printDonationImpactReportPdf({ donor, donation, data, organization })}><FileText size={15} /> Impacto</Button>
+                      {(donation.donor_email || donor.email || donor.access_email) && <Button variant="secondary" onClick={() => onSendThankYou?.(donation)}><Mail size={15} /> Enviar</Button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {!donor.donations.length && (
-                <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={4}>No hay donaciones vinculadas.</td></tr>
+                <tr><td className="px-3 py-8 text-center text-slate-500" colSpan={5}>No hay donaciones vinculadas.</td></tr>
               )}
             </tbody>
           </table>
@@ -359,6 +372,7 @@ function DonorDetail({ donor, data, actions, organization, canGenerateCredential
             <h3 className="font-bold text-ink">Trazabilidad e impacto</h3>
             <p className="mt-1 text-sm text-slate-500">Cadena donante - donacion - lote - inventario - entrega - beneficiario.</p>
           </div>
+          <Button variant="secondary" onClick={() => printDonationImpactReportPdf({ donor, data, organization })}><FileText size={16} /> Generar informe de impacto</Button>
           <div className="grid gap-2 text-sm sm:grid-cols-4">
             <TraceMetric label="Recibido" value={formatQuantity(traceability.unitsReceived)} />
             <TraceMetric label="Entregado" value={formatQuantity(traceability.unitsDelivered)} />

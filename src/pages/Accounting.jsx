@@ -62,6 +62,7 @@ const DONATION_DOCUMENT_TYPES = [
   { value: 'internal_document', label: 'Documento interno', numberLabel: 'Número interno', readOnly: true },
   { value: 'no_document', label: 'Sin documento' }
 ];
+const DEFAULT_DONATION_PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Tarjeta', 'Bizum', 'PayPal', 'Otro'];
 const DONOR_KIND_MARKER = '[DONANTE_TIPO]';
 const DONOR_CONTACT_MARKER = '[DONANTE_CONTACTO]';
 
@@ -402,6 +403,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
   const initialDebt = pendingDebts.find((debt) => debt.id === initialDebtId) || pendingDebts[0];
   const initialOperationAt = toDateTimeInputValue().slice(0, 10);
   const initialDocumentType = defaultDocumentTypeForOperation(initialType);
+  const paymentMethods = useMemo(() => paymentMethodsForOperation(data.organization_settings?.[0], initialType), [data.organization_settings, initialType]);
   const initialAmount = initialType === 'loan_repayment'
     ? initialLoan?.outstanding || ''
     : initialType === 'debt_payment'
@@ -413,8 +415,9 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
     amount: initialAmount,
     concept: '',
     financial_account_id: accounts[0]?.id || '',
-    payment_method: 'Transferencia',
+    payment_method: paymentMethods[0] || 'Transferencia',
     reference: initialType === 'donation_money' ? nextAccountingDonationReference(data, initialOperationAt) : '',
+    campaign_id: '',
     donor_id: '',
     donor_selection_id: '',
     contact_name: '',
@@ -474,6 +477,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
     || (form.operation_type === 'debt_payment' && !pendingDebts.length)
     || (form.operation_type === 'correction' && !correctableMovements.length)
     || (form.operation_type === 'void' && !activeMovements.length);
+  const currentPaymentMethods = paymentMethodsForOperation(data.organization_settings?.[0], form.operation_type);
 
   function update(field, value) {
     setForm((state) => (typeof field === 'object' ? { ...state, ...field } : { ...state, [field]: value }));
@@ -481,6 +485,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
 
   function changeOperationType(value) {
     const nextDocumentType = defaultDocumentTypeForOperation(value);
+    const nextPaymentMethods = paymentMethodsForOperation(data.organization_settings?.[0], value);
     setForm((state) => ({
       ...state,
       operation_type: value,
@@ -491,6 +496,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
       amount: value === 'loan_repayment' ? pendingLoans[0]?.outstanding || '' : value === 'debt_payment' ? pendingDebts[0]?.outstanding || '' : value === 'donation_in_kind' ? '' : state.amount,
       loan_id: pendingLoans[0]?.id || state.loan_id,
       debt_id: pendingDebts[0]?.id || state.debt_id,
+      payment_method: nextPaymentMethods.includes(state.payment_method) ? state.payment_method : nextPaymentMethods[0] || state.payment_method,
       target_movement_id: value === 'correction' ? correctableMovements[0]?.id || '' : value === 'void' ? activeMovements[0]?.id || '' : state.target_movement_id
     }));
   }
@@ -647,6 +653,10 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
 
       <ContactFields form={form} update={update} beneficiaries={beneficiaries} data={data} actions={actions} />
 
+      {DONATION_OPERATION_TYPES.has(form.operation_type) && (
+        <DonationCampaignField form={form} update={update} campaigns={data.campanas || []} />
+      )}
+
       {needsInventory && (
         <InventoryOperationFields form={form} update={update} items={inventoryItems} operationType={form.operation_type} inventoryUnitValues={inventoryUnitValues} />
       )}
@@ -659,7 +669,7 @@ function EconomicOperationForm({ data, actions, report, currentUser, isSuperadmi
         <>
           {(needsAccount || form.operation_type === 'transfer' || form.operation_type === 'correction') && (
             <>
-              <FormField label="Método"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Bizum</option><option>PayPal</option><option>Otro</option></select></FormField>
+              <FormField label="Método"><select className={inputClass} value={form.payment_method} onChange={(event) => update('payment_method', event.target.value)}>{ensureOption(currentPaymentMethods, form.payment_method).map((method) => <option key={method}>{method}</option>)}</select></FormField>
               {form.operation_type === 'donation_money' ? (
                 <FormField label="Referencia interna">
                   <input className={`${inputClass} bg-slate-50 text-slate-600`} readOnly value={form.reference} />
@@ -1073,6 +1083,26 @@ function OperationBlocker({ type }) {
   );
 }
 
+function paymentMethodsForOperation(settings = {}, operationType = '') {
+  const configured = Array.isArray(settings.donation_payment_methods)
+    ? settings.donation_payment_methods
+    : Array.isArray(settings.erp_preferences?.donations?.payment_methods)
+      ? settings.erp_preferences.donations.payment_methods
+      : [];
+  if (DONATION_OPERATION_TYPES.has(operationType)) {
+    const clean = configured.map((item) => String(item || '').trim()).filter(Boolean);
+    return clean.length ? clean : DEFAULT_DONATION_PAYMENT_METHODS;
+  }
+  return DEFAULT_DONATION_PAYMENT_METHODS;
+}
+
+function ensureOption(options = [], current = '') {
+  const cleanOptions = options.map((item) => String(item || '').trim()).filter(Boolean);
+  const value = String(current || '').trim();
+  if (value && !cleanOptions.some((item) => normalize(item) === normalize(value))) return [value, ...cleanOptions];
+  return cleanOptions.length ? cleanOptions : DEFAULT_DONATION_PAYMENT_METHODS;
+}
+
 function AccountSelect({ label, accounts, value, onChange }) {
   return (
     <FormField label={label} required>
@@ -1132,6 +1162,25 @@ function ContactFields({ form, update, beneficiaries, data, actions }) {
     );
   }
   return null;
+}
+
+function DonationCampaignField({ form, update, campaigns = [] }) {
+  const activeCampaigns = campaigns
+    .filter((campaign) => !['Cerrada', 'Cancelada', 'Archivada'].includes(campaign.status || ''))
+    .sort((a, b) => String(b.start_date || b.created_at || '').localeCompare(String(a.start_date || a.created_at || '')));
+  return (
+    <FormField label="Campaña vinculada">
+      <select className={inputClass} value={form.campaign_id || ''} onChange={(event) => update('campaign_id', event.target.value)}>
+        <option value="">Sin campaña vinculada</option>
+        {activeCampaigns.map((campaign) => (
+          <option key={campaign.id} value={campaign.id}>
+            {campaign.name || campaign.description || 'Campaña'}{campaign.status ? ` - ${campaign.status}` : ''}
+          </option>
+        ))}
+      </select>
+      {!activeCampaigns.length && <p className="mt-1 text-xs text-slate-500">No hay campañas activas en el ERP.</p>}
+    </FormField>
+  );
 }
 
 function DonorSelector({ form, update, contacts, donors: crmDonors = [], actions }) {

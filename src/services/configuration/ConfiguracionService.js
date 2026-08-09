@@ -44,6 +44,9 @@ export function sanitizeConfigurationPayload(payload = {}, current = {}) {
     paypal_settings: payload.paypal_settings ?? current.paypal_settings,
     bizum_settings: payload.bizum_settings ?? current.bizum_settings,
     stripe_settings: payload.stripe_settings ?? current.stripe_settings,
+    donation_payment_methods: Array.isArray(payload.donation_payment_methods)
+      ? payload.donation_payment_methods.map(cleanText).filter(Boolean)
+      : current.donation_payment_methods,
     resend_settings: payload.resend_settings ?? current.resend_settings,
     supabase_settings: payload.supabase_settings ?? current.supabase_settings,
     public_variables: payload.public_variables ?? current.public_variables,
