@@ -2097,93 +2097,48 @@ function CompactCopilotPreview({ summary, onShowFull, expanded }) {
 }
 
 function BeneficiarySocialResourcesBlock({ analysis, onOpenResources }) {
-  const recommendations = analysis.recommendations.slice(0, 3);
-  const topRecommendation = analysis.topRecommendation;
-  const newRecommendation = analysis.recommendations.find((item) => item.lifecycle?.flags?.new);
+  const compatibleCount = Number(analysis.counts.high || 0) + Number(analysis.counts.possible || 0);
+  const insufficientCount = Number(analysis.counts.insufficient || 0);
   const deadlineText = analysis.endingSoonCount
     ? `${analysis.endingSoonCount} convocatoria${analysis.endingSoonCount === 1 ? '' : 's'} finaliza${analysis.endingSoonCount === 1 ? '' : 'n'} pronto.`
     : 'Sin convocatorias urgentes detectadas.';
 
   return (
-    <section className="rounded-2xl border border-brand-100 bg-white p-5 shadow-sm" aria-label="Recursos sociales recomendados">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <section className="rounded-2xl border border-brand-100 bg-white p-5 shadow-sm" aria-label="Resumen de recursos sociales">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-wide text-brand-700">Recursos Sociales</p>
-          <h3 className="mt-1 text-xl font-black text-ink">{analysis.summaryText}</h3>
+          <h3 className="mt-1 text-xl font-black text-ink">
+            {compatibleCount} recurso{compatibleCount === 1 ? '' : 's'} potencialmente compatible{compatibleCount === 1 ? '' : 's'}
+          </h3>
           <p className="mt-1 text-sm font-semibold text-slate-600">{deadlineText}</p>
-          <p className="mt-2 text-xs font-bold text-slate-500">Recomendacion basada en reglas del ERP. La decision final corresponde al organismo que concede la ayuda.</p>
-          {newRecommendation && (
-            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-              <p className="font-black">Nueva convocatoria potencialmente compatible con este expediente.</p>
-              <p className="mt-1">{newRecommendation.resource.name}</p>
-              <p className="mt-1 text-blue-800">Por que: {newRecommendation.checks.slice(0, 2).join(' ') || 'coincide con datos objetivos del expediente.'}</p>
-            </div>
-          )}
+          <p className="mt-2 text-xs font-bold text-slate-500">
+            La ficha muestra solo un resumen. El catalogo, la revision, la compatibilidad y el seguimiento se gestionan en el Centro de Recursos Sociales.
+          </p>
         </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:min-w-[280px]">
-          <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Accion recomendada</p>
-          <p className="mt-1 text-sm font-black text-ink">{topRecommendation ? `Revisar ${topRecommendation.resource.name}` : 'Mantener busqueda manual de recursos'}</p>
-          <Button className="mt-3 w-full" variant="secondary" onClick={() => onOpenResources?.(topRecommendation?.resource?.id || '')} disabled={!onOpenResources}>
-            <Search size={16} /> Abrir Centro de Recursos
-          </Button>
+        <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[460px]">
+          <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
+            <p className="text-2xl font-black text-brand-800">{compatibleCount}</p>
+            <p className="text-xs font-bold text-brand-700">Compatibles o posibles</p>
+          </div>
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+            <p className="text-2xl font-black text-amber-800">{analysis.endingSoonCount || 0}</p>
+            <p className="text-xs font-bold text-amber-700">Proximas a cerrar</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-2xl font-black text-slate-800">{insufficientCount}</p>
+            <p className="text-xs font-bold text-slate-600">Datos por completar</p>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-3">
-        {recommendations.map((item) => (
-          <article key={item.resource.id} className={`rounded-xl border p-4 ${item.level.card}`}>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${item.level.badge}`}>
-              <span className={`h-2.5 w-2.5 rounded-full ${item.level.dot}`} /> {item.level.label}
-            </span>
-            <h4 className="mt-3 line-clamp-2 text-base font-black text-ink">{item.resource.name}</h4>
-            <p className="text-sm font-semibold text-brand-700">{item.resource.organization_name}</p>
-            <p className="mt-2 text-sm text-slate-700">{item.phrase}</p>
-            <ResourceEvidence title="Por que" items={item.checks} empty="Sin coincidencias verificadas." />
-            <ResourceEvidence title="Falta comprobar" items={item.missing} empty="Sin faltantes principales." muted />
-            <ResourceDocumentStatus documentation={item.documentation} />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => onOpenResources?.(item.resource.id)} disabled={!onOpenResources}>Ver recurso</Button>
-              <Button onClick={() => onOpenResources?.(item.resource.id, 'track')} disabled={!onOpenResources}>Iniciar seguimiento</Button>
-            </div>
-          </article>
-        ))}
-        {!recommendations.length && (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm font-semibold text-slate-600 xl:col-span-3">
-            No hay recomendaciones suficientes con los datos actuales. El trabajador social puede abrir el Centro de Recursos y buscar manualmente.
-          </div>
-        )}
+      <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-semibold text-slate-600">No se muestran recursos concretos en la ficha para evitar duplicar el catalogo del ERP.</p>
+        <Button variant="secondary" onClick={() => onOpenResources?.('')} disabled={!onOpenResources}>
+          <Search size={16} /> Ver en Centro de Recursos
+        </Button>
       </div>
     </section>
-  );
-}
-
-function ResourceEvidence({ title, items, empty, muted = false }) {
-  return (
-    <div className="mt-3">
-      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{title}</p>
-      <ul className="mt-1 space-y-1 text-sm text-slate-700">
-        {(items.length ? items.slice(0, 3) : [empty]).map((item) => (
-          <li key={item} className="flex gap-2">
-            <span className={`font-black ${muted ? 'text-amber-700' : 'text-brand-700'}`}>{items.length ? '+' : '-'}</span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ResourceDocumentStatus({ documentation }) {
-  if (!documentation.required.length) return null;
-  return (
-    <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-3 text-xs">
-      <p className="font-black uppercase tracking-wide text-slate-500">Documentacion</p>
-      <div className="mt-2 grid gap-1">
-        <p><span className="font-black text-brand-700">Disponibles:</span> {documentation.available.map((item) => item.label).join(', ') || '-'}</p>
-        <p><span className="font-black text-amber-700">Pendientes:</span> {documentation.pending.map((item) => item.label).join(', ') || '-'}</p>
-        <p><span className="font-black text-red-700">Caducados:</span> {documentation.expired.map((item) => item.label).join(', ') || '-'}</p>
-      </div>
-    </div>
   );
 }
 

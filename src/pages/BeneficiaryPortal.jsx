@@ -1365,6 +1365,7 @@ function ResourcesSection({ resources, beneficiary, documents }) {
   const recommended = available.filter((resource) => resource.isRecommended);
   const newResources = available.filter((resource) => resource.isNew);
   const closingSoon = available.filter((resource) => resource.isClosingSoon);
+  const savedResources = available.filter((resource) => Boolean(resource.assigned_status));
 
   return (
     <Panel title="Ayudas y recursos" icon={BookOpen}>
@@ -1373,6 +1374,7 @@ function ResourcesSection({ resources, beneficiary, documents }) {
           <ResourceGroup title="Recomendadas para mi" resources={recommended} emptyText="No hay recomendaciones especificas con los datos actuales." />
           <ResourceGroup title="Convocatorias nuevas" resources={newResources} emptyText="No hay convocatorias nuevas ahora mismo." />
           <ResourceGroup title="Proximas a cerrar" resources={closingSoon} emptyText="No hay convocatorias proximas a cerrar." />
+          <ResourceGroup title="Guardados y solicitados" resources={savedResources} emptyText="No hay recursos guardados o solicitados en tu expediente." />
           <ResourceGroup title="Recursos disponibles" resources={available} emptyText="No hay recursos disponibles." />
         </div>
       )}
@@ -1405,6 +1407,7 @@ function PortalResourceCard({ resource }) {
         {resource.isRecommended && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">⭐ Recomendado para ti</span>}
         {resource.isNew && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Nuevo</span>}
         {resource.isClosingSoon && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Proximo a cerrar</span>}
+        {resource.assigned_status && <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700">{portalResourceTrackingLabel(resource.assigned_status)}</span>}
       </div>
       <h4 className="mt-3 font-bold text-ink">{resource.name || resource.title}</h4>
       <p className="mt-1 text-sm font-semibold text-brand-700">{resource.organization_name || resource.category}</p>
@@ -1427,6 +1430,18 @@ function PortalResourceCard({ resource }) {
       )}
     </article>
   );
+}
+
+function portalResourceTrackingLabel(status = '') {
+  const value = normalize(status);
+  if (value.includes('interes')) return 'Interes registrado';
+  if (value.includes('iniciada')) return 'Solicitud iniciada';
+  if (value.includes('documentacion')) return 'Documentacion pendiente';
+  if (value.includes('presentada')) return 'Solicitud presentada';
+  if (value.includes('concedida')) return 'Concedida';
+  if (value.includes('denegada')) return 'Denegada';
+  if (value.includes('no procede')) return 'No procede';
+  return 'Guardado en tu expediente';
 }
 
 function toCompatibilityResource(resource = {}) {
