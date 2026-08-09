@@ -57,6 +57,8 @@ const emptyResource = {
   application_method: '',
   status: 'Activo',
   scope: 'municipal',
+  visible_to_all_beneficiaries: false,
+  publish_in_beneficiary_portal: false,
   last_verified_at: '',
   age_min: '',
   age_max: '',
@@ -879,6 +881,8 @@ function ResourceCard({ resource, recommendation, alert, selected, link, canEdit
             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusStyles[resource.status] || statusStyles.Activo}`}>{resource.status || 'Activo'}</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{resource.scope || 'municipal'}</span>
             {alert && <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${alert.tone}`}>{alert.label}</span>}
+            {resource.publish_in_beneficiary_portal && <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">Portal</span>}
+            {resource.visible_to_all_beneficiaries && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Todos los beneficiarios</span>}
             <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
               {verified ? 'Fuente verificada' : 'Fuente pendiente'}
             </span>
@@ -1088,6 +1092,18 @@ function SocialResourceForm({ initial, onSubmit, onCancel }) {
         <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{SOCIAL_RESOURCE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
         <FormField label="Ambito"><select className={inputClass} value={form.scope} onChange={(event) => update('scope', event.target.value)}>{SOCIAL_RESOURCE_SCOPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
         <FormField label="Municipio"><input className={inputClass} value={form.municipality} onChange={(event) => update('municipality', event.target.value)} /></FormField>
+        <ToggleField
+          label="Publicar en Portal del Beneficiario"
+          description="Permite mostrar el recurso en el portal sin exponer notas internas."
+          checked={form.publish_in_beneficiary_portal === true}
+          onChange={(value) => update('publish_in_beneficiary_portal', value)}
+        />
+        <ToggleField
+          label="Visible para todos los beneficiarios"
+          description="Lo publica para todos sin crear vinculaciones individuales."
+          checked={form.visible_to_all_beneficiaries === true}
+          onChange={(value) => update('visible_to_all_beneficiaries', value)}
+        />
         <FormField label="Fecha de apertura"><input type="date" className={inputClass} value={form.opens_at || ''} onChange={(event) => update('opens_at', event.target.value)} /></FormField>
         <FormField label="Fecha limite"><input type="date" className={inputClass} value={form.deadline_at || ''} onChange={(event) => update('deadline_at', event.target.value)} /></FormField>
         <FormField label="Ultima verificacion"><input type="date" className={inputClass} value={form.last_verified_at || ''} onChange={(event) => update('last_verified_at', event.target.value)} /></FormField>
@@ -1346,6 +1362,23 @@ function TextAreaField({ label, value, onChange }) {
     <FormField label={label}>
       <textarea className={`${inputClass} min-h-28 resize-y`} value={value || ''} onChange={(event) => onChange(event.target.value)} />
     </FormField>
+  );
+}
+
+function ToggleField({ label, description, checked, onChange }) {
+  return (
+    <label className="flex min-h-[4.25rem] cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+      <input
+        type="checkbox"
+        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+        checked={Boolean(checked)}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        <span className="block text-sm font-bold text-ink">{label}</span>
+        <span className="mt-1 block text-xs text-slate-500">{description}</span>
+      </span>
+    </label>
   );
 }
 

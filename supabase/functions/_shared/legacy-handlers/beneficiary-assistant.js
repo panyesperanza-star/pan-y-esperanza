@@ -256,7 +256,7 @@ async function buildBeneficiaryContext(supabase, beneficiary) {
     listBy(supabase, 'deliveries', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_documents', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_portal_notices', 'beneficiary_id', beneficiary.id),
-    listPublishedResources(supabase),
+    listPublishedResources(supabase, beneficiary),
     listBy(supabase, 'beneficiary_portal_profile_updates', 'beneficiary_id', beneficiary.id),
     getOrganizationSettings(supabase)
   ]);
@@ -354,16 +354,46 @@ async function listBy(supabase, table, column, value) {
   return data || [];
 }
 
-async function listPublishedResources(supabase) {
-  const { data, error } = await supabase
-    .from('recursos')
-    .select('id,titulo,descripcion,categoria_nombre,url,telefono,email,direccion,etiquetas,created_at')
-    .eq('publicado', true)
-    .eq('status', 'published')
-    .order('created_at', { ascending: false })
-    .limit(10);
-  if (error) throw error;
-  return data || [];
+async function listPublishedResources(supabase, beneficiary) {
+  const today = new Date().toISOString().slice(0, 10);
+  const resourceSelect = 'id,name,organization_name,category,description,requirements,target_audience,required_documents,benefit,opens_at,deadline_at,municipality,phone,email,web_url,official_url,application_method,status,scope,created_at,updated_at,publish_in_beneficiary_portal,visible_to_all_beneficiaries';
+  const [globalResult, linkResult] = await Promise.all([
+    supabase
+      .from('social_resources')
+      .select(resourceSelect)
+      .eq('publish_in_beneficiary_portal', true)
+      .eq('visible_to_all_beneficiaries', true)
+      .in('status', ['Activo', 'Proximamente'])
+      .or(`deadline_at.is.null,deadline_at.gte.${today}`)
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('beneficiary_social_resources')
+      .select('resource_id,status')
+      .eq('beneficiary_id', beneficiary.id)
+  ]);
+  if (globalResult.error) throw globalResult.error;
+  if (linkResult.error) throw linkResult.error;
+
+  const linkedIds = [...new Set((linkResult.data || []).map((item) => item.resource_id).filter(Boolean))];
+  let assignedResources = [];
+  if (linkedIds.length) {
+    const assignedResult = await supabase
+      .from('social_resources')
+      .select(resourceSelect)
+      .in('id', linkedIds)
+      .eq('publish_in_beneficiary_portal', true)
+      .in('status', ['Activo', 'Proximamente'])
+      .or(`deadline_at.is.null,deadline_at.gte.${today}`)
+      .limit(10);
+    if (assignedResult.error) throw assignedResult.error;
+    assignedResources = assignedResult.data || [];
+  }
+
+  const resourcesById = new Map();
+  (globalResult.data || []).forEach((resource) => resourcesById.set(resource.id, resource));
+  assignedResources.forEach((resource) => resourcesById.set(resource.id, resource));
+  return [...resourcesById.values()].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 10);
 }
 
 async function getOrganizationSettings(supabase) {
@@ -449,10 +479,10 @@ function sanitizeNotice(notice = {}) {
 function sanitizeResource(resource = {}) {
   return {
     id: resource.id,
-    title: resource.titulo,
-    description: resource.descripcion,
-    category: resource.categoria_nombre,
-    url: resource.url
+    title: resource.name,
+    description: resource.description,
+    category: resource.category,
+    url: resource.web_url || resource.official_url
   };
 }
 

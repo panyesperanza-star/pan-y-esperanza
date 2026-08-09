@@ -727,6 +727,8 @@ create table if not exists public.social_resources (
   application_method text not null default '',
   status text not null default 'Activo',
   scope text not null default 'municipal',
+  visible_to_all_beneficiaries boolean not null default false,
+  publish_in_beneficiary_portal boolean not null default false,
   last_verified_at date,
   verified_by uuid references public.app_users(id) on delete set null,
   verified_by_name text not null default '',
@@ -2213,6 +2215,7 @@ create index if not exists idx_donations_collaborator_id on public.donations(col
 create index if not exists idx_recursos_collaborator_id on public.recursos(collaborator_id);
 create index if not exists social_resources_category_idx on public.social_resources(category);
 create index if not exists social_resources_status_idx on public.social_resources(status);
+create index if not exists social_resources_portal_publication_idx on public.social_resources(publish_in_beneficiary_portal, visible_to_all_beneficiaries, status, deadline_at);
 create index if not exists social_resources_deadline_idx on public.social_resources(deadline_at);
 create index if not exists social_resources_municipality_idx on public.social_resources(municipality);
 create index if not exists beneficiary_social_resources_beneficiary_idx on public.beneficiary_social_resources(beneficiary_id);

@@ -492,7 +492,7 @@ export function useAppData(enabled = true, currentUser = null) {
       deliveries: appData.deliveries || [],
       documents: appData.beneficiary_documents || [],
       socialHistory: appData.social_history || [],
-      resources: appData.recursos || [],
+      resources: appData.social_resources || [],
       notifications: appData.notificaciones || [],
       organizationSettings: appData.organization_settings?.[0] || {},
       audit,

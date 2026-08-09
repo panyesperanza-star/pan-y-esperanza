@@ -39,7 +39,11 @@ function isActiveDelivery(delivery) {
 }
 
 function isPublishedResource(resource) {
-  return resource?.publicado === true && normalize(resource?.status) === 'published';
+  const status = normalize(resource?.status);
+  const deadline = String(resource?.deadline_at || '').slice(0, 10);
+  return resource?.publish_in_beneficiary_portal === true
+    && ['activo', 'proximamente'].includes(status)
+    && (!deadline || deadline >= todayISO());
 }
 
 function sortByDateAsc(a, b, field) {
@@ -852,8 +856,8 @@ export class BeneficiarioPortalService {
   }
 
   async readResources() {
-    if (this.recursoService?.listPublished) return this.recursoService.listPublished();
     if (this.resources.length) return this.resources;
+    if (this.recursoService?.listPublished) return this.recursoService.listPublished();
     return this.repository.listResources();
   }
 
@@ -861,6 +865,9 @@ export class BeneficiarioPortalService {
     const resourceSignals = [
       resource.categoria_slug,
       resource.categoria_nombre,
+      resource.category,
+      resource.municipality,
+      resource.scope,
       resource.provincia_slug,
       resource.provincia_nombre,
       resource.tipo,

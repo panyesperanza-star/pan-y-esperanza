@@ -21,6 +21,24 @@ export class SocialResourceRepository {
     return this.repository.create('beneficiary_social_resources', payload);
   }
 
+  async upsertLink(payload) {
+    if (this.repository.supabase) {
+      const { data, error } = await this.repository.supabase
+        .from('beneficiary_social_resources')
+        .upsert(payload, { onConflict: 'beneficiary_id,resource_id' })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    const links = await this.repository.list('beneficiary_social_resources');
+    const current = links.find((item) => item.beneficiary_id === payload.beneficiary_id && item.resource_id === payload.resource_id);
+    return current
+      ? this.repository.update('beneficiary_social_resources', current.id, payload)
+      : this.repository.create('beneficiary_social_resources', payload);
+  }
+
   async updateLink(id, payload) {
     return this.repository.update('beneficiary_social_resources', id, payload);
   }

@@ -545,7 +545,7 @@ async function buildBeneficiaryOverview(supabase, beneficiary) {
     listBy(supabase, 'beneficiary_documents', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'social_history', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_portal_notices', 'beneficiary_id', beneficiary.id),
-    listPublishedResources(supabase),
+    listPublishedResources(supabase, beneficiary),
     listBy(supabase, 'beneficiary_portal_renewals', 'beneficiary_id', beneficiary.id),
     listBy(supabase, 'beneficiary_portal_profile_updates', 'beneficiary_id', beneficiary.id),
     supabase.from('beneficiary_portal_accounts').select('must_change_pin,pin_changed_at').eq('beneficiary_id', beneficiary.id).maybeSingle()
@@ -1147,10 +1147,99 @@ async function listBy(supabase, table, column, value) {
   return data || [];
 }
 
-async function listPublishedResources(supabase) {
-  const { data, error } = await supabase.from('recursos').select('*').eq('publicado', true).eq('status', 'published').order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+async function listPublishedResources(supabase, beneficiary) {
+  const today = new Date().toISOString().slice(0, 10);
+  const resourceSelect = 'id,name,organization_name,category,description,requirements,target_audience,required_documents,benefit,opens_at,deadline_at,address,municipality,phone,email,web_url,official_url,application_method,status,scope,created_at,updated_at,publish_in_beneficiary_portal,visible_to_all_beneficiaries';
+  const [globalResult, linkResult] = await Promise.all([
+    supabase
+      .from('social_resources')
+      .select(resourceSelect)
+      .eq('publish_in_beneficiary_portal', true)
+      .eq('visible_to_all_beneficiaries', true)
+      .in('status', ['Activo', 'Proximamente'])
+      .or(`deadline_at.is.null,deadline_at.gte.${today}`)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('beneficiary_social_resources')
+      .select('id,resource_id,status,observations,linked_at,updated_at')
+      .eq('beneficiary_id', beneficiary.id)
+      .order('updated_at', { ascending: false })
+  ]);
+  if (globalResult.error) throw globalResult.error;
+  if (linkResult.error) throw linkResult.error;
+
+  const linkedRows = linkResult.data || [];
+  const linkedIds = [...new Set(linkedRows.map((item) => item.resource_id).filter(Boolean))];
+  let assignedResources = [];
+  if (linkedIds.length) {
+    const assignedResult = await supabase
+      .from('social_resources')
+      .select(resourceSelect)
+      .in('id', linkedIds)
+      .eq('publish_in_beneficiary_portal', true)
+      .in('status', ['Activo', 'Proximamente'])
+      .or(`deadline_at.is.null,deadline_at.gte.${today}`);
+    if (assignedResult.error) throw assignedResult.error;
+    assignedResources = assignedResult.data || [];
+  }
+
+  const linkByResource = new Map(linkedRows.map((item) => [item.resource_id, item]));
+  const resourcesById = new Map();
+  (globalResult.data || []).forEach((resource) => {
+    resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'global'));
+  });
+  assignedResources.forEach((resource) => {
+    resourcesById.set(resource.id, sanitizePortalSocialResource(resource, linkByResource.get(resource.id), 'individual'));
+  });
+
+  return [...resourcesById.values()].sort((a, b) =>
+    Number(b.is_new) - Number(a.is_new)
+    || String(b.created_at || '').localeCompare(String(a.created_at || ''))
+  );
+}
+
+function sanitizePortalSocialResource(resource = {}, link = null, portalScope = 'global') {
+  const today = new Date().toISOString().slice(0, 10);
+  const createdDate = String(resource.created_at || '').slice(0, 10);
+  const deadline = String(resource.deadline_at || '').slice(0, 10);
+  const daysSinceCreated = createdDate ? daysBetween(createdDate, today) : null;
+  const daysUntilDeadline = deadline ? daysBetween(today, deadline) : null;
+  return {
+    id: resource.id,
+    title: resource.name || '',
+    name: resource.name || '',
+    organization_name: resource.organization_name || '',
+    category: resource.category || 'Otros',
+    description: resource.description || '',
+    requirements: resource.requirements || '',
+    target_audience: resource.target_audience || '',
+    required_documents: resource.required_documents || '',
+    benefit: resource.benefit || '',
+    opens_at: resource.opens_at || null,
+    deadline_at: resource.deadline_at || null,
+    municipality: resource.municipality || '',
+    phone: resource.phone || '',
+    email: resource.email || '',
+    web_url: resource.web_url || '',
+    official_url: resource.official_url || '',
+    application_method: resource.application_method || '',
+    status: resource.status || 'Activo',
+    scope: resource.scope || 'municipal',
+    created_at: resource.created_at || null,
+    updated_at: resource.updated_at || null,
+    portal_scope: portalScope,
+    assigned_status: link?.status || '',
+    is_new: Number.isFinite(daysSinceCreated) && daysSinceCreated <= 30,
+    is_closing_soon: Number.isFinite(daysUntilDeadline) && daysUntilDeadline >= 0 && daysUntilDeadline <= 15
+  };
+}
+
+function daysBetween(start, end) {
+  if (!start || !end) return null;
+  const startDate = new Date(`${String(start).slice(0, 10)}T00:00:00Z`);
+  const endDate = new Date(`${String(end).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86400000);
 }
 
 async function audit(supabase, action) {

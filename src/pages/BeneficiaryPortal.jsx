@@ -27,6 +27,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
+import { analyzeResourceCompatibility } from '../lib/socialResourceRecommendations';
 
 const SESSION_KEY = 'pan-y-esperanza-beneficiary-portal-session';
 const PORTAL_REQUEST_TIMEOUT_MS = 8000;
@@ -38,7 +39,7 @@ const TABS = [
   { id: 'historial', label: 'Historial', icon: History },
   { id: 'avisos', label: 'Avisos', icon: Bell },
   { id: 'documentos', label: 'Documentos', icon: FileText },
-  { id: 'recursos', label: 'Recursos', icon: BookOpen },
+  { id: 'recursos', label: 'Ayudas y recursos', icon: BookOpen },
   { id: 'solicitudes', label: 'Solicitudes', icon: MessageSquare },
   { id: 'perfil', label: 'Perfil', icon: UserRound }
 ];
@@ -407,7 +408,7 @@ export function BeneficiaryPortal({ data, actions }) {
           {activeTab === 'historial' && <HistorySection history={overview.history || []} />}
           {activeTab === 'avisos' && <NoticesSection notices={overview.notices || []} service={portalService} session={session} onRefresh={refreshPortal} setError={setError} setSuccess={setSuccess} />}
           {activeTab === 'documentos' && <DocumentsSection documents={overview.documents || []} />}
-          {activeTab === 'recursos' && <ResourcesSection resources={overview.personalizedResources || []} />}
+          {activeTab === 'recursos' && <ResourcesSection resources={overview.personalizedResources || []} beneficiary={beneficiary} documents={overview.documents || []} />}
           {activeTab === 'solicitudes' && (
             <RequestsSection
               service={portalService}
@@ -1320,7 +1321,7 @@ function DocumentStatusBadge({ status }) {
   );
 }
 
-function ResourcesSection({ resources }) {
+function LegacyResourcesSection({ resources }) {
   return (
     <Panel title="Centro de Recursos personalizado" icon={BookOpen}>
       {!resources.length ? <EmptyState title="No hay recursos personalizados." text="Cuando haya recursos publicados para tu perfil aparecerán aquí." /> : (
@@ -1340,6 +1341,105 @@ function ResourcesSection({ resources }) {
       )}
     </Panel>
   );
+}
+
+function ResourcesSection({ resources, beneficiary, documents }) {
+  const today = todayISO();
+  const decoratedResources = useMemo(() => {
+    return (resources || []).map((resource) => {
+      const deadline = String(resource.deadline_at || '').slice(0, 10);
+      const createdAt = String(resource.created_at || '').slice(0, 10);
+      const daysUntilDeadline = deadline ? daysBetween(today, deadline) : null;
+      const daysSinceCreated = createdAt ? daysBetween(createdAt, today) : null;
+      const compatibility = analyzeResourceCompatibility(toCompatibilityResource(resource), beneficiary, documents || [], new Set());
+      return {
+        ...resource,
+        isExpired: Number.isFinite(daysUntilDeadline) && daysUntilDeadline < 0,
+        isNew: resource.is_new === true || (Number.isFinite(daysSinceCreated) && daysSinceCreated <= 30),
+        isClosingSoon: resource.is_closing_soon === true || (Number.isFinite(daysUntilDeadline) && daysUntilDeadline >= 0 && daysUntilDeadline <= 15),
+        isRecommended: ['high', 'possible'].includes(compatibility.level.id)
+      };
+    });
+  }, [beneficiary, documents, resources, today]);
+  const available = decoratedResources.filter((resource) => !resource.isExpired && normalize(resource.status) !== 'cerrado');
+  const recommended = available.filter((resource) => resource.isRecommended);
+  const newResources = available.filter((resource) => resource.isNew);
+  const closingSoon = available.filter((resource) => resource.isClosingSoon);
+
+  return (
+    <Panel title="Ayudas y recursos" icon={BookOpen}>
+      {!available.length ? <EmptyState title="No hay recursos disponibles." text="Cuando Pan y Esperanza publique ayudas o recursos para tu portal apareceran aqui." /> : (
+        <div className="space-y-5">
+          <ResourceGroup title="Recomendadas para mi" resources={recommended} emptyText="No hay recomendaciones especificas con los datos actuales." />
+          <ResourceGroup title="Convocatorias nuevas" resources={newResources} emptyText="No hay convocatorias nuevas ahora mismo." />
+          <ResourceGroup title="Proximas a cerrar" resources={closingSoon} emptyText="No hay convocatorias proximas a cerrar." />
+          <ResourceGroup title="Recursos disponibles" resources={available} emptyText="No hay recursos disponibles." />
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ResourceGroup({ title, resources, emptyText }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-black uppercase tracking-wide text-brand-800">{title}</h3>
+        <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{resources.length}</span>
+      </div>
+      {!resources.length ? (
+        <p className="rounded-md border border-slate-100 bg-slate-50 p-3 text-sm text-slate-500">{emptyText}</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {resources.map((resource) => <PortalResourceCard key={`${title}-${resource.id}`} resource={resource} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PortalResourceCard({ resource }) {
+  return (
+    <article className="rounded-md border border-slate-100 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {resource.isRecommended && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">⭐ Recomendado para ti</span>}
+        {resource.isNew && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Nuevo</span>}
+        {resource.isClosingSoon && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Proximo a cerrar</span>}
+      </div>
+      <h4 className="mt-3 font-bold text-ink">{resource.name || resource.title}</h4>
+      <p className="mt-1 text-sm font-semibold text-brand-700">{resource.organization_name || resource.category}</p>
+      <p className="mt-2 text-sm text-slate-600">{resource.description || 'Consulta la informacion del recurso con el equipo de Pan y Esperanza.'}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[resource.category, resource.municipality, resource.status, resource.deadline_at ? `Hasta ${formatDate(resource.deadline_at)}` : 'Sin fecha limite'].filter(Boolean).map((tag) => (
+          <span key={tag} className="rounded-md bg-white px-2 py-1 text-xs font-bold text-slate-600">{tag}</span>
+        ))}
+      </div>
+      {(resource.benefit || resource.application_method || resource.web_url || resource.official_url) && (
+        <div className="mt-3 space-y-2 text-sm text-slate-600">
+          {resource.benefit && <p><strong>Beneficio:</strong> {resource.benefit}</p>}
+          {resource.application_method && <p><strong>Como solicitarlo:</strong> {resource.application_method}</p>}
+          {(resource.web_url || resource.official_url) && (
+            <a className="inline-flex font-bold text-brand-700 underline-offset-4 hover:underline" href={resource.web_url || resource.official_url} target="_blank" rel="noreferrer">
+              Ver informacion oficial
+            </a>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function toCompatibilityResource(resource = {}) {
+  return {
+    ...resource,
+    name: resource.name || resource.title || '',
+    category: resource.category || '',
+    description: resource.description || '',
+    requirements: resource.requirements || '',
+    required_documents: resource.required_documents || '',
+    deadline_at: resource.deadline_at || null,
+    status: resource.status || 'Activo'
+  };
 }
 
 function RequestsSection({ service, beneficiary, session, requests, onRefresh, setError, setSuccess }) {
@@ -1670,6 +1770,14 @@ function normalizePhoneForWhatsApp(value) {
 
 function sortNotices(notices = []) {
   return [...notices].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+}
+
+function daysBetween(start, end) {
+  if (!start || !end) return null;
+  const startDate = new Date(`${String(start).slice(0, 10)}T00:00:00`);
+  const endDate = new Date(`${String(end).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86400000);
 }
 
 function isPendingDocument(document) {

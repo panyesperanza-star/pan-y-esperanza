@@ -49,6 +49,8 @@ const RESOURCE_HISTORY_FIELDS = {
   benefit: 'Importe/beneficio',
   required_documents: 'Documentacion',
   status: 'Estado',
+  publish_in_beneficiary_portal: 'Publicacion en portal',
+  visible_to_all_beneficiaries: 'Visible para todos los beneficiarios',
   official_url: 'URL oficial',
   last_verified_at: 'Fecha de comprobacion',
   organization_name: 'Organismo responsable',
@@ -72,6 +74,12 @@ function cleanInteger(value) {
   if (value === '' || value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
+}
+
+function cleanBoolean(value, fallback = false) {
+  if (value === true || value === 'true' || value === 'on' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return Boolean(fallback);
 }
 
 function pickAllowed(value, allowed, fallback) {
@@ -125,6 +133,8 @@ export function sanitizeSocialResourcePayload(payload = {}, current = {}, contex
     application_method: cleanText(payload.application_method ?? current.application_method),
     status,
     scope,
+    visible_to_all_beneficiaries: cleanBoolean(payload.visible_to_all_beneficiaries ?? current.visible_to_all_beneficiaries, false),
+    publish_in_beneficiary_portal: cleanBoolean(payload.publish_in_beneficiary_portal ?? current.publish_in_beneficiary_portal, false),
     last_verified_at: lastVerifiedAt,
     verified_by: shouldStampVerifier ? context.userId || null : payload.verified_by || current.verified_by || null,
     verified_by_name: shouldStampVerifier ? context.userName || '' : cleanText(payload.verified_by_name ?? current.verified_by_name),
@@ -305,7 +315,7 @@ export class SocialResourceService {
     }, current || {}, context);
     const link = current
       ? await this.repository.updateLink(current.id, linkPayload)
-      : await this.repository.createLink(linkPayload);
+      : await this.repository.upsertLink(linkPayload);
     await this.repository.createFollowup({
       beneficiary_id: beneficiaryId,
       resource_id: resourceId,
