@@ -14,6 +14,7 @@ import {
   HandHeart,
   HandCoins,
   KeyRound,
+  Landmark,
   Mail,
   Megaphone,
   PackageCheck,
