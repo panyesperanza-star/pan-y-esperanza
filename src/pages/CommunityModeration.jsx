@@ -15,7 +15,7 @@ import {
   UserRound,
   XCircle
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -70,12 +70,20 @@ export function CommunityModeration({ data, actions, currentUser }) {
   const [blockReason, setBlockReason] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [selectedInterestPostId, setSelectedInterestPostId] = useState('');
+  const interestsSectionRef = useRef(null);
   const photoUrls = useCommunityPhotoUrls(posts);
 
   const beneficiaryById = useMemo(() => new Map(beneficiaries.map((item) => [item.id, item])), [beneficiaries]);
   const interestsByPost = useMemo(() => groupByPost(interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status))), [interests]);
   const reportsByPost = useMemo(() => groupByPost(reports.filter((item) => item.status !== 'dismissed')), [reports]);
   const matchesByPost = useMemo(() => buildCommunityMatches(posts), [posts]);
+  const activeInterests = useMemo(() => interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status)), [interests]);
+  const visibleInterests = useMemo(() => {
+    if (!selectedInterestPostId) return activeInterests;
+    return activeInterests.filter((interest) => interest.post_id === selectedInterestPostId);
+  }, [activeInterests, selectedInterestPostId]);
+  const selectedInterestPost = selectedInterestPostId ? posts.find((post) => post.id === selectedInterestPostId) : null;
   const counters = useMemo(() => posts.reduce((acc, post) => {
     const key = post.status || 'pending_review';
     acc[key] = (acc[key] || 0) + 1;
@@ -176,6 +184,13 @@ export function CommunityModeration({ data, actions, currentUser }) {
     }
   }
 
+  function viewPostInterests(postId) {
+    setSelectedInterestPostId(postId);
+    window.setTimeout(() => {
+      interestsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }
+
   async function updateResolution(post, payload) {
     setError('');
     setNotice('');
@@ -233,6 +248,47 @@ export function CommunityModeration({ data, actions, currentUser }) {
         </div>
       </section>
 
+      <section ref={interestsSectionRef} className="mt-5 rounded-md border border-brand-100 bg-brand-50/50 p-4 shadow-panel">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Personas interesadas</p>
+            <h2 className="mt-1 text-xl font-black text-ink">Gestion del interes</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Intereses recibidos desde el Portal Beneficiario. Gestiona cada solicitud sin compartir datos personales automaticamente.
+            </p>
+            <p className="mt-2 text-xs font-black uppercase tracking-wide text-brand-700">
+              {'Flujo: Nuevo -> Revisado -> Contactado -> Derivado -> Cerrado'}
+            </p>
+            {selectedInterestPost && (
+              <p className="mt-2 text-sm font-bold text-brand-800">
+                Mostrando interesados de: {selectedInterestPost.title}
+              </p>
+            )}
+          </div>
+          {selectedInterestPostId && (
+            <Button variant="secondary" onClick={() => setSelectedInterestPostId('')}>Ver todos los interesados</Button>
+          )}
+        </div>
+        {!visibleInterests.length ? (
+          <div className="mt-4 rounded-md border border-dashed border-brand-200 bg-white/70 p-5 text-center text-sm font-semibold text-slate-500">
+            No hay personas interesadas pendientes de gestion.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3">
+            {visibleInterests.map((interest) => (
+              <InterestManagementCard
+                key={interest.id}
+                interest={interest}
+                post={posts.find((post) => post.id === interest.post_id)}
+                beneficiary={beneficiaryById.get(interest.beneficiary_id)}
+                canEdit={canEdit}
+                onUpdate={updateInterest}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="mt-5 grid gap-4 xl:grid-cols-2">
         {!filteredPosts.length ? (
           <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-slate-500 xl:col-span-2">
@@ -261,6 +317,7 @@ export function CommunityModeration({ data, actions, currentUser }) {
                 setBlockReason(post.blocked_reason || '');
               }}
               onWithdraw={() => withdrawPost(post)}
+              onViewInterests={() => viewPostInterests(post.id)}
               onUpdateInterest={updateInterest}
               onUpdateResolution={updateResolution}
             />
@@ -333,7 +390,7 @@ function SummaryCard({ label, value, tone, icon: Icon }) {
   );
 }
 
-function CommunityPostCard({ post, beneficiary, interests, reports, matches, beneficiaryById, photoUrl, canEdit, onReview, onWithdraw, onBlock, onUpdateInterest, onUpdateResolution }) {
+function CommunityPostCard({ post, beneficiary, interests, reports, matches, beneficiaryById, photoUrl, canEdit, onReview, onWithdraw, onBlock, onViewInterests, onUpdateInterest, onUpdateResolution }) {
   const category = categoryMeta[post.category] || categoryMeta.need;
   const status = statusMeta[post.status] || statusMeta.pending_review;
   const CategoryIcon = category.icon;
@@ -397,7 +454,10 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
         )}
         {interests.length > 0 && (
           <div className="rounded-md border border-brand-100 bg-brand-50/60 p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Gestion del interes</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-black uppercase tracking-wide text-brand-700">{interests.length} personas interesadas</p>
+              <Button variant="secondary" onClick={onViewInterests}><MessageCircle size={16} /> Ver interesados</Button>
+            </div>
             <div className="mt-3 space-y-3">
               {interests.map((interest) => (
                 <InterestWorkflowRow
@@ -436,6 +496,37 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
           {!['withdrawn', 'blocked'].includes(post.status) && <Button variant="danger" disabled={!canEdit} onClick={onBlock}><ShieldAlert size={16} /> Bloquear</Button>}
           {post.status !== 'withdrawn' && <Button variant="danger" disabled={!canEdit} onClick={onWithdraw}><Trash2 size={16} /> Retirar</Button>}
         </div>
+      </div>
+    </article>
+  );
+}
+
+function InterestManagementCard({ interest, post, beneficiary, canEdit, onUpdate }) {
+  const category = categoryMeta[post?.category] || categoryMeta.need;
+  const CategoryIcon = category.icon;
+  const statusLabel = interestStatusOptions.find((item) => item.value === (interest.status === 'registered' ? 'new' : interest.status))?.label || 'Nuevo';
+
+  return (
+    <article className="rounded-md border border-white bg-white p-4 shadow-sm">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={category.tone}><CategoryIcon size={14} /> {category.label}</Badge>
+            <Badge className="border-brand-100 bg-brand-50 text-brand-700">{statusLabel}</Badge>
+          </div>
+          <h3 className="mt-3 font-black text-ink">{post?.title || 'Publicacion no disponible'}</h3>
+          <p className="mt-1 text-sm text-slate-600">Publicacion: {post?.status ? statusMeta[post.status]?.label || post.status : 'Sin estado'}</p>
+        </div>
+        <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">Beneficiario interesado</p>
+          <p className="mt-1 font-bold text-ink">{beneficiary?.full_name || 'Beneficiario'}{beneficiary?.code ? ` - ${beneficiary.code}` : ''}</p>
+          <p className="mt-1 text-sm text-slate-600">Fecha: {formatDate(interest.created_at)}</p>
+          {interest.message && <p className="mt-2 text-sm text-slate-700">{interest.message}</p>}
+        </div>
+      </div>
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Acciones</p>
+        <InterestWorkflowRow interest={interest} beneficiary={beneficiary} canEdit={canEdit} onUpdate={onUpdate} />
       </div>
     </article>
   );
