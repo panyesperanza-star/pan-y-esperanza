@@ -46,6 +46,8 @@ const TABLES = [
   'treasury_loans',
   'treasury_accounts',
   'volunteers',
+  'person_identities',
+  'person_identity_link_audit',
   'volunteer_history',
   'notificaciones',
   'agenda_operativa',
@@ -131,7 +133,9 @@ const OPTIONAL_TABLES = new Set([
   'community_post_recommendations',
   'platform_maintenance_logs',
   'official_credential_registry',
-  'official_credential_events'
+  'official_credential_events',
+  'person_identities',
+  'person_identity_link_audit'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';

@@ -50,6 +50,7 @@ export function sanitizeVolunteerPayload(payload = {}) {
     availability: cleanText(payload.availability),
     documentation: cleanText(payload.documentation),
     notes: String(payload.notes || '').trim(),
+    person_identity_id: payload.person_identity_id || undefined,
     created_at: payload.created_at || undefined
   };
 

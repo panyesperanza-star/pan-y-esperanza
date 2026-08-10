@@ -6,6 +6,13 @@ import { sendEmailViaApi } from '../lib/emailClient';
 import { normalize } from '../lib/formatters';
 import { runSocialResourceWatchdog } from '../lib/socialResourceWatchdogClient';
 import { hasSupabaseConfig, supabase } from '../lib/supabase';
+import {
+  applyPersonIdentityToUser,
+  applyPersonIdentityToVolunteer,
+  mergePersonIdentityPayloads,
+  personIdentityPayloadFromUser,
+  personIdentityPayloadFromVolunteer
+} from '../lib/personIdentity';
 import { AgendaOperativaRepository } from '../services/agenda/AgendaOperativaRepository';
 import { AgendaOperativaService } from '../services/agenda/AgendaOperativaService';
 import { BeneficiarioPortalRepository } from '../services/beneficiaryPortal/BeneficiarioPortalRepository';
@@ -94,6 +101,8 @@ const EMPTY_APP_DATA = Object.freeze({
   treasury_accounts: EMPTY_TABLE,
   volunteers: EMPTY_TABLE,
   volunteer_history: EMPTY_TABLE,
+  person_identities: EMPTY_TABLE,
+  person_identity_link_audit: EMPTY_TABLE,
   notificaciones: EMPTY_TABLE,
   agenda_operativa: EMPTY_TABLE,
   campanas: EMPTY_TABLE,
@@ -147,10 +156,10 @@ export function useAppData(enabled = true, currentUser = null) {
         repository.loadAll(appDataTablesForUser(currentUser)),
         APP_DATA_LOAD_TIMEOUT_MS
       );
-      setData(enrichOfficialCredentialData({
+      setData(enrichOfficialCredentialData(enrichPersonIdentityData({
         ...EMPTY_APP_DATA,
         ...loadedData
-      }));
+      })));
     } catch (err) {
       setData((current) => current || EMPTY_APP_DATA);
       setError(err.message || 'No se pudieron cargar los datos.');
@@ -287,6 +296,130 @@ export function useAppData(enabled = true, currentUser = null) {
     return null;
   }
 
+  function compactPersonIdentityPayload(payload = {}) {
+    return Object.fromEntries(Object.entries(payload).filter(([key, value]) => {
+      if (key === 'updated_at') return true;
+      if (value === undefined || value === null) return false;
+      if (typeof value === 'string' && value.trim() === '') return false;
+      return true;
+    }));
+  }
+
+  async function createPersonIdentity(payload = {}) {
+    const cleanPayload = compactPersonIdentityPayload({
+      ...payload,
+      created_by: currentUser?.id || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    return repositoryCreate('person_identities', cleanPayload);
+  }
+
+  async function updatePersonIdentity(identityId, payload = {}) {
+    if (!identityId) return null;
+    const cleanPayload = compactPersonIdentityPayload({ ...payload, updated_at: new Date().toISOString() });
+    if (Object.keys(cleanPayload).length <= 1) return null;
+    return repositoryUpdate('person_identities', identityId, cleanPayload);
+  }
+
+  async function writePersonIdentityAudit(action, payload = {}) {
+    await repositoryCreate('person_identity_link_audit', {
+      person_identity_id: payload.person_identity_id || null,
+      volunteer_id: payload.volunteer_id || null,
+      app_user_id: payload.app_user_id || null,
+      action,
+      actor_id: currentUser?.id || null,
+      actor_name: currentUserName(),
+      reason: String(payload.reason || '').trim(),
+      previous_values: payload.previous_values || {},
+      next_values: payload.next_values || {},
+      created_at: new Date().toISOString()
+    });
+  }
+
+  async function ensureVolunteerPersonIdentity(volunteerId, payload = null) {
+    const current = (appData.volunteers || []).find((item) => item.id === volunteerId) || {};
+    const source = { ...current, ...(payload || {}) };
+    if (source.person_identity_id) {
+      await updatePersonIdentity(source.person_identity_id, personIdentityPayloadFromVolunteer(source));
+      return source.person_identity_id;
+    }
+    const identity = await createPersonIdentity(personIdentityPayloadFromVolunteer({ ...source, id: volunteerId }));
+    await repositoryUpdate('volunteers', volunteerId, { person_identity_id: identity.id });
+    await writePersonIdentityAudit('created', {
+      person_identity_id: identity.id,
+      volunteer_id: volunteerId,
+      reason: 'Identidad creada para expediente de voluntario',
+      next_values: { volunteer_id: volunteerId }
+    });
+    return identity.id;
+  }
+
+  async function ensureUserPersonIdentity(userId, payload = null) {
+    const current = (appData.app_users || []).find((item) => item.id === userId) || {};
+    const source = { ...current, ...(payload || {}) };
+    if (source.person_identity_id) {
+      await updatePersonIdentity(source.person_identity_id, personIdentityPayloadFromUser(source));
+      return source.person_identity_id;
+    }
+    const identity = await createPersonIdentity(personIdentityPayloadFromUser({ ...source, id: userId }));
+    await repositoryUpdate('app_users', userId, { person_identity_id: identity.id });
+    await writePersonIdentityAudit('created', {
+      person_identity_id: identity.id,
+      app_user_id: userId,
+      reason: 'Identidad creada para usuario ERP',
+      next_values: { app_user_id: userId }
+    });
+    return identity.id;
+  }
+
+  async function linkVolunteerUserIdentityRecords(volunteerId, userId, reason = 'Vinculacion verificada', preferredIdentityId = '') {
+    assertPermission('users', 'edit');
+    const volunteer = (appData.volunteers || []).find((item) => item.id === volunteerId);
+    const user = (appData.app_users || []).find((item) => item.id === userId);
+    if (!volunteer) throw new Error('No se ha encontrado el voluntario que se desea vincular.');
+    if (!user) throw new Error('No se ha encontrado el usuario ERP que se desea vincular.');
+    const existingIdentityId = preferredIdentityId || volunteer.person_identity_id || user.person_identity_id;
+    if (volunteer.person_identity_id && user.person_identity_id && volunteer.person_identity_id !== user.person_identity_id && !preferredIdentityId) {
+      throw new Error('El voluntario y el usuario ERP ya pertenecen a identidades distintas. Desvincule primero una de ellas antes de vincular.');
+    }
+    const volunteerPayload = personIdentityPayloadFromVolunteer(volunteer);
+    const userPayload = personIdentityPayloadFromUser(user);
+    const identityPayload = mergePersonIdentityPayloads(volunteerPayload, userPayload);
+    const identityId = existingIdentityId || (await createPersonIdentity(identityPayload)).id;
+    await updatePersonIdentity(identityId, identityPayload);
+    await repositoryUpdate('volunteers', volunteerId, { person_identity_id: identityId });
+    await repositoryUpdate('app_users', userId, { person_identity_id: identityId });
+    await writePersonIdentityAudit('linked', {
+      person_identity_id: identityId,
+      volunteer_id: volunteerId,
+      app_user_id: userId,
+      reason,
+      previous_values: { volunteer_person_identity_id: volunteer.person_identity_id || null, user_person_identity_id: user.person_identity_id || null },
+      next_values: { person_identity_id: identityId }
+    });
+    await audit(`Identidad unica: vinculo voluntario ${volunteer.full_name || volunteerId} con usuario ${user.email || userId}`.trim());
+    return identityId;
+  }
+
+  async function unlinkVolunteerUserIdentityRecords(volunteerId, userId, reason = 'Desvinculacion verificada') {
+    assertPermission('users', 'edit');
+    const volunteer = (appData.volunteers || []).find((item) => item.id === volunteerId);
+    const user = (appData.app_users || []).find((item) => item.id === userId);
+    if (!volunteer || !user) throw new Error('No se ha encontrado la relacion que se desea desvincular.');
+    const identityId = volunteer.person_identity_id || user.person_identity_id || null;
+    await repositoryUpdate('volunteers', volunteerId, { person_identity_id: null });
+    await repositoryUpdate('app_users', userId, { person_identity_id: null });
+    await writePersonIdentityAudit('unlinked', {
+      person_identity_id: identityId,
+      volunteer_id: volunteerId,
+      app_user_id: userId,
+      reason,
+      previous_values: { person_identity_id: identityId },
+      next_values: { volunteer_person_identity_id: null, user_person_identity_id: null }
+    });
+    await audit(`Identidad unica: desvinculo voluntario ${volunteer.full_name || volunteerId} de usuario ${user.email || userId}`.trim());
+  }
   function createInventarioService(repositoryAdapter = createRepository(), notificacionService = null) {
     return new InventarioService({
       repository: new InventarioRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
@@ -2984,12 +3117,26 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createVolunteer: async (payload) => {
-      await voluntarioService.create(payload);
+      const identity = await createPersonIdentity(personIdentityPayloadFromVolunteer(payload));
+      const created = await voluntarioService.create({ ...payload, person_identity_id: identity.id });
+      if (created?.id) {
+        await updatePersonIdentity(identity.id, personIdentityPayloadFromVolunteer({ ...payload, id: created.id }));
+        await writePersonIdentityAudit('created', {
+          person_identity_id: identity.id,
+          volunteer_id: created.id,
+          reason: 'Identidad creada al dar de alta voluntario',
+          next_values: { volunteer_id: created.id }
+        });
+      }
       await reload();
+      return created;
     },
     updateVolunteer: async (id, payload) => {
-      await voluntarioService.update(id, payload);
+      const identityId = payload.person_identity_id || await ensureVolunteerPersonIdentity(id, payload);
+      await updatePersonIdentity(identityId, personIdentityPayloadFromVolunteer({ ...payload, id }));
+      const updated = await voluntarioService.update(id, { ...payload, person_identity_id: identityId });
       await reload();
+      return updated;
     },
     createCollaborator: async (payload) => {
       await colaboradorService.create(payload);
@@ -3053,14 +3200,68 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createUser: async (payload) => {
-      await usuarioService.create(payload);
+      const { linked_volunteer_id: linkedVolunteerId, identity_link_decision: identityLinkDecision, ...userPayload } = payload || {};
+      let identityId = userPayload.person_identity_id || '';
+      let linkedVolunteer = null;
+      if (linkedVolunteerId) {
+        linkedVolunteer = (appData.volunteers || []).find((item) => item.id === linkedVolunteerId) || null;
+        identityId = await ensureVolunteerPersonIdentity(linkedVolunteerId);
+      }
+      if (!identityId) {
+        const identity = await createPersonIdentity(personIdentityPayloadFromUser(userPayload));
+        identityId = identity.id;
+      } else {
+        const basePayload = linkedVolunteer
+          ? mergePersonIdentityPayloads(personIdentityPayloadFromVolunteer(linkedVolunteer), personIdentityPayloadFromUser(userPayload))
+          : personIdentityPayloadFromUser(userPayload);
+        await updatePersonIdentity(identityId, basePayload);
+      }
+      const createdUser = await usuarioService.create({ ...userPayload, person_identity_id: identityId });
+      if (createdUser?.id) {
+        await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id: createdUser.id }));
+        if (linkedVolunteerId) {
+          await repositoryUpdate('app_users', createdUser.id, { person_identity_id: identityId });
+          await writePersonIdentityAudit('linked', {
+            person_identity_id: identityId,
+            volunteer_id: linkedVolunteerId,
+            app_user_id: createdUser.id,
+            reason: identityLinkDecision || 'Vinculado al crear usuario ERP',
+            previous_values: { volunteer_person_identity_id: linkedVolunteer?.person_identity_id || null, user_person_identity_id: null },
+            next_values: { person_identity_id: identityId }
+          });
+          await audit(`Identidad unica: vinculo voluntario ${linkedVolunteer?.full_name || linkedVolunteerId} con usuario ${createdUser.email || createdUser.id}`.trim());
+        } else {
+          await writePersonIdentityAudit('created', {
+            person_identity_id: identityId,
+            app_user_id: createdUser.id,
+            reason: identityLinkDecision || 'Identidad creada al dar de alta usuario ERP',
+            next_values: { app_user_id: createdUser.id }
+          });
+        }
+      }
       await reload();
+      return createdUser;
     },
     sendUserWelcomeEmail: async (user, organization, logoUrl) => {
       await usuarioService.sendWelcomeEmail(user, organization, logoUrl);
     },
     updateUser: async (id, payload) => {
-      await usuarioService.update(id, payload);
+      const { linked_volunteer_id: linkedVolunteerId, identity_link_decision: identityLinkDecision, ...userPayload } = payload || {};
+      const identityId = linkedVolunteerId
+        ? await linkVolunteerUserIdentityRecords(linkedVolunteerId, id, identityLinkDecision || 'Vinculado al editar usuario ERP', userPayload.person_identity_id || '')
+        : (userPayload.person_identity_id || await ensureUserPersonIdentity(id, userPayload));
+      await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id }));
+      const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
+      await reload();
+      return updated;
+    },
+    linkVolunteerUserIdentity: async ({ volunteerId, userId, reason }) => {
+      const identityId = await linkVolunteerUserIdentityRecords(volunteerId, userId, reason);
+      await reload();
+      return identityId;
+    },
+    unlinkVolunteerUserIdentity: async ({ volunteerId, userId, reason }) => {
+      await unlinkVolunteerUserIdentityRecords(volunteerId, userId, reason);
       await reload();
     },
     deactivateUser: async (id) => {
@@ -3232,6 +3433,17 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
   );
 }
 
+function enrichPersonIdentityData(data = {}) {
+  const identities = data.person_identities || [];
+  if (!identities.length) return data;
+  const byId = new Map(identities.map((identity) => [identity.id, identity]));
+
+  return {
+    ...data,
+    volunteers: (data.volunteers || []).map((volunteer) => applyPersonIdentityToVolunteer(volunteer, byId.get(volunteer.person_identity_id))),
+    app_users: (data.app_users || []).map((user) => applyPersonIdentityToUser(user, byId.get(user.person_identity_id)))
+  };
+}
 function enrichOfficialCredentialData(data = {}) {
   const registry = data.official_credential_registry || [];
   const events = data.official_credential_events || [];

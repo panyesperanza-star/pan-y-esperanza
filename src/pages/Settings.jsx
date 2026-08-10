@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
@@ -7,6 +7,7 @@ import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
+import { buildVolunteerUserIdentityCandidates, findVolunteerMatchesForUser, splitPersonName, userFullName } from '../lib/personIdentity';
 import { canAccess, canDo, getUserStatus } from '../lib/auth';
 import {
   buildUsersViewModel,
@@ -115,7 +116,7 @@ export function Settings({ data, actions, currentUser, initialTab = 'entity' }) 
       </section>
       )}
       {tab === 'mail' && <MailSettings settings={form} setSettings={setForm} configService={settingsService} onSave={(payload) => settingsService.saveMailSettings(payload).then(() => actions.reloadData?.())} />}
-      {tab === 'users' && <UsersSettings users={data.app_users || []} auditLogs={data.audit_logs || []} actions={actions} currentUser={currentUser} organization={current} />}
+      {tab === 'users' && <UsersSettings users={data.app_users || []} volunteers={data.volunteers || []} identityAudit={data.person_identity_link_audit || []} auditLogs={data.audit_logs || []} actions={actions} currentUser={currentUser} organization={current} />}
       {tab === 'system' && <SystemStatus configService={settingsService} />}
     </>
   );
@@ -211,7 +212,7 @@ function MailSettings({ settings, setSettings, configService, onSave }) {
   );
 }
 
-function UsersSettings({ users, auditLogs, actions, currentUser, organization }) {
+function UsersSettings({ users, volunteers = [], identityAudit = [], auditLogs, actions, currentUser, organization }) {
   const [editing, setEditing] = useState(null);
   const [section, setSection] = useState('users');
   const [message, setMessage] = useState('');
@@ -238,18 +239,20 @@ function UsersSettings({ users, auditLogs, actions, currentUser, organization })
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant={section === 'users' ? 'primary' : 'secondary'} onClick={() => setSection('users')}>Usuarios</Button>
         {canEdit && <Button variant={section === 'permissions' ? 'primary' : 'secondary'} onClick={() => setSection('permissions')}>Usuarios &gt; Permisos</Button>}
+        {canEdit && <Button variant={section === 'identity' ? 'primary' : 'secondary'} onClick={() => setSection('identity')}>Identidad unica</Button>}
         <Button variant={section === 'audit' ? 'primary' : 'secondary'} onClick={() => setSection('audit')}>Auditoria</Button>
       </div>
       {message && <p className="mb-4 rounded-md bg-brand-50 p-3 text-sm font-medium text-brand-700">{message}</p>}
-      {section === 'users' && <UsersTable users={associationUsers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
+      {section === 'users' && <UsersTable users={associationUsers} volunteers={volunteers} actions={actions} currentUser={currentUser} setEditing={setEditing} setMessage={setMessage} canEdit={canEdit} canDelete={canDelete} />}
       {section === 'permissions' && canEdit && <PermissionsMatrix users={associationUsers} actions={actions} setMessage={setMessage} />}
+      {section === 'identity' && canEdit && <IdentityUniquePanel users={associationUsers} volunteers={volunteers} identityAudit={identityAudit} actions={actions} setMessage={setMessage} />}
       {section === 'audit' && <AuditTable logs={auditLogs} />}
-      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} users={associationUsers} organization={organization} actions={actions} canGenerateCredential={canGenerateCredential} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
+      {editing && <Modal title={editing.id ? 'Editar usuario' : 'Crear usuario'} onClose={() => setEditing(null)} wide><UserForm initial={editing} users={associationUsers} volunteers={volunteers} organization={organization} actions={actions} canGenerateCredential={canGenerateCredential} onSubmit={async (payload) => { if (payload.id) { await actions.updateUser(payload.id, payload); setMessage('Usuario actualizado correctamente.'); } else { await actions.createUser(payload); await actions.sendUserWelcomeEmail(payload, organization, getOfficialLogoUrl()); setMessage('Usuario creado y correo de bienvenida solicitado.'); } setEditing(null); }} /></Modal>}
     </section>
   );
 }
 
-function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEdit, canDelete }) {
+function UsersTable({ users, volunteers = [], actions, currentUser, setEditing, setMessage, canEdit, canDelete }) {
   const [filter, setFilter] = useState('active');
   const filtered = filterUsersByStatus(users, filter);
 
@@ -315,15 +318,17 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
       </div>
       <p className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">Para conservar historial y permisos, se recomienda desactivar usuarios en lugar de eliminarlos definitivamente.</p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1360px] table-fixed text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[160px] px-4 py-3">Usuario</th><th className="w-[190px]">Email</th><th className="w-[110px]">Teléfono</th><th className="w-[130px]">Cargo</th><th className="w-[105px]">Estado</th><th className="w-[135px]">Último acceso</th><th className="w-[135px]">Creado</th><th className="w-[120px]">Creado por</th><th className="w-[280px] pr-4 text-right">Acciones</th></tr></thead>
+        <table className="w-full min-w-[1480px] table-fixed text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="w-[160px] px-4 py-3">Usuario</th><th className="w-[150px]">Identidad</th><th className="w-[190px]">Email</th><th className="w-[110px]">Teléfono</th><th className="w-[130px]">Cargo</th><th className="w-[105px]">Estado</th><th className="w-[135px]">Último acceso</th><th className="w-[135px]">Creado</th><th className="w-[120px]">Creado por</th><th className="w-[280px] pr-4 text-right">Acciones</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((user) => {
               const status = getUserStatus(user);
+              const linkedVolunteer = linkedVolunteerForUser(user, volunteers);
               const isCurrentUser = user.id === currentUser?.id;
               return (
                 <tr key={user.id}>
                   <td className="px-4 py-3"><div className="flex min-w-0 items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />}<span className="truncate font-semibold">{user.first_name} {user.last_name}</span></div></td>
+                  <td className="pr-3 text-xs">{linkedVolunteer ? <span className="rounded-md bg-brand-50 px-2 py-1 font-bold text-brand-700">Voluntario vinculado</span> : <span className="rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-600">Solo ERP</span>}{linkedVolunteer && <p className="mt-1 truncate text-slate-500">{linkedVolunteer.code || linkedVolunteer.full_name}</p>}</td>
                   <td className="break-words pr-3">{user.email}</td>
                   <td className="break-words pr-3">{user.phone || '-'}</td>
                   <td className="break-words pr-3">{user.position || user.role}</td>
@@ -359,7 +364,7 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
                 </tr>
               );
             })}
-            {!filtered.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="9">No hay usuarios para el filtro seleccionado.</td></tr>}
+            {!filtered.length && <tr><td className="px-4 py-5 text-center text-slate-500" colSpan="10">No hay usuarios para el filtro seleccionado.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -367,14 +372,127 @@ function UsersTable({ users, actions, currentUser, setEditing, setMessage, canEd
   );
 }
 
+function IdentityUniquePanel({ users = [], volunteers = [], identityAudit = [], actions, setMessage }) {
+  const candidates = useMemo(() => buildVolunteerUserIdentityCandidates(volunteers, users), [volunteers, users]);
+  const linked = useMemo(() => volunteers.flatMap((volunteer) => {
+    const user = linkedUserForVolunteer(volunteer, users);
+    return user ? [{ volunteer, user }] : [];
+  }), [volunteers, users]);
+  const pending = candidates.filter((candidate) => !candidate.alreadyLinked);
+
+  async function linkCandidate(candidate) {
+    const reason = window.prompt('Motivo de vinculacion', candidate.reasons.join(', '));
+    if (reason === null) return;
+    await actions.linkVolunteerUserIdentity({ volunteerId: candidate.volunteer.id, userId: candidate.user.id, reason: reason || candidate.reasons.join(', ') });
+    setMessage('Voluntario y usuario ERP vinculados correctamente.');
+  }
+
+  async function unlinkPair(pair) {
+    const reason = window.prompt('Motivo de desvinculacion', 'Correccion de identidad');
+    if (reason === null) return;
+    await actions.unlinkVolunteerUserIdentity({ volunteerId: pair.volunteer.id, userId: pair.user.id, reason });
+    setMessage('Relacion desvinculada correctamente.');
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-md border border-brand-100 bg-brand-50 p-4">
+        <h4 className="font-bold text-ink">Identidad unica Voluntario - Usuario ERP</h4>
+        <p className="mt-1 text-sm text-slate-600">Una persona puede ser voluntaria, usuaria ERP o ambas. Las coincidencias se revisan manualmente antes de vincular.</p>
+      </div>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h4 className="font-bold text-ink">Vinculos actuales</h4>
+          <span className="text-sm font-semibold text-slate-500">{linked.length} vinculados</span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {linked.map((pair) => (
+            <article key={`${pair.volunteer.id}-${pair.user.id}`} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <p className="font-bold text-ink">{pair.volunteer.full_name}</p>
+              <p className="text-sm text-slate-600">Voluntario: {pair.volunteer.code || '-'} - Usuario ERP: {userFullName(pair.user) || pair.user.email}</p>
+              <p className="mt-1 text-xs text-brand-700">Acceso ERP vinculado</p>
+              <div className="mt-3"><Button type="button" variant="secondary" onClick={() => unlinkPair(pair)}>Desvincular</Button></div>
+            </article>
+          ))}
+          {!linked.length && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 md:col-span-2">No hay voluntarios vinculados a usuarios ERP.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h4 className="font-bold text-ink">Posibles duplicados pendientes</h4>
+          <span className="text-sm font-semibold text-slate-500">{pending.length} coincidencias</span>
+        </div>
+        <div className="space-y-2">
+          {pending.map((candidate) => (
+            <article key={`${candidate.volunteer.id}-${candidate.user.id}`} className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="font-bold text-ink">{candidate.volunteer.full_name} - {userFullName(candidate.user) || candidate.user.email}</p>
+                  <p className="text-sm text-amber-900">Coincidencias: {candidate.reasons.join(', ')}</p>
+                  {candidate.conflict && <p className="mt-1 text-xs font-bold text-red-700">Atencion: ambos registros tienen identidades distintas.</p>}
+                </div>
+                <Button type="button" variant="secondary" onClick={() => linkCandidate(candidate)} disabled={candidate.conflict}>Vincular</Button>
+              </div>
+            </article>
+          ))}
+          {!pending.length && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">Sin coincidencias pendientes por documento, email, telefono o nombre.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <h4 className="mb-3 font-bold text-ink">Auditoria de vinculacion</h4>
+        <div className="space-y-2">
+          {identityAudit.slice(0, 10).map((row) => (
+            <p key={row.id} className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+              <strong>{formatDateTime(row.created_at)}</strong> - {row.action} - {row.actor_name || 'Sistema'}{row.reason ? ` - ${row.reason}` : ''}
+            </p>
+          ))}
+          {!identityAudit.length && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">Todavia no hay auditoria de identidad unica.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function linkedVolunteerForUser(user = {}, volunteers = []) {
+  if (!user.person_identity_id) return null;
+  return volunteers.find((volunteer) => volunteer.person_identity_id === user.person_identity_id) || null;
+}
+
+function linkedUserForVolunteer(volunteer = {}, users = []) {
+  if (!volunteer.person_identity_id) return null;
+  return users.find((user) => user.person_identity_id === volunteer.person_identity_id) || null;
+}
 function MiniStat({ label, value }) {
   return <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-ink">{value}</p></div>;
 }
 
-function UserForm({ initial, users = [], organization, actions, canGenerateCredential = false, onSubmit }) {
+function UserForm({ initial, users = [], volunteers = [], organization, actions, canGenerateCredential = false, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
+  const creating = !form.id;
+  const volunteerMatches = useMemo(() => (
+    creating ? findVolunteerMatchesForUser(form, volunteers).slice(0, 4) : []
+  ), [creating, volunteers, form.document_id, form.email, form.phone, form.first_name, form.last_name]);
+  const mustResolveVolunteerMatch = creating && volunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked';
+  function chooseVolunteerLink(volunteer) {
+    const names = splitPersonName(volunteer.full_name || '');
+    setForm((state) => ({
+      ...state,
+      linked_volunteer_id: volunteer.id,
+      person_identity_id: volunteer.person_identity_id || state.person_identity_id || '',
+      identity_link_decision: 'Vincular con voluntario existente',
+      first_name: state.first_name || names.first_name,
+      last_name: state.last_name || names.last_name,
+      document_id: state.document_id || volunteer.document_id || '',
+      email: state.email || volunteer.email || '',
+      phone: state.phone || volunteer.phone || '',
+      profile_photo: state.profile_photo || volunteer.photo_data_url || volunteer.profile_photo || ''
+    }));
+  }
   function updateRole(role) {
     setForm((state) => ({ ...state, role, position: state.position || role, permissions: ROLE_PERMISSIONS[role] || [], permission_matrix: ROLE_PERMISSION_MATRIX[role] || {} }));
   }
@@ -388,6 +506,10 @@ function UserForm({ initial, users = [], organization, actions, canGenerateCrede
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
       event.preventDefault();
       setError('');
+      if (mustResolveVolunteerMatch) {
+        setError('Esta persona ya existe como voluntaria. Vincula el usuario con el voluntario existente o confirma que deseas continuar sin vincular.');
+        return;
+      }
       try {
         await onSubmit({ ...form, permissions: viewPermissionsFromMatrix(form.permission_matrix, form.role) });
       } catch (err) {
@@ -395,6 +517,30 @@ function UserForm({ initial, users = [], organization, actions, canGenerateCrede
       }
     }}>
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
+      {creating && volunteerMatches.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:col-span-2">
+          <p className="font-bold">Esta persona ya existe como voluntaria.</p>
+          <p className="mt-1">Revisa la coincidencia antes de crear el usuario ERP. No se vincula automaticamente.</p>
+          <div className="mt-3 space-y-2">
+            {volunteerMatches.map(({ volunteer, reasons }) => (
+              <div key={volunteer.id} className="rounded-md border border-amber-200 bg-white p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-bold text-ink">{volunteer.full_name}</p>
+                    <p className="text-xs text-slate-600">{volunteer.code || 'Voluntario'} - {reasons.join(', ')}</p>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => chooseVolunteerLink(volunteer)}>Vincular con voluntario existente</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" onClick={() => update('identity_link_decision', 'continue-unlinked')}>Continuar sin vincular</Button>
+            {form.linked_volunteer_id && <span className="rounded-md bg-brand-100 px-3 py-2 text-xs font-bold text-brand-800">Voluntario seleccionado para vincular.</span>}
+            {form.identity_link_decision === 'continue-unlinked' && !form.linked_volunteer_id && <span className="rounded-md bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Se creara como usuario ERP independiente.</span>}
+          </div>
+        </div>
+      )}
       {form.id && canGenerateCredential && (
         <div className="flex justify-end sm:col-span-2">
           <OfficialCredentialButton kind="user" subject={buildUserCredentialSubject(form, users)} organization={organization} actions={actions} />
@@ -403,6 +549,7 @@ function UserForm({ initial, users = [], organization, actions, canGenerateCrede
       <FormField label="Nombre"><input className={inputClass} required value={form.first_name || ''} onChange={(event) => update('first_name', event.target.value)} /></FormField>
       <FormField label="Apellidos"><input className={inputClass} value={form.last_name || ''} onChange={(event) => update('last_name', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" required value={form.email || ''} onChange={(event) => update('email', event.target.value)} /></FormField>
+      <FormField label="DNI/NIE"><input className={inputClass} value={form.document_id || ''} onChange={(event) => update('document_id', event.target.value)} /></FormField>
       <FormField label="Teléfono"><input className={inputClass} value={form.phone || ''} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Cargo"><input className={inputClass} value={form.position || ''} onChange={(event) => update('position', event.target.value)} /></FormField>
       <FormField label="Contraseña temporal"><input className={inputClass} type="password" value={form.password || ''} onChange={(event) => update('password', event.target.value)} /></FormField>

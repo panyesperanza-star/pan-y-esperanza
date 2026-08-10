@@ -32,6 +32,7 @@ export function createEmptyUser(currentUser) {
     last_name: '',
     email: '',
     password: '',
+    document_id: '',
     phone: '',
     role: 'Voluntario',
     position: 'Voluntario',
@@ -40,6 +41,9 @@ export function createEmptyUser(currentUser) {
     permissions: ROLE_PERMISSIONS.Voluntario,
     permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario,
     profile_photo: '',
+    person_identity_id: '',
+    linked_volunteer_id: '',
+    identity_link_decision: '',
     last_access_at: '',
     created_by: currentUser?.email || 'Sistema',
     created_at: new Date().toISOString()
@@ -86,15 +90,17 @@ export class UsuarioService {
 
   async create(payload) {
     const cleanPayload = sanitizeUserPayload(payload);
-    await this.repository.create(cleanPayload);
+    const created = await this.repository.create(cleanPayload);
     await this.audit(`Creo usuario ${payload.email || ''}`.trim());
+    return created?.user || created;
   }
 
   async update(id, payload) {
     const cleanPayload = sanitizeUserPayload(payload);
     this.assertNotLastActiveSuperadmin(id, cleanPayload.is_active === false, 'No se puede desactivar al ultimo Superadministrador.');
-    await this.repository.update(id, cleanPayload);
+    const updated = await this.repository.update(id, cleanPayload);
     await this.audit(`Edito usuario ${cleanPayload.email || ''}`.trim());
+    return updated?.user || updated;
   }
 
   async deactivate(id) {

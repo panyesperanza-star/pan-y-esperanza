@@ -161,6 +161,7 @@ function sanitizeProfile(user) {
     'last_name',
     'email',
     'phone',
+    'document_id',
     'role',
     'position',
     'status',
@@ -168,6 +169,7 @@ function sanitizeProfile(user) {
     'permissions',
     'permission_matrix',
     'profile_photo',
+    'person_identity_id',
     'last_access_at',
     'created_by',
     'created_at'

@@ -26,6 +26,9 @@ import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
 import { canDo } from '../lib/auth';
 import { formatDate, formatDateTime, normalize, todayISO } from '../lib/formatters';
+import { ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
+import { buildVolunteerUserIdentityCandidates, splitPersonName, userFullName } from '../lib/personIdentity';
+import { viewPermissionsFromMatrix } from '../services/users/UsuarioService';
 
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
 const VOLUNTEER_META_END = '[/PYE_VOLUNTEER_META]';
@@ -47,10 +50,12 @@ export function Volunteers({ data, actions, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('code');
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
+  const appUsers = data.app_users || [];
   const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
   const canDelete = currentUser?.role === 'Superadministrador';
   const canGenerateCredential = canDo(currentUser, 'volunteers', 'generate-credential');
+  const canManageUserAccess = canDo(currentUser, 'users', 'create') || canDo(currentUser, 'users', 'edit');
 
   async function saveVolunteer(form, current = null) {
     const payload = volunteerPayloadFromForm(form, volunteers, current);
@@ -126,6 +131,9 @@ export function Volunteers({ data, actions, currentUser }) {
             stats={volunteerStats(volunteer, data.volunteer_history || [])}
             canManage={canManage}
             canDelete={canDelete}
+            linkedUser={linkedUserForVolunteer(volunteer, appUsers)}
+            canManageUserAccess={canManageUserAccess}
+            onManageErpAccess={() => setModal({ type: 'erp-access', volunteer })}
             onOpen={() => setModal({ type: 'profile', volunteer })}
             onEdit={() => setModal({ type: 'edit', volunteer })}
             onArchive={() => archiveVolunteer(volunteer)}
@@ -151,6 +159,12 @@ export function Volunteers({ data, actions, currentUser }) {
         </Modal>
       )}
 
+      {modal?.type === 'erp-access' && (
+        <Modal title="Acceso ERP del voluntario" onClose={() => setModal(null)} wide>
+          <VolunteerErpAccessPanel volunteer={refreshVolunteer(modal.volunteer, data.volunteers || [])} users={appUsers} actions={actions} onClose={() => setModal(null)} />
+        </Modal>
+      )}
+
       {modal?.type === 'profile' && (
         <Modal title="Expediente del voluntario" onClose={() => setModal(null)} wide>
           <VolunteerProfile
@@ -160,6 +174,10 @@ export function Volunteers({ data, actions, currentUser }) {
             canManage={canManage}
             canDelete={canDelete}
             canGenerateCredential={canGenerateCredential}
+            actions={actions}
+            linkedUser={linkedUserForVolunteer(refreshVolunteer(modal.volunteer, data.volunteers || []), appUsers)}
+            canManageUserAccess={canManageUserAccess}
+            onManageErpAccess={() => setModal({ type: 'erp-access', volunteer: refreshVolunteer(modal.volunteer, data.volunteers || []) })}
             onEdit={() => setModal({ type: 'edit', volunteer: refreshVolunteer(modal.volunteer, data.volunteers || []) })}
             onArchive={() => archiveVolunteer(refreshVolunteer(modal.volunteer, data.volunteers || []))}
             onDelete={() => deleteVolunteer(refreshVolunteer(modal.volunteer, data.volunteers || []))}
@@ -171,7 +189,140 @@ export function Volunteers({ data, actions, currentUser }) {
   );
 }
 
-function VolunteerCard({ volunteer, stats, canManage, canDelete, onOpen, onEdit, onArchive, onDelete }) {
+function VolunteerErpAccessPanel({ volunteer, users = [], actions, onClose }) {
+  const linkedUser = linkedUserForVolunteer(volunteer, users);
+  const candidates = useMemo(() => buildVolunteerUserIdentityCandidates([volunteer], users).filter((candidate) => !candidate.alreadyLinked), [volunteer, users]);
+  const names = splitPersonName(volunteer.full_name || '');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [form, setForm] = useState(() => ({
+    first_name: names.first_name,
+    last_name: names.last_name,
+    email: volunteer.email || '',
+    password: '',
+    document_id: volunteer.document_id || '',
+    phone: volunteer.phone || '',
+    role: 'Voluntario',
+    position: 'Voluntario',
+    status: 'Activo',
+    is_active: true,
+    permissions: ROLE_PERMISSIONS.Voluntario,
+    permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario,
+    profile_photo: volunteer.photo_data_url || '',
+    person_identity_id: volunteer.person_identity_id || '',
+    linked_volunteer_id: volunteer.id,
+    identity_link_decision: 'Creado desde expediente de voluntario'
+  }));
+  const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
+
+  async function linkUser(user) {
+    setError('');
+    try {
+      await actions.linkVolunteerUserIdentity({ volunteerId: volunteer.id, userId: user.id, reason: 'Vinculado desde expediente de voluntario' });
+      setMessage('Usuario ERP vinculado al voluntario.');
+    } catch (err) {
+      setError(err.message || 'No se pudo vincular el usuario ERP.');
+    }
+  }
+
+  async function unlinkUser(user) {
+    const reason = window.prompt('Motivo de desvinculacion', 'Correccion de identidad');
+    if (reason === null) return;
+    setError('');
+    try {
+      await actions.unlinkVolunteerUserIdentity({ volunteerId: volunteer.id, userId: user.id, reason });
+      setMessage('Usuario ERP desvinculado del voluntario.');
+    } catch (err) {
+      setError(err.message || 'No se pudo desvincular el usuario ERP.');
+    }
+  }
+
+  async function createLinkedUser(event) {
+    event.preventDefault();
+    setError('');
+    try {
+      await actions.createUser({ ...form, permissions: viewPermissionsFromMatrix(form.permission_matrix, form.role) });
+      setMessage('Usuario ERP creado y vinculado al voluntario.');
+      onClose?.();
+    } catch (err) {
+      setError(err.message || 'No se pudo crear el usuario ERP.');
+    }
+  }
+
+  if (linkedUser) {
+    return (
+      <div className="space-y-4">
+        {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-semibold text-brand-700">{message}</p>}
+        {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+        <div className="rounded-md border border-brand-100 bg-brand-50 p-4">
+          <p className="text-xs font-bold uppercase text-brand-700">Acceso ERP vinculado</p>
+          <h3 className="mt-1 text-lg font-bold text-ink">{userFullName(linkedUser) || linkedUser.email}</h3>
+          <p className="text-sm text-slate-600">{linkedUser.email} - {linkedUser.role} - {linkedUser.position || 'Sin cargo'}</p>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cerrar</Button>
+          <Button type="button" variant="danger" onClick={() => unlinkUser(linkedUser)}>Desvincular</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {message && <p className="rounded-md bg-brand-50 p-3 text-sm font-semibold text-brand-700">{message}</p>}
+      {error && <p className="rounded-md bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+        <p className="text-xs font-bold uppercase text-slate-500">Acceso ERP</p>
+        <h3 className="mt-1 font-bold text-ink">Sin usuario ERP vinculado</h3>
+        <p className="mt-1 text-sm text-slate-600">Puedes vincular un usuario existente o crear un acceso nuevo sin duplicar la persona.</p>
+      </div>
+
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <h4 className="mb-3 font-bold text-ink">Usuarios ERP compatibles</h4>
+        <div className="space-y-2">
+          {candidates.map((candidate) => (
+            <article key={candidate.user.id} className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-bold text-ink">{userFullName(candidate.user) || candidate.user.email}</p>
+                  <p className="text-sm text-amber-900">{candidate.reasons.join(', ')}</p>
+                  {candidate.conflict && <p className="text-xs font-bold text-red-700">Ya pertenece a otra identidad.</p>}
+                </div>
+                <Button type="button" variant="secondary" disabled={candidate.conflict} onClick={() => linkUser(candidate.user)}>Vincular usuario ERP</Button>
+              </div>
+            </article>
+          ))}
+          {!candidates.length && <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No se han detectado usuarios ERP compatibles.</p>}
+        </div>
+      </section>
+
+      <form className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2" onSubmit={createLinkedUser}>
+        <div className="sm:col-span-2">
+          <h4 className="font-bold text-ink">Crear usuario ERP vinculado</h4>
+          <p className="mt-1 text-sm text-slate-500">El acceso se crea con los datos compartidos del voluntario y queda vinculado a su identidad.</p>
+        </div>
+        <FormField label="Nombre"><input className={inputClass} required value={form.first_name} onChange={(event) => update('first_name', event.target.value)} /></FormField>
+        <FormField label="Apellidos"><input className={inputClass} value={form.last_name} onChange={(event) => update('last_name', event.target.value)} /></FormField>
+        <FormField label="Email"><input className={inputClass} type="email" required value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
+        <FormField label="DNI/NIE"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
+        <FormField label="Telefono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+        <FormField label="Cargo"><input className={inputClass} value={form.position} onChange={(event) => update('position', event.target.value)} /></FormField>
+        <FormField label="Rol"><select className={inputClass} value={form.role} onChange={(event) => { const role = event.target.value; setForm((state) => ({ ...state, role, position: state.position || role, permissions: ROLE_PERMISSIONS[role] || [], permission_matrix: ROLE_PERMISSION_MATRIX[role] || {} })); }}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField>
+        <FormField label="Contrasena temporal"><input className={inputClass} type="password" required value={form.password} onChange={(event) => update('password', event.target.value)} /></FormField>
+        <div className="flex justify-end gap-2 sm:col-span-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="submit">Crear usuario vinculado</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function linkedUserForVolunteer(volunteer = {}, users = []) {
+  if (!volunteer.person_identity_id) return null;
+  return users.find((user) => user.person_identity_id === volunteer.person_identity_id) || null;
+}
+function VolunteerCard({ volunteer, stats, canManage, canDelete, linkedUser, canManageUserAccess, onManageErpAccess, onOpen, onEdit, onArchive, onDelete }) {
   const archived = volunteer.status === 'Archivado';
   return (
     <article className={`rounded-md border p-4 shadow-panel ${archived ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}>
@@ -185,6 +336,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, onOpen, onEdit,
           <p className="mt-1 text-sm font-semibold text-brand-700">{volunteer.code}</p>
           <p className="mt-1 text-sm text-slate-600">Alta: {formatDate(volunteer.joined_at)}</p>
           <p className="mt-1 text-sm text-slate-600">Disponibilidad: {volunteer.availability || '-'}</p>
+          <p className="mt-2 text-xs font-bold text-slate-600">Acceso ERP: {linkedUser ? <span className="text-brand-700">Vinculado</span> : <span>Sin acceso ERP</span>}</p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
@@ -194,6 +346,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, onOpen, onEdit,
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button type="button" variant="secondary" onClick={onOpen}><IdCard size={16} /> Abrir expediente</Button>
+        {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {archived ? 'Reactivar' : 'Archivar'}</Button>}
         {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Eliminar</Button>}
@@ -202,7 +355,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, onOpen, onEdit,
   );
 }
 
-function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, canGenerateCredential, onEdit, onArchive, onDelete, onAddHistory }) {
+function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, canDelete, canGenerateCredential, linkedUser, canManageUserAccess, onManageErpAccess, onEdit, onArchive, onDelete, onAddHistory }) {
   const [tab, setTab] = useState('summary');
   const history = volunteerHistoryFor(data, volunteer.id);
   const stats = volunteerStats(volunteer, history);
@@ -220,6 +373,7 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
                 <StatusBadge status={volunteer.status} />
               </div>
               <p className="mt-1 font-semibold text-brand-700">{volunteer.code}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-600">Acceso ERP: {linkedUser ? `Vinculado a ${userFullName(linkedUser) || linkedUser.email}` : 'Sin acceso ERP'}</p>
               <p className="mt-1 text-sm text-slate-600">Alta: {formatDate(volunteer.joined_at)} · {volunteer.email || 'Sin email'} · {volunteer.phone || 'Sin teléfono'}</p>
             </div>
           </div>
@@ -227,7 +381,8 @@ function VolunteerProfile({ volunteer, data, currentUser, canManage, canDelete, 
             {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} organization={data.organization_settings?.[0]} actions={actions} />}
             <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
-            {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
+            {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
+        {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
             {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {volunteer.status === 'Archivado' ? 'Reactivar' : 'Archivar'}</Button>}
             {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Eliminar</Button>}
           </div>
@@ -405,6 +560,7 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
     training: parsed.training || '',
     documentation: parsed.documentation || '',
     photo_data_url: parsed.photo_data_url || '',
+    person_identity_id: parsed.person_identity_id || '',
     notes: parsed.visibleNotes || parsed.notes || ''
   }));
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
@@ -618,7 +774,7 @@ function parseVolunteer(volunteer, index = 0) {
     emergency_contact: meta.emergency_contact || '',
     emergency_phone: meta.emergency_phone || '',
     tasks: meta.tasks || '',
-    photo_data_url: meta.photo_data_url || '',
+    photo_data_url: volunteer.photo_data_url || meta.photo_data_url || '',
     archived_at: meta.archived_at || '',
     archived_by: meta.archived_by || '',
     archive_reason: meta.archive_reason || '',
@@ -671,6 +827,7 @@ function volunteerPayloadFromForm(form, volunteers, current = null) {
     availability: form.availability,
     documentation: form.documentation,
     created_at: form.joined_at ? `${form.joined_at}T00:00:00` : current?.created_at,
+    person_identity_id: form.person_identity_id || current?.person_identity_id || null,
     notes: buildVolunteerNotes(form.notes, meta)
   };
 }
@@ -685,6 +842,7 @@ function volunteerPayloadFromParsed(volunteer, meta) {
     availability: volunteer.availability,
     documentation: volunteer.documentation,
     created_at: volunteer.created_at,
+    person_identity_id: volunteer.person_identity_id || null,
     notes: buildVolunteerNotes(volunteer.visibleNotes || volunteer.notes, meta)
   };
 }

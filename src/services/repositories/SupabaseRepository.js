@@ -132,7 +132,9 @@ const OPTIONAL_TABLES = new Set([
   'community_post_recommendations',
   'platform_maintenance_logs',
   'official_credential_registry',
-  'official_credential_events'
+  'official_credential_events',
+  'person_identities',
+  'person_identity_link_audit'
 ]);
 
 const NEW_MODULE_OPTIONAL_TABLES = new Set([
@@ -148,7 +150,9 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'community_post_reports',
   'community_conversations',
   'community_messages',
-  'community_post_recommendations'
+  'community_post_recommendations',
+  'person_identities',
+  'person_identity_link_audit'
 ]);
 
 const SECURITY_TABLES = new Set([

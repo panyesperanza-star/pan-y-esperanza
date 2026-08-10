@@ -534,6 +534,7 @@ function credentialVerificationUrl(credential = {}) {
 }
 
 function credentialName(kind, subject = {}) {
+  if (subject.person_identity?.full_name) return cleanText(subject.person_identity.full_name);
   if (kind === 'user') {
     const fullName = [subject.first_name, subject.last_name].filter(Boolean).join(' ').trim();
     return cleanText(subject.full_name || fullName || subject.name || subject.email || KIND_LABELS.user);
@@ -582,6 +583,7 @@ function credentialPhotoUrl(subject = {}) {
 }
 
 function credentialPhotoSource(subject = {}) {
+  if (subject.person_identity?.photo_data_url) return { photo_data_url: subject.person_identity.photo_data_url };
   return {
     photo_data_url: subject.photo_data_url,
     photo_url: subject.photo_url,

@@ -297,6 +297,8 @@ export const seedData = {
   volunteers: [
     { id: crypto.randomUUID(), full_name: 'Lucia Martin', document_id: '87654321Z', phone: '622 333 444', email: 'lucia@example.com', training: 'Manipulacion de alimentos', availability: 'Martes y jueves por la tarde', documentation: 'Seguro voluntariado', notes: 'Apoyo en almacen.' }
   ],
+  person_identities: [],
+  person_identity_link_audit: [],
   volunteer_history: [],
   campanas: [
     {
