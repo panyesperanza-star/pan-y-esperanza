@@ -1503,6 +1503,8 @@ function toCompatibilityResource(resource = {}) {
 function CommunitySection({ community, service, session, onRefresh, setError, setSuccess }) {
   const [filter, setFilter] = useState('');
   const [interestMessageByPost, setInterestMessageByPost] = useState({});
+  const [interestSubmittingByPost, setInterestSubmittingByPost] = useState({});
+  const [optimisticInterestByPost, setOptimisticInterestByPost] = useState({});
   const [reportOpenByPost, setReportOpenByPost] = useState({});
   const [reportReasonByPost, setReportReasonByPost] = useState({});
   const [photoPreview, setPhotoPreview] = useState('');
@@ -1525,7 +1527,9 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
   });
   const posts = community.posts || [];
   const myPosts = community.myPosts || [];
-  const visiblePosts = posts.filter((post) => !filter || post.category === filter);
+  const visiblePosts = posts
+    .filter((post) => !filter || post.category === filter)
+    .map((post) => ({ ...post, ...(optimisticInterestByPost[post.id] || {}) }));
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -1586,14 +1590,31 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
   async function registerInterest(post) {
     setError('');
     setSuccess('');
+    setInterestSubmittingByPost((current) => ({ ...current, [post.id]: true }));
     try {
-      await service.registerCommunityInterest(session, post.id, {
+      const interest = await service.registerCommunityInterest(session, post.id, {
         message: interestMessageByPost[post.id] || ''
       });
-      setSuccess('Interes registrado. El equipo de Pan y Esperanza lo gestionara de forma segura.');
-      await onRefresh();
+      setOptimisticInterestByPost((current) => ({
+        ...current,
+        [post.id]: {
+          interested: true,
+          interest_id: interest?.id || post.interest_id,
+          interest_status: interest?.status || 'new',
+          interest_status_label: 'Nuevo'
+        }
+      }));
+      setInterestMessageByPost((current) => ({ ...current, [post.id]: '' }));
+      setSuccess('Hemos registrado tu interés. El equipo de Pan y Esperanza revisará la solicitud.');
+      try {
+        await onRefresh();
+      } catch (refreshError) {
+        console.warn('[Portal Beneficiario] Interés registrado, pero no se pudo refrescar Comunidad.', refreshError);
+      }
     } catch (interestError) {
       setError(interestError.message || 'No se pudo registrar el interes.');
+    } finally {
+      setInterestSubmittingByPost((current) => ({ ...current, [post.id]: false }));
     }
   }
 
@@ -1612,12 +1633,28 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
   async function withdrawInterest(post) {
     setError('');
     setSuccess('');
+    setInterestSubmittingByPost((current) => ({ ...current, [post.id]: true }));
     try {
       await service.withdrawCommunityInterest(session, post.interest_id);
+      setOptimisticInterestByPost((current) => ({
+        ...current,
+        [post.id]: {
+          interested: false,
+          interest_id: null,
+          interest_status: '',
+          interest_status_label: ''
+        }
+      }));
       setSuccess('Interes retirado.');
-      await onRefresh();
+      try {
+        await onRefresh();
+      } catch (refreshError) {
+        console.warn('[Portal Beneficiario] Interés retirado, pero no se pudo refrescar Comunidad.', refreshError);
+      }
     } catch (withdrawError) {
       setError(withdrawError.message || 'No se pudo retirar el interes.');
+    } finally {
+      setInterestSubmittingByPost((current) => ({ ...current, [post.id]: false }));
     }
   }
 
@@ -1672,6 +1709,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                   onInterestMessageChange={(value) => setInterestMessageByPost((current) => ({ ...current, [post.id]: value }))}
                   onInterest={() => registerInterest(post)}
                   onWithdrawInterest={() => withdrawInterest(post)}
+                  interestSubmitting={interestSubmittingByPost[post.id] === true}
                   reportOpen={reportOpenByPost[post.id] === true}
                   reportReason={reportReasonByPost[post.id] || ''}
                   onToggleReport={() => setReportOpenByPost((current) => ({ ...current, [post.id]: !current[post.id] }))}
@@ -1788,6 +1826,7 @@ function CommunityPortalCard({
   onInterestMessageChange,
   onInterest,
   onWithdrawInterest,
+  interestSubmitting = false,
   reportOpen,
   reportReason,
   onToggleReport,
@@ -1836,8 +1875,13 @@ function CommunityPortalCard({
             <p className="text-sm font-bold text-slate-600">Esta es tu publicacion.</p>
           ) : post.interested ? (
             <div className="space-y-2">
-              <p className="text-sm font-bold text-brand-700">Interes registrado. Estado: {COMMUNITY_INTEREST_STATUS_LABELS[post.interest_status] || post.interest_status_label || 'Nuevo'}.</p>
-              <Button variant="secondary" onClick={onWithdrawInterest}>Retirar interes</Button>
+              <Button variant="subtle" disabled className="w-full justify-center">
+                ✓ Interés enviado
+              </Button>
+              <p className="text-sm font-bold text-brand-700">Estado: {COMMUNITY_INTEREST_STATUS_LABELS[post.interest_status] || post.interest_status_label || 'Nuevo'}.</p>
+              <Button variant="secondary" onClick={onWithdrawInterest} disabled={interestSubmitting}>
+                {interestSubmitting ? 'Retirando...' : 'Retirar interés'}
+              </Button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1847,7 +1891,9 @@ function CommunityPortalCard({
                 onChange={(event) => onInterestMessageChange(event.target.value)}
                 placeholder="Mensaje opcional para el equipo de Pan y Esperanza"
               />
-              <Button onClick={onInterest}><MessageSquare size={16} /> Me interesa</Button>
+              <Button onClick={onInterest} disabled={interestSubmitting}>
+                <MessageSquare size={16} /> {interestSubmitting ? 'Enviando interés...' : 'Me interesa'}
+              </Button>
             </div>
           )}
         </div>
