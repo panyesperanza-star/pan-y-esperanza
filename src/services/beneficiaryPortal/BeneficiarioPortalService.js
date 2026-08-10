@@ -458,6 +458,7 @@ function sanitizeCommunityConversationForPortal(conversation = {}, context = {})
     reported_by_me: conversation.reported_by_beneficiary_id === currentId,
     participant_name: participant.full_name || 'Beneficiario',
     participant_code: participant.code || '',
+    participant_photo_url: participant.photo_data_url || participant.photo_url || participant.avatar_url || participant.photo || '',
     realtime_topic: conversation.realtime_topic || '',
     last_message_at: conversation.last_message_at || null,
     last_message: lastMessage?.message || '',

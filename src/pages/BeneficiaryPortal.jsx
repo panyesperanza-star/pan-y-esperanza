@@ -1641,6 +1641,14 @@ function findCommunityConversation(community = {}, conversationId = '') {
   return null;
 }
 
+function enrichCommunityConversations(conversations = [], community = {}) {
+  const posts = [...(community.posts || []), ...(community.myPosts || [])];
+  return conversations.map((conversation) => {
+    const post = posts.find((item) => item.id === conversation.post_id);
+    return post ? { ...conversation, offer_status: post.offer_status || conversation.offer_status } : conversation;
+  });
+}
+
 function formatTime(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -1652,6 +1660,11 @@ function formatChatDay(value) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Hoy';
+  if (date.toDateString() === yesterday.toDateString()) return 'Ayer';
   return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
 }
 
@@ -1706,7 +1719,7 @@ function CommunitySection({
   });
   const posts = community.posts || [];
   const myPosts = community.myPosts || [];
-  const conversations = community.conversations || [];
+  const conversations = enrichCommunityConversations(community.conversations || [], community);
   const visiblePosts = posts
     .filter((post) => !filter || post.category === filter)
     .map((post) => ({ ...post, ...(optimisticInterestByPost[post.id] || {}) }));
@@ -2183,42 +2196,49 @@ function CommunityConversationList({ conversations = [], onOpenConversation }) {
   const sorted = [...conversations].sort((a, b) =>
     String(b.last_message_at || b.updated_at || b.created_at || '').localeCompare(String(a.last_message_at || a.updated_at || a.created_at || ''))
   );
+  const unreadTotal = sorted.reduce((total, conversation) => total + Number(conversation.unread_count || 0), 0);
   return (
-    <section className="rounded-md border border-slate-100 bg-white p-4 shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-wide text-brand-700">Mis conversaciones</p>
-          <h3 className="mt-1 font-black text-ink">Chat privado de Comunidad</h3>
+        <div className="p-4 pb-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brand-700">Mis conversaciones</p>
+          <h3 className="mt-1 text-lg font-black text-ink">Chat privado</h3>
+          <p className="mt-1 text-sm font-medium text-slate-500">Conversaciones seguras dentro del Portal.</p>
         </div>
-        {sorted.some((conversation) => Number(conversation.unread_count || 0) > 0) && (
-          <span className="rounded-full bg-red-600 px-2.5 py-1 text-xs font-black text-white">
-            {sorted.reduce((total, conversation) => total + Number(conversation.unread_count || 0), 0)} nuevos
+        {unreadTotal > 0 && (
+          <span className="mr-4 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white shadow-sm">
+            {unreadTotal} nuevos
           </span>
         )}
       </div>
       {!sorted.length ? (
-        <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-500">Aun no tienes conversaciones abiertas.</p>
+        <p className="mx-4 mb-4 rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">Aun no tienes conversaciones abiertas.</p>
       ) : (
-        <div className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-100">
+        <div className="divide-y divide-slate-100">
           {sorted.map((conversation) => {
             const unread = Number(conversation.unread_count || 0);
+            const status = communityConversationStatusLabel(conversation);
             return (
               <button
                 key={conversation.id}
                 type="button"
                 onClick={() => onOpenConversation(conversation)}
-                className="flex w-full items-center justify-between gap-3 bg-white p-3 text-left transition hover:bg-brand-50/60"
+                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 bg-white px-4 py-3 text-left transition hover:bg-emerald-50/70"
               >
+                <CommunityChatAvatar conversation={conversation} />
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate font-black text-ink">{conversation.post_title || 'Comunidad'}</p>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">{conversation.participant_code || 'Beneficiario'}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-black text-ink">{conversation.post_title || 'Comunidad'}</p>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${communityConversationStatusClass(conversation)}`}>
+                      {status}
+                    </span>
                   </div>
+                  <p className="mt-0.5 text-xs font-bold text-brand-700">{conversation.participant_code || 'Beneficiario'}</p>
                   <p className="mt-1 line-clamp-1 text-sm text-slate-600">{conversation.last_message || 'Sin mensajes todavia.'}</p>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="text-xs font-bold text-slate-500">{conversation.last_message_at ? formatTime(conversation.last_message_at) : ''}</p>
-                  {unread > 0 && <p className="mt-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white">{unread} nuevos</p>}
+                  {unread > 0 && <p className="mt-2 inline-flex min-w-6 justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white">{unread}</p>}
                 </div>
               </button>
             );
@@ -2469,6 +2489,7 @@ function CommunityChatModal({
   const closed = ['blocked', 'closed', 'completed'].includes(conversation.status);
   const messages = conversation.messages || [];
   const endRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -2481,36 +2502,73 @@ function CommunityChatModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Chat privado de Comunidad</p>
-            <h3 className="text-lg font-black text-ink">{conversation.participant_code || 'Beneficiario'}</h3>
-            <p className="text-sm text-slate-600">No se comparten teléfono, email ni dirección personal.</p>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-[#f7faf6] shadow-2xl sm:h-[82vh] sm:max-w-3xl sm:rounded-3xl">
+        <div className="relative border-b border-emerald-100 bg-white px-4 py-4 sm:px-5">
+          <div className="flex items-center gap-3 pr-20">
+            <CommunityChatAvatar conversation={conversation} size="lg" />
+            <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-base font-black text-ink sm:text-lg">{conversation.participant_code || 'Beneficiario'}</h3>
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${communityConversationStatusClass(conversation)}`}>
+                {communityConversationStatusLabel(conversation)}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-sm font-bold text-brand-700">{conversation.post_title || 'Publicacion de Comunidad'}</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">Chat privado. Sin telefono, email ni direccion personal.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
-            <X size={18} />
-          </button>
+          </div>
+          <div className="absolute right-3 top-3 flex items-center gap-1">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((current) => !current)}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-xl font-black leading-none text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Mas opciones"
+              >
+                ⋮
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-11 z-10 w-72 rounded-2xl border border-slate-100 bg-white p-3 shadow-2xl">
+                  <FormField label="Motivo si bloqueas o reportas">
+                    <input className={inputClass} value={reason} onChange={(event) => onReasonChange(event.target.value)} placeholder="Opcional para bloquear; recomendado para reportar" />
+                  </FormField>
+                  <div className="mt-3 grid gap-2">
+                    <Button variant="danger" onClick={onReport}><Flag size={16} /> Reportar conversacion</Button>
+                    <Button variant="secondary" onClick={onBlock} disabled={closed}>Bloquear usuario/conversacion</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
+              <X size={18} />
+            </button>
+          </div>
         </div>
-        <div className="max-h-[52vh] space-y-3 overflow-y-auto bg-slate-50 p-4">
+        <div className="min-h-[10rem] max-h-[46dvh] flex-none space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.10),transparent_32%),linear-gradient(180deg,#f8fbf7_0%,#eef6ef_100%)] px-4 py-5 sm:min-h-0 sm:max-h-none sm:flex-1 sm:px-6">
           {!messages.length ? (
-            <p className="rounded-md bg-white p-4 text-center text-sm font-semibold text-slate-500">Todavía no hay mensajes.</p>
+            <p className="mx-auto max-w-sm rounded-2xl bg-white/90 p-5 text-center text-sm font-semibold text-slate-500 shadow-sm">Todavia no hay mensajes.</p>
           ) : messages.map((item, index) => (
-            <div key={item.id} className="space-y-2">
+            <div key={item.id} className="space-y-3">
               {shouldShowChatDay(messages, index) && (
                 <div className="flex justify-center">
-                  <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black uppercase tracking-wide text-slate-500 shadow-sm">
+                  <span className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500 shadow-sm">
                     {formatChatDay(item.sent_at || item.created_at)}
                   </span>
                 </div>
               )}
               <div className={`flex ${item.sender === 'system' ? 'justify-center' : item.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[82%] rounded-lg px-3 py-2 text-sm ${item.sender === 'system' ? 'bg-amber-50 text-center font-bold text-amber-900' : item.sender === 'me' ? 'bg-brand-600 text-white' : 'bg-white text-slate-700'}`}>
-                  <p>{item.message}</p>
-                  <p className={`mt-1 text-[11px] font-semibold ${item.sender === 'me' ? 'text-brand-50' : item.sender === 'system' ? 'text-amber-700' : 'text-slate-400'}`}>
+                <div className={`max-w-[86%] px-4 py-2.5 text-sm leading-relaxed shadow-sm sm:max-w-[74%] ${
+                  item.sender === 'system'
+                    ? 'rounded-2xl border border-amber-100 bg-amber-50/95 text-center font-bold text-amber-900'
+                    : item.sender === 'me'
+                      ? 'rounded-[1.35rem] rounded-br-md bg-brand-700 text-white shadow-brand-900/10'
+                      : 'rounded-[1.35rem] rounded-bl-md border border-white bg-white text-slate-700'
+                }`}>
+                  <p className="whitespace-pre-wrap">{item.message}</p>
+                  <p className={`mt-1.5 flex items-center gap-1 text-[11px] font-semibold ${item.sender === 'me' ? 'justify-end text-brand-50/85' : item.sender === 'system' ? 'justify-center text-amber-700' : 'text-slate-400'}`}>
                     {formatTime(item.sent_at || item.created_at)}
-                    {item.sender === 'me' && <span className="ml-2">{item.read_at ? '✓✓ Leido' : '✓ Enviado'}</span>}
+                    {item.sender === 'me' && <span>{item.read_at ? '✓✓' : '✓'}</span>}
                   </p>
                 </div>
               </div>
@@ -2518,34 +2576,71 @@ function CommunityChatModal({
           ))}
           <div ref={endRef} />
         </div>
-        <div className="space-y-3 border-t border-slate-100 p-4">
+        <div className="border-t border-emerald-100 bg-white p-3 sm:p-4">
           {closed ? (
-            <p className="rounded-md bg-slate-50 p-3 text-sm font-bold text-slate-600">Esta conversación está cerrada.</p>
+            <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-600">Esta conversacion esta cerrada.</p>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="flex items-end gap-2 rounded-2xl border border-emerald-100 bg-slate-50 p-2 shadow-inner">
               <textarea
-                className={`${inputClass} min-h-20`}
+                className="max-h-32 min-h-11 flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
                 value={message}
                 onChange={(event) => onMessageChange(event.target.value)}
                 onKeyDown={handleMessageKeyDown}
-                placeholder="Escribe un mensaje sin datos personales sensibles."
+                placeholder="Escribe un mensaje..."
               />
-              <Button onClick={onSend} disabled={sending}>{sending ? 'Enviando...' : 'Enviar'}</Button>
+              <button
+                type="button"
+                onClick={onSend}
+                disabled={sending}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Enviar mensaje"
+              >
+                <Send size={18} />
+              </button>
             </div>
           )}
-          <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
-            <FormField label="Motivo si bloqueas o reportas">
-              <input className={inputClass} value={reason} onChange={(event) => onReasonChange(event.target.value)} placeholder="Opcional para bloquear, obligatorio para reportar" />
-            </FormField>
-            <div className="mt-3 flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" onClick={onBlock} disabled={closed}>Bloquear conversación</Button>
-              <Button variant="danger" onClick={onReport}><Flag size={16} /> Reportar</Button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
   );
+}
+
+function CommunityChatAvatar({ conversation = {}, size = 'md' }) {
+  const label = conversation.participant_code || conversation.participant_name || 'PY';
+  const photoUrl = conversation.participant_photo_url || conversation.participant_photo || conversation.photo_url || conversation.avatar_url || '';
+  const initials = String(label)
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((item) => item[0])
+    .join('')
+    .toUpperCase() || 'PY';
+  const dimensions = size === 'lg' ? 'h-12 w-12 text-base' : 'h-11 w-11 text-sm';
+  return (
+    <div className={`${dimensions} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-700 via-emerald-700 to-amber-500 font-black text-white shadow-sm`}>
+      {photoUrl ? (
+        <img src={photoUrl} alt="" className="h-full w-full rounded-full object-cover" />
+      ) : initials}
+    </div>
+  );
+}
+
+function communityConversationStatusLabel(conversation = {}) {
+  const status = String(conversation.offer_status || conversation.status || '').toLowerCase();
+  if (status === 'reserved') return 'Reservado';
+  if (status === 'delivered' || status === 'completed') return 'Entregado';
+  if (status === 'blocked') return 'Bloqueado';
+  if (status === 'closed') return 'Cerrado';
+  return 'Disponible';
+}
+
+function communityConversationStatusClass(conversation = {}) {
+  const status = String(conversation.offer_status || conversation.status || '').toLowerCase();
+  if (status === 'reserved') return 'bg-amber-50 text-amber-800';
+  if (status === 'delivered' || status === 'completed') return 'bg-slate-100 text-slate-700';
+  if (status === 'blocked' || status === 'closed') return 'bg-red-50 text-red-700';
+  return 'bg-emerald-50 text-emerald-700';
 }
 
 function communityOfferStatusLabel(status = '') {
