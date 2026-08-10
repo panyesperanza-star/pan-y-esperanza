@@ -134,7 +134,9 @@ const OPTIONAL_TABLES = new Set([
   'official_credential_registry',
   'official_credential_events',
   'person_identities',
-  'person_identity_link_audit'
+  'person_identity_link_audit',
+  'volunteer_documents',
+  'volunteer_training'
 ]);
 
 const NEW_MODULE_OPTIONAL_TABLES = new Set([
@@ -152,7 +154,9 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'community_messages',
   'community_post_recommendations',
   'person_identities',
-  'person_identity_link_audit'
+  'person_identity_link_audit',
+  'volunteer_documents',
+  'volunteer_training'
 ]);
 
 const SECURITY_TABLES = new Set([

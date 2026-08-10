@@ -101,6 +101,8 @@ const EMPTY_APP_DATA = Object.freeze({
   treasury_accounts: EMPTY_TABLE,
   volunteers: EMPTY_TABLE,
   volunteer_history: EMPTY_TABLE,
+  volunteer_documents: EMPTY_TABLE,
+  volunteer_training: EMPTY_TABLE,
   person_identities: EMPTY_TABLE,
   person_identity_link_audit: EMPTY_TABLE,
   notificaciones: EMPTY_TABLE,
@@ -3193,6 +3195,30 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     createVolunteerHistory: async (payload) => {
       await voluntarioService.createHistory(payload);
+      await reload();
+    },
+    createVolunteerDocument: async (payload) => {
+      await voluntarioService.createDocument(payload);
+      await reload();
+    },
+    updateVolunteerDocument: async (id, payload) => {
+      await voluntarioService.updateDocument(id, payload);
+      await reload();
+    },
+    deleteVolunteerDocument: async (id) => {
+      await voluntarioService.removeDocument(id);
+      await reload();
+    },
+    createVolunteerTraining: async (payload) => {
+      await voluntarioService.createTraining(payload);
+      await reload();
+    },
+    updateVolunteerTraining: async (id, payload) => {
+      await voluntarioService.updateTraining(id, payload);
+      await reload();
+    },
+    deleteVolunteerTraining: async (id) => {
+      await voluntarioService.removeTraining(id);
       await reload();
     },
     updateOrganizationSettings: async (payload) => {

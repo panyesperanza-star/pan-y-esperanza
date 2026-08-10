@@ -33,7 +33,9 @@ import { viewPermissionsFromMatrix } from '../services/users/UsuarioService';
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
 const VOLUNTEER_META_END = '[/PYE_VOLUNTEER_META]';
 const PARTICIPATION_TYPES = ['Reparto', 'Recogida', 'Clasificación', 'Evento', 'Campaña'];
-const DOCUMENT_TYPES = ['DNI', 'Certificado', 'Autorización', 'Curso', 'Otros documentos'];
+const DOCUMENT_TYPES = ['Acuerdo de voluntariado', 'Protección de datos', 'Confidencialidad', 'Autorización de imagen', 'Certificados/formación', 'Otros documentos'];
+const DOCUMENT_STATUS_OPTIONS = ['Vigente', 'Pendiente', 'Caducado', 'No requerido'];
+const VOLUNTEER_STATUS_OPTIONS = ['Activo', 'Inactivo', 'Archivado', 'Baja'];
 const PROFILE_TABS = [
   { id: 'summary', label: 'Resumen', icon: BadgeCheck },
   { id: 'personal', label: 'Datos personales', icon: UserRoundCheck },
@@ -67,14 +69,12 @@ export function Volunteers({ data, actions, currentUser }) {
   async function archiveVolunteer(volunteer) {
     const nextArchived = volunteer.status !== 'Archivado';
     const reason = nextArchived ? window.prompt('Motivo del archivado', 'Fin de colaboración') : '';
-    const meta = {
-      ...volunteer.meta,
+    const updates = {
       status: nextArchived ? 'Archivado' : 'Activo',
-      archived_at: nextArchived ? new Date().toISOString() : '',
-      archived_by: nextArchived ? currentUserName(currentUser) : '',
-      archive_reason: nextArchived ? reason || 'Sin motivo indicado' : ''
+      left_at: nextArchived ? new Date().toISOString() : null,
+      leave_reason: nextArchived ? reason || 'Sin motivo indicado' : ''
     };
-    await actions.updateVolunteer(volunteer.id, volunteerPayloadFromParsed(volunteer, meta));
+    await actions.updateVolunteer(volunteer.id, volunteerPayloadFromParsed(volunteer, updates));
   }
 
   async function deleteVolunteer(volunteer) {
@@ -336,6 +336,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, linkedUser, can
           <p className="mt-1 text-sm font-semibold text-brand-700">{volunteer.code}</p>
           <p className="mt-1 text-sm text-slate-600">Alta: {formatDate(volunteer.joined_at)}</p>
           <p className="mt-1 text-sm text-slate-600">Disponibilidad: {volunteer.availability || '-'}</p>
+          <p className="mt-1 text-sm text-slate-600">Funciones: {volunteer.functions || '-'}</p>
           <p className="mt-2 text-xs font-bold text-slate-600">Acceso ERP: {linkedUser ? <span className="text-brand-700">Vinculado</span> : <span>Sin acceso ERP</span>}</p>
         </div>
       </div>
@@ -358,8 +359,12 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, linkedUser, can
 function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, canDelete, canGenerateCredential, linkedUser, canManageUserAccess, onManageErpAccess, onEdit, onArchive, onDelete, onAddHistory }) {
   const [tab, setTab] = useState('summary');
   const history = volunteerHistoryFor(data, volunteer.id);
+  const documents = volunteerDocumentsFor(data, volunteer.id);
+  const trainingRecords = volunteerTrainingFor(data, volunteer.id);
+  const timeline = volunteerTimelineFor(volunteer, history, documents, trainingRecords);
   const stats = volunteerStats(volunteer, history);
   const communications = volunteerCommunications(data.email_logs || [], volunteer);
+  const actor = currentUserName(currentUser);
 
   return (
     <div>
@@ -379,7 +384,7 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
           </div>
           <div className="flex flex-wrap gap-2">
             {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} organization={data.organization_settings?.[0]} actions={actions} />}
-            <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0])}><FileText size={16} /> Expediente PDF</Button>
+            <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0], documents, trainingRecords)}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
@@ -402,20 +407,22 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
       </nav>
 
       <section className="mt-4">
-        {tab === 'summary' && <VolunteerSummary volunteer={volunteer} history={history} stats={stats} />}
+        {tab === 'summary' && <VolunteerSummary volunteer={volunteer} history={history} documents={documents} trainingRecords={trainingRecords} stats={stats} />}
         {tab === 'personal' && <PersonalDetails volunteer={volunteer} />}
         {tab === 'participations' && <ParticipationPanel history={history} canManage={canManage} onAdd={onAddHistory} />}
-        {tab === 'training' && <TrainingPanel history={history} volunteer={volunteer} canManage={canManage} onAdd={onAddHistory} />}
-        {tab === 'documents' && <DocumentsPanel history={history} canManage={canManage} onAdd={onAddHistory} />}
+        {tab === 'training' && <TrainingPanel records={trainingRecords} volunteer={volunteer} canManage={canManage} actor={actor} onAdd={(payload) => actions.createVolunteerTraining({ ...payload, volunteer_id: volunteer.id })} onUpdate={(id, payload) => actions.updateVolunteerTraining(id, { ...payload, volunteer_id: volunteer.id })} onDelete={(id) => actions.deleteVolunteerTraining(id)} />}
+        {tab === 'documents' && <DocumentsPanel documents={documents} canManage={canManage} actor={actor} onAdd={(payload) => actions.createVolunteerDocument({ ...payload, volunteer_id: volunteer.id })} onUpdate={(id, payload) => actions.updateVolunteerDocument(id, { ...payload, volunteer_id: volunteer.id })} onDelete={(id) => actions.deleteVolunteerDocument(id)} />}
         {tab === 'communications' && <CommunicationsPanel communications={communications} />}
         {tab === 'observations' && <ObservationsPanel history={history} currentUser={currentUser} canManage={canManage} onAdd={onAddHistory} />}
-        {tab === 'history' && <HistoryPanel history={history} />}
+        {tab === 'history' && <HistoryPanel timeline={timeline} />}
       </section>
     </div>
   );
 }
 
-function VolunteerSummary({ volunteer, history, stats }) {
+function VolunteerSummary({ volunteer, history, documents = [], trainingRecords = [], stats }) {
+  const pendingDocuments = documents.filter((item) => ['Pendiente', 'Caducado'].includes(documentEffectiveStatus(item))).length;
+  const validDocuments = documents.filter((item) => documentEffectiveStatus(item) === 'Vigente').length;
   return (
     <div className="grid gap-4">
       <section className="grid gap-3 sm:grid-cols-3">
@@ -423,8 +430,9 @@ function VolunteerSummary({ volunteer, history, stats }) {
         <MetricCard label="Días colaborados" value={stats.days} detail="Fechas distintas" />
         <MetricCard label="Última actividad" value={stats.last ? formatDate(stats.last) : '-'} detail={stats.lastActivity || 'Sin actividad'} />
         <InfoCard title="Disponibilidad" value={volunteer.availability || '-'} />
-        <InfoCard title="Tareas habituales" value={volunteer.tasks || '-'} />
-        <InfoCard title="Formación" value={volunteer.training || '-'} />
+        <InfoCard title="Funciones" value={volunteer.functions || volunteer.tasks || '-'} />
+        <InfoCard title="Documentación" value={pendingDocuments ? `${pendingDocuments} pendiente(s) de revisar` : `${validDocuments} vigente(s)`} />
+        <InfoCard title="Formación" value={trainingRecords.length ? `${trainingRecords.length} curso(s) registrado(s)` : (volunteer.training || '-')} />
       </section>
       <section className="rounded-md border border-slate-200 bg-white p-4">
         <h3 className="font-bold text-ink">Últimas participaciones</h3>
@@ -444,13 +452,16 @@ function PersonalDetails({ volunteer }) {
     ['Documento', volunteer.document_id || '-'],
     ['Fecha de alta', formatDate(volunteer.joined_at)],
     ['Estado', volunteer.status],
+    ['Fecha de baja', volunteer.left_at ? formatDate(volunteer.left_at) : '-'],
+    ['Motivo de baja', volunteer.leave_reason || '-'],
     ['Teléfono', volunteer.phone || '-'],
     ['Email', volunteer.email || '-'],
     ['Dirección', volunteer.address || '-'],
     ['Contacto de emergencia', volunteer.emergency_contact || '-'],
     ['Teléfono de emergencia', volunteer.emergency_phone || '-'],
     ['Disponibilidad', volunteer.availability || '-'],
-    ['Tareas habituales', volunteer.tasks || '-']
+    ['Funciones', volunteer.functions || volunteer.tasks || '-'],
+    ['Identidad única', volunteer.person_identity_id ? 'Vinculado a identidad compartida con ERP' : 'Sin vínculo ERP']
   ];
   return <KeyValueGrid rows={rows} />;
 }
@@ -466,38 +477,101 @@ function ParticipationPanel({ history, canManage, onAdd }) {
   );
 }
 
-function TrainingPanel({ history, volunteer, canManage, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const rows = trainingRows(history);
+function TrainingPanel({ records = [], volunteer, canManage, actor, onAdd, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(null);
   return (
-    <SectionShell title="Formación" action={canManage && <Button type="button" onClick={() => setOpen(true)}><Plus size={16} /> Añadir formación</Button>}>
-      <InfoCard title="Formación indicada en ficha" value={volunteer.training || '-'} />
-      {open && <InlineHistoryForm mode="training" onCancel={() => setOpen(false)} onSubmit={(payload) => { onAdd(payload); setOpen(false); }} />}
-      <div className="mt-3"><HistoryList rows={rows} empty="No hay formación registrada en historial." /></div>
+    <SectionShell title="Formación" action={canManage && <Button type="button" onClick={() => setEditing({})}><Plus size={16} /> Añadir formación</Button>}>
+      {volunteer.training && <InfoCard title="Formación indicada en ficha" value={volunteer.training} />}
+      {editing && (
+        <TrainingRecordForm
+          initial={editing.id ? editing : null}
+          actor={actor}
+          onCancel={() => setEditing(null)}
+          onSubmit={async (payload) => {
+            if (editing.id) await onUpdate(editing.id, payload);
+            else await onAdd(payload);
+            setEditing(null);
+          }}
+        />
+      )}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {records.map((item) => (
+          <article key={item.id} className="rounded-md border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-bold text-ink">{item.course_name}</p>
+                <p className="mt-1 text-sm text-slate-600">{formatDate(item.course_date)} · {item.entity || 'Entidad no indicada'}</p>
+              </div>
+              <DocumentStatusBadge status={documentEffectiveStatus(item)} />
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+              <p>Horas: <strong>{item.hours ?? '-'}</strong></p>
+              <p>Caducidad: <strong>{item.expires_at ? formatDate(item.expires_at) : 'No aplica'}</strong></p>
+            </div>
+            {item.notes && <p className="mt-3 text-sm leading-6 text-slate-700">{item.notes}</p>}
+            {item.certificate_file_data_url && <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-800" href={item.certificate_file_data_url} download={item.certificate_file_name || 'certificado'}>Descargar certificado</a>}
+            {canManage && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => setEditing(item)}>Editar</Button>
+                <Button type="button" variant="danger" onClick={() => window.confirm('¿Eliminar esta formación?') && onDelete(item.id)}>Eliminar</Button>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+      {!records.length && <EmptyText text="No hay formación registrada." />}
     </SectionShell>
   );
 }
 
-function DocumentsPanel({ history, canManage, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const rows = documentRows(history);
+function DocumentsPanel({ documents = [], canManage, actor, onAdd, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(null);
+  const cards = documentCards(documents);
   return (
-    <SectionShell title="Documentación" action={canManage && <Button type="button" onClick={() => setOpen(true)}><Plus size={16} /> Añadir documento</Button>}>
-      {open && <DocumentHistoryForm onCancel={() => setOpen(false)} onSubmit={(payload) => { onAdd(payload); setOpen(false); }} />}
+    <SectionShell title="Documentación y consentimientos" action={canManage && <Button type="button" onClick={() => setEditing({})}><Plus size={16} /> Añadir documento</Button>}>
+      {editing && (
+        <VolunteerDocumentForm
+          initial={editing.id ? editing : null}
+          actor={actor}
+          onCancel={() => setEditing(null)}
+          onSubmit={async (payload) => {
+            if (editing.id) await onUpdate(editing.id, payload);
+            else await onAdd(payload);
+            setEditing(null);
+          }}
+        />
+      )}
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {rows.map((item) => {
-          const doc = parseHistoryJson(item.notes);
+        {cards.map((item) => {
+          const virtual = !item.id;
           return (
-            <article key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-              <p className="font-bold text-ink">{item.activity.replace('Documento: ', '')}</p>
-              <p className="text-sm text-slate-600">{formatDate(item.date)} · {doc.file_name || 'Documento registrado'}</p>
-              {doc.notes && <p className="mt-2 text-sm text-slate-600">{doc.notes}</p>}
-              {doc.file_data_url && <a className="mt-2 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-800" href={doc.file_data_url} download={doc.file_name || 'documento'}>Descargar archivo</a>}
+            <article key={item.id || item.document_type} className="rounded-md border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-ink">{item.document_type}</p>
+                  <p className="mt-1 text-sm text-slate-600">Subido: {item.uploaded_at ? formatDate(item.uploaded_at) : '-'}</p>
+                </div>
+                <DocumentStatusBadge status={documentEffectiveStatus(item)} />
+              </div>
+              <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                <p>Caducidad: <strong>{item.expires_at ? formatDate(item.expires_at) : 'No aplica'}</strong></p>
+                <p>Revisión: <strong>{item.reviewed_by || 'Sin revisar'}</strong></p>
+                <p>Última actualización: <strong>{formatDate(item.updated_at || item.created_at || item.uploaded_at)}</strong></p>
+                <p>Archivo: <strong>{item.file_name || 'Sin archivo'}</strong></p>
+              </div>
+              {item.notes && <p className="mt-3 text-sm leading-6 text-slate-700">{item.notes}</p>}
+              <DocumentHistoryMini history={item.history} />
+              {item.file_data_url && <a className="mt-3 inline-flex text-sm font-semibold text-brand-700 hover:text-brand-800" href={item.file_data_url} download={item.file_name || 'documento'}>Descargar archivo</a>}
+              {canManage && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setEditing(virtual ? { document_type: item.document_type } : item)}>{virtual ? 'Registrar' : 'Editar'}</Button>
+                  {!virtual && <Button type="button" variant="danger" onClick={() => window.confirm('¿Eliminar este documento?') && onDelete(item.id)}>Eliminar</Button>}
+                </div>
+              )}
             </article>
           );
         })}
       </div>
-      {!rows.length && <EmptyText text="No hay documentación registrada." />}
     </SectionShell>
   );
 }
@@ -534,10 +608,10 @@ function ObservationsPanel({ history, currentUser, canManage, onAdd }) {
   );
 }
 
-function HistoryPanel({ history }) {
+function HistoryPanel({ timeline = [] }) {
   return (
     <SectionShell title="Historial completo">
-      <HistoryList rows={history} empty="Todavía no hay historial registrado." />
+      <HistoryList rows={timeline} empty="Todavía no hay historial registrado." />
     </SectionShell>
   );
 }
@@ -552,11 +626,13 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
     code: parsed.code || nextVolunteerCode(volunteers, parsed.id),
     joined_at: parsed.joined_at || todayISO(),
     status: parsed.status || 'Activo',
+    left_at: parsed.left_at ? String(parsed.left_at).slice(0, 10) : '',
+    leave_reason: parsed.leave_reason || '',
     address: parsed.address || '',
     emergency_contact: parsed.emergency_contact || '',
     emergency_phone: parsed.emergency_phone || '',
     availability: parsed.availability || '',
-    tasks: parsed.tasks || '',
+    functions: parsed.functions || parsed.tasks || '',
     training: parsed.training || '',
     documentation: parsed.documentation || '',
     photo_data_url: parsed.photo_data_url || '',
@@ -581,14 +657,20 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
       </FormField>
       <FormField label="DNI"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
       <FormField label="Fecha de alta"><input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} /></FormField>
-      <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}><option>Activo</option><option>Archivado</option></select></FormField>
+      <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{VOLUNTEER_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+      {form.status !== 'Activo' && (
+        <>
+          <FormField label="Fecha de baja"><input className={inputClass} type="date" value={form.left_at} onChange={(event) => update('left_at', event.target.value)} /></FormField>
+          <FormField label="Motivo de baja"><input className={inputClass} value={form.leave_reason} onChange={(event) => update('leave_reason', event.target.value)} /></FormField>
+        </>
+      )}
       <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
       <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
       <FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField>
       <FormField label="Contacto de emergencia"><input className={inputClass} value={form.emergency_contact} onChange={(event) => update('emergency_contact', event.target.value)} /></FormField>
       <FormField label="Teléfono de emergencia"><input className={inputClass} value={form.emergency_phone} onChange={(event) => update('emergency_phone', event.target.value)} /></FormField>
       <FormField label="Disponibilidad"><input className={inputClass} value={form.availability} onChange={(event) => update('availability', event.target.value)} /></FormField>
-      <FormField label="Tareas habituales"><input className={inputClass} value={form.tasks} onChange={(event) => update('tasks', event.target.value)} /></FormField>
+      <FormField label="Funciones"><input className={inputClass} value={form.functions} onChange={(event) => update('functions', event.target.value)} /></FormField>
       <FormField label="Formación"><input className={inputClass} value={form.training} onChange={(event) => update('training', event.target.value)} /></FormField>
       <FormField label="Documentación"><input className={inputClass} value={form.documentation} onChange={(event) => update('documentation', event.target.value)} /></FormField>
       <FormField label="Foto"><input className={inputClass} type="file" accept="image/png,image/jpeg" onChange={loadPhoto} /></FormField>
@@ -628,8 +710,19 @@ function InlineHistoryForm({ mode, onSubmit, onCancel }) {
   );
 }
 
-function DocumentHistoryForm({ onSubmit, onCancel }) {
-  const [form, setForm] = useState({ date: todayISO(), type: DOCUMENT_TYPES[0], file_name: '', file_data_url: '', notes: '' });
+function VolunteerDocumentForm({ initial, actor, onSubmit, onCancel }) {
+  const [form, setForm] = useState(() => ({
+    document_type: initial?.document_type || DOCUMENT_TYPES[0],
+    status: initial?.status || 'Pendiente',
+    uploaded_at: initial?.uploaded_at || todayISO(),
+    expires_at: initial?.expires_at || '',
+    reviewed_at: initial?.reviewed_at || '',
+    reviewed_by: initial?.reviewed_by || actor || '',
+    file_name: initial?.file_name || '',
+    file_data_url: initial?.file_data_url || '',
+    notes: initial?.notes || '',
+    history: Array.isArray(initial?.history) ? initial.history : []
+  }));
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   async function loadFile(event) {
     const file = event.target.files?.[0];
@@ -641,16 +734,57 @@ function DocumentHistoryForm({ onSubmit, onCancel }) {
     <form className="mb-4 grid gap-3 rounded-md border border-brand-100 bg-brand-50 p-4 sm:grid-cols-2" onSubmit={(event) => {
       event.preventDefault();
       onSubmit({
-        date: form.date,
-        activity: `Documento: ${form.type}`,
-        notes: JSON.stringify({ file_name: form.file_name, file_data_url: form.file_data_url, notes: form.notes })
+        ...form,
+        reviewed_at: form.reviewed_by ? (form.reviewed_at || new Date().toISOString()) : ''
       });
     }}>
-      <FormField label="Fecha"><input className={inputClass} type="date" value={form.date} onChange={(event) => update('date', event.target.value)} /></FormField>
-      <FormField label="Tipo"><select className={inputClass} value={form.type} onChange={(event) => update('type', event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+      <FormField label="Documento"><select className={inputClass} value={form.document_type} onChange={(event) => update('document_type', event.target.value)}>{DOCUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+      <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{DOCUMENT_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+      <FormField label="Fecha de subida"><input className={inputClass} type="date" value={form.uploaded_at || ''} onChange={(event) => update('uploaded_at', event.target.value)} /></FormField>
+      <FormField label="Fecha de caducidad"><input className={inputClass} type="date" value={form.expires_at || ''} onChange={(event) => update('expires_at', event.target.value)} /></FormField>
+      <FormField label="Revisado por"><input className={inputClass} value={form.reviewed_by} onChange={(event) => update('reviewed_by', event.target.value)} /></FormField>
       <FormField label="Archivo"><input className={inputClass} type="file" onChange={loadFile} /></FormField>
-      <div className="sm:col-span-2"><FormField label="Notas"><textarea className={inputClass} rows="2" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+      {form.file_name && <p className="rounded-md bg-white p-3 text-sm font-semibold text-slate-600 sm:col-span-2">Archivo seleccionado: {form.file_name}</p>}
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="2" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
       <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit">Guardar documento</Button></div>
+    </form>
+  );
+}
+
+function TrainingRecordForm({ initial, actor, onSubmit, onCancel }) {
+  const [form, setForm] = useState(() => ({
+    course_name: initial?.course_name || '',
+    course_date: initial?.course_date || todayISO(),
+    hours: initial?.hours ?? '',
+    entity: initial?.entity || '',
+    certificate_file_name: initial?.certificate_file_name || '',
+    certificate_file_data_url: initial?.certificate_file_data_url || '',
+    expires_at: initial?.expires_at || '',
+    status: initial?.status || 'Vigente',
+    notes: initial?.notes || ''
+  }));
+  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  async function loadCertificate(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    update('certificate_file_name', file.name);
+    update('certificate_file_data_url', await fileToDataUrl(file));
+  }
+  return (
+    <form className="mb-4 grid gap-3 rounded-md border border-brand-100 bg-brand-50 p-4 sm:grid-cols-2" onSubmit={(event) => {
+      event.preventDefault();
+      onSubmit({ ...form, notes: form.notes || `Registro actualizado por ${actor || 'usuario ERP'}.` });
+    }}>
+      <FormField label="Nombre del curso" required><input className={inputClass} required value={form.course_name} onChange={(event) => update('course_name', event.target.value)} /></FormField>
+      <FormField label="Entidad"><input className={inputClass} value={form.entity} onChange={(event) => update('entity', event.target.value)} /></FormField>
+      <FormField label="Fecha"><input className={inputClass} type="date" value={form.course_date || ''} onChange={(event) => update('course_date', event.target.value)} /></FormField>
+      <FormField label="Horas"><input className={inputClass} type="number" min="0" step="0.5" value={form.hours} onChange={(event) => update('hours', event.target.value)} /></FormField>
+      <FormField label="Caducidad"><input className={inputClass} type="date" value={form.expires_at || ''} onChange={(event) => update('expires_at', event.target.value)} /></FormField>
+      <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{DOCUMENT_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+      <FormField label="Certificado"><input className={inputClass} type="file" onChange={loadCertificate} /></FormField>
+      {form.certificate_file_name && <p className="rounded-md bg-white p-3 text-sm font-semibold text-slate-600">Archivo: {form.certificate_file_name}</p>}
+      <div className="sm:col-span-2"><FormField label="Observaciones"><textarea className={inputClass} rows="2" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+      <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button><Button type="submit">Guardar formación</Button></div>
     </form>
   );
 }
@@ -678,9 +812,53 @@ function VolunteerPhoto({ volunteer, size = 'md' }) {
   return <div className={`${classes} flex shrink-0 items-center justify-center rounded-md bg-brand-100 text-lg font-bold text-brand-700`}>{initials(volunteer.full_name)}</div>;
 }
 
+function DocumentStatusBadge({ status }) {
+  const styles = {
+    Vigente: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Pendiente: 'bg-slate-100 text-slate-700 ring-slate-200',
+    Caducado: 'bg-red-50 text-red-700 ring-red-200',
+    'No requerido': 'bg-zinc-100 text-zinc-600 ring-zinc-200'
+  };
+  const icons = {
+    Vigente: '✓',
+    Pendiente: '⚫',
+    Caducado: '🔴',
+    'No requerido': '⚪'
+  };
+  const value = status || 'Pendiente';
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${styles[value] || styles.Pendiente}`}>{icons[value] || '⚫'} {value}</span>;
+}
+
+function DocumentHistoryMini({ history }) {
+  const rows = Array.isArray(history) ? history.slice(-3).reverse() : [];
+  if (!rows.length) return null;
+  return (
+    <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
+      <p className="text-xs font-bold uppercase text-slate-500">Historial</p>
+      <div className="mt-2 space-y-1 text-xs text-slate-600">
+        {rows.map((item, index) => (
+          <p key={`${item.date || 'fecha'}-${index}`}>{formatDateTime(item.date)} · {item.event || item.status || 'Actualización'}{item.user ? ` · ${item.user}` : ''}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
-  const archived = status === 'Archivado';
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${archived ? 'bg-slate-100 text-slate-600 ring-slate-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>{archived ? '⚪ Archivado' : '🟢 Activo'}</span>;
+  const styles = {
+    Activo: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Inactivo: 'bg-amber-50 text-amber-700 ring-amber-200',
+    Archivado: 'bg-slate-100 text-slate-600 ring-slate-200',
+    Baja: 'bg-red-50 text-red-700 ring-red-200'
+  };
+  const icons = {
+    Activo: '🟢',
+    Inactivo: '🟡',
+    Archivado: '⚪',
+    Baja: '🔴'
+  };
+  const value = status || 'Activo';
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${styles[value] || styles.Activo}`}>{icons[value] || '🟢'} {value}</span>;
 }
 
 function MiniMetric({ label, value }) {
@@ -761,23 +939,26 @@ function compareVolunteerValues(a, b) {
 
 function parseVolunteer(volunteer, index = 0) {
   const { meta, visibleNotes } = parseVolunteerMeta(volunteer.notes || '');
-  const joined = meta.joined_at || volunteer.created_at || todayISO();
-  const status = meta.status || (meta.archived_at ? 'Archivado' : 'Activo');
+  const joined = volunteer.joined_at || meta.joined_at || volunteer.created_at || todayISO();
+  const status = volunteer.status || meta.status || (volunteer.left_at || meta.archived_at ? 'Archivado' : 'Activo');
   return {
     ...volunteer,
     meta,
     visibleNotes,
-    code: meta.code || fallbackVolunteerCode(index, joined),
+    code: volunteer.code || meta.code || fallbackVolunteerCode(index, joined),
     joined_at: joined,
     status,
-    address: meta.address || '',
-    emergency_contact: meta.emergency_contact || '',
-    emergency_phone: meta.emergency_phone || '',
-    tasks: meta.tasks || '',
+    address: volunteer.address || meta.address || '',
+    emergency_contact: volunteer.emergency_contact || meta.emergency_contact || '',
+    emergency_phone: volunteer.emergency_phone || meta.emergency_phone || '',
+    functions: volunteer.functions || meta.tasks || '',
+    tasks: volunteer.functions || meta.tasks || '',
     photo_data_url: volunteer.photo_data_url || meta.photo_data_url || '',
-    archived_at: meta.archived_at || '',
+    archived_at: volunteer.left_at || meta.archived_at || '',
     archived_by: meta.archived_by || '',
-    archive_reason: meta.archive_reason || '',
+    archive_reason: volunteer.leave_reason || meta.archive_reason || '',
+    left_at: volunteer.left_at || meta.archived_at || '',
+    leave_reason: volunteer.leave_reason || meta.archive_reason || '',
     notes: visibleNotes
   };
 }
@@ -799,51 +980,56 @@ function parseVolunteerMeta(notes) {
   return { meta: safeJson(json), visibleNotes: [before, after].filter(Boolean).join('\n') };
 }
 
-function buildVolunteerNotes(visibleNotes, meta) {
-  return [VOLUNTEER_META_START, JSON.stringify(meta), VOLUNTEER_META_END, String(visibleNotes || '').trim()].filter(Boolean).join('\n');
-}
-
 function volunteerPayloadFromForm(form, volunteers, current = null) {
   const code = current
     ? nextAvailableVolunteerCode(volunteers, current.code || form.code, current.id)
     : nextAvailableVolunteerCode(volunteers, form.code);
-  const meta = {
-    ...(current?.meta || {}),
-    code,
-    joined_at: form.joined_at || todayISO(),
-    status: form.status || 'Activo',
-    address: form.address || '',
-    emergency_contact: form.emergency_contact || '',
-    emergency_phone: form.emergency_phone || '',
-    tasks: form.tasks || '',
-    photo_data_url: form.photo_data_url || ''
-  };
   return {
+    code,
     full_name: form.full_name,
     document_id: form.document_id,
     phone: form.phone,
     email: form.email,
+    status: form.status || 'Activo',
+    joined_at: form.joined_at || todayISO(),
+    left_at: form.left_at || null,
+    leave_reason: form.leave_reason || '',
+    address: form.address || '',
+    emergency_contact: form.emergency_contact || '',
+    emergency_phone: form.emergency_phone || '',
+    functions: form.functions || form.tasks || '',
+    photo_data_url: form.photo_data_url || '',
     training: form.training,
     availability: form.availability,
     documentation: form.documentation,
     created_at: form.joined_at ? `${form.joined_at}T00:00:00` : current?.created_at,
     person_identity_id: form.person_identity_id || current?.person_identity_id || null,
-    notes: buildVolunteerNotes(form.notes, meta)
+    notes: String(form.notes || '').trim()
   };
 }
 
-function volunteerPayloadFromParsed(volunteer, meta) {
+function volunteerPayloadFromParsed(volunteer, updates = {}) {
   return {
+    code: updates.code || volunteer.code,
     full_name: volunteer.full_name,
     document_id: volunteer.document_id,
     phone: volunteer.phone,
     email: volunteer.email,
+    status: updates.status || volunteer.status || 'Activo',
+    joined_at: updates.joined_at || volunteer.joined_at || todayISO(),
+    left_at: Object.prototype.hasOwnProperty.call(updates, 'left_at') ? updates.left_at : (volunteer.left_at || null),
+    leave_reason: Object.prototype.hasOwnProperty.call(updates, 'leave_reason') ? updates.leave_reason : (volunteer.leave_reason || ''),
+    address: updates.address || volunteer.address || '',
+    emergency_contact: updates.emergency_contact || volunteer.emergency_contact || '',
+    emergency_phone: updates.emergency_phone || volunteer.emergency_phone || '',
+    functions: updates.functions || volunteer.functions || volunteer.tasks || '',
+    photo_data_url: updates.photo_data_url || volunteer.photo_data_url || '',
     training: volunteer.training,
     availability: volunteer.availability,
     documentation: volunteer.documentation,
     created_at: volunteer.created_at,
     person_identity_id: volunteer.person_identity_id || null,
-    notes: buildVolunteerNotes(volunteer.visibleNotes || volunteer.notes, meta)
+    notes: String(volunteer.visibleNotes || volunteer.notes || '').trim()
   };
 }
 
@@ -889,6 +1075,70 @@ function volunteerHistoryFor(data, volunteerId) {
   return (data.volunteer_history || [])
     .filter((item) => item.volunteer_id === volunteerId)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function volunteerDocumentsFor(data, volunteerId) {
+  return (data.volunteer_documents || [])
+    .filter((item) => item.volunteer_id === volunteerId)
+    .sort((a, b) => String(b.updated_at || b.uploaded_at || b.created_at || '').localeCompare(String(a.updated_at || a.uploaded_at || a.created_at || '')));
+}
+
+function volunteerTrainingFor(data, volunteerId) {
+  return (data.volunteer_training || [])
+    .filter((item) => item.volunteer_id === volunteerId)
+    .sort((a, b) => String(b.course_date || b.created_at || '').localeCompare(String(a.course_date || a.created_at || '')));
+}
+
+function documentCards(documents = []) {
+  const byType = new Map(documents.map((item) => [normalize(item.document_type), item]));
+  const required = DOCUMENT_TYPES.slice(0, -1).map((type) => byType.get(normalize(type)) || {
+    document_type: type,
+    status: 'Pendiente'
+  });
+  const extras = documents.filter((item) => !DOCUMENT_TYPES.slice(0, -1).some((type) => normalize(type) === normalize(item.document_type)));
+  return [...required, ...extras];
+}
+
+function documentEffectiveStatus(item = {}) {
+  if (item.status === 'No requerido') return 'No requerido';
+  if (item.expires_at && String(item.expires_at).slice(0, 10) < todayISO()) return 'Caducado';
+  return item.status || 'Pendiente';
+}
+
+function volunteerTimelineFor(volunteer, history = [], documents = [], trainingRecords = []) {
+  const rows = [
+    {
+      id: `${volunteer.id}-alta`,
+      date: volunteer.joined_at || volunteer.created_at || todayISO(),
+      activity: 'Alta del voluntario',
+      notes: volunteer.code || ''
+    },
+    ...history,
+    ...documents.map((item) => ({
+      id: `doc-${item.id || item.document_type}`,
+      date: item.updated_at || item.uploaded_at || item.created_at || todayISO(),
+      activity: `Documentación: ${item.document_type}`,
+      notes: `${documentEffectiveStatus(item)}${item.reviewed_by ? ` · Revisado por ${item.reviewed_by}` : ''}`
+    })),
+    ...trainingRecords.map((item) => ({
+      id: `training-${item.id}`,
+      date: item.course_date || item.created_at || todayISO(),
+      activity: `Formación: ${item.course_name}`,
+      hours: item.hours,
+      notes: item.entity || item.notes || ''
+    }))
+  ];
+
+  if (volunteer.left_at) {
+    rows.push({
+      id: `${volunteer.id}-baja`,
+      date: volunteer.left_at,
+      activity: 'Baja / archivado',
+      notes: volunteer.leave_reason || ''
+    });
+  }
+
+  return rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 
 function participationRows(history) {
@@ -963,15 +1213,16 @@ function currentUserName(user) {
   return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email || 'Usuario';
 }
 
-async function printVolunteerProfilePdf(volunteer, history = [], communications = [], organization = {}) {
+async function printVolunteerProfilePdf(volunteer, history = [], communications = [], organization = {}, documents = [], trainingRecords = []) {
   const doc = new jsPDF();
   const logo = await imageUrlToDataUrl(officialLogoUrl);
   const organizationName = organization.name || 'Asociación Pan y Esperanza';
   const participations = participationRows(history);
-  const documents = documentRows(history);
   const observations = observationRows(history);
   const stats = volunteerStats(volunteer, history);
-  const timeline = [...history].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  const structuredDocuments = documents.length ? documents : documentRows(history);
+  const structuredTraining = trainingRecords.length ? trainingRecords : trainingRows(history);
+  const timeline = volunteerTimelineFor(volunteer, history, documents, trainingRecords).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   let y = drawVolunteerProfilePdfHeader(doc, { volunteer, organizationName, logo });
 
   y = drawVolunteerPdfSection(doc, 'Datos personales', y);
@@ -981,6 +1232,8 @@ async function printVolunteerProfilePdf(volunteer, history = [], communications 
     `Documento: ${volunteer.document_id || '-'}`,
     `Estado: ${volunteer.status || '-'}`,
     `Fecha de alta: ${formatDate(volunteer.joined_at)}`,
+    `Fecha de baja: ${volunteer.left_at ? formatDate(volunteer.left_at) : '-'}`,
+    `Motivo de baja: ${volunteer.leave_reason || '-'}`,
     `Teléfono: ${volunteer.phone || '-'}`,
     `Email: ${volunteer.email || '-'}`,
     `Dirección: ${volunteer.address || '-'}`,
@@ -991,8 +1244,9 @@ async function printVolunteerProfilePdf(volunteer, history = [], communications 
   y = drawVolunteerPdfLines(doc, [
     `Formación indicada: ${volunteer.training || '-'}`,
     `Disponibilidad: ${volunteer.availability || '-'}`,
-    `Tareas habituales: ${volunteer.tasks || '-'}`
+    `Funciones: ${volunteer.functions || volunteer.tasks || '-'}`
   ], y);
+  y = drawVolunteerPdfList(doc, structuredTraining.map((item) => volunteerTrainingLine(item)), y, 'No hay formación registrada.');
 
   y = drawVolunteerPdfSection(doc, 'Participaciones', y + 4);
   y = drawVolunteerPdfLines(doc, [
@@ -1006,7 +1260,7 @@ async function printVolunteerProfilePdf(volunteer, history = [], communications 
   y = drawVolunteerPdfList(doc, timeline.map((item) => volunteerHistoryLine(item)), y, 'Todavía no hay historial registrado.');
 
   y = drawVolunteerPdfSection(doc, 'Documentación', y + 4);
-  y = drawVolunteerPdfList(doc, documents.map((item) => volunteerDocumentLine(item)), y, 'No hay documentación registrada.');
+  y = drawVolunteerPdfList(doc, structuredDocuments.map((item) => volunteerDocumentLine(item)), y, 'No hay documentación registrada.');
 
   y = drawVolunteerPdfSection(doc, 'Comunicaciones', y + 4);
   y = drawVolunteerPdfList(doc, communications.map((item) => volunteerCommunicationLine(item)), y, 'No hay comunicaciones registradas.');
@@ -1118,8 +1372,18 @@ function volunteerHistoryLine(item) {
 }
 
 function volunteerDocumentLine(item) {
+  if (item.document_type) {
+    return `${formatDate(item.uploaded_at || item.created_at)} · ${item.document_type} · ${documentEffectiveStatus(item)} · ${item.file_name || 'Sin archivo'}${item.reviewed_by ? ` · Revisado por ${item.reviewed_by}` : ''}`;
+  }
   const doc = parseHistoryJson(item.notes);
   return `${formatDate(item.date)} · ${String(item.activity || 'Documento').replace('Documento: ', '')} · ${doc.file_name || 'Documento registrado'}${doc.notes ? ` · ${doc.notes}` : ''}`;
+}
+
+function volunteerTrainingLine(item) {
+  if (item.course_name) {
+    return `${formatDate(item.course_date || item.created_at)} · ${item.course_name}${item.hours ? ` · ${item.hours} h` : ''}${item.entity ? ` · ${item.entity}` : ''} · ${documentEffectiveStatus(item)}`;
+  }
+  return volunteerHistoryLine(item);
 }
 
 function volunteerCommunicationLine(item) {

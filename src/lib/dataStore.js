@@ -49,6 +49,8 @@ const TABLES = [
   'person_identities',
   'person_identity_link_audit',
   'volunteer_history',
+  'volunteer_documents',
+  'volunteer_training',
   'notificaciones',
   'agenda_operativa',
   'campanas',
@@ -135,7 +137,9 @@ const OPTIONAL_TABLES = new Set([
   'official_credential_registry',
   'official_credential_events',
   'person_identities',
-  'person_identity_link_audit'
+  'person_identity_link_audit',
+  'volunteer_documents',
+  'volunteer_training'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
@@ -171,6 +175,7 @@ const DATE_FIELDS = new Set([
   'expense_at',
   'loan_at',
   'returned_at',
+  'left_at',
   'moved_at',
   'happened_at',
   'requested_at',
@@ -200,6 +205,7 @@ const DATE_FIELDS = new Set([
   'expired_at',
   'renewal_due_at',
   'reviewed_at',
+  'course_date',
   'archived_at',
   'published_at',
   'unpublished_at',

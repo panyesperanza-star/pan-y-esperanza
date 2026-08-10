@@ -36,4 +36,28 @@ export class VoluntarioRepository {
   async removeHistory(id) {
     return this.repository.remove('volunteer_history', id);
   }
+
+  async createDocument(payload) {
+    return this.repository.create('volunteer_documents', payload);
+  }
+
+  async updateDocument(id, payload) {
+    return this.repository.update('volunteer_documents', id, payload);
+  }
+
+  async removeDocument(id) {
+    return this.repository.remove('volunteer_documents', id);
+  }
+
+  async createTraining(payload) {
+    return this.repository.create('volunteer_training', payload);
+  }
+
+  async updateTraining(id, payload) {
+    return this.repository.update('volunteer_training', id, payload);
+  }
+
+  async removeTraining(id) {
+    return this.repository.remove('volunteer_training', id);
+  }
 }

@@ -300,6 +300,8 @@ export const seedData = {
   person_identities: [],
   person_identity_link_audit: [],
   volunteer_history: [],
+  volunteer_documents: [],
+  volunteer_training: [],
   campanas: [
     {
       id: demoCampaignId,
