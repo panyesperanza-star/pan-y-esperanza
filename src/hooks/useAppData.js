@@ -2624,11 +2624,14 @@ export function useAppData(enabled = true, currentUser = null) {
     },
     updateCommunityInterestStatus: async (id, payload = {}) => {
       assertPermission('community-moderation', 'edit');
-      const allowed = new Set(['new', 'reviewed', 'contacted', 'referred', 'closed']);
       const status = String(payload.status || '').trim();
-      if (!allowed.has(status)) throw new Error('Estado de interes no valido.');
       const interest = (appData.community_interests || []).find((item) => item.id === id);
       if (!interest) throw new Error('El interes de comunidad no existe.');
+      const post = (appData.community_posts || []).find((item) => item.id === interest.post_id);
+      const allowed = post?.category === 'offer'
+        ? new Set(['new', 'reviewed', 'contacted', 'delivery_pending', 'closed'])
+        : new Set(['new', 'reviewed', 'contacted', 'referred', 'closed']);
+      if (!allowed.has(status)) throw new Error('Estado de interes no valido para esta categoria.');
       const updated = await repositoryUpdate('community_interests', id, {
         status,
         status_notes: String(payload.status_notes || payload.notes || '').trim(),

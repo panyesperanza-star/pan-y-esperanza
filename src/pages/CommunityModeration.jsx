@@ -48,6 +48,29 @@ const interestStatusOptions = [
   { value: 'closed', label: 'Cerrado' }
 ];
 
+const interestStatusLabels = {
+  registered: 'Nuevo',
+  new: 'Nuevo',
+  reviewed: 'Revisado',
+  contacted: 'Contactado',
+  delivery_pending: 'Entrega pendiente',
+  delivered: 'Entregado / Cerrado',
+  not_completed: 'No realizado',
+  referred: 'Derivado',
+  closed: 'Cerrado',
+  withdrawn: 'Retirado',
+  cancelled: 'Cancelado'
+};
+
+const offerInterestStatusOptions = [
+  { value: 'new', label: 'Nuevo' },
+  { value: 'contacted', label: 'Contactado' },
+  { value: 'delivery_pending', label: 'Entrega pendiente' },
+  { value: 'closed', label: 'Cerrado' }
+];
+
+const terminalInterestStatuses = new Set(['delivered', 'not_completed', 'closed', 'withdrawn', 'cancelled']);
+
 const resolutionLabels = {
   active: 'Vigente',
   employment_filled: 'Empleo cubierto',
@@ -463,6 +486,7 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
                 <InterestWorkflowRow
                   key={interest.id}
                   interest={interest}
+                  post={post}
                   beneficiary={beneficiaryById.get(interest.beneficiary_id)}
                   canEdit={canEdit}
                   onUpdate={onUpdateInterest}
@@ -504,7 +528,7 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
 function InterestManagementCard({ interest, post, beneficiary, canEdit, onUpdate }) {
   const category = categoryMeta[post?.category] || categoryMeta.need;
   const CategoryIcon = category.icon;
-  const statusLabel = interestStatusOptions.find((item) => item.value === (interest.status === 'registered' ? 'new' : interest.status))?.label || 'Nuevo';
+  const statusLabel = interestStatusLabel(interest.status);
 
   return (
     <article className="rounded-md border border-white bg-white p-4 shadow-sm">
@@ -526,15 +550,23 @@ function InterestManagementCard({ interest, post, beneficiary, canEdit, onUpdate
       </div>
       <div className="mt-3 border-t border-slate-100 pt-3">
         <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Acciones</p>
-        <InterestWorkflowRow interest={interest} beneficiary={beneficiary} canEdit={canEdit} onUpdate={onUpdate} />
+        <InterestWorkflowRow interest={interest} post={post} beneficiary={beneficiary} canEdit={canEdit} onUpdate={onUpdate} />
       </div>
     </article>
   );
 }
 
-function InterestWorkflowRow({ interest, beneficiary, canEdit, onUpdate }) {
-  const [status, setStatus] = useState(interest.status === 'registered' ? 'new' : interest.status || 'new');
+function InterestWorkflowRow({ interest, post, beneficiary, canEdit, onUpdate }) {
+  const storedStatus = interest.status === 'registered' ? 'new' : interest.status || 'new';
+  const [status, setStatus] = useState(storedStatus);
   const [notes, setNotes] = useState(interest.status_notes || '');
+  const options = interestOptionsForPost(post, status);
+  const isTerminal = terminalInterestStatuses.has(storedStatus);
+
+  useEffect(() => {
+    setStatus(storedStatus);
+    setNotes(interest.status_notes || '');
+  }, [storedStatus, interest.status_notes]);
 
   return (
     <div className="rounded-md border border-white/70 bg-white p-3">
@@ -543,17 +575,32 @@ function InterestWorkflowRow({ interest, beneficiary, canEdit, onUpdate }) {
           <p className="font-bold text-brand-900">{beneficiary?.full_name || 'Beneficiario'}{beneficiary?.code ? ` - ${beneficiary.code}` : ''}</p>
           <p className="mt-1 text-sm text-brand-800">{formatDate(interest.created_at)} - {interest.message || 'Interes registrado'}</p>
         </div>
-        <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-black text-brand-700">{interestStatusOptions.find((item) => item.value === status)?.label || 'Nuevo'}</span>
+        <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-black text-brand-700">{interestStatusLabel(status)}</span>
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_auto]">
-        <select className={inputClass} value={status} onChange={(event) => setStatus(event.target.value)} disabled={!canEdit}>
-          {interestStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        <select className={inputClass} value={status} onChange={(event) => setStatus(event.target.value)} disabled={!canEdit || isTerminal}>
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <input className={inputClass} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit} />
-        <Button variant="secondary" disabled={!canEdit} onClick={() => onUpdate(interest, { status, status_notes: notes })}>Actualizar</Button>
+        <input className={inputClass} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit || isTerminal} />
+        <Button variant="secondary" disabled={!canEdit || isTerminal} onClick={() => onUpdate(interest, { status, status_notes: notes })}>Actualizar</Button>
       </div>
+      {post?.category === 'offer' && status === 'delivery_pending' && (
+        <p className="mt-2 text-xs font-semibold text-brand-700">
+          El beneficiario interesado confirmara desde su Portal si recibio el articulo o si la entrega no se realizo.
+        </p>
+      )}
     </div>
   );
+}
+
+function interestStatusLabel(status) {
+  return interestStatusLabels[status === 'registered' ? 'new' : status] || 'Nuevo';
+}
+
+function interestOptionsForPost(post, currentStatus) {
+  const baseOptions = post?.category === 'offer' ? offerInterestStatusOptions : interestStatusOptions;
+  if (baseOptions.some((option) => option.value === currentStatus)) return baseOptions;
+  return [{ value: currentStatus, label: interestStatusLabel(currentStatus) }, ...baseOptions];
 }
 
 function Badge({ children, className }) {

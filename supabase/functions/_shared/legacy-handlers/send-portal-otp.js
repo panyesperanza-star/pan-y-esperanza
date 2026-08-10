@@ -724,6 +724,9 @@ async function executePortalAction(supabase, portal, subject, body) {
     if (action === 'withdraw-community-interest') {
       return withdrawCommunityInterestFromPortal(supabase, subject, payload);
     }
+    if (action === 'resolve-community-interest') {
+      return resolveCommunityInterestFromPortal(supabase, subject, payload);
+    }
     if (action === 'report-community-post') {
       return reportCommunityPostFromPortal(supabase, subject, payload);
     }
@@ -1243,7 +1246,7 @@ async function listCommunityOverview(supabase, beneficiary) {
       .from('community_interests')
       .select('id,post_id,beneficiary_id,status,message,status_notes,created_at,updated_at')
       .eq('beneficiary_id', beneficiary.id)
-      .not('status', 'in', '(cancelled,withdrawn)')
+      .not('status', 'in', '(cancelled,withdrawn,closed,delivered,not_completed)')
       .order('created_at', { ascending: false }),
     supabase
       .from('community_post_reports')
@@ -1300,7 +1303,7 @@ async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficia
     withdrawn_at: post.withdrawn_at || null,
     ownPost,
     active: isCommunityPostActive(post),
-    interested: Boolean(interest && !['cancelled', 'withdrawn'].includes(interest.status)),
+    interested: interestIsActive(interest),
     interest_id: interest?.id || null,
     interest_status: interest?.status || '',
     interest_status_label: statusLabelForCommunityInterest(interest?.status),
@@ -1366,14 +1369,22 @@ function isCommunityPostActive(post = {}) {
   return true;
 }
 
+function interestIsActive(interest = null) {
+  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed'].includes(interest.status));
+}
+
 function statusLabelForCommunityInterest(status = '') {
   const labels = {
     registered: 'Nuevo',
     new: 'Nuevo',
     reviewed: 'Revisado',
     contacted: 'Contactado',
+    delivery_pending: 'Entrega pendiente',
+    delivered: 'Entregado / Cerrado',
+    not_completed: 'No realizado',
     referred: 'Derivado',
     closed: 'Cerrado',
+    cancelled: 'Cancelado',
     withdrawn: 'Retirado'
   };
   return labels[status] || 'Nuevo';
@@ -1510,6 +1521,17 @@ async function withdrawCommunityInterestFromPortal(supabase, beneficiary, payloa
   const interestId = cleanText(payload.interestId || payload.interest_id);
   if (!interestId) throw new Error('No se ha indicado el interes.');
   const now = new Date().toISOString();
+  const { data: current, error: currentError } = await supabase
+    .from('community_interests')
+    .select('id,status')
+    .eq('id', interestId)
+    .eq('beneficiary_id', beneficiary.id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (!current) throw new Error('El interes no existe o no pertenece a tu portal.');
+  if (['delivery_pending', 'delivered', 'not_completed', 'closed'].includes(current.status)) {
+    throw new Error('Este interes ya esta en gestion y no puede retirarse desde el portal.');
+  }
   const { data, error } = await supabase
     .from('community_interests')
     .update({ status: 'withdrawn', updated_at: now })
@@ -1520,6 +1542,79 @@ async function withdrawCommunityInterestFromPortal(supabase, beneficiary, payloa
   if (error) throw error;
   await audit(supabase, `Portal del Beneficiario: interes retirado en comunidad ${interestId}`);
   return data;
+}
+
+async function resolveCommunityInterestFromPortal(supabase, beneficiary, payload = {}) {
+  const interestId = cleanText(payload.interestId || payload.interest_id);
+  const outcome = cleanText(payload.outcome).toLowerCase();
+  if (!interestId) throw new Error('No se ha indicado el interes.');
+  if (!['delivered', 'not_completed'].includes(outcome)) throw new Error('Resultado de interes no valido.');
+
+  const { data: interest, error: interestError } = await supabase
+    .from('community_interests')
+    .select('id,post_id,beneficiary_id,status,message,created_at,updated_at')
+    .eq('id', interestId)
+    .eq('beneficiary_id', beneficiary.id)
+    .maybeSingle();
+  if (interestError) throw interestError;
+  if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
+  if (interest.status !== 'delivery_pending') throw new Error('Este interes no esta pendiente de entrega.');
+
+  const { data: post, error: postError } = await supabase
+    .from('community_posts')
+    .select('id,beneficiary_id,category,title,status,resolution_status,expires_at')
+    .eq('id', interest.post_id)
+    .maybeSingle();
+  if (postError) throw postError;
+  if (!post || post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
+
+  const now = new Date().toISOString();
+  const statusNotes = outcome === 'delivered'
+    ? 'Articulo confirmado como recibido por el beneficiario interesado.'
+    : 'El beneficiario interesado indico que la entrega no se realizo.';
+  const { data: updatedInterest, error: updateError } = await supabase
+    .from('community_interests')
+    .update({
+      status: outcome,
+      status_notes: statusNotes,
+      closed_at: now,
+      updated_at: now
+    })
+    .eq('id', interest.id)
+    .eq('beneficiary_id', beneficiary.id)
+    .select('id,post_id,beneficiary_id,status,message,status_notes,closed_at,created_at,updated_at')
+    .single();
+  if (updateError) throw updateError;
+
+  if (outcome === 'delivered') {
+    const { error: postUpdateError } = await supabase
+      .from('community_posts')
+      .update({
+        status: 'withdrawn',
+        resolution_status: 'item_delivered',
+        resolution_notes: 'Articulo confirmado como recibido por el beneficiario interesado.',
+        withdrawn_at: now,
+        updated_at: now
+      })
+      .eq('id', post.id);
+    if (postUpdateError) throw postUpdateError;
+
+    const { error: closeOthersError } = await supabase
+      .from('community_interests')
+      .update({
+        status: 'closed',
+        status_notes: 'Publicacion cerrada porque el articulo fue entregado.',
+        closed_at: now,
+        updated_at: now
+      })
+      .eq('post_id', post.id)
+      .neq('id', interest.id)
+      .not('status', 'in', '(cancelled,withdrawn,closed,delivered,not_completed)');
+    if (closeOthersError) throw closeOthersError;
+  }
+
+  await audit(supabase, `Portal del Beneficiario: resultado ${outcome} en interes de comunidad ${interestId}`);
+  return updatedInterest;
 }
 
 async function reportCommunityPostFromPortal(supabase, beneficiary, payload = {}) {

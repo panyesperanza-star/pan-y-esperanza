@@ -240,7 +240,7 @@ function isCommunityPostActive(post = {}) {
 }
 
 function interestIsActive(interest = null) {
-  return Boolean(interest && !['cancelled', 'withdrawn'].includes(interest.status));
+  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed'].includes(interest.status));
 }
 
 function statusLabelForCommunityInterest(status = '') {
@@ -249,8 +249,12 @@ function statusLabelForCommunityInterest(status = '') {
     new: 'Nuevo',
     reviewed: 'Revisado',
     contacted: 'Contactado',
+    delivery_pending: 'Entrega pendiente',
+    delivered: 'Entregado / Cerrado',
+    not_completed: 'No realizado',
     referred: 'Derivado',
     closed: 'Cerrado',
+    cancelled: 'Cancelado',
     withdrawn: 'Retirado'
   };
   return labels[status] || 'Nuevo';
@@ -861,11 +865,61 @@ export class BeneficiarioPortalService {
     const interests = await this.readCommunityInterests();
     const interest = interests.find((item) => item.id === interestId && item.beneficiary_id === beneficiary.id);
     if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
+    if (['delivery_pending', 'delivered', 'not_completed', 'closed'].includes(interest.status)) {
+      throw new Error('Este interes ya esta en gestion y no puede retirarse desde el portal.');
+    }
     const updated = await this.repository.updateCommunityInterest(interest.id, {
       status: 'withdrawn',
       updated_at: new Date().toISOString()
     });
     await this.audit(`Portal beneficiario: interes retirado en comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
+    return updated;
+  }
+
+  async resolveCommunityInterest(session, interestId, outcome) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const normalizedOutcome = cleanText(outcome).toLowerCase();
+    if (!['delivered', 'not_completed'].includes(normalizedOutcome)) {
+      throw new Error('Resultado de interes no valido.');
+    }
+    const interests = await this.readCommunityInterests();
+    const interest = interests.find((item) => item.id === interestId && item.beneficiary_id === beneficiary.id);
+    if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
+    if (interest.status !== 'delivery_pending') throw new Error('Este interes no esta pendiente de entrega.');
+    const posts = await this.readCommunityPosts();
+    const post = posts.find((item) => item.id === interest.post_id);
+    if (!post || post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
+
+    const now = new Date().toISOString();
+    const updated = await this.repository.updateCommunityInterest(interest.id, {
+      status: normalizedOutcome,
+      status_notes: normalizedOutcome === 'delivered'
+        ? 'Articulo confirmado como recibido por el beneficiario interesado.'
+        : 'El beneficiario interesado indico que la entrega no se realizo.',
+      closed_at: now,
+      updated_at: now
+    });
+
+    if (normalizedOutcome === 'delivered') {
+      await this.repository.updateCommunityPost(post.id, {
+        status: 'withdrawn',
+        resolution_status: 'item_delivered',
+        resolution_notes: 'Articulo confirmado como recibido por el beneficiario interesado.',
+        withdrawn_at: now,
+        updated_at: now
+      });
+      const pendingStatuses = new Set(['registered', 'new', 'reviewed', 'contacted', 'referred', 'delivery_pending']);
+      await Promise.all(interests
+        .filter((item) => item.post_id === post.id && item.id !== interest.id && pendingStatuses.has(item.status))
+        .map((item) => this.repository.updateCommunityInterest(item.id, {
+          status: 'closed',
+          status_notes: 'Publicacion cerrada porque el articulo fue entregado.',
+          closed_at: now,
+          updated_at: now
+        })));
+    }
+
+    await this.audit(`Portal beneficiario: resultado de interes ${normalizedOutcome} en comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
     return updated;
   }
 
@@ -1078,7 +1132,7 @@ export class BeneficiarioPortalService {
       this.readCommunityReports()
     ]);
     const interestByPost = new Map(interests
-      .filter((item) => item.beneficiary_id === beneficiaryId && !['cancelled', 'withdrawn'].includes(item.status))
+      .filter((item) => item.beneficiary_id === beneficiaryId && interestIsActive(item))
       .map((item) => [item.post_id, item]));
     const reportByPost = new Map(reports
       .filter((item) => item.beneficiary_id === beneficiaryId && item.status !== 'dismissed')
@@ -1091,7 +1145,7 @@ export class BeneficiarioPortalService {
     return {
       posts: visible.filter((post) => post.status === 'approved' && post.active),
       myPosts: visible.filter((post) => post.ownPost),
-      interests: interests.filter((item) => item.beneficiary_id === beneficiaryId && !['cancelled', 'withdrawn'].includes(item.status))
+      interests: interests.filter((item) => item.beneficiary_id === beneficiaryId && interestIsActive(item))
     };
   }
 

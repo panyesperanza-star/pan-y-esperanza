@@ -72,8 +72,12 @@ const COMMUNITY_INTEREST_STATUS_LABELS = {
   new: 'Nuevo',
   reviewed: 'Revisado',
   contacted: 'Contactado',
+  delivery_pending: 'Entrega pendiente',
+  delivered: 'Entregado / Cerrado',
+  not_completed: 'No realizado',
   referred: 'Derivado',
   closed: 'Cerrado',
+  cancelled: 'Cancelado',
   withdrawn: 'Retirado'
 };
 
@@ -1658,6 +1662,46 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     }
   }
 
+  async function resolveInterest(post, outcome) {
+    setError('');
+    setSuccess('');
+    setInterestSubmittingByPost((current) => ({ ...current, [post.id]: true }));
+    try {
+      const interest = await service.resolveCommunityInterest(session, post.interest_id, outcome);
+      const delivered = outcome === 'delivered';
+      setOptimisticInterestByPost((current) => ({
+        ...current,
+        [post.id]: delivered
+          ? {
+              interested: true,
+              interest_id: interest?.id || post.interest_id,
+              interest_status: 'delivered',
+              interest_status_label: 'Entregado / Cerrado',
+              active: false,
+              resolution_status: 'item_delivered'
+            }
+          : {
+              interested: false,
+              interest_id: null,
+              interest_status: '',
+              interest_status_label: ''
+            }
+      }));
+      setSuccess(delivered
+        ? 'Gracias. Hemos registrado que has recibido el articulo.'
+        : 'Hemos registrado que la entrega no se realizo. La publicacion seguira disponible si el articulo continua disponible.');
+      try {
+        await onRefresh();
+      } catch (refreshError) {
+        console.warn('[Portal Beneficiario] Resultado de interes registrado, pero no se pudo refrescar Comunidad.', refreshError);
+      }
+    } catch (resolveError) {
+      setError(resolveError.message || 'No se pudo actualizar el interes.');
+    } finally {
+      setInterestSubmittingByPost((current) => ({ ...current, [post.id]: false }));
+    }
+  }
+
   async function reportPost(post) {
     setError('');
     setSuccess('');
@@ -1709,6 +1753,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                   onInterestMessageChange={(value) => setInterestMessageByPost((current) => ({ ...current, [post.id]: value }))}
                   onInterest={() => registerInterest(post)}
                   onWithdrawInterest={() => withdrawInterest(post)}
+                  onResolveInterest={(outcome) => resolveInterest(post, outcome)}
                   interestSubmitting={interestSubmittingByPost[post.id] === true}
                   reportOpen={reportOpenByPost[post.id] === true}
                   reportReason={reportReasonByPost[post.id] || ''}
@@ -1826,6 +1871,7 @@ function CommunityPortalCard({
   onInterestMessageChange,
   onInterest,
   onWithdrawInterest,
+  onResolveInterest,
   interestSubmitting = false,
   reportOpen,
   reportReason,
@@ -1834,6 +1880,10 @@ function CommunityPortalCard({
   onReport
 }) {
   const CategoryIcon = COMMUNITY_CATEGORIES.find((item) => item.id === post.category)?.icon || HandHeart;
+  const interestStatus = post.interest_status || '';
+  const isOfferDeliveryPending = post.category === 'offer' && interestStatus === 'delivery_pending';
+  const terminalInterestStatuses = new Set(['closed', 'withdrawn', 'cancelled', 'delivered', 'not_completed']);
+  const canWithdrawInterest = post.interested && !isOfferDeliveryPending && !terminalInterestStatuses.has(interestStatus);
   return (
     <article className="overflow-hidden rounded-md border border-slate-100 bg-slate-50">
       {post.photo_url ? (
@@ -1879,9 +1929,21 @@ function CommunityPortalCard({
                 ✓ Interés enviado
               </Button>
               <p className="text-sm font-bold text-brand-700">Estado: {COMMUNITY_INTEREST_STATUS_LABELS[post.interest_status] || post.interest_status_label || 'Nuevo'}.</p>
-              <Button variant="secondary" onClick={onWithdrawInterest} disabled={interestSubmitting}>
-                {interestSubmitting ? 'Retirando...' : 'Retirar interés'}
-              </Button>
+              {isOfferDeliveryPending && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button onClick={() => onResolveInterest('delivered')} disabled={interestSubmitting}>
+                    {interestSubmitting ? 'Confirmando...' : 'Confirmar que lo he recibido'}
+                  </Button>
+                  <Button variant="secondary" onClick={() => onResolveInterest('not_completed')} disabled={interestSubmitting}>
+                    No se realizó la entrega
+                  </Button>
+                </div>
+              )}
+              {canWithdrawInterest && (
+                <Button variant="secondary" onClick={onWithdrawInterest} disabled={interestSubmitting}>
+                  {interestSubmitting ? 'Retirando...' : 'Retirar interés'}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
