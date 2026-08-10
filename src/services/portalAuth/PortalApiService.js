@@ -103,6 +103,36 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return response.result;
   }
 
+  async createCommunityPost(session, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'create-community-post',
+      payload
+    });
+    return response.result;
+  }
+
+  async registerCommunityInterest(session, postId, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'register-community-interest',
+      payload: { ...payload, postId }
+    });
+    return response.result;
+  }
+
+  async withdrawCommunityPost(session, postId) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'withdraw-community-post',
+      payload: { postId }
+    });
+    return response.result;
+  }
+
   async changePin(session, payload = {}) {
     console.info('[beneficiary-access] PortalApiService changePin payload', {
       keys: Object.keys(payload || {}),

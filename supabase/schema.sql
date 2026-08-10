@@ -877,6 +877,52 @@ create table if not exists public.social_resource_followups (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.community_posts (
+  id uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  category text not null,
+  title text not null,
+  zone text not null default '',
+  description text not null default '',
+  photo_storage_bucket text not null default '',
+  photo_storage_path text not null default '',
+  photo_file_name text not null default '',
+  photo_mime_type text not null default '',
+  job_position text not null default '',
+  company_name text not null default '',
+  workday text not null default '',
+  schedule text not null default '',
+  requirements text not null default '',
+  deadline_at date,
+  contact_method text not null default 'Gestionado por Pan y Esperanza',
+  status text not null default 'pending_review',
+  moderation_notes text not null default '',
+  rejection_reason text not null default '',
+  reviewed_by uuid references public.app_users(id) on delete set null,
+  reviewed_by_name text not null default '',
+  reviewed_at timestamptz,
+  withdrawn_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint community_posts_category_check check (category in ('employment', 'offer', 'need')),
+  constraint community_posts_status_check check (status in ('pending_review', 'approved', 'rejected', 'withdrawn')),
+  constraint community_posts_title_min check (char_length(trim(title)) >= 3),
+  constraint community_posts_description_min check (char_length(trim(description)) >= 10),
+  constraint community_posts_zone_min check (char_length(trim(zone)) >= 2)
+);
+
+create table if not exists public.community_interests (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.community_posts(id) on delete cascade,
+  beneficiary_id uuid not null references public.beneficiaries(id) on delete cascade,
+  status text not null default 'registered',
+  message text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint community_interests_status_check check (status in ('registered', 'cancelled')),
+  constraint community_interests_unique unique (post_id, beneficiary_id)
+);
+
 create table public.deletion_requests (
   id uuid primary key default gen_random_uuid(),
   association_id text not null,

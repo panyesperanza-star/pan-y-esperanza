@@ -47,6 +47,10 @@ const DATE_FIELDS = new Set([
   'end_at',
   'start_date',
   'end_date',
+  'opens_at',
+  'deadline_at',
+  'last_verified_at',
+  'linked_at',
   'last_printed_at',
   'last_validated_at',
   'suspended_at',
@@ -57,6 +61,7 @@ const DATE_FIELDS = new Set([
   'archived_at',
   'published_at',
   'unpublished_at',
+  'withdrawn_at',
   'last_access_at',
   'verified_at',
   'started_at',
@@ -117,6 +122,8 @@ const OPTIONAL_TABLES = new Set([
   'social_resource_history',
   'social_resource_sources',
   'social_resource_detections',
+  'community_posts',
+  'community_interests',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
@@ -129,7 +136,9 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'social_resource_followups',
   'social_resource_history',
   'social_resource_sources',
-  'social_resource_detections'
+  'social_resource_detections',
+  'community_posts',
+  'community_interests'
 ]);
 
 const SECURITY_TABLES = new Set([

@@ -5,6 +5,7 @@ export const MODULES = [
   { id: 'notifications', label: 'Centro de Notificaciones', path: '/notifications' },
   { id: 'social-care', label: 'Centro de Atencion Social', path: '/social-care' },
   { id: 'social-resources', label: 'Centro de Recursos Sociales', path: '/social-resources' },
+  { id: 'community-moderation', label: 'Moderacion de Comunidad', path: '/community-moderation' },
   { id: 'agenda', label: 'Agenda Operativa', path: '/agenda' },
   { id: 'beneficiaries', label: 'Beneficiarios', path: '/beneficiaries' },
   { id: 'communications', label: 'Comunicaciones', path: '/communications' },
@@ -45,6 +46,7 @@ export const PERMISSION_MODULES = [
   { id: 'notifications', label: 'Centro de Notificaciones', actions: ['view', 'edit'] },
   { id: 'social-care', label: 'Centro de Atencion Social', actions: ['view', 'edit'] },
   { id: 'social-resources', label: 'Centro de Recursos Sociales' },
+  { id: 'community-moderation', label: 'Moderacion de Comunidad' },
   { id: 'agenda', label: 'Agenda Operativa' },
   { id: 'beneficiaries', label: 'Beneficiarios' },
   { id: 'communications', label: 'Comunicaciones' },
@@ -122,10 +124,10 @@ export function constrainRolePermissionMatrix(role, matrix = {}) {
 
 export const ROLE_PERMISSIONS = {
   Superadministrador: ['*'],
-  Presidenta: ['notifications', 'social-care', 'social-resources', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'donations', 'donors', 'accounting', 'volunteers', 'collaborators', 'reports', 'users', 'settings'],
-  Secretaria: ['notifications', 'social-care', 'social-resources', 'agenda', 'beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
+  Presidenta: ['notifications', 'social-care', 'social-resources', 'community-moderation', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'donations', 'donors', 'accounting', 'volunteers', 'collaborators', 'reports', 'users', 'settings'],
+  Secretaria: ['notifications', 'social-care', 'social-resources', 'community-moderation', 'agenda', 'beneficiaries', 'communications', 'families', 'receipts', 'reports', 'users', 'settings'],
   Tesorera: ['notifications', 'agenda', 'donations', 'donors', 'accounting', 'collaborators', 'reports', 'receipts', 'communications'],
-  Coordinadora: ['notifications', 'social-care', 'social-resources', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'accounting', 'volunteers', 'collaborators', 'donors', 'reports'],
+  Coordinadora: ['notifications', 'social-care', 'social-resources', 'community-moderation', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'accounting', 'volunteers', 'collaborators', 'donors', 'reports'],
   Voluntario: ['notifications', 'social-care', 'agenda', 'beneficiaries', 'communications', 'deliveries', 'smart-deliveries', 'credential-scanner', 'inventory', 'accounting']
 };
 
@@ -134,7 +136,7 @@ export const LEGACY_ROLE_PERMISSIONS = {
   Secretario: ROLE_PERMISSIONS.Secretaria,
   Tesorero: ROLE_PERMISSIONS.Tesorera,
   Administrador: ROLE_PERMISSIONS.Presidenta,
-  Coordinador: ['notifications', 'social-care', 'social-resources', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'accounting', 'volunteers', 'collaborators', 'donors', 'reports'],
+  Coordinador: ['notifications', 'social-care', 'social-resources', 'community-moderation', 'agenda', 'beneficiaries', 'communications', 'families', 'deliveries', 'smart-deliveries', 'credential-scanner', 'receipts', 'inventory', 'accounting', 'volunteers', 'collaborators', 'donors', 'reports'],
   Consulta: ['notifications', 'agenda', 'reports']
 };
 

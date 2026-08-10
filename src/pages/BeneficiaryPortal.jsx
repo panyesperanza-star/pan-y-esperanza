@@ -3,21 +3,27 @@ import {
   ArrowRight,
   Bell,
   BookOpen,
+  Briefcase,
   CalendarDays,
   CheckCircle2,
   CircleHelp,
   Clock3,
   FileText,
+  Gift,
+  HandHeart,
   History,
   Home,
+  Image as ImageIcon,
   KeyRound,
   Lock,
   LogOut,
   MapPin,
   MessageSquare,
   PackageCheck,
+  Plus,
   Send,
   ShieldCheck,
+  Trash2,
   UserRound,
   UsersRound,
   X
@@ -40,9 +46,23 @@ const TABS = [
   { id: 'avisos', label: 'Avisos', icon: Bell },
   { id: 'documentos', label: 'Documentos', icon: FileText },
   { id: 'recursos', label: 'Ayudas y recursos', icon: BookOpen },
+  { id: 'comunidad', label: 'Comunidad', icon: UsersRound },
   { id: 'solicitudes', label: 'Solicitudes', icon: MessageSquare },
   { id: 'perfil', label: 'Perfil', icon: UserRound }
 ];
+
+const COMMUNITY_CATEGORIES = [
+  { id: 'employment', label: 'Empleo', icon: Briefcase },
+  { id: 'offer', label: 'Ofrezco', icon: Gift },
+  { id: 'need', label: 'Necesito', icon: HandHeart }
+];
+
+const COMMUNITY_STATUS_LABELS = {
+  pending_review: 'Pendiente de revision',
+  approved: 'Aprobada',
+  rejected: 'Rechazada',
+  withdrawn: 'Retirada'
+};
 
 export function BeneficiaryPortal({ data, actions }) {
   const portalService = actions?.beneficiarioPortal;
@@ -409,6 +429,16 @@ export function BeneficiaryPortal({ data, actions }) {
           {activeTab === 'avisos' && <NoticesSection notices={overview.notices || []} service={portalService} session={session} onRefresh={refreshPortal} setError={setError} setSuccess={setSuccess} />}
           {activeTab === 'documentos' && <DocumentsSection documents={overview.documents || []} />}
           {activeTab === 'recursos' && <ResourcesSection resources={overview.personalizedResources || []} beneficiary={beneficiary} documents={overview.documents || []} />}
+          {activeTab === 'comunidad' && (
+            <CommunitySection
+              community={overview.community || { posts: [], myPosts: [], interests: [] }}
+              service={portalService}
+              session={session}
+              onRefresh={refreshPortal}
+              setError={setError}
+              setSuccess={setSuccess}
+            />
+          )}
           {activeTab === 'solicitudes' && (
             <RequestsSection
               service={portalService}
@@ -1455,6 +1485,314 @@ function toCompatibilityResource(resource = {}) {
     deadline_at: resource.deadline_at || null,
     status: resource.status || 'Activo'
   };
+}
+
+function CommunitySection({ community, service, session, onRefresh, setError, setSuccess }) {
+  const [filter, setFilter] = useState('');
+  const [interestMessageByPost, setInterestMessageByPost] = useState({});
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    category: 'need',
+    title: '',
+    zone: '',
+    description: '',
+    photoDataUrl: '',
+    photoFileName: '',
+    job_position: '',
+    company_name: '',
+    workday: '',
+    schedule: '',
+    requirements: '',
+    deadline_at: '',
+    contact_method: 'Gestionado por Pan y Esperanza'
+  });
+  const posts = community.posts || [];
+  const myPosts = community.myPosts || [];
+  const visiblePosts = posts.filter((post) => !filter || post.category === filter);
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handlePhotoChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      updateForm('photoDataUrl', '');
+      updateForm('photoFileName', '');
+      setPhotoPreview('');
+      return;
+    }
+    try {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('La imagen debe ser JPG, PNG o WEBP.');
+      if (file.size > 5 * 1024 * 1024) throw new Error('La imagen no puede superar 5 MB.');
+      const dataUrl = await readFileAsDataUrl(file);
+      setForm((current) => ({ ...current, photoDataUrl: dataUrl, photoFileName: file.name }));
+      setPhotoPreview(dataUrl);
+    } catch (photoError) {
+      setError(photoError.message || 'No se pudo cargar la imagen.');
+    }
+  }
+
+  async function submitPost(event) {
+    event.preventDefault();
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    try {
+      await service.createCommunityPost(session, form);
+      setForm({
+        category: 'need',
+        title: '',
+        zone: '',
+        description: '',
+        photoDataUrl: '',
+        photoFileName: '',
+        job_position: '',
+        company_name: '',
+        workday: '',
+        schedule: '',
+        requirements: '',
+        deadline_at: '',
+        contact_method: 'Gestionado por Pan y Esperanza'
+      });
+      setPhotoPreview('');
+      setSuccess('Publicacion enviada. Aparecera cuando el equipo la revise y apruebe.');
+      await onRefresh();
+    } catch (submitError) {
+      setError(submitError.message || 'No se pudo crear la publicacion.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function registerInterest(post) {
+    setError('');
+    setSuccess('');
+    try {
+      await service.registerCommunityInterest(session, post.id, {
+        message: interestMessageByPost[post.id] || ''
+      });
+      setSuccess('Interes registrado. El equipo de Pan y Esperanza lo gestionara de forma segura.');
+      await onRefresh();
+    } catch (interestError) {
+      setError(interestError.message || 'No se pudo registrar el interes.');
+    }
+  }
+
+  async function withdrawPost(post) {
+    setError('');
+    setSuccess('');
+    try {
+      await service.withdrawCommunityPost(session, post.id);
+      setSuccess('Publicacion retirada.');
+      await onRefresh();
+    } catch (withdrawError) {
+      setError(withdrawError.message || 'No se pudo retirar la publicacion.');
+    }
+  }
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[1fr_0.88fr]">
+      <Panel title="Comunidad" icon={UsersRound}>
+        <div className="space-y-5">
+          <div className="rounded-md border border-brand-100 bg-brand-50/60 p-4">
+            <h3 className="font-bold text-ink">Una comunidad privada y moderada</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Publica oportunidades, ofrece ayuda o indica una necesidad sin compartir telefono, email, direccion exacta ni datos internos. Todo se revisa antes de hacerse visible.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <CategoryButton active={!filter} onClick={() => setFilter('')}>Todas</CategoryButton>
+            {COMMUNITY_CATEGORIES.map((category) => {
+              const CategoryIcon = category.icon;
+              return (
+                <CategoryButton key={category.id} active={filter === category.id} onClick={() => setFilter(category.id)}>
+                  <CategoryIcon size={16} /> {category.label}
+                </CategoryButton>
+              );
+            })}
+          </div>
+
+          {!visiblePosts.length ? (
+            <EmptyState title="Todavia no hay publicaciones aprobadas." text="Cuando el equipo apruebe nuevas publicaciones apareceran aqui." />
+          ) : (
+            <div className="grid gap-4">
+              {visiblePosts.map((post) => (
+                <CommunityPortalCard
+                  key={post.id}
+                  post={post}
+                  interestMessage={interestMessageByPost[post.id] || ''}
+                  onInterestMessageChange={(value) => setInterestMessageByPost((current) => ({ ...current, [post.id]: value }))}
+                  onInterest={() => registerInterest(post)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <div className="space-y-5">
+        <Panel title="Crear publicacion" icon={Plus}>
+          <form onSubmit={submitPost} className="space-y-4">
+            <FormField label="Categoria" required>
+              <select className={inputClass} value={form.category} onChange={(event) => updateForm('category', event.target.value)}>
+                <option value="employment">Empleo</option>
+                <option value="offer">Ofrezco</option>
+                <option value="need">Necesito</option>
+              </select>
+            </FormField>
+            <FormField label={form.category === 'employment' ? 'Puesto' : 'Titulo'} required>
+              <input className={inputClass} value={form.title} onChange={(event) => updateForm('title', event.target.value)} placeholder={form.category === 'employment' ? 'Ej. Ayudante de cocina' : 'Ej. Carrito de bebe'} />
+            </FormField>
+            <FormField label="Zona o barrio" required>
+              <input className={inputClass} value={form.zone} onChange={(event) => updateForm('zone', event.target.value)} placeholder="Sin direccion privada" />
+            </FormField>
+            {form.category === 'employment' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField label="Empresa o entidad">
+                  <input className={inputClass} value={form.company_name} onChange={(event) => updateForm('company_name', event.target.value)} />
+                </FormField>
+                <FormField label="Jornada">
+                  <input className={inputClass} value={form.workday} onChange={(event) => updateForm('workday', event.target.value)} placeholder="Completa, parcial..." />
+                </FormField>
+                <FormField label="Horario">
+                  <input className={inputClass} value={form.schedule} onChange={(event) => updateForm('schedule', event.target.value)} />
+                </FormField>
+                <FormField label="Fecha limite">
+                  <input className={inputClass} type="date" value={form.deadline_at} onChange={(event) => updateForm('deadline_at', event.target.value)} />
+                </FormField>
+              </div>
+            )}
+            <FormField label="Descripcion" required>
+              <textarea className={`${inputClass} min-h-28`} value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Cuenta lo necesario sin datos personales privados." />
+            </FormField>
+            {form.category === 'employment' && (
+              <FormField label="Requisitos">
+                <textarea className={`${inputClass} min-h-20`} value={form.requirements} onChange={(event) => updateForm('requirements', event.target.value)} />
+              </FormField>
+            )}
+            <FormField label="Forma de contacto controlada">
+              <input className={inputClass} value={form.contact_method} onChange={(event) => updateForm('contact_method', event.target.value)} />
+            </FormField>
+            <FormField label="Fotografia opcional">
+              <input className={inputClass} type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} />
+            </FormField>
+            {photoPreview && (
+              <img src={photoPreview} alt="Vista previa" className="h-36 w-full rounded-md border border-slate-100 object-cover" />
+            )}
+            <Button type="submit" disabled={submitting} className="w-full">
+              <Send size={16} /> {submitting ? 'Enviando...' : 'Enviar a revision'}
+            </Button>
+          </form>
+        </Panel>
+
+        <Panel title="Mis publicaciones" icon={History}>
+          {!myPosts.length ? <EmptyState title="Sin publicaciones propias." text="Tus publicaciones enviadas apareceran aqui con su estado." /> : (
+            <div className="space-y-3">
+              {myPosts.map((post) => (
+                <article key={post.id} className="rounded-md border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-ink">{post.title}</h3>
+                      <p className="mt-1 text-sm text-slate-600">{communityCategoryLabel(post.category)} · {post.zone}</p>
+                      {post.rejection_reason && <p className="mt-2 text-sm text-red-700">Motivo: {post.rejection_reason}</p>}
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-slate-700">{communityStatusLabel(post.status)}</span>
+                  </div>
+                  {post.status !== 'withdrawn' && (
+                    <Button variant="secondary" className="mt-3" onClick={() => withdrawPost(post)}>
+                      <Trash2 size={15} /> Retirar publicacion
+                    </Button>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function CategoryButton({ active, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`focus-ring inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${active ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CommunityPortalCard({ post, interestMessage, onInterestMessageChange, onInterest }) {
+  const CategoryIcon = COMMUNITY_CATEGORIES.find((item) => item.id === post.category)?.icon || HandHeart;
+  return (
+    <article className="overflow-hidden rounded-md border border-slate-100 bg-slate-50">
+      {post.photo_url ? (
+        <img src={post.photo_url} alt="" className="h-48 w-full object-cover" />
+      ) : (
+        <div className="flex h-24 items-center justify-center bg-white text-slate-300">
+          <ImageIcon size={28} />
+        </div>
+      )}
+      <div className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-black text-brand-700">
+            <CategoryIcon size={14} /> {communityCategoryLabel(post.category)}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+            <MapPin size={14} /> {post.zone}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-600">{formatDate(post.created_at)}</span>
+        </div>
+        <h3 className="mt-3 text-lg font-bold text-ink">{post.title}</h3>
+        {post.category === 'employment' && (
+          <p className="mt-1 text-sm font-semibold text-brand-700">{[post.company_name, post.workday, post.schedule].filter(Boolean).join(' · ')}</p>
+        )}
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">{post.description}</p>
+        {post.requirements && <p className="mt-2 text-sm text-slate-600"><strong>Requisitos:</strong> {post.requirements}</p>}
+        {post.deadline_at && <p className="mt-2 text-sm text-slate-600"><strong>Fecha limite:</strong> {formatDate(post.deadline_at)}</p>}
+        <div className="mt-4 rounded-md border border-brand-100 bg-white p-3">
+          {post.ownPost ? (
+            <p className="text-sm font-bold text-slate-600">Esta es tu publicacion.</p>
+          ) : post.interested ? (
+            <p className="text-sm font-bold text-brand-700">Interes registrado. El equipo lo gestionara de forma segura.</p>
+          ) : (
+            <div className="space-y-3">
+              <textarea
+                className={`${inputClass} min-h-20`}
+                value={interestMessage}
+                onChange={(event) => onInterestMessageChange(event.target.value)}
+                placeholder="Mensaje opcional para el equipo de Pan y Esperanza"
+              />
+              <Button onClick={onInterest}><MessageSquare size={16} /> Me interesa</Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function communityCategoryLabel(category) {
+  return COMMUNITY_CATEGORIES.find((item) => item.id === category)?.label || 'Comunidad';
+}
+
+function communityStatusLabel(status) {
+  return COMMUNITY_STATUS_LABELS[status] || 'Pendiente de revision';
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function RequestsSection({ service, beneficiary, session, requests, onRefresh, setError, setSuccess }) {

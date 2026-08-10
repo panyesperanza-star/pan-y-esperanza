@@ -111,6 +111,8 @@ const EMPTY_APP_DATA = Object.freeze({
   social_resource_history: EMPTY_TABLE,
   social_resource_sources: EMPTY_TABLE,
   social_resource_detections: EMPTY_TABLE,
+  community_posts: EMPTY_TABLE,
+  community_interests: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
@@ -497,6 +499,8 @@ export function useAppData(enabled = true, currentUser = null) {
       resources: appData.social_resources || [],
       resourceLinks: appData.beneficiary_social_resources || [],
       portalAudience: appData.social_resource_portal_beneficiaries || [],
+      communityPosts: appData.community_posts || [],
+      communityInterests: appData.community_interests || [],
       notifications: appData.notificaciones || [],
       organizationSettings: appData.organization_settings?.[0] || {},
       audit,
@@ -2548,6 +2552,54 @@ export function useAppData(enabled = true, currentUser = null) {
       const result = await runSocialResourceWatchdog({ sourceId });
       await reload();
       return result;
+    },
+    approveCommunityPost: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      const updated = await repositoryUpdate('community_posts', id, {
+        status: 'approved',
+        moderation_notes: String(payload.moderation_notes || payload.notes || post.moderation_notes || '').trim(),
+        rejection_reason: '',
+        reviewed_by: currentUser?.id || null,
+        reviewed_by_name: currentUserName(),
+        reviewed_at: new Date().toISOString()
+      });
+      await audit(`Comunidad: aprobo publicacion ${updated.title || updated.id}`.trim());
+      await reload();
+      return updated;
+    },
+    rejectCommunityPost: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const reason = String(payload.reason || payload.rejection_reason || '').trim();
+      if (reason.length < 3) throw new Error('Indica un motivo de rechazo.');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      const updated = await repositoryUpdate('community_posts', id, {
+        status: 'rejected',
+        moderation_notes: String(payload.moderation_notes || '').trim(),
+        rejection_reason: reason,
+        reviewed_by: currentUser?.id || null,
+        reviewed_by_name: currentUserName(),
+        reviewed_at: new Date().toISOString()
+      });
+      await audit(`Comunidad: rechazo publicacion ${updated.title || updated.id}`.trim());
+      await reload();
+      return updated;
+    },
+    withdrawCommunityPost: async (id) => {
+      assertPermission('community-moderation', 'edit');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      const updated = await repositoryUpdate('community_posts', id, {
+        status: 'withdrawn',
+        withdrawn_at: new Date().toISOString(),
+        reviewed_by: currentUser?.id || null,
+        reviewed_by_name: currentUserName()
+      });
+      await audit(`Comunidad: retiro publicacion ${updated.title || updated.id}`.trim());
+      await reload();
+      return updated;
     },
     createFinancialAccount: async (payload) => {
       assertPermission('accounting', 'create');

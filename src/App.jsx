@@ -12,6 +12,7 @@ import { BeneficiaryPortal } from './pages/BeneficiaryPortal';
 import { Backup } from './pages/Backup';
 import { Collaborators } from './pages/Collaborators';
 import { CollaboratorPortal } from './pages/CollaboratorPortal';
+import { CommunityModeration } from './pages/CommunityModeration';
 import { Communications } from './pages/Communications';
 import { CredentialScanner } from './pages/CredentialScanner';
 import { CredentialVerification } from './pages/CredentialVerification';
@@ -202,6 +203,8 @@ export default function App() {
       social_resource_history: [...(data.social_resource_history || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       social_resource_sources: [...(data.social_resource_sources || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es')),
       social_resource_detections: [...(data.social_resource_detections || [])].sort((a, b) => String(b.detected_at || b.created_at || '').localeCompare(String(a.detected_at || a.created_at || ''))),
+      community_posts: [...(data.community_posts || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      community_interests: [...(data.community_interests || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))
@@ -269,6 +272,7 @@ export default function App() {
     notifications: <Notifications data={sorted} actions={actions} currentUser={currentUser} onNavigate={navigateTo} />,
     'social-care': <SocialCareCenter data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
     'social-resources': <SocialResourcesCenter data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
+    'community-moderation': <CommunityModeration data={sorted} actions={actions} currentUser={currentUser} />,
     agenda: <AgendaOperativa data={sorted} actions={actions} currentUser={currentUser} />,
     settings: <Settings key="settings" data={sorted} actions={actions} currentUser={currentUser} initialTab="entity" />,
     beneficiaries: <Beneficiaries data={sorted} actions={actions} currentUser={currentUser} navigationTarget={navigationTarget} onNavigate={navigateTo} />,
