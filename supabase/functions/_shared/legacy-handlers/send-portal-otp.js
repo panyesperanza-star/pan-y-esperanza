@@ -733,6 +733,9 @@ async function executePortalAction(supabase, portal, subject, body) {
     if (action === 'send-community-message') {
       return sendCommunityMessageFromPortal(supabase, subject, payload);
     }
+    if (action === 'get-community-conversation') {
+      return getCommunityConversationFromPortal(supabase, subject, payload);
+    }
     if (action === 'mark-community-conversation-read') {
       return markCommunityConversationReadFromPortal(supabase, subject, payload);
     }
@@ -1298,7 +1301,7 @@ async function listCommunityOverview(supabase, beneficiary) {
     .order('created_at', { ascending: false });
   const conversationsQuery = supabase
     .from('community_conversations')
-    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status,blocked_by_beneficiary_id,blocked_reason,reported_by_beneficiary_id,report_reason,reported_at,closed_at,last_message_at,created_at,updated_at')
+    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status,blocked_by_beneficiary_id,blocked_reason,reported_by_beneficiary_id,report_reason,reported_at,closed_at,last_message_at,realtime_topic,created_at,updated_at')
     .or(`author_beneficiary_id.eq.${beneficiary.id},interested_beneficiary_id.eq.${beneficiary.id}`)
     .order('updated_at', { ascending: false });
 
@@ -1324,9 +1327,9 @@ async function listCommunityOverview(supabase, beneficiary) {
   const messagesResult = conversationIds.length
     ? await supabase
         .from('community_messages')
-        .select('id,conversation_id,sender_beneficiary_id,message,read_at,created_at,updated_at')
+        .select('id,conversation_id,sender_beneficiary_id,message,message_type,system_event,metadata,read_at,sent_at,created_at,updated_at')
         .in('conversation_id', conversationIds)
-        .order('created_at', { ascending: true })
+        .order('sent_at', { ascending: true })
     : { data: [], error: null };
   if (messagesResult.error) throw messagesResult.error;
 
@@ -1353,6 +1356,7 @@ async function listCommunityOverview(supabase, beneficiary) {
     ownerInterestsByPost: groupByPost(allRelevantInterests.filter((item) => ownPostIds.includes(item.post_id))),
     conversationByInterest: new Map(conversations.map((item) => [item.interest_id, item])),
     messagesByConversation: groupByConversation(messagesResult.data || []),
+    postById: new Map(posts.map((item) => [item.id, item])),
     beneficiaryById: new Map((beneficiariesResult.data || []).map((item) => [item.id, item]))
   };
 
@@ -1362,7 +1366,10 @@ async function listCommunityOverview(supabase, beneficiary) {
   return {
     posts: sanitized.filter((post) => !post.ownPost && post.status === 'approved' && (post.active || post.reserved_for_me)),
     myPosts: sanitized.filter((post) => post.ownPost),
-    interests: currentInterests.filter(interestIsActive)
+    interests: currentInterests.filter(interestIsActive),
+    conversations: conversations
+      .map((conversation) => sanitizeCommunityConversationForPortal(conversation, context))
+      .sort((a, b) => String(b.last_message_at || b.updated_at || b.created_at || '').localeCompare(String(a.last_message_at || a.updated_at || a.created_at || '')))
   };
 }
 
@@ -1477,27 +1484,38 @@ function sanitizeCommunityInterestForPortal(interest = {}, context = {}) {
 function sanitizeCommunityConversationForPortal(conversation = {}, context = {}) {
   const currentId = context.currentBeneficiaryId;
   const messages = context.messagesByConversation?.get(conversation.id) || [];
+  const post = context.postById?.get(conversation.post_id) || {};
   const participantId = conversation.author_beneficiary_id === currentId
     ? conversation.interested_beneficiary_id
     : conversation.author_beneficiary_id;
   const participant = context.beneficiaryById?.get(participantId) || {};
+  const lastMessage = messages[messages.length - 1] || null;
   return {
     id: conversation.id,
     post_id: conversation.post_id,
+    post_title: post.title || 'Publicacion de Comunidad',
+    post_category: post.category || '',
     interest_id: conversation.interest_id,
     status: conversation.status || 'open',
     blocked_by_me: conversation.blocked_by_beneficiary_id === currentId,
     reported_by_me: conversation.reported_by_beneficiary_id === currentId,
     participant_name: participant.full_name || 'Beneficiario',
     participant_code: participant.code || '',
+    realtime_topic: conversation.realtime_topic || '',
     last_message_at: conversation.last_message_at || null,
+    last_message: lastMessage?.message || '',
+    created_at: conversation.created_at || null,
+    updated_at: conversation.updated_at || null,
     unread_count: messages.filter((message) => message.sender_beneficiary_id !== currentId && !message.read_at).length,
     messages: messages.map((message) => ({
       id: message.id,
       conversation_id: message.conversation_id,
-      sender: message.sender_beneficiary_id === currentId ? 'me' : 'other',
+      sender: message.message_type === 'system' ? 'system' : (message.sender_beneficiary_id === currentId ? 'me' : 'other'),
+      message_type: message.message_type || 'user',
+      system_event: message.system_event || '',
       message: message.message || '',
       read_at: message.read_at || null,
+      sent_at: message.sent_at || message.created_at || null,
       created_at: message.created_at || null
     }))
   };
@@ -1908,10 +1926,12 @@ async function sendCommunityMessageFromPortal(supabase, beneficiary, payload = {
       conversation_id: conversation.id,
       sender_beneficiary_id: beneficiary.id,
       message,
+      message_type: 'user',
+      sent_at: now,
       created_at: now,
       updated_at: now
     })
-    .select('id,conversation_id,sender_beneficiary_id,message,read_at,created_at,updated_at')
+    .select('id,conversation_id,sender_beneficiary_id,message,message_type,system_event,metadata,read_at,sent_at,created_at,updated_at')
     .single();
   if (error) throw error;
   const { error: updateError } = await supabase
@@ -1922,14 +1942,51 @@ async function sendCommunityMessageFromPortal(supabase, beneficiary, payload = {
   const recipientId = conversation.author_beneficiary_id === beneficiary.id
     ? conversation.interested_beneficiary_id
     : conversation.author_beneficiary_id;
+  const { data: post } = await supabase
+    .from('community_posts')
+    .select('title')
+    .eq('id', conversation.post_id)
+    .maybeSingle();
   await createBeneficiaryPortalNotice(supabase, recipientId, {
-    title: 'Nuevo mensaje en Comunidad',
+    title: `Nuevo mensaje sobre: ${post?.title || 'Comunidad'}`,
     message: `${beneficiary.code || 'Un beneficiario'} te ha enviado un mensaje sobre una publicacion.`,
     notice_type: 'community_message',
     created_at: now
   });
   await audit(supabase, `Portal del Beneficiario: mensaje de comunidad ${conversation.id}`);
   return data;
+}
+
+async function getCommunityConversationFromPortal(supabase, beneficiary, payload = {}) {
+  const conversationId = cleanText(payload.conversationId || payload.conversation_id);
+  if (!conversationId) throw new Error('No se ha indicado la conversacion.');
+  const conversation = await requireCommunityConversationParticipant(supabase, conversationId, beneficiary.id);
+  const [{ data: post, error: postError }, { data: messages, error: messagesError }, { data: beneficiaries, error: beneficiariesError }] = await Promise.all([
+    supabase
+      .from('community_posts')
+      .select('id,category,title')
+      .eq('id', conversation.post_id)
+      .maybeSingle(),
+    supabase
+      .from('community_messages')
+      .select('id,conversation_id,sender_beneficiary_id,message,message_type,system_event,metadata,read_at,sent_at,created_at,updated_at')
+      .eq('conversation_id', conversation.id)
+      .order('sent_at', { ascending: true }),
+    supabase
+      .from('beneficiaries')
+      .select('id,full_name,code')
+      .in('id', [conversation.author_beneficiary_id, conversation.interested_beneficiary_id].filter(Boolean))
+  ]);
+  if (postError) throw postError;
+  if (messagesError) throw messagesError;
+  if (beneficiariesError) throw beneficiariesError;
+  return sanitizeCommunityConversationForPortal(conversation, {
+    currentBeneficiary: beneficiary,
+    currentBeneficiaryId: beneficiary.id,
+    messagesByConversation: groupByConversation(messages || []),
+    postById: new Map(post ? [[post.id, post]] : []),
+    beneficiaryById: new Map((beneficiaries || []).map((item) => [item.id, item]))
+  });
 }
 
 async function markCommunityConversationReadFromPortal(supabase, beneficiary, payload = {}) {
@@ -2004,6 +2061,10 @@ async function reserveCommunityOfferForInterest(supabase, beneficiary, post, int
     })
     .eq('id', interest.id);
   if (interestUpdateError) throw interestUpdateError;
+  const conversation = await getCommunityConversationByInterest(supabase, interest.id);
+  if (conversation?.id) {
+    await createCommunitySystemMessage(supabase, conversation.id, beneficiary.id, 'El articulo ha sido reservado para ti.', 'offer_reserved', now);
+  }
   await notifyOfferReserved(supabase, interest.beneficiary_id, post, now);
   await audit(supabase, `Portal del Beneficiario: articulo reservado ${post.id}`);
   return updatedPost;
@@ -2037,6 +2098,12 @@ async function makeCommunityOfferAvailableAgain(supabase, beneficiary, post) {
       })
       .eq('id', reservedInterestId);
     if (interestUpdateError) throw interestUpdateError;
+  }
+  if (reservedInterestId) {
+    const conversation = await getCommunityConversationByInterest(supabase, reservedInterestId);
+    if (conversation?.id) {
+      await createCommunitySystemMessage(supabase, conversation.id, beneficiary.id, 'La reserva se ha cancelado. El articulo vuelve a estar disponible.', 'offer_available', now);
+    }
   }
   if (reservedBeneficiaryId) await notifyOfferReservationCancelled(supabase, reservedBeneficiaryId, post, now);
   await audit(supabase, `Portal del Beneficiario: articulo vuelve a disponible ${post.id}`);
@@ -2073,6 +2140,10 @@ async function markCommunityOfferDelivered(supabase, beneficiary, post) {
     })
     .eq('id', post.reserved_interest_id);
   if (selectedError) throw selectedError;
+  const selectedConversation = await getCommunityConversationByInterest(supabase, post.reserved_interest_id);
+  if (selectedConversation?.id) {
+    await createCommunitySystemMessage(supabase, selectedConversation.id, beneficiary.id, 'El articulo ha sido marcado como entregado.', 'offer_delivered', now);
+  }
 
   const { data: otherInterests, error: othersReadError } = await supabase
     .from('community_interests')
@@ -2093,6 +2164,12 @@ async function markCommunityOfferDelivered(supabase, beneficiary, post) {
     .neq('id', post.reserved_interest_id)
     .not('status', 'in', '(cancelled,withdrawn,closed,completed,delivered,not_completed,not_selected)');
   if (othersUpdateError) throw othersUpdateError;
+  await Promise.all((otherInterests || []).map(async (interest) => {
+    const conversation = await getCommunityConversationByInterest(supabase, interest.id);
+    if (conversation?.id) {
+      await createCommunitySystemMessage(supabase, conversation.id, beneficiary.id, 'Este articulo ya ha sido entregado.', 'offer_unavailable', now);
+    }
+  }));
   const { error: conversationsError } = await supabase
     .from('community_conversations')
     .update({ status: 'completed', closed_at: now, updated_at: now })
@@ -2156,13 +2233,48 @@ async function reportCommunityConversationFromPortal(supabase, beneficiary, payl
 async function requireCommunityConversationParticipant(supabase, conversationId, beneficiaryId) {
   const { data, error } = await supabase
     .from('community_conversations')
-    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status')
+    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status,realtime_topic,blocked_by_beneficiary_id,reported_by_beneficiary_id,closed_at,last_message_at,created_at,updated_at')
     .eq('id', conversationId)
     .maybeSingle();
   if (error) throw error;
   if (!data || (data.author_beneficiary_id !== beneficiaryId && data.interested_beneficiary_id !== beneficiaryId)) {
     throw new Error('La conversacion no existe o no pertenece a tu portal.');
   }
+  return data;
+}
+
+async function createCommunitySystemMessage(supabase, conversationId, actorBeneficiaryId, message, systemEvent, now = new Date().toISOString()) {
+  if (!conversationId || !actorBeneficiaryId || !message) return null;
+  const { data, error } = await supabase
+    .from('community_messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_beneficiary_id: actorBeneficiaryId,
+      message: cleanText(message),
+      message_type: 'system',
+      system_event: cleanText(systemEvent || 'community_event'),
+      sent_at: now,
+      created_at: now,
+      updated_at: now
+    })
+    .select('id,conversation_id,sender_beneficiary_id,message,message_type,system_event,metadata,read_at,sent_at,created_at,updated_at')
+    .single();
+  if (error) throw error;
+  await supabase
+    .from('community_conversations')
+    .update({ last_message_at: now, updated_at: now })
+    .eq('id', conversationId);
+  return data;
+}
+
+async function getCommunityConversationByInterest(supabase, interestId) {
+  if (!interestId) return null;
+  const { data, error } = await supabase
+    .from('community_conversations')
+    .select('id')
+    .eq('interest_id', interestId)
+    .maybeSingle();
+  if (error) throw error;
   return data;
 }
 

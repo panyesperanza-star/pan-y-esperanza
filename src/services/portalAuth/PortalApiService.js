@@ -163,6 +163,16 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return response.result;
   }
 
+  async getCommunityConversation(session, conversationId) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'get-community-conversation',
+      payload: { conversationId }
+    });
+    return response.result;
+  }
+
   async markCommunityConversationRead(session, conversationId) {
     const response = await callPortalApi('portal-action', {
       portal: this.portal,

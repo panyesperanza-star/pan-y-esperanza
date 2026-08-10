@@ -30,11 +30,12 @@ import {
   UsersRound,
   X
 } from 'lucide-react';
-import { Component, useEffect, useMemo, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandLogo } from '../components/BrandLogo';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { formatDate, normalize, todayISO } from '../lib/formatters';
+import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import { analyzeResourceCompatibility } from '../lib/socialResourceRecommendations';
 
 const SESSION_KEY = 'pan-y-esperanza-beneficiary-portal-session';
@@ -97,6 +98,10 @@ export function BeneficiaryPortal({ data, actions }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [communityConversationRequest, setCommunityConversationRequest] = useState(null);
+  const [activeCommunityConversationId, setActiveCommunityConversationId] = useState('');
+  const [communityToast, setCommunityToast] = useState(null);
+  const activeCommunityConversationIdRef = useRef('');
 
   useEffect(() => {
     if (!portalService) return;
@@ -126,6 +131,71 @@ export function BeneficiaryPortal({ data, actions }) {
       cancelled = true;
     };
   }, [portalService]);
+
+  useEffect(() => {
+    activeCommunityConversationIdRef.current = activeCommunityConversationId;
+  }, [activeCommunityConversationId]);
+
+  const communityConversations = overview?.community?.conversations || [];
+  const communityTopicsKey = useMemo(
+    () => communityConversations
+      .map((conversation) => `${conversation.id}:${conversation.realtime_topic || ''}`)
+      .filter((item) => item.includes(':') && !item.endsWith(':'))
+      .sort()
+      .join('|'),
+    [communityConversations]
+  );
+  const communityUnreadCount = useMemo(
+    () => communityConversations.reduce((total, conversation) => total + Number(conversation.unread_count || 0), 0),
+    [communityConversations]
+  );
+
+  const mergeCommunityConversation = useCallback((conversation) => {
+    if (!conversation?.id) return;
+    setOverview((current) => mergeCommunityConversationIntoOverview(current, conversation));
+  }, []);
+
+  const openCommunityConversationFromNotice = useCallback((conversationId) => {
+    if (!conversationId) return;
+    setCommunityToast(null);
+    setActiveTab('comunidad');
+    setCommunityConversationRequest({ id: conversationId, requestedAt: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !portalService || !session?.token || !communityTopicsKey) return undefined;
+    const conversations = communityConversations.filter((conversation) => conversation.id && conversation.realtime_topic);
+    const channels = conversations.map((conversation) => {
+      const channel = supabase.channel(`community:${conversation.realtime_topic}`)
+        .on('broadcast', { event: 'community_message' }, async (event) => {
+          const payload = event?.payload || {};
+          const conversationId = payload.conversation_id || conversation.id;
+          try {
+            const updated = await portalService.getCommunityConversation(session, conversationId);
+            mergeCommunityConversation(updated);
+            const lastMessage = [...(updated.messages || [])].reverse().find((item) => item.sender !== 'system');
+            if (updated.id !== activeCommunityConversationIdRef.current && lastMessage?.sender === 'other') {
+              setCommunityToast({
+                conversationId: updated.id,
+                title: updated.post_title || 'Comunidad',
+                participant: updated.participant_code || 'Beneficiario',
+                message: lastMessage.message || 'Nuevo mensaje'
+              });
+            }
+          } catch (realtimeError) {
+            console.warn('[Portal Beneficiario] No se pudo sincronizar la conversacion en tiempo real.', realtimeError);
+          }
+        })
+        .subscribe();
+      return channel;
+    });
+
+    return () => {
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [communityTopicsKey, communityConversations, mergeCommunityConversation, portalService, session]);
 
   async function loadOverview(activeSession, options = {}) {
     const showLoading = options.showLoading !== false;
@@ -421,6 +491,11 @@ export function BeneficiaryPortal({ data, actions }) {
                 className={`focus-ring inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${activeTab === tab.id ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
               >
                 <Icon size={16} /> {tab.label}
+                {tab.id === 'comunidad' && communityUnreadCount > 0 && (
+                  <span className={`ml-1 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-black ${activeTab === tab.id ? 'bg-white text-brand-700' : 'bg-red-600 text-white'}`}>
+                    {communityUnreadCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -456,6 +531,10 @@ export function BeneficiaryPortal({ data, actions }) {
               service={portalService}
               session={session}
               onRefresh={refreshPortal}
+              onConversationUpdated={mergeCommunityConversation}
+              conversationRequest={communityConversationRequest}
+              onConversationRequestHandled={() => setCommunityConversationRequest(null)}
+              onActiveConversationChange={setActiveCommunityConversationId}
               setError={setError}
               setSuccess={setSuccess}
             />
@@ -493,6 +572,18 @@ export function BeneficiaryPortal({ data, actions }) {
         setError={setError}
         setSuccess={setSuccess}
       />
+      {communityToast && (
+        <div className="fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-brand-100 bg-white p-4 shadow-2xl">
+          <p className="text-xs font-black uppercase tracking-wide text-brand-700">Nuevo mensaje</p>
+          <h3 className="mt-1 font-black text-ink">{communityToast.title}</h3>
+          <p className="mt-1 text-sm font-semibold text-slate-600">{communityToast.participant}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-slate-700">{communityToast.message}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCommunityToast(null)}>Cerrar</Button>
+            <Button onClick={() => openCommunityConversationFromNotice(communityToast.conversationId)}>Ver conversacion</Button>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }
@@ -1508,7 +1599,82 @@ function toCompatibilityResource(resource = {}) {
   };
 }
 
-function CommunitySection({ community, service, session, onRefresh, setError, setSuccess }) {
+function mergeCommunityConversationIntoOverview(current, conversation) {
+  if (!current?.community || !conversation?.id) return current;
+  const community = current.community;
+  const mergeConversation = (item) => item?.id === conversation.id ? { ...item, ...conversation } : item;
+  const mergePost = (post) => ({
+    ...post,
+    conversation: post.conversation ? mergeConversation(post.conversation) : post.conversation,
+    interests: (post.interests || []).map((interest) => ({
+      ...interest,
+      conversation: interest.conversation ? mergeConversation(interest.conversation) : interest.conversation
+    }))
+  });
+  const currentConversations = community.conversations || [];
+  const conversations = currentConversations.some((item) => item.id === conversation.id)
+    ? currentConversations.map(mergeConversation)
+    : [conversation, ...currentConversations];
+  return {
+    ...current,
+    community: {
+      ...community,
+      conversations: conversations.sort((a, b) =>
+        String(b.last_message_at || b.updated_at || b.created_at || '').localeCompare(String(a.last_message_at || a.updated_at || a.created_at || ''))
+      ),
+      posts: (community.posts || []).map(mergePost),
+      myPosts: (community.myPosts || []).map(mergePost)
+    }
+  };
+}
+
+function findCommunityConversation(community = {}, conversationId = '') {
+  if (!conversationId) return null;
+  const direct = (community.conversations || []).find((conversation) => conversation.id === conversationId);
+  if (direct) return direct;
+  const posts = [...(community.posts || []), ...(community.myPosts || [])];
+  for (const post of posts) {
+    if (post.conversation?.id === conversationId) return post.conversation;
+    const fromInterest = (post.interests || []).find((interest) => interest.conversation?.id === conversationId);
+    if (fromInterest?.conversation) return fromInterest.conversation;
+  }
+  return null;
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+function formatChatDay(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+}
+
+function shouldShowChatDay(messages = [], index = 0) {
+  const current = new Date(messages[index]?.sent_at || messages[index]?.created_at || '');
+  const previous = new Date(messages[index - 1]?.sent_at || messages[index - 1]?.created_at || '');
+  if (Number.isNaN(current.getTime())) return index === 0;
+  if (index === 0 || Number.isNaN(previous.getTime())) return true;
+  return current.toDateString() !== previous.toDateString();
+}
+
+function CommunitySection({
+  community,
+  service,
+  session,
+  onRefresh,
+  onConversationUpdated,
+  conversationRequest,
+  onConversationRequestHandled,
+  onActiveConversationChange,
+  setError,
+  setSuccess
+}) {
   const [filter, setFilter] = useState('');
   const [interestMessageByPost, setInterestMessageByPost] = useState({});
   const [interestSubmittingByPost, setInterestSubmittingByPost] = useState({});
@@ -1540,9 +1706,58 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
   });
   const posts = community.posts || [];
   const myPosts = community.myPosts || [];
+  const conversations = community.conversations || [];
   const visiblePosts = posts
     .filter((post) => !filter || post.category === filter)
     .map((post) => ({ ...post, ...(optimisticInterestByPost[post.id] || {}) }));
+  const markingReadRef = useRef(new Set());
+
+  useEffect(() => {
+    onActiveConversationChange?.(activeConversation?.id || '');
+    return () => {
+      onActiveConversationChange?.('');
+    };
+  }, [activeConversation?.id, onActiveConversationChange]);
+
+  useEffect(() => {
+    if (!activeConversation?.id) return;
+    const updated = findCommunityConversation(community, activeConversation.id);
+    if (updated) setActiveConversation(updated);
+  }, [community, activeConversation?.id]);
+
+  useEffect(() => {
+    if (!conversationRequest?.id) return;
+    const requested = findCommunityConversation(community, conversationRequest.id);
+    if (requested) {
+      openConversation(requested);
+      onConversationRequestHandled?.();
+    }
+  }, [conversationRequest, community, onConversationRequestHandled]);
+
+  useEffect(() => {
+    if (!activeConversation?.id || !activeConversation.unread_count || markingReadRef.current.has(activeConversation.id)) return;
+    let cancelled = false;
+    const conversationId = activeConversation.id;
+    markingReadRef.current.add(conversationId);
+    async function markRead() {
+      try {
+        await service.markCommunityConversationRead(session, conversationId);
+        const updated = await service.getCommunityConversation?.(session, conversationId);
+        if (!cancelled && updated) {
+          setActiveConversation(updated);
+          onConversationUpdated?.(updated);
+        }
+      } catch (readError) {
+        console.warn('[Portal Beneficiario] No se pudo marcar la conversacion como leida.', readError);
+      } finally {
+        markingReadRef.current.delete(conversationId);
+      }
+    }
+    markRead();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversation?.id, activeConversation?.unread_count, onConversationUpdated, service, session]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -1698,7 +1913,11 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     setChatReason('');
     try {
       await service.markCommunityConversationRead(session, conversation.id);
-      await onRefresh();
+      const updated = await service.getCommunityConversation?.(session, conversation.id);
+      if (updated) {
+        setActiveConversation(updated);
+        onConversationUpdated?.(updated);
+      }
     } catch (readError) {
       console.warn('[Portal Beneficiario] No se pudo marcar la conversacion como leida.', readError);
     }
@@ -1728,7 +1947,11 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
         : current);
       setChatMessage('');
       setSuccess('Mensaje enviado.');
-      await onRefresh();
+      const updated = await service.getCommunityConversation?.(session, activeConversation.id);
+      if (updated) {
+        setActiveConversation(updated);
+        onConversationUpdated?.(updated);
+      }
     } catch (messageError) {
       setError(messageError.message || 'No se pudo enviar el mensaje.');
     } finally {
@@ -1802,6 +2025,8 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
               );
             })}
           </div>
+
+          <CommunityConversationList conversations={conversations} onOpenConversation={openConversation} />
 
           {!visiblePosts.length ? (
             <EmptyState title="Todavia no hay publicaciones aprobadas." text="Cuando el equipo apruebe nuevas publicaciones apareceran aqui." />
@@ -1951,6 +2176,56 @@ function CategoryButton({ active, children, onClick }) {
     >
       {children}
     </button>
+  );
+}
+
+function CommunityConversationList({ conversations = [], onOpenConversation }) {
+  const sorted = [...conversations].sort((a, b) =>
+    String(b.last_message_at || b.updated_at || b.created_at || '').localeCompare(String(a.last_message_at || a.updated_at || a.created_at || ''))
+  );
+  return (
+    <section className="rounded-md border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-brand-700">Mis conversaciones</p>
+          <h3 className="mt-1 font-black text-ink">Chat privado de Comunidad</h3>
+        </div>
+        {sorted.some((conversation) => Number(conversation.unread_count || 0) > 0) && (
+          <span className="rounded-full bg-red-600 px-2.5 py-1 text-xs font-black text-white">
+            {sorted.reduce((total, conversation) => total + Number(conversation.unread_count || 0), 0)} nuevos
+          </span>
+        )}
+      </div>
+      {!sorted.length ? (
+        <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-500">Aun no tienes conversaciones abiertas.</p>
+      ) : (
+        <div className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-100">
+          {sorted.map((conversation) => {
+            const unread = Number(conversation.unread_count || 0);
+            return (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={() => onOpenConversation(conversation)}
+                className="flex w-full items-center justify-between gap-3 bg-white p-3 text-left transition hover:bg-brand-50/60"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate font-black text-ink">{conversation.post_title || 'Comunidad'}</p>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">{conversation.participant_code || 'Beneficiario'}</span>
+                  </div>
+                  <p className="mt-1 line-clamp-1 text-sm text-slate-600">{conversation.last_message || 'Sin mensajes todavia.'}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs font-bold text-slate-500">{conversation.last_message_at ? formatTime(conversation.last_message_at) : ''}</p>
+                  {unread > 0 && <p className="mt-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white">{unread} nuevos</p>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2192,6 +2467,19 @@ function CommunityChatModal({
   onClose
 }) {
   const closed = ['blocked', 'closed', 'completed'].includes(conversation.status);
+  const messages = conversation.messages || [];
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, conversation.id]);
+
+  function handleMessageKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    onSend();
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center">
       <div className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl">
@@ -2206,16 +2494,29 @@ function CommunityChatModal({
           </button>
         </div>
         <div className="max-h-[52vh] space-y-3 overflow-y-auto bg-slate-50 p-4">
-          {!(conversation.messages || []).length ? (
+          {!messages.length ? (
             <p className="rounded-md bg-white p-4 text-center text-sm font-semibold text-slate-500">Todavía no hay mensajes.</p>
-          ) : (conversation.messages || []).map((item) => (
-            <div key={item.id} className={`flex ${item.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[82%] rounded-lg px-3 py-2 text-sm ${item.sender === 'me' ? 'bg-brand-600 text-white' : 'bg-white text-slate-700'}`}>
-                <p>{item.message}</p>
-                <p className={`mt-1 text-[11px] font-semibold ${item.sender === 'me' ? 'text-brand-50' : 'text-slate-400'}`}>{formatDate(item.created_at)}</p>
+          ) : messages.map((item, index) => (
+            <div key={item.id} className="space-y-2">
+              {shouldShowChatDay(messages, index) && (
+                <div className="flex justify-center">
+                  <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black uppercase tracking-wide text-slate-500 shadow-sm">
+                    {formatChatDay(item.sent_at || item.created_at)}
+                  </span>
+                </div>
+              )}
+              <div className={`flex ${item.sender === 'system' ? 'justify-center' : item.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[82%] rounded-lg px-3 py-2 text-sm ${item.sender === 'system' ? 'bg-amber-50 text-center font-bold text-amber-900' : item.sender === 'me' ? 'bg-brand-600 text-white' : 'bg-white text-slate-700'}`}>
+                  <p>{item.message}</p>
+                  <p className={`mt-1 text-[11px] font-semibold ${item.sender === 'me' ? 'text-brand-50' : item.sender === 'system' ? 'text-amber-700' : 'text-slate-400'}`}>
+                    {formatTime(item.sent_at || item.created_at)}
+                    {item.sender === 'me' && <span className="ml-2">{item.read_at ? '✓✓ Leido' : '✓ Enviado'}</span>}
+                  </p>
+                </div>
               </div>
             </div>
           ))}
+          <div ref={endRef} />
         </div>
         <div className="space-y-3 border-t border-slate-100 p-4">
           {closed ? (
@@ -2226,6 +2527,7 @@ function CommunityChatModal({
                 className={`${inputClass} min-h-20`}
                 value={message}
                 onChange={(event) => onMessageChange(event.target.value)}
+                onKeyDown={handleMessageKeyDown}
                 placeholder="Escribe un mensaje sin datos personales sensibles."
               />
               <Button onClick={onSend} disabled={sending}>{sending ? 'Enviando...' : 'Enviar'}</Button>

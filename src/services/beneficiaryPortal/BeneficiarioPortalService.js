@@ -441,27 +441,38 @@ function sanitizeCommunityInterestForPortal(interest = {}, context = {}) {
 function sanitizeCommunityConversationForPortal(conversation = {}, context = {}) {
   const currentId = context.currentBeneficiaryId;
   const messages = context.messagesByConversation?.get(conversation.id) || [];
+  const post = context.postById?.get(conversation.post_id) || {};
   const participantId = conversation.author_beneficiary_id === currentId
     ? conversation.interested_beneficiary_id
     : conversation.author_beneficiary_id;
   const participant = context.beneficiaryById?.get(participantId) || {};
+  const lastMessage = messages[messages.length - 1] || null;
   return {
     id: conversation.id,
     post_id: conversation.post_id,
+    post_title: post.title || 'Publicacion de Comunidad',
+    post_category: post.category || '',
     interest_id: conversation.interest_id,
     status: conversation.status || 'open',
     blocked_by_me: conversation.blocked_by_beneficiary_id === currentId,
     reported_by_me: conversation.reported_by_beneficiary_id === currentId,
     participant_name: participant.full_name || 'Beneficiario',
     participant_code: participant.code || '',
+    realtime_topic: conversation.realtime_topic || '',
     last_message_at: conversation.last_message_at || null,
+    last_message: lastMessage?.message || '',
+    created_at: conversation.created_at || null,
+    updated_at: conversation.updated_at || null,
     unread_count: messages.filter((message) => message.sender_beneficiary_id !== currentId && !message.read_at).length,
     messages: messages.map((message) => ({
       id: message.id,
       conversation_id: message.conversation_id,
-      sender: message.sender_beneficiary_id === currentId ? 'me' : 'other',
+      sender: message.message_type === 'system' ? 'system' : (message.sender_beneficiary_id === currentId ? 'me' : 'other'),
+      message_type: message.message_type || 'user',
+      system_event: message.system_event || '',
       message: message.message || '',
       read_at: message.read_at || null,
+      sent_at: message.sent_at || message.created_at || null,
       created_at: message.created_at || null
     }))
   };
@@ -1062,6 +1073,8 @@ export class BeneficiarioPortalService {
       conversation_id: conversation.id,
       sender_beneficiary_id: beneficiary.id,
       message: cleanMessage,
+      message_type: 'user',
+      sent_at: now,
       created_at: now,
       updated_at: now
     });
@@ -1072,9 +1085,11 @@ export class BeneficiarioPortalService {
     const recipientId = conversation.author_beneficiary_id === beneficiary.id
       ? conversation.interested_beneficiary_id
       : conversation.author_beneficiary_id;
+    const posts = await this.readCommunityPosts();
+    const post = posts.find((item) => item.id === conversation.post_id);
     await this.repository.createNotice({
       beneficiary_id: recipientId,
-      title: 'Nuevo mensaje en Comunidad',
+      title: `Nuevo mensaje sobre: ${post?.title || 'Comunidad'}`,
       message: `${beneficiary.code || 'Un beneficiario'} te ha enviado un mensaje sobre una publicacion.`,
       notice_type: 'community_message',
       status: 'unread',
@@ -1083,6 +1098,23 @@ export class BeneficiarioPortalService {
     });
     await this.audit(`Portal beneficiario: mensaje de comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
     return created;
+  }
+
+  async getCommunityConversation(session, conversationId) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const conversation = await this.requireCommunityConversationParticipant(conversationId, beneficiary.id);
+    const [messages, posts, beneficiaries] = await Promise.all([
+      this.readCommunityMessages(),
+      this.readCommunityPosts(),
+      this.readBeneficiaries()
+    ]);
+    return sanitizeCommunityConversationForPortal(conversation, {
+      currentBeneficiary: beneficiary,
+      currentBeneficiaryId: beneficiary.id,
+      messagesByConversation: groupByConversation(messages.filter((item) => item.conversation_id === conversation.id)),
+      postById: new Map(posts.map((item) => [item.id, item])),
+      beneficiaryById: new Map(beneficiaries.map((item) => [item.id, item]))
+    });
   }
 
   async markCommunityConversationRead(session, conversationId) {
@@ -1491,6 +1523,7 @@ export class BeneficiarioPortalService {
       recommendationByPost: latestByPost(recommendations.filter((item) => item.beneficiary_id === beneficiaryId && item.status === 'active')),
       conversationByInterest: new Map(participantConversations.map((item) => [item.interest_id, item])),
       messagesByConversation: groupByConversation(messages.filter((item) => participantConversations.some((conversation) => conversation.id === item.conversation_id))),
+      postById: new Map(posts.map((item) => [item.id, item])),
       beneficiaryById: new Map(beneficiaries.map((item) => [item.id, item]))
     };
     const visible = posts
@@ -1501,7 +1534,10 @@ export class BeneficiarioPortalService {
     return {
       posts: visible.filter((post) => !post.ownPost && post.status === 'approved' && (post.active || post.reserved_for_me)),
       myPosts: visible.filter((post) => post.ownPost),
-      interests: currentInterests.filter(interestIsActive)
+      interests: currentInterests.filter(interestIsActive),
+      conversations: participantConversations
+        .map((conversation) => sanitizeCommunityConversationForPortal(conversation, context))
+        .sort((a, b) => String(b.last_message_at || b.updated_at || b.created_at || '').localeCompare(String(a.last_message_at || a.updated_at || a.created_at || '')))
     };
   }
 
