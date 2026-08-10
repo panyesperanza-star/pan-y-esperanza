@@ -206,6 +206,9 @@ export default function App() {
       community_posts: [...(data.community_posts || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       community_interests: [...(data.community_interests || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       community_post_reports: [...(data.community_post_reports || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      community_conversations: [...(data.community_conversations || [])].sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || ''))),
+      community_messages: [...(data.community_messages || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
+      community_post_recommendations: [...(data.community_post_recommendations || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))),
       treasury_incomes: [...(data.treasury_incomes || [])].sort((a, b) => String(b.income_at).localeCompare(String(a.income_at))),
       treasury_expenses: [...(data.treasury_expenses || [])].sort((a, b) => String(b.expense_at).localeCompare(String(a.expense_at))),
       treasury_loans: [...(data.treasury_loans || [])].sort((a, b) => String(b.loan_at).localeCompare(String(a.loan_at)))

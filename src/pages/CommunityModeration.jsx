@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   MapPin,
   MessageCircle,
+  Send,
   Search,
   ShieldAlert,
   Trash2,
@@ -56,6 +57,9 @@ const interestStatusLabels = {
   delivery_pending: 'Entrega pendiente',
   delivered: 'Entregado / Cerrado',
   not_completed: 'No realizado',
+  reserved: 'Reservado',
+  completed: 'Entregado / Cerrado',
+  not_selected: 'Cerrado',
   referred: 'Derivado',
   closed: 'Cerrado',
   withdrawn: 'Retirado',
@@ -64,12 +68,11 @@ const interestStatusLabels = {
 
 const offerInterestStatusOptions = [
   { value: 'new', label: 'Nuevo' },
-  { value: 'contacted', label: 'Contactado' },
-  { value: 'delivery_pending', label: 'Entrega pendiente' },
+  { value: 'reviewed', label: 'Revisado' },
   { value: 'closed', label: 'Cerrado' }
 ];
 
-const terminalInterestStatuses = new Set(['delivered', 'not_completed', 'closed', 'withdrawn', 'cancelled']);
+const terminalInterestStatuses = new Set(['delivered', 'not_completed', 'completed', 'not_selected', 'reserved', 'closed', 'withdrawn', 'cancelled']);
 
 const resolutionLabels = {
   active: 'Vigente',
@@ -83,6 +86,9 @@ export function CommunityModeration({ data, actions, currentUser }) {
   const posts = data.community_posts || [];
   const interests = data.community_interests || [];
   const reports = data.community_post_reports || [];
+  const conversations = data.community_conversations || [];
+  const messages = data.community_messages || [];
+  const recommendations = data.community_post_recommendations || [];
   const beneficiaries = data.beneficiaries || [];
   const canEdit = canDo(currentUser, 'community-moderation', 'edit');
   const [filters, setFilters] = useState({ search: '', status: 'pending_review', category: '' });
@@ -94,12 +100,17 @@ export function CommunityModeration({ data, actions, currentUser }) {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [selectedInterestPostId, setSelectedInterestPostId] = useState('');
+  const [recommending, setRecommending] = useState(null);
+  const [recommendQuery, setRecommendQuery] = useState('');
+  const [recommendSelectedIds, setRecommendSelectedIds] = useState([]);
+  const [recommendNotes, setRecommendNotes] = useState('');
   const interestsSectionRef = useRef(null);
   const photoUrls = useCommunityPhotoUrls(posts);
 
   const beneficiaryById = useMemo(() => new Map(beneficiaries.map((item) => [item.id, item])), [beneficiaries]);
   const interestsByPost = useMemo(() => groupByPost(interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status))), [interests]);
   const reportsByPost = useMemo(() => groupByPost(reports.filter((item) => item.status !== 'dismissed')), [reports]);
+  const recommendationsByPost = useMemo(() => groupByPost(recommendations.filter((item) => item.status === 'active')), [recommendations]);
   const matchesByPost = useMemo(() => buildCommunityMatches(posts), [posts]);
   const activeInterests = useMemo(() => interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status)), [interests]);
   const visibleInterests = useMemo(() => {
@@ -107,13 +118,17 @@ export function CommunityModeration({ data, actions, currentUser }) {
     return activeInterests.filter((interest) => interest.post_id === selectedInterestPostId);
   }, [activeInterests, selectedInterestPostId]);
   const selectedInterestPost = selectedInterestPostId ? posts.find((post) => post.id === selectedInterestPostId) : null;
+  const messagesByConversation = useMemo(() => groupByConversation(messages), [messages]);
   const counters = useMemo(() => posts.reduce((acc, post) => {
     const key = post.status || 'pending_review';
     acc[key] = (acc[key] || 0) + 1;
     acc.total += 1;
     if (isPostExpired(post)) acc.expired += 1;
+    if (post.offer_status === 'reserved') acc.reserved += 1;
+    if (post.offer_status === 'delivered') acc.delivered += 1;
     return acc;
-  }, { total: 0, pending_review: 0, approved: 0, rejected: 0, withdrawn: 0, blocked: 0, expired: 0 }), [posts]);
+  }, { total: 0, pending_review: 0, approved: 0, rejected: 0, withdrawn: 0, blocked: 0, expired: 0, reserved: 0, delivered: 0 }), [posts]);
+  const reportedConversations = conversations.filter((item) => ['reported', 'blocked'].includes(item.status));
 
   const filteredPosts = useMemo(() => {
     const query = normalize(filters.search);
@@ -133,6 +148,23 @@ export function CommunityModeration({ data, actions, currentUser }) {
         && (!query || searchText.includes(query));
     });
   }, [beneficiaryById, filters, posts]);
+  const recommendationCandidates = useMemo(() => {
+    if (!recommending) return [];
+    const query = normalize(recommendQuery);
+    return beneficiaries
+      .filter((beneficiary) => beneficiary.id !== recommending.beneficiary_id)
+      .filter((beneficiary) => {
+        if (!query) return true;
+        return normalize([
+          beneficiary.full_name,
+          beneficiary.code,
+          beneficiary.document_id,
+          beneficiary.document_number,
+          beneficiary.phone
+        ].filter(Boolean).join(' ')).includes(query);
+      })
+      .slice(0, 50);
+  }, [beneficiaries, recommendQuery, recommending]);
 
   async function approvePost(post) {
     setError('');
@@ -225,22 +257,65 @@ export function CommunityModeration({ data, actions, currentUser }) {
     }
   }
 
+  async function updateConversation(conversation, payload) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.updateCommunityConversationStatus(conversation.id, payload);
+      setNotice('Incidencia de conversacion actualizada.');
+    } catch (conversationError) {
+      setError(conversationError.message || 'No se pudo actualizar la conversacion.');
+    }
+  }
+
+  function openRecommend(post) {
+    setRecommending(post);
+    setRecommendQuery('');
+    setRecommendSelectedIds([]);
+    setRecommendNotes('');
+  }
+
+  function toggleRecommendBeneficiary(id) {
+    setRecommendSelectedIds((current) => current.includes(id)
+      ? current.filter((item) => item !== id)
+      : [...current, id]);
+  }
+
+  async function recommendPost() {
+    if (!recommending) return;
+    setError('');
+    setNotice('');
+    try {
+      await actions.recommendCommunityPost(recommending.id, {
+        beneficiary_ids: recommendSelectedIds,
+        notes: recommendNotes
+      });
+      setRecommending(null);
+      setRecommendSelectedIds([]);
+      setRecommendNotes('');
+      setNotice('Publicacion recomendada a los beneficiarios seleccionados.');
+    } catch (recommendError) {
+      setError(recommendError.message || 'No se pudo recomendar la publicacion.');
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Moderacion de Comunidad"
-        description="Revisa publicaciones, intereses, reportes y posibles coincidencias antes de facilitar cualquier contacto."
+        description="Supervisa publicaciones, intereses, reservas y reportes. Pan y Esperanza modera; los beneficiarios contactan y el propietario decide."
       />
 
       {notice && <div className="mb-4 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
       {error && <div className="mb-4 rounded-md border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>}
 
-      <section className="grid gap-3 md:grid-cols-5">
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <SummaryCard label="Pendientes" value={counters.pending_review} tone="amber" icon={Clock3} />
         <SummaryCard label="Aprobadas" value={counters.approved} tone="emerald" icon={CheckCircle2} />
         <SummaryCard label="Reportes" value={reports.filter((item) => item.status !== 'dismissed').length} tone="red" icon={Flag} />
         <SummaryCard label="Intereses" value={interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status)).length} tone="brand" icon={MessageCircle} />
-        <SummaryCard label="Caducadas" value={counters.expired} tone="slate" icon={AlertTriangle} />
+        <SummaryCard label="Reservas" value={counters.reserved} tone="brand" icon={Gift} />
+        <SummaryCard label="Incidencias" value={reportedConversations.length} tone="red" icon={ShieldAlert} />
       </section>
 
       <section className="mt-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
@@ -277,10 +352,10 @@ export function CommunityModeration({ data, actions, currentUser }) {
             <p className="text-xs font-black uppercase tracking-wide text-brand-700">Personas interesadas</p>
             <h2 className="mt-1 text-xl font-black text-ink">Gestion del interes</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Intereses recibidos desde el Portal Beneficiario. Gestiona cada solicitud sin compartir datos personales automaticamente.
+              Intereses recibidos desde el Portal Beneficiario. Revisa y atiende incidencias sin compartir datos personales automaticamente.
             </p>
             <p className="mt-2 text-xs font-black uppercase tracking-wide text-brand-700">
-              {'Flujo: Nuevo -> Revisado -> Contactado -> Derivado -> Cerrado'}
+              {'Flujo de supervision: Nuevo -> Revisado -> Cerrado. El propietario gestiona reserva y entrega.'}
             </p>
             {selectedInterestPost && (
               <p className="mt-2 text-sm font-bold text-brand-800">
@@ -312,6 +387,39 @@ export function CommunityModeration({ data, actions, currentUser }) {
         )}
       </section>
 
+      <section className="mt-5 rounded-md border border-red-100 bg-red-50/40 p-4 shadow-panel">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-red-700">Incidencias de chat</p>
+            <h2 className="mt-1 text-xl font-black text-ink">Conversaciones reportadas o bloqueadas</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo se muestra contenido cuando existe reporte o bloqueo. El equipo supervisa la incidencia, no decide la entrega del articulo.
+            </p>
+          </div>
+          <Badge className="border-red-100 bg-red-50 text-red-700">{reportedConversations.length} incidencias</Badge>
+        </div>
+        {!reportedConversations.length ? (
+          <div className="mt-4 rounded-md border border-dashed border-red-100 bg-white/70 p-5 text-center text-sm font-semibold text-slate-500">
+            No hay conversaciones reportadas.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3">
+            {reportedConversations.map((conversation) => (
+              <ConversationIncidentCard
+                key={conversation.id}
+                conversation={conversation}
+                post={posts.find((post) => post.id === conversation.post_id)}
+                author={beneficiaryById.get(conversation.author_beneficiary_id)}
+                interested={beneficiaryById.get(conversation.interested_beneficiary_id)}
+                messages={messagesByConversation.get(conversation.id) || []}
+                canEdit={canEdit}
+                onUpdate={updateConversation}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="mt-5 grid gap-4 xl:grid-cols-2">
         {!filteredPosts.length ? (
           <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-slate-500 xl:col-span-2">
@@ -326,6 +434,7 @@ export function CommunityModeration({ data, actions, currentUser }) {
               beneficiary={beneficiary}
               interests={interestsByPost.get(post.id) || []}
               reports={reportsByPost.get(post.id) || []}
+              recommendations={recommendationsByPost.get(post.id) || []}
               matches={matchesByPost.get(post.id) || []}
               beneficiaryById={beneficiaryById}
               photoUrl={photoUrls[post.id]}
@@ -343,6 +452,7 @@ export function CommunityModeration({ data, actions, currentUser }) {
               onViewInterests={() => viewPostInterests(post.id)}
               onUpdateInterest={updateInterest}
               onUpdateResolution={updateResolution}
+              onRecommend={() => openRecommend(post)}
             />
           );
         })}
@@ -388,6 +498,64 @@ export function CommunityModeration({ data, actions, currentUser }) {
           </div>
         </Modal>
       )}
+
+      {recommending && (
+        <Modal title="Recomendar publicacion" onClose={() => setRecommending(null)}>
+          <div className="space-y-4">
+            <div className="rounded-md border border-brand-100 bg-brand-50/60 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-brand-700">Publicacion</p>
+              <h3 className="mt-1 text-lg font-black text-ink">{recommending.title}</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                La recomendacion aparecera en el Portal de las personas seleccionadas y se enviara un aviso. No se comparten datos personales entre beneficiarios.
+              </p>
+            </div>
+            <FormField label="Buscar beneficiario">
+              <input
+                className={inputClass}
+                value={recommendQuery}
+                onChange={(event) => setRecommendQuery(event.target.value)}
+                placeholder="Nombre, codigo, documento o telefono"
+              />
+            </FormField>
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border border-slate-100 bg-slate-50 p-3">
+              {!recommendationCandidates.length ? (
+                <p className="p-3 text-center text-sm font-semibold text-slate-500">No hay beneficiarios con esa busqueda.</p>
+              ) : recommendationCandidates.map((beneficiary) => {
+                const checked = recommendSelectedIds.includes(beneficiary.id);
+                return (
+                  <label key={beneficiary.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm ${checked ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-white bg-white text-slate-700'}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleRecommendBeneficiary(beneficiary.id)}
+                      className="h-4 w-4 accent-brand-700"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-black">{beneficiary.full_name || 'Beneficiario'}</span>
+                      <span className="block text-xs font-semibold text-slate-500">{beneficiary.code || 'Sin codigo'}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <FormField label="Nota interna opcional">
+              <textarea
+                className={`${inputClass} min-h-20`}
+                value={recommendNotes}
+                onChange={(event) => setRecommendNotes(event.target.value)}
+                placeholder="Solo visible en el ERP. No se mostrara al beneficiario."
+              />
+            </FormField>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-slate-600">{recommendSelectedIds.length} beneficiarios seleccionados</p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" onClick={() => setRecommending(null)}>Cancelar</Button>
+                <Button disabled={!canEdit || !recommendSelectedIds.length} onClick={recommendPost}><Send size={16} /> Recomendar</Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -413,7 +581,7 @@ function SummaryCard({ label, value, tone, icon: Icon }) {
   );
 }
 
-function CommunityPostCard({ post, beneficiary, interests, reports, matches, beneficiaryById, photoUrl, canEdit, onReview, onWithdraw, onBlock, onViewInterests, onUpdateInterest, onUpdateResolution }) {
+function CommunityPostCard({ post, beneficiary, interests, reports, recommendations, matches, beneficiaryById, photoUrl, canEdit, onReview, onWithdraw, onBlock, onViewInterests, onUpdateInterest, onUpdateResolution, onRecommend }) {
   const category = categoryMeta[post.category] || categoryMeta.need;
   const status = statusMeta[post.status] || statusMeta.pending_review;
   const CategoryIcon = category.icon;
@@ -437,9 +605,15 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
         <div className="flex flex-wrap items-center gap-2">
           <Badge className={category.tone}><CategoryIcon size={14} /> {category.label}</Badge>
           <Badge className={status.tone}>{status.label}</Badge>
+          {post.category === 'offer' && (
+            <Badge className={offerStatusTone(post.offer_status)}>
+              {offerStatusLabel(post.offer_status)}
+            </Badge>
+          )}
           {expired && <Badge className="border-red-100 bg-red-50 text-red-700">Caducada</Badge>}
           {post.resolution_status && post.resolution_status !== 'active' && <Badge className="border-slate-200 bg-slate-50 text-slate-700">{resolutionLabels[post.resolution_status] || post.resolution_status}</Badge>}
           <Badge className="border-slate-100 bg-slate-50 text-slate-600"><MessageCircle size={14} /> {interests.length} intereses</Badge>
+          {recommendations.length > 0 && <Badge className="border-brand-100 bg-brand-50 text-brand-700"><Send size={14} /> {recommendations.length} recomendaciones</Badge>}
           {reports.length > 0 && <Badge className="border-red-100 bg-red-50 text-red-700"><Flag size={14} /> {reports.length} reportes</Badge>}
           {matches.length > 0 && <Badge className="border-amber-100 bg-amber-50 text-amber-800"><AlertTriangle size={14} /> Posible coincidencia</Badge>}
         </div>
@@ -499,7 +673,9 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
           <p className="text-xs font-black uppercase tracking-wide text-slate-600">Vigencia de la publicacion</p>
           <div className="mt-3 grid gap-2 md:grid-cols-[190px_1fr_auto]">
             <select className={inputClass} value={resolutionStatus} onChange={(event) => setResolutionStatus(event.target.value)} disabled={!canEdit}>
-              {Object.entries(resolutionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {Object.entries(resolutionLabels)
+                .filter(([value]) => post.category !== 'offer' || value !== 'item_delivered')
+                .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
             <input className={inputClass} value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit} />
             <Button variant="secondary" disabled={!canEdit} onClick={() => onUpdateResolution(post, { resolution_status: resolutionStatus, resolution_notes: resolutionNotes })}>Guardar</Button>
@@ -516,6 +692,7 @@ function CommunityPostCard({ post, beneficiary, interests, reports, matches, ben
           </div>
         )}
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+          {post.status === 'approved' && <Button variant="secondary" disabled={!canEdit} onClick={onRecommend}><Send size={16} /> Recomendar</Button>}
           <Button variant="secondary" disabled={!canEdit} onClick={onReview}>Revisar</Button>
           {!['withdrawn', 'blocked'].includes(post.status) && <Button variant="danger" disabled={!canEdit} onClick={onBlock}><ShieldAlert size={16} /> Bloquear</Button>}
           {post.status !== 'withdrawn' && <Button variant="danger" disabled={!canEdit} onClick={onWithdraw}><Trash2 size={16} /> Retirar</Button>}
@@ -556,6 +733,51 @@ function InterestManagementCard({ interest, post, beneficiary, canEdit, onUpdate
   );
 }
 
+function ConversationIncidentCard({ conversation, post, author, interested, messages, canEdit, onUpdate }) {
+  const [reason, setReason] = useState(conversation.blocked_reason || conversation.report_reason || '');
+  useEffect(() => {
+    setReason(conversation.blocked_reason || conversation.report_reason || '');
+  }, [conversation.blocked_reason, conversation.report_reason]);
+  return (
+    <article className="rounded-md border border-red-100 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <Badge className="border-red-100 bg-red-50 text-red-700">{conversation.status === 'blocked' ? 'Bloqueada' : 'Reportada'}</Badge>
+            {post && <Badge className="border-slate-100 bg-slate-50 text-slate-700">{post.title}</Badge>}
+          </div>
+          <h3 className="mt-2 font-black text-ink">Incidencia de conversacion privada</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Autor: {author?.code || 'Beneficiario'} · Interesado: {interested?.code || 'Beneficiario'}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">Motivo: {conversation.report_reason || conversation.blocked_reason || 'Sin detalle'}</p>
+        </div>
+        <p className="text-xs font-bold text-slate-500">{formatDate(conversation.reported_at || conversation.updated_at || conversation.created_at)}</p>
+      </div>
+      <div className="mt-3 rounded-md border border-slate-100 bg-slate-50 p-3">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-500">Mensajes visibles por incidencia</p>
+        {!messages.length ? (
+          <p className="mt-2 text-sm text-slate-500">No hay mensajes disponibles para esta incidencia.</p>
+        ) : (
+          <div className="mt-2 max-h-48 space-y-2 overflow-y-auto">
+            {messages.map((message) => (
+              <div key={message.id} className="rounded-md bg-white p-2 text-sm text-slate-700">
+                <p>{message.message}</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-400">{message.sender_beneficiary_id === conversation.author_beneficiary_id ? 'Autor' : 'Interesado'} · {formatDate(message.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+        <input className={inputClass} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo interno si se bloquea" disabled={!canEdit} />
+        <Button variant="secondary" disabled={!canEdit} onClick={() => onUpdate(conversation, { status: 'closed', reason })}>Cerrar incidencia</Button>
+        <Button variant="danger" disabled={!canEdit} onClick={() => onUpdate(conversation, { status: 'blocked', reason })}>Bloquear</Button>
+      </div>
+    </article>
+  );
+}
+
 function InterestWorkflowRow({ interest, post, beneficiary, canEdit, onUpdate }) {
   const storedStatus = interest.status === 'registered' ? 'new' : interest.status || 'new';
   const [status, setStatus] = useState(storedStatus);
@@ -584,9 +806,9 @@ function InterestWorkflowRow({ interest, post, beneficiary, canEdit, onUpdate })
         <input className={inputClass} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit || isTerminal} />
         <Button variant="secondary" disabled={!canEdit || isTerminal} onClick={() => onUpdate(interest, { status, status_notes: notes })}>Actualizar</Button>
       </div>
-      {post?.category === 'offer' && status === 'delivery_pending' && (
+      {post?.category === 'offer' && status === 'reserved' && (
         <p className="mt-2 text-xs font-semibold text-brand-700">
-          El beneficiario interesado confirmara desde su Portal si recibio el articulo o si la entrega no se realizo.
+          Articulo reservado por el propietario. Moderacion solo supervisa el proceso.
         </p>
       )}
     </div>
@@ -601,6 +823,18 @@ function interestOptionsForPost(post, currentStatus) {
   const baseOptions = post?.category === 'offer' ? offerInterestStatusOptions : interestStatusOptions;
   if (baseOptions.some((option) => option.value === currentStatus)) return baseOptions;
   return [{ value: currentStatus, label: interestStatusLabel(currentStatus) }, ...baseOptions];
+}
+
+function offerStatusLabel(status = '') {
+  if (status === 'reserved') return 'Reservado';
+  if (status === 'delivered') return 'Entregado';
+  return 'Disponible';
+}
+
+function offerStatusTone(status = '') {
+  if (status === 'reserved') return 'border-amber-100 bg-amber-50 text-amber-800';
+  if (status === 'delivered') return 'border-slate-200 bg-slate-100 text-slate-700';
+  return 'border-emerald-100 bg-emerald-50 text-emerald-700';
 }
 
 function Badge({ children, className }) {
@@ -623,6 +857,16 @@ function groupByPost(items) {
     const list = map.get(item.post_id) || [];
     list.push(item);
     map.set(item.post_id, list);
+  });
+  return map;
+}
+
+function groupByConversation(items) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.conversation_id) || [];
+    list.push(item);
+    map.set(item.conversation_id, list);
   });
   return map;
 }

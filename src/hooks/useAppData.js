@@ -114,6 +114,9 @@ const EMPTY_APP_DATA = Object.freeze({
   community_posts: EMPTY_TABLE,
   community_interests: EMPTY_TABLE,
   community_post_reports: EMPTY_TABLE,
+  community_conversations: EMPTY_TABLE,
+  community_messages: EMPTY_TABLE,
+  community_post_recommendations: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
@@ -503,6 +506,9 @@ export function useAppData(enabled = true, currentUser = null) {
       communityPosts: appData.community_posts || [],
       communityInterests: appData.community_interests || [],
       communityReports: appData.community_post_reports || [],
+      communityConversations: appData.community_conversations || [],
+      communityMessages: appData.community_messages || [],
+      communityPostRecommendations: appData.community_post_recommendations || [],
       notifications: appData.notificaciones || [],
       organizationSettings: appData.organization_settings?.[0] || {},
       audit,
@@ -2567,6 +2573,19 @@ export function useAppData(enabled = true, currentUser = null) {
         reviewed_by_name: currentUserName(),
         reviewed_at: new Date().toISOString()
       });
+      try {
+        await repositoryCreate('beneficiary_portal_notices', {
+          beneficiary_id: updated.beneficiary_id,
+          title: 'Publicacion aprobada',
+          message: `Tu publicacion "${updated.title || 'Comunidad'}" ya esta visible en Comunidad.`,
+          notice_type: 'community_post_approved',
+          status: 'unread',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      } catch (noticeError) {
+        console.warn('[Comunidad] No se pudo crear aviso de aprobacion en Portal Beneficiario:', noticeError);
+      }
       await audit(`Comunidad: aprobo publicacion ${updated.title || updated.id}`.trim());
       await reload();
       return updated;
@@ -2585,6 +2604,19 @@ export function useAppData(enabled = true, currentUser = null) {
         reviewed_by_name: currentUserName(),
         reviewed_at: new Date().toISOString()
       });
+      try {
+        await repositoryCreate('beneficiary_portal_notices', {
+          beneficiary_id: updated.beneficiary_id,
+          title: 'Publicacion rechazada',
+          message: `Tu publicacion "${updated.title || 'Comunidad'}" no se ha aprobado. Motivo: ${reason}.`,
+          notice_type: 'community_post_rejected',
+          status: 'unread',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      } catch (noticeError) {
+        console.warn('[Comunidad] No se pudo crear aviso de rechazo en Portal Beneficiario:', noticeError);
+      }
       await audit(`Comunidad: rechazo publicacion ${updated.title || updated.id}`.trim());
       await reload();
       return updated;
@@ -2622,6 +2654,56 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
       return updated;
     },
+    recommendCommunityPost: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      if (post.status !== 'approved') throw new Error('Solo se pueden recomendar publicaciones aprobadas.');
+      const beneficiaryIds = [...new Set((payload.beneficiary_ids || payload.beneficiaryIds || [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean))];
+      if (!beneficiaryIds.length) throw new Error('Selecciona al menos un beneficiario.');
+      const validBeneficiaryIds = new Set((appData.beneficiaries || []).map((item) => item.id));
+      const notes = String(payload.notes || '').trim();
+      const now = new Date().toISOString();
+      const recommendations = [];
+
+      for (const beneficiaryId of beneficiaryIds) {
+        if (!validBeneficiaryIds.has(beneficiaryId)) continue;
+        const current = (appData.community_post_recommendations || []).find((item) => item.post_id === id && item.beneficiary_id === beneficiaryId);
+        const recommendationPayload = {
+          post_id: id,
+          beneficiary_id: beneficiaryId,
+          recommended_by: currentUser?.id || null,
+          recommended_by_name: currentUserName(),
+          notes,
+          status: 'active',
+          updated_at: now
+        };
+        const recommendation = current
+          ? await repositoryUpdate('community_post_recommendations', current.id, recommendationPayload)
+          : await repositoryCreate('community_post_recommendations', { ...recommendationPayload, created_at: now });
+        recommendations.push(recommendation);
+        try {
+          await repositoryCreate('beneficiary_portal_notices', {
+            beneficiary_id: beneficiaryId,
+            title: 'Publicacion recomendada',
+            message: `El equipo de Pan y Esperanza ha recomendado para ti "${post.title || 'una publicacion'}" en Comunidad.`,
+            notice_type: 'community_post_recommended',
+            status: 'unread',
+            created_at: now,
+            updated_at: now
+          });
+        } catch (noticeError) {
+          console.warn('[Comunidad] No se pudo crear aviso de recomendacion en Portal Beneficiario:', noticeError);
+        }
+      }
+
+      if (!recommendations.length) throw new Error('No se pudo recomendar la publicacion a los beneficiarios seleccionados.');
+      await audit(`Comunidad: recomendo publicacion ${post.title || id} a ${recommendations.length} beneficiarios`.trim());
+      await reload();
+      return recommendations;
+    },
     updateCommunityInterestStatus: async (id, payload = {}) => {
       assertPermission('community-moderation', 'edit');
       const status = String(payload.status || '').trim();
@@ -2629,8 +2711,8 @@ export function useAppData(enabled = true, currentUser = null) {
       if (!interest) throw new Error('El interes de comunidad no existe.');
       const post = (appData.community_posts || []).find((item) => item.id === interest.post_id);
       const allowed = post?.category === 'offer'
-        ? new Set(['new', 'reviewed', 'contacted', 'delivery_pending', 'closed'])
-        : new Set(['new', 'reviewed', 'contacted', 'referred', 'closed']);
+        ? new Set(['new', 'reviewed', 'closed'])
+        : new Set(['new', 'reviewed', 'referred', 'closed']);
       if (!allowed.has(status)) throw new Error('Estado de interes no valido para esta categoria.');
       const updated = await repositoryUpdate('community_interests', id, {
         status,
@@ -2651,11 +2733,31 @@ export function useAppData(enabled = true, currentUser = null) {
       if (!allowed.has(resolutionStatus)) throw new Error('Estado de vigencia no valido.');
       const post = (appData.community_posts || []).find((item) => item.id === id);
       if (!post) throw new Error('La publicacion de comunidad no existe.');
+      if (post.category === 'offer' && resolutionStatus === 'item_delivered') {
+        throw new Error('El ERP no puede marcar un articulo como entregado. Solo puede hacerlo el propietario desde el Portal.');
+      }
       const updated = await repositoryUpdate('community_posts', id, {
         resolution_status: resolutionStatus,
         resolution_notes: String(payload.resolution_notes || payload.notes || '').trim()
       });
       await audit(`Comunidad: actualizo vigencia de publicacion ${updated.title || updated.id} a ${resolutionStatus}`.trim());
+      await reload();
+      return updated;
+    },
+    updateCommunityConversationStatus: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const status = String(payload.status || '').trim();
+      const allowed = new Set(['open', 'blocked', 'closed']);
+      if (!allowed.has(status)) throw new Error('Estado de conversacion no valido.');
+      const conversation = (appData.community_conversations || []).find((item) => item.id === id);
+      if (!conversation) throw new Error('La conversacion de comunidad no existe.');
+      const updated = await repositoryUpdate('community_conversations', id, {
+        status,
+        blocked_reason: status === 'blocked' ? String(payload.reason || payload.blocked_reason || conversation.blocked_reason || 'Bloqueada por moderacion').trim() : conversation.blocked_reason || '',
+        closed_at: status === 'closed' || status === 'blocked' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      });
+      await audit(`Comunidad: actualizo conversacion ${updated.id} a ${status}`.trim());
       await reload();
       return updated;
     },

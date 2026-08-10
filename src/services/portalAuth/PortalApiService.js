@@ -153,6 +153,56 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return response.result;
   }
 
+  async sendCommunityMessage(session, conversationId, message) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'send-community-message',
+      payload: { conversationId, message }
+    });
+    return response.result;
+  }
+
+  async markCommunityConversationRead(session, conversationId) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'mark-community-conversation-read',
+      payload: { conversationId }
+    });
+    return response.result;
+  }
+
+  async updateCommunityOfferStatus(session, postId, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'update-community-offer-status',
+      payload: { ...payload, postId }
+    });
+    return response.result;
+  }
+
+  async blockCommunityConversation(session, conversationId, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'block-community-conversation',
+      payload: { ...payload, conversationId }
+    });
+    return response.result;
+  }
+
+  async reportCommunityConversation(session, conversationId, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'report-community-conversation',
+      payload: { ...payload, conversationId }
+    });
+    return response.result;
+  }
+
   async reportCommunityPost(session, postId, payload = {}) {
     const response = await callPortalApi('portal-action', {
       portal: this.portal,

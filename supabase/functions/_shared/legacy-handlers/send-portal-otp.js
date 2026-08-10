@@ -730,6 +730,21 @@ async function executePortalAction(supabase, portal, subject, body) {
     if (action === 'report-community-post') {
       return reportCommunityPostFromPortal(supabase, subject, payload);
     }
+    if (action === 'send-community-message') {
+      return sendCommunityMessageFromPortal(supabase, subject, payload);
+    }
+    if (action === 'mark-community-conversation-read') {
+      return markCommunityConversationReadFromPortal(supabase, subject, payload);
+    }
+    if (action === 'update-community-offer-status') {
+      return updateCommunityOfferStatusFromPortal(supabase, subject, payload);
+    }
+    if (action === 'block-community-conversation') {
+      return blockCommunityConversationFromPortal(supabase, subject, payload);
+    }
+    if (action === 'report-community-conversation') {
+      return reportCommunityConversationFromPortal(supabase, subject, payload);
+    }
     if (action === 'create-request' || action === 'request-profile-update') {
       const changes = action === 'create-request' ? { request_type: payload.request_type, message: payload.message, preferred_contact: payload.preferred_contact } : payload.changes || payload;
       const { data, error } = await supabase.from('beneficiary_portal_profile_updates').insert({
@@ -1236,48 +1251,145 @@ async function listPublishedResources(supabase, beneficiary) {
 }
 
 async function listCommunityOverview(supabase, beneficiary) {
-  const [postsResult, interestsResult, reportsResult] = await Promise.all([
-    supabase
-      .from('community_posts')
-      .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,blocked_reason,reviewed_at,withdrawn_at,created_at,updated_at')
-      .or(`status.eq.approved,beneficiary_id.eq.${beneficiary.id}`)
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('community_interests')
-      .select('id,post_id,beneficiary_id,status,message,status_notes,created_at,updated_at')
-      .eq('beneficiary_id', beneficiary.id)
-      .not('status', 'in', '(cancelled,withdrawn,closed,delivered,not_completed)')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('community_post_reports')
-      .select('id,post_id,beneficiary_id,status,reason,created_at,updated_at')
-      .eq('beneficiary_id', beneficiary.id)
-      .neq('status', 'dismissed')
-      .order('created_at', { ascending: false })
-  ]);
-  if (postsResult.error) throw postsResult.error;
-  if (interestsResult.error) throw interestsResult.error;
-  if (reportsResult.error) throw reportsResult.error;
+  const postsSelect = [
+    'id', 'beneficiary_id', 'category', 'title', 'zone', 'description',
+    'photo_storage_bucket', 'photo_storage_path', 'photo_file_name', 'photo_mime_type',
+    'job_position', 'company_name', 'workday', 'schedule', 'requirements', 'deadline_at',
+    'expires_at', 'contact_method', 'status', 'resolution_status', 'rejection_reason',
+    'blocked_reason', 'reviewed_at', 'withdrawn_at', 'created_at', 'updated_at',
+    'offer_status', 'reserved_interest_id', 'reserved_beneficiary_id', 'reserved_at',
+    'delivered_interest_id', 'delivered_beneficiary_id', 'delivered_at'
+  ].join(',');
 
-  const interests = interestsResult.data || [];
-  const reports = reportsResult.data || [];
-  const interestByPost = new Map(interests.map((item) => [item.post_id, item]));
-  const reportByPost = new Map(reports.map((item) => [item.post_id, item]));
-  const posts = await Promise.all((postsResult.data || [])
-    .filter((post) => post.beneficiary_id === beneficiary.id || isCommunityPostActive(post))
-    .map((post) => sanitizePortalCommunityPost(supabase, post, beneficiary, interestByPost.get(post.id), reportByPost.get(post.id)))
-  );
+  const { data: postsData, error: postsError } = await supabase
+    .from('community_posts')
+    .select(postsSelect)
+    .or(`status.eq.approved,beneficiary_id.eq.${beneficiary.id},reserved_beneficiary_id.eq.${beneficiary.id}`)
+    .order('created_at', { ascending: false });
+  if (postsError) throw postsError;
+
+  const posts = postsData || [];
+  const postIds = posts.map((item) => item.id).filter(Boolean);
+  const ownPostIds = posts.filter((post) => post.beneficiary_id === beneficiary.id).map((post) => post.id).filter(Boolean);
+
+  const currentInterestsQuery = supabase
+    .from('community_interests')
+    .select('id,post_id,beneficiary_id,status,message,status_notes,closed_at,created_at,updated_at')
+    .eq('beneficiary_id', beneficiary.id)
+    .order('created_at', { ascending: false });
+  const ownInterestsQuery = ownPostIds.length
+    ? supabase
+        .from('community_interests')
+        .select('id,post_id,beneficiary_id,status,message,status_notes,closed_at,created_at,updated_at')
+        .in('post_id', ownPostIds)
+        .order('created_at', { ascending: false })
+    : Promise.resolve({ data: [], error: null });
+  const reportsQuery = supabase
+    .from('community_post_reports')
+    .select('id,post_id,beneficiary_id,status,reason,created_at,updated_at')
+    .eq('beneficiary_id', beneficiary.id)
+    .neq('status', 'dismissed')
+    .order('created_at', { ascending: false });
+  const recommendationsQuery = supabase
+    .from('community_post_recommendations')
+    .select('id,post_id,beneficiary_id,status,created_at,updated_at')
+    .eq('beneficiary_id', beneficiary.id)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false });
+  const conversationsQuery = supabase
+    .from('community_conversations')
+    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status,blocked_by_beneficiary_id,blocked_reason,reported_by_beneficiary_id,report_reason,reported_at,closed_at,last_message_at,created_at,updated_at')
+    .or(`author_beneficiary_id.eq.${beneficiary.id},interested_beneficiary_id.eq.${beneficiary.id}`)
+    .order('updated_at', { ascending: false });
+
+  const [currentInterestsResult, ownInterestsResult, reportsResult, recommendationsResult, conversationsResult] = await Promise.all([
+    currentInterestsQuery,
+    ownInterestsQuery,
+    reportsQuery,
+    recommendationsQuery,
+    conversationsQuery
+  ]);
+  if (currentInterestsResult.error) throw currentInterestsResult.error;
+  if (ownInterestsResult.error) throw ownInterestsResult.error;
+  if (reportsResult.error) throw reportsResult.error;
+  if (recommendationsResult.error) throw recommendationsResult.error;
+  if (conversationsResult.error) throw conversationsResult.error;
+
+  const currentInterests = currentInterestsResult.data || [];
+  const ownInterests = ownInterestsResult.data || [];
+  const allRelevantInterests = dedupeById([...currentInterests, ...ownInterests]);
+  const conversations = conversationsResult.data || [];
+  const conversationIds = conversations.map((item) => item.id).filter(Boolean);
+
+  const messagesResult = conversationIds.length
+    ? await supabase
+        .from('community_messages')
+        .select('id,conversation_id,sender_beneficiary_id,message,read_at,created_at,updated_at')
+        .in('conversation_id', conversationIds)
+        .order('created_at', { ascending: true })
+    : { data: [], error: null };
+  if (messagesResult.error) throw messagesResult.error;
+
+  const participantIds = new Set([beneficiary.id]);
+  allRelevantInterests.forEach((interest) => participantIds.add(interest.beneficiary_id));
+  conversations.forEach((conversation) => {
+    participantIds.add(conversation.author_beneficiary_id);
+    participantIds.add(conversation.interested_beneficiary_id);
+  });
+  const beneficiariesResult = participantIds.size
+    ? await supabase
+        .from('beneficiaries')
+        .select('id,full_name,code')
+        .in('id', [...participantIds])
+    : { data: [], error: null };
+  if (beneficiariesResult.error) throw beneficiariesResult.error;
+
+  const context = {
+    currentBeneficiary: beneficiary,
+    currentBeneficiaryId: beneficiary.id,
+    interestByPost: latestByPost(currentInterests),
+    reportByPost: new Map((reportsResult.data || []).map((item) => [item.post_id, item])),
+    recommendationByPost: latestByPost(recommendationsResult.data || []),
+    ownerInterestsByPost: groupByPost(allRelevantInterests.filter((item) => ownPostIds.includes(item.post_id))),
+    conversationByInterest: new Map(conversations.map((item) => [item.interest_id, item])),
+    messagesByConversation: groupByConversation(messagesResult.data || []),
+    beneficiaryById: new Map((beneficiariesResult.data || []).map((item) => [item.id, item]))
+  };
+
+  const visiblePosts = posts.filter((post) => isCommunityPostVisibleToBeneficiary(post, beneficiary.id, context.interestByPost.get(post.id)));
+  const sanitized = await Promise.all(visiblePosts.map((post) => sanitizePortalCommunityPost(supabase, post, context)));
 
   return {
-    posts: posts.filter((post) => post.status === 'approved' && post.active),
-    myPosts: posts.filter((post) => post.ownPost),
-    interests
+    posts: sanitized.filter((post) => !post.ownPost && post.status === 'approved' && (post.active || post.reserved_for_me)),
+    myPosts: sanitized.filter((post) => post.ownPost),
+    interests: currentInterests.filter(interestIsActive)
   };
 }
 
-async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficiary = '', interest = null, report = null) {
-  const currentBeneficiaryId = typeof currentBeneficiary === 'string' ? currentBeneficiary : currentBeneficiary?.id;
+async function sanitizePortalCommunityPost(supabase, post = {}, contextOrBeneficiary = '', interestArg = null, reportArg = null) {
+  const context = normalizeCommunitySanitizeContext(contextOrBeneficiary, interestArg, reportArg);
+  const currentBeneficiary = context.currentBeneficiary;
+  const currentBeneficiaryId = context.currentBeneficiaryId;
   const ownPost = post.beneficiary_id === currentBeneficiaryId;
+  const interest = context.interestByPost?.get(post.id) || null;
+  const report = context.reportByPost?.get(post.id) || null;
+  const ownerInterests = context.ownerInterestsByPost?.get(post.id) || [];
+  const offerStatus = post.offer_status || 'available';
+  const reservedForMe = post.reserved_beneficiary_id === currentBeneficiaryId || interest?.status === 'reserved';
+  const active = isCommunityPostActive(post);
+  const availableForInterest = !ownPost && active && !interestIsActive(interest) && isCommunityPostAvailableForInterest(post);
+  const conversation = interest?.id ? context.conversationByInterest?.get(interest.id) : null;
+  const manualRecommendation = context.recommendationByPost?.get(post.id) || null;
+  const automaticRecommendation = ownPost ? null : analyzeCommunityEmploymentRecommendation(post, currentBeneficiary);
+  const recommendation = !ownPost && manualRecommendation
+    ? {
+        recommended: true,
+        label: 'Recomendado por el equipo',
+        reasons: ['El equipo de Pan y Esperanza ha revisado esta publicacion y la ha marcado para tu Portal.'],
+        note: 'Recomendacion revisada por el equipo de Pan y Esperanza.'
+      }
+    : automaticRecommendation;
+
   return {
     id: post.id,
     category: post.category || 'need',
@@ -1292,9 +1404,16 @@ async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficia
     requirements: post.requirements || '',
     deadline_at: post.deadline_at || null,
     expires_at: post.expires_at || null,
-    contact_method: post.contact_method || 'Gestionado por Pan y Esperanza',
+    contact_method: post.contact_method || 'Chat privado dentro del Portal Beneficiario',
     status: post.status || 'pending_review',
     resolution_status: post.resolution_status || 'active',
+    offer_status: offerStatus,
+    reserved_interest_id: post.reserved_interest_id || null,
+    reserved_beneficiary_id: post.reserved_beneficiary_id || null,
+    reserved_at: post.reserved_at || null,
+    delivered_interest_id: post.delivered_interest_id || null,
+    delivered_beneficiary_id: post.delivered_beneficiary_id || null,
+    delivered_at: post.delivered_at || null,
     rejection_reason: ownPost ? post.rejection_reason || '' : '',
     blocked_reason: ownPost ? post.blocked_reason || '' : '',
     created_at: post.created_at || null,
@@ -1302,13 +1421,85 @@ async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficia
     reviewed_at: post.reviewed_at || null,
     withdrawn_at: post.withdrawn_at || null,
     ownPost,
-    active: isCommunityPostActive(post),
+    active,
+    available_for_interest: availableForInterest,
+    reserved_for_me: reservedForMe,
     interested: interestIsActive(interest),
     interest_id: interest?.id || null,
     interest_status: interest?.status || '',
     interest_status_label: statusLabelForCommunityInterest(interest?.status),
+    interest_count: ownerInterests.filter(interestIsActive).length,
+    interests: ownPost ? ownerInterests.map((item) => sanitizeCommunityInterestForPortal(item, context)) : [],
+    conversation: conversation ? sanitizeCommunityConversationForPortal(conversation, context) : null,
     reported: Boolean(report && report.status !== 'dismissed'),
-    recommendation: ownPost ? null : analyzeCommunityEmploymentRecommendation(post, currentBeneficiary)
+    manual_recommendation: Boolean(manualRecommendation),
+    recommendation
+  };
+}
+
+function normalizeCommunitySanitizeContext(contextOrBeneficiary, interest, report) {
+  if (contextOrBeneficiary && typeof contextOrBeneficiary === 'object' && contextOrBeneficiary.currentBeneficiaryId) {
+    return contextOrBeneficiary;
+  }
+  const currentBeneficiary = typeof contextOrBeneficiary === 'object' ? contextOrBeneficiary : { id: contextOrBeneficiary };
+  return {
+    currentBeneficiary,
+    currentBeneficiaryId: currentBeneficiary?.id || contextOrBeneficiary,
+    interestByPost: new Map(interest ? [[interest.post_id, interest]] : []),
+    reportByPost: new Map(report ? [[report.post_id, report]] : []),
+    recommendationByPost: new Map(),
+    ownerInterestsByPost: new Map(),
+    conversationByInterest: new Map(),
+    messagesByConversation: new Map(),
+    beneficiaryById: new Map()
+  };
+}
+
+function sanitizeCommunityInterestForPortal(interest = {}, context = {}) {
+  const beneficiary = context.beneficiaryById?.get(interest.beneficiary_id) || {};
+  const conversation = context.conversationByInterest?.get(interest.id) || null;
+  return {
+    id: interest.id,
+    post_id: interest.post_id,
+    beneficiary_id: interest.beneficiary_id,
+    beneficiary_name: beneficiary.full_name || 'Beneficiario',
+    beneficiary_code: beneficiary.code || '',
+    status: interest.status || 'new',
+    status_label: statusLabelForCommunityInterest(interest.status),
+    message: interest.message || '',
+    status_notes: interest.status_notes || '',
+    created_at: interest.created_at || null,
+    updated_at: interest.updated_at || null,
+    conversation: conversation ? sanitizeCommunityConversationForPortal(conversation, context) : null
+  };
+}
+
+function sanitizeCommunityConversationForPortal(conversation = {}, context = {}) {
+  const currentId = context.currentBeneficiaryId;
+  const messages = context.messagesByConversation?.get(conversation.id) || [];
+  const participantId = conversation.author_beneficiary_id === currentId
+    ? conversation.interested_beneficiary_id
+    : conversation.author_beneficiary_id;
+  const participant = context.beneficiaryById?.get(participantId) || {};
+  return {
+    id: conversation.id,
+    post_id: conversation.post_id,
+    interest_id: conversation.interest_id,
+    status: conversation.status || 'open',
+    blocked_by_me: conversation.blocked_by_beneficiary_id === currentId,
+    reported_by_me: conversation.reported_by_beneficiary_id === currentId,
+    participant_name: participant.full_name || 'Beneficiario',
+    participant_code: participant.code || '',
+    last_message_at: conversation.last_message_at || null,
+    unread_count: messages.filter((message) => message.sender_beneficiary_id !== currentId && !message.read_at).length,
+    messages: messages.map((message) => ({
+      id: message.id,
+      conversation_id: message.conversation_id,
+      sender: message.sender_beneficiary_id === currentId ? 'me' : 'other',
+      message: message.message || '',
+      read_at: message.read_at || null,
+      created_at: message.created_at || null
+    }))
   };
 }
 
@@ -1348,7 +1539,7 @@ function sanitizeCommunityPostPayload(beneficiary, payload = {}) {
     requirements: cleanText(payload.requirements),
     deadline_at: payload.deadline_at || null,
     expires_at: expiresAt,
-    contact_method: cleanText(payload.contact_method || 'Gestionado por Pan y Esperanza'),
+    contact_method: cleanText(payload.contact_method || 'Chat privado dentro del Portal Beneficiario'),
     status: 'pending_review',
     resolution_status: 'active',
     created_at: new Date().toISOString(),
@@ -1369,8 +1560,24 @@ function isCommunityPostActive(post = {}) {
   return true;
 }
 
+function isCommunityPostAvailableForInterest(post = {}) {
+  if (!isCommunityPostActive(post)) return false;
+  if (post.category === 'offer' && (post.offer_status || 'available') !== 'available') return false;
+  return true;
+}
+
+function isCommunityPostVisibleToBeneficiary(post = {}, beneficiaryId = '', interest = null) {
+  if (post.beneficiary_id === beneficiaryId) return true;
+  if (!isCommunityPostActive(post)) return false;
+  if (post.category !== 'offer') return true;
+  const offerStatus = post.offer_status || 'available';
+  if (offerStatus === 'available') return true;
+  if (offerStatus === 'reserved') return post.reserved_beneficiary_id === beneficiaryId || interest?.status === 'reserved';
+  return false;
+}
+
 function interestIsActive(interest = null) {
-  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed'].includes(interest.status));
+  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed', 'completed', 'not_selected'].includes(interest.status));
 }
 
 function statusLabelForCommunityInterest(status = '') {
@@ -1382,6 +1589,9 @@ function statusLabelForCommunityInterest(status = '') {
     delivery_pending: 'Entrega pendiente',
     delivered: 'Entregado / Cerrado',
     not_completed: 'No realizado',
+    reserved: 'Reservado',
+    completed: 'Entregado / Cerrado',
+    not_selected: 'Cerrado',
     referred: 'Derivado',
     closed: 'Cerrado',
     cancelled: 'Cancelado',
@@ -1452,7 +1662,7 @@ async function createCommunityPostFromPortal(supabase, beneficiary, payload = {}
   const { data, error } = await supabase
     .from('community_posts')
     .insert(insertPayload)
-    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
+    .select('*')
     .single();
   if (error) throw error;
 
@@ -1467,17 +1677,17 @@ async function registerCommunityInterestFromPortal(supabase, beneficiary, payloa
 
   const { data: post, error: postError } = await supabase
     .from('community_posts')
-    .select('id,beneficiary_id,title,status,resolution_status,expires_at')
+    .select('id,beneficiary_id,category,title,status,resolution_status,expires_at,offer_status')
     .eq('id', postId)
     .maybeSingle();
   if (postError) throw postError;
-  if (!post || !isCommunityPostActive(post)) throw new Error('La publicacion ya no esta disponible.');
+  if (!post || !isCommunityPostAvailableForInterest(post)) throw new Error('La publicacion ya no esta disponible.');
   if (post.beneficiary_id === beneficiary.id) throw new Error('No puedes marcar interes en tu propia publicacion.');
 
   const now = new Date().toISOString();
   const { data: current, error: currentError } = await supabase
     .from('community_interests')
-    .select('id')
+    .select('id,status')
     .eq('post_id', postId)
     .eq('beneficiary_id', beneficiary.id)
     .maybeSingle();
@@ -1496,6 +1706,7 @@ async function registerCommunityInterestFromPortal(supabase, beneficiary, payloa
   const { data: interest, error } = await query.select('id,post_id,beneficiary_id,status,message,created_at,updated_at').single();
   if (error) throw error;
 
+  await ensureCommunityConversation(supabase, post, interest, now);
   await notifyCommunityInterest(supabase, beneficiary, post, now);
   await audit(supabase, `Portal del Beneficiario: interes registrado en comunidad ${postId}`);
   return interest;
@@ -1510,7 +1721,7 @@ async function withdrawCommunityPostFromPortal(supabase, beneficiary, payload = 
     .update({ status: 'withdrawn', withdrawn_at: now, updated_at: now })
     .eq('id', postId)
     .eq('beneficiary_id', beneficiary.id)
-    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
+    .select('*')
     .single();
   if (error) throw error;
   await audit(supabase, `Portal del Beneficiario: publicacion de comunidad retirada ${postId}`);
@@ -1529,8 +1740,8 @@ async function withdrawCommunityInterestFromPortal(supabase, beneficiary, payloa
     .maybeSingle();
   if (currentError) throw currentError;
   if (!current) throw new Error('El interes no existe o no pertenece a tu portal.');
-  if (['delivery_pending', 'delivered', 'not_completed', 'closed'].includes(current.status)) {
-    throw new Error('Este interes ya esta en gestion y no puede retirarse desde el portal.');
+  if (['reserved', 'completed', 'not_selected', 'delivery_pending', 'delivered', 'not_completed', 'closed'].includes(current.status)) {
+    throw new Error('Este interes ya no puede retirarse desde el portal.');
   }
   const { data, error } = await supabase
     .from('community_interests')
@@ -1545,76 +1756,7 @@ async function withdrawCommunityInterestFromPortal(supabase, beneficiary, payloa
 }
 
 async function resolveCommunityInterestFromPortal(supabase, beneficiary, payload = {}) {
-  const interestId = cleanText(payload.interestId || payload.interest_id);
-  const outcome = cleanText(payload.outcome).toLowerCase();
-  if (!interestId) throw new Error('No se ha indicado el interes.');
-  if (!['delivered', 'not_completed'].includes(outcome)) throw new Error('Resultado de interes no valido.');
-
-  const { data: interest, error: interestError } = await supabase
-    .from('community_interests')
-    .select('id,post_id,beneficiary_id,status,message,created_at,updated_at')
-    .eq('id', interestId)
-    .eq('beneficiary_id', beneficiary.id)
-    .maybeSingle();
-  if (interestError) throw interestError;
-  if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
-  if (interest.status !== 'delivery_pending') throw new Error('Este interes no esta pendiente de entrega.');
-
-  const { data: post, error: postError } = await supabase
-    .from('community_posts')
-    .select('id,beneficiary_id,category,title,status,resolution_status,expires_at')
-    .eq('id', interest.post_id)
-    .maybeSingle();
-  if (postError) throw postError;
-  if (!post || post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
-
-  const now = new Date().toISOString();
-  const statusNotes = outcome === 'delivered'
-    ? 'Articulo confirmado como recibido por el beneficiario interesado.'
-    : 'El beneficiario interesado indico que la entrega no se realizo.';
-  const { data: updatedInterest, error: updateError } = await supabase
-    .from('community_interests')
-    .update({
-      status: outcome,
-      status_notes: statusNotes,
-      closed_at: now,
-      updated_at: now
-    })
-    .eq('id', interest.id)
-    .eq('beneficiary_id', beneficiary.id)
-    .select('id,post_id,beneficiary_id,status,message,status_notes,closed_at,created_at,updated_at')
-    .single();
-  if (updateError) throw updateError;
-
-  if (outcome === 'delivered') {
-    const { error: postUpdateError } = await supabase
-      .from('community_posts')
-      .update({
-        status: 'withdrawn',
-        resolution_status: 'item_delivered',
-        resolution_notes: 'Articulo confirmado como recibido por el beneficiario interesado.',
-        withdrawn_at: now,
-        updated_at: now
-      })
-      .eq('id', post.id);
-    if (postUpdateError) throw postUpdateError;
-
-    const { error: closeOthersError } = await supabase
-      .from('community_interests')
-      .update({
-        status: 'closed',
-        status_notes: 'Publicacion cerrada porque el articulo fue entregado.',
-        closed_at: now,
-        updated_at: now
-      })
-      .eq('post_id', post.id)
-      .neq('id', interest.id)
-      .not('status', 'in', '(cancelled,withdrawn,closed,delivered,not_completed)');
-    if (closeOthersError) throw closeOthersError;
-  }
-
-  await audit(supabase, `Portal del Beneficiario: resultado ${outcome} en interes de comunidad ${interestId}`);
-  return updatedInterest;
+  throw new Error('El propietario de la publicacion gestiona la reserva y la entrega desde su Portal.');
 }
 
 async function reportCommunityPostFromPortal(supabase, beneficiary, payload = {}) {
@@ -1705,27 +1847,441 @@ async function notifyCommunityModeration(supabase, beneficiary, post, now) {
 }
 
 async function notifyCommunityInterest(supabase, beneficiary, post, now) {
+  await createBeneficiaryPortalNotice(supabase, post.beneficiary_id, {
+    title: 'Alguien esta interesado en tu publicacion',
+    message: `A ${beneficiary.code || 'un beneficiario'} le interesa tu publicacion "${post.title}". Puedes verlo y contactar desde Comunidad.`,
+    notice_type: 'community_interest',
+    created_at: now
+  });
+}
+
+async function ensureCommunityConversation(supabase, post, interest, now) {
+  const { data: current, error: currentError } = await supabase
+    .from('community_conversations')
+    .select('id,status')
+    .eq('interest_id', interest.id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (current) {
+    if (current.status !== 'open') {
+      const { error: reopenError } = await supabase
+        .from('community_conversations')
+        .update({ status: 'open', closed_at: null, updated_at: now })
+        .eq('id', current.id);
+      if (reopenError) throw reopenError;
+    }
+    return current;
+  }
+  const { data, error } = await supabase
+    .from('community_conversations')
+    .insert({
+      post_id: post.id,
+      interest_id: interest.id,
+      author_beneficiary_id: post.beneficiary_id,
+      interested_beneficiary_id: interest.beneficiary_id,
+      status: 'open',
+      created_at: now,
+      updated_at: now
+    })
+    .select('id,status')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function sendCommunityMessageFromPortal(supabase, beneficiary, payload = {}) {
+  const conversationId = cleanText(payload.conversationId || payload.conversation_id);
+  const message = cleanText(payload.message);
+  if (!conversationId) throw new Error('No se ha indicado la conversacion.');
+  if (!message) throw new Error('Escribe un mensaje.');
+  if (message.length > 1200) throw new Error('El mensaje no puede superar 1200 caracteres.');
+
+  const conversation = await requireCommunityConversationParticipant(supabase, conversationId, beneficiary.id);
+  if (['blocked', 'closed', 'completed'].includes(conversation.status)) {
+    throw new Error('Esta conversacion ya no admite nuevos mensajes.');
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('community_messages')
+    .insert({
+      conversation_id: conversation.id,
+      sender_beneficiary_id: beneficiary.id,
+      message,
+      created_at: now,
+      updated_at: now
+    })
+    .select('id,conversation_id,sender_beneficiary_id,message,read_at,created_at,updated_at')
+    .single();
+  if (error) throw error;
+  const { error: updateError } = await supabase
+    .from('community_conversations')
+    .update({ last_message_at: now, updated_at: now })
+    .eq('id', conversation.id);
+  if (updateError) throw updateError;
+  const recipientId = conversation.author_beneficiary_id === beneficiary.id
+    ? conversation.interested_beneficiary_id
+    : conversation.author_beneficiary_id;
+  await createBeneficiaryPortalNotice(supabase, recipientId, {
+    title: 'Nuevo mensaje en Comunidad',
+    message: `${beneficiary.code || 'Un beneficiario'} te ha enviado un mensaje sobre una publicacion.`,
+    notice_type: 'community_message',
+    created_at: now
+  });
+  await audit(supabase, `Portal del Beneficiario: mensaje de comunidad ${conversation.id}`);
+  return data;
+}
+
+async function markCommunityConversationReadFromPortal(supabase, beneficiary, payload = {}) {
+  const conversationId = cleanText(payload.conversationId || payload.conversation_id);
+  if (!conversationId) throw new Error('No se ha indicado la conversacion.');
+  const conversation = await requireCommunityConversationParticipant(supabase, conversationId, beneficiary.id);
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('community_messages')
+    .update({ read_at: now, updated_at: now })
+    .eq('conversation_id', conversation.id)
+    .neq('sender_beneficiary_id', beneficiary.id)
+    .is('read_at', null);
+  if (error) throw error;
+  return { read: true };
+}
+
+async function updateCommunityOfferStatusFromPortal(supabase, beneficiary, payload = {}) {
+  const postId = cleanText(payload.postId || payload.post_id);
+  const interestId = cleanText(payload.interestId || payload.interest_id);
+  const status = cleanText(payload.status || payload.offer_status);
+  if (!postId) throw new Error('No se ha indicado la publicacion.');
+  if (!['reserved', 'available', 'delivered'].includes(status)) throw new Error('Estado de articulo no valido.');
+
+  const { data: post, error: postError } = await supabase
+    .from('community_posts')
+    .select('id,beneficiary_id,category,title,status,resolution_status,offer_status,reserved_interest_id,reserved_beneficiary_id')
+    .eq('id', postId)
+    .eq('beneficiary_id', beneficiary.id)
+    .maybeSingle();
+  if (postError) throw postError;
+  if (!post) throw new Error('La publicacion no existe o no pertenece a tu portal.');
+  if (post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
+
+  if (status === 'reserved') return reserveCommunityOfferForInterest(supabase, beneficiary, post, interestId);
+  if (status === 'available') return makeCommunityOfferAvailableAgain(supabase, beneficiary, post);
+  return markCommunityOfferDelivered(supabase, beneficiary, post);
+}
+
+async function reserveCommunityOfferForInterest(supabase, beneficiary, post, interestId) {
+  if (!interestId) throw new Error('Selecciona la persona interesada.');
+  if (!isCommunityPostAvailableForInterest(post)) throw new Error('El articulo no esta disponible para reservar.');
+  const { data: interest, error: interestError } = await supabase
+    .from('community_interests')
+    .select('id,post_id,beneficiary_id,status')
+    .eq('id', interestId)
+    .eq('post_id', post.id)
+    .maybeSingle();
+  if (interestError) throw interestError;
+  if (!interest || !interestIsActive(interest)) throw new Error('El interes seleccionado no esta disponible.');
+
+  const now = new Date().toISOString();
+  const { data: updatedPost, error: postUpdateError } = await supabase
+    .from('community_posts')
+    .update({
+      offer_status: 'reserved',
+      reserved_interest_id: interest.id,
+      reserved_beneficiary_id: interest.beneficiary_id,
+      reserved_at: now,
+      updated_at: now
+    })
+    .eq('id', post.id)
+    .select('*')
+    .single();
+  if (postUpdateError) throw postUpdateError;
+  const { error: interestUpdateError } = await supabase
+    .from('community_interests')
+    .update({
+      status: 'reserved',
+      status_notes: 'El propietario ha reservado este articulo para esta persona.',
+      updated_at: now
+    })
+    .eq('id', interest.id);
+  if (interestUpdateError) throw interestUpdateError;
+  await notifyOfferReserved(supabase, interest.beneficiary_id, post, now);
+  await audit(supabase, `Portal del Beneficiario: articulo reservado ${post.id}`);
+  return updatedPost;
+}
+
+async function makeCommunityOfferAvailableAgain(supabase, beneficiary, post) {
+  if ((post.offer_status || 'available') !== 'reserved') throw new Error('El articulo no esta reservado.');
+  const now = new Date().toISOString();
+  const reservedInterestId = post.reserved_interest_id;
+  const reservedBeneficiaryId = post.reserved_beneficiary_id;
+  const { data: updatedPost, error: postUpdateError } = await supabase
+    .from('community_posts')
+    .update({
+      offer_status: 'available',
+      reserved_interest_id: null,
+      reserved_beneficiary_id: null,
+      reserved_at: null,
+      updated_at: now
+    })
+    .eq('id', post.id)
+    .select('*')
+    .single();
+  if (postUpdateError) throw postUpdateError;
+  if (reservedInterestId) {
+    const { error: interestUpdateError } = await supabase
+      .from('community_interests')
+      .update({
+        status: 'new',
+        status_notes: 'El propietario cancelo la reserva. La publicacion vuelve a estar disponible.',
+        updated_at: now
+      })
+      .eq('id', reservedInterestId);
+    if (interestUpdateError) throw interestUpdateError;
+  }
+  if (reservedBeneficiaryId) await notifyOfferReservationCancelled(supabase, reservedBeneficiaryId, post, now);
+  await audit(supabase, `Portal del Beneficiario: articulo vuelve a disponible ${post.id}`);
+  return updatedPost;
+}
+
+async function markCommunityOfferDelivered(supabase, beneficiary, post) {
+  if ((post.offer_status || 'available') !== 'reserved' || !post.reserved_interest_id || !post.reserved_beneficiary_id) {
+    throw new Error('Antes de marcar como entregado debes reservar el articulo para una persona.');
+  }
+  const now = new Date().toISOString();
+  const { data: updatedPost, error: postUpdateError } = await supabase
+    .from('community_posts')
+    .update({
+      offer_status: 'delivered',
+      resolution_status: 'item_delivered',
+      resolution_notes: 'Articulo marcado como entregado por el propietario desde el Portal Beneficiario.',
+      delivered_interest_id: post.reserved_interest_id,
+      delivered_beneficiary_id: post.reserved_beneficiary_id,
+      delivered_at: now,
+      updated_at: now
+    })
+    .eq('id', post.id)
+    .select('*')
+    .single();
+  if (postUpdateError) throw postUpdateError;
+  const { error: selectedError } = await supabase
+    .from('community_interests')
+    .update({
+      status: 'completed',
+      status_notes: 'Articulo entregado por el propietario.',
+      closed_at: now,
+      updated_at: now
+    })
+    .eq('id', post.reserved_interest_id);
+  if (selectedError) throw selectedError;
+
+  const { data: otherInterests, error: othersReadError } = await supabase
+    .from('community_interests')
+    .select('id,beneficiary_id')
+    .eq('post_id', post.id)
+    .neq('id', post.reserved_interest_id)
+    .not('status', 'in', '(cancelled,withdrawn,closed,completed,delivered,not_completed,not_selected)');
+  if (othersReadError) throw othersReadError;
+  const { error: othersUpdateError } = await supabase
+    .from('community_interests')
+    .update({
+      status: 'not_selected',
+      status_notes: 'Este articulo ya ha sido entregado.',
+      closed_at: now,
+      updated_at: now
+    })
+    .eq('post_id', post.id)
+    .neq('id', post.reserved_interest_id)
+    .not('status', 'in', '(cancelled,withdrawn,closed,completed,delivered,not_completed,not_selected)');
+  if (othersUpdateError) throw othersUpdateError;
+  const { error: conversationsError } = await supabase
+    .from('community_conversations')
+    .update({ status: 'completed', closed_at: now, updated_at: now })
+    .eq('post_id', post.id);
+  if (conversationsError) throw conversationsError;
+
+  await notifyOfferDelivered(supabase, post.reserved_beneficiary_id, post, now);
+  await Promise.all((otherInterests || []).map((interest) => notifyOfferNoLongerAvailable(supabase, interest.beneficiary_id, post, now)));
+  await audit(supabase, `Portal del Beneficiario: articulo entregado ${post.id}`);
+  return updatedPost;
+}
+
+async function blockCommunityConversationFromPortal(supabase, beneficiary, payload = {}) {
+  const conversationId = cleanText(payload.conversationId || payload.conversation_id);
+  const reason = cleanText(payload.reason || 'Bloqueada por el beneficiario');
+  if (!conversationId) throw new Error('No se ha indicado la conversacion.');
+  const conversation = await requireCommunityConversationParticipant(supabase, conversationId, beneficiary.id);
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('community_conversations')
+    .update({
+      status: 'blocked',
+      blocked_by_beneficiary_id: beneficiary.id,
+      blocked_reason: reason,
+      closed_at: now,
+      updated_at: now
+    })
+    .eq('id', conversation.id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  await audit(supabase, `Portal del Beneficiario: conversacion bloqueada ${conversation.id}`);
+  return data;
+}
+
+async function reportCommunityConversationFromPortal(supabase, beneficiary, payload = {}) {
+  const conversationId = cleanText(payload.conversationId || payload.conversation_id);
+  const reason = cleanText(payload.reason);
+  if (!conversationId) throw new Error('No se ha indicado la conversacion.');
+  if (reason.length < 3) throw new Error('Indica brevemente el motivo del reporte.');
+  const conversation = await requireCommunityConversationParticipant(supabase, conversationId, beneficiary.id);
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('community_conversations')
+    .update({
+      status: 'reported',
+      reported_by_beneficiary_id: beneficiary.id,
+      report_reason: reason,
+      reported_at: now,
+      updated_at: now
+    })
+    .eq('id', conversation.id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  await notifyCommunityConversationReport(supabase, beneficiary, data, now);
+  await audit(supabase, `Portal del Beneficiario: conversacion reportada ${conversation.id}`);
+  return data;
+}
+
+async function requireCommunityConversationParticipant(supabase, conversationId, beneficiaryId) {
+  const { data, error } = await supabase
+    .from('community_conversations')
+    .select('id,post_id,interest_id,author_beneficiary_id,interested_beneficiary_id,status')
+    .eq('id', conversationId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || (data.author_beneficiary_id !== beneficiaryId && data.interested_beneficiary_id !== beneficiaryId)) {
+    throw new Error('La conversacion no existe o no pertenece a tu portal.');
+  }
+  return data;
+}
+
+async function createBeneficiaryPortalNotice(supabase, beneficiaryId, payload = {}) {
+  if (!beneficiaryId) return null;
+  const now = payload.created_at || new Date().toISOString();
+  const { data, error } = await supabase
+    .from('beneficiary_portal_notices')
+    .insert({
+      beneficiary_id: beneficiaryId,
+      title: cleanText(payload.title || 'Aviso de Comunidad'),
+      message: cleanText(payload.message || ''),
+      notice_type: cleanText(payload.notice_type || 'community'),
+      status: 'unread',
+      created_at: now,
+      updated_at: now
+    })
+    .select()
+    .single();
+  if (error) {
+    console.warn('[send-portal-otp] No se pudo registrar aviso de portal de Comunidad', { beneficiaryId, message: error.message });
+    return null;
+  }
+  return data;
+}
+
+async function notifyOfferReserved(supabase, beneficiaryId, post, now) {
+  return createBeneficiaryPortalNotice(supabase, beneficiaryId, {
+    title: 'Articulo reservado para ti',
+    message: `La publicacion "${post.title}" ha sido reservada para ti. Puedes contactar con la persona autora desde Comunidad.`,
+    notice_type: 'community_offer_reserved',
+    created_at: now
+  });
+}
+
+async function notifyOfferReservationCancelled(supabase, beneficiaryId, post, now) {
+  return createBeneficiaryPortalNotice(supabase, beneficiaryId, {
+    title: 'Reserva cancelada',
+    message: `La reserva de "${post.title}" se ha cancelado. La publicacion vuelve a estar disponible.`,
+    notice_type: 'community_offer_available',
+    created_at: now
+  });
+}
+
+async function notifyOfferDelivered(supabase, beneficiaryId, post, now) {
+  return createBeneficiaryPortalNotice(supabase, beneficiaryId, {
+    title: 'Articulo entregado',
+    message: `La publicacion "${post.title}" ha sido marcada como entregada por su autor.`,
+    notice_type: 'community_offer_delivered',
+    created_at: now
+  });
+}
+
+async function notifyOfferNoLongerAvailable(supabase, beneficiaryId, post, now) {
+  return createBeneficiaryPortalNotice(supabase, beneficiaryId, {
+    title: 'Articulo ya entregado',
+    message: `La publicacion "${post.title}" ya ha sido entregada.`,
+    notice_type: 'community_offer_unavailable',
+    created_at: now
+  });
+}
+
+async function notifyCommunityConversationReport(supabase, beneficiary, conversation, now) {
   const { error } = await supabase.from('notificaciones').insert({
-    tipo: 'info',
-    prioridad: 'normal',
+    tipo: 'warning',
+    prioridad: 'warning',
     modulo: 'community-moderation',
     origen: 'Portal del Beneficiario',
-    titulo: 'Interes registrado en Comunidad',
-    mensaje: `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha marcado interes en: ${post.title}.`,
+    titulo: 'Conversacion reportada en Comunidad',
+    mensaje: `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha reportado una conversacion de Comunidad.`,
     estado: 'Pendiente',
     leida: false,
-    entity_type: 'community_post',
-    entity_id: post.id,
+    entity_type: 'community_conversation',
+    entity_id: conversation.id,
     action_url: '/community-moderation',
-    dedupe_key: `community-interest-${post.id}-${beneficiary.id}-${now}`,
+    dedupe_key: `community-conversation-report-${conversation.id}-${beneficiary.id}-${now}`,
     metadata: {
       beneficiary_id: beneficiary.id,
-      post_id: post.id
+      conversation_id: conversation.id,
+      post_id: conversation.post_id
     },
     created_at: now,
     updated_at: now
   });
-  if (error) console.warn('[send-portal-otp] No se pudo registrar notificacion de interes de comunidad', { message: error.message });
+  if (error) console.warn('[send-portal-otp] No se pudo registrar notificacion de reporte de conversacion', { message: error.message });
+}
+
+function dedupeById(items = []) {
+  return [...new Map(items.filter((item) => item?.id).map((item) => [item.id, item])).values()];
+}
+
+function latestByPost(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    if (!map.has(item.post_id) || String(item.updated_at || item.created_at || '') > String(map.get(item.post_id).updated_at || map.get(item.post_id).created_at || '')) {
+      map.set(item.post_id, item);
+    }
+  });
+  return map;
+}
+
+function groupByPost(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.post_id) || [];
+    list.push(item);
+    map.set(item.post_id, list);
+  });
+  return map;
+}
+
+function groupByConversation(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.conversation_id) || [];
+    list.push(item);
+    map.set(item.conversation_id, list);
+  });
+  return map;
 }
 
 async function uploadCommunityPhotoFromDataUrl(supabase, beneficiary, dataUrl, fileName = '') {

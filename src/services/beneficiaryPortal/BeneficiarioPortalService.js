@@ -218,7 +218,7 @@ function sanitizeCommunityPostPayload(beneficiaryId, payload = {}) {
     requirements: cleanText(payload.requirements),
     deadline_at: payload.deadline_at || null,
     expires_at: expiresAt,
-    contact_method: cleanText(payload.contact_method || 'Gestionado por Pan y Esperanza'),
+    contact_method: cleanText(payload.contact_method || 'Chat privado dentro del Portal Beneficiario'),
     status: 'pending_review',
     resolution_status: 'active',
     created_at: new Date().toISOString(),
@@ -239,8 +239,24 @@ function isCommunityPostActive(post = {}) {
   return true;
 }
 
+function isCommunityPostAvailableForInterest(post = {}) {
+  if (!isCommunityPostActive(post)) return false;
+  if (post.category === 'offer' && (post.offer_status || 'available') !== 'available') return false;
+  return true;
+}
+
+function isCommunityPostVisibleToBeneficiary(post = {}, beneficiaryId = '', interest = null) {
+  if (post.beneficiary_id === beneficiaryId) return true;
+  if (!isCommunityPostActive(post)) return false;
+  if (post.category !== 'offer') return true;
+  const offerStatus = post.offer_status || 'available';
+  if (offerStatus === 'available') return true;
+  if (offerStatus === 'reserved') return post.reserved_beneficiary_id === beneficiaryId || interest?.status === 'reserved';
+  return false;
+}
+
 function interestIsActive(interest = null) {
-  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed'].includes(interest.status));
+  return Boolean(interest && !['cancelled', 'withdrawn', 'closed', 'delivered', 'not_completed', 'completed', 'not_selected'].includes(interest.status));
 }
 
 function statusLabelForCommunityInterest(status = '') {
@@ -252,6 +268,9 @@ function statusLabelForCommunityInterest(status = '') {
     delivery_pending: 'Entrega pendiente',
     delivered: 'Entregado / Cerrado',
     not_completed: 'No realizado',
+    reserved: 'Reservado',
+    completed: 'Entregado / Cerrado',
+    not_selected: 'Cerrado',
     referred: 'Derivado',
     closed: 'Cerrado',
     cancelled: 'Cancelado',
@@ -335,9 +354,24 @@ function analyzeCommunityEmploymentRecommendation(post = {}, beneficiary = {}) {
   };
 }
 
-function sanitizePortalCommunityPost(post = {}, currentBeneficiary = '', interest = null, report = null) {
-  const currentBeneficiaryId = typeof currentBeneficiary === 'string' ? currentBeneficiary : currentBeneficiary?.id;
+function sanitizePortalCommunityPost(post = {}, currentBeneficiary = '', interest = null, report = null, context = {}) {
+  const currentBeneficiaryId = context.currentBeneficiaryId || (typeof currentBeneficiary === 'string' ? currentBeneficiary : currentBeneficiary?.id);
   const ownPost = post.beneficiary_id === currentBeneficiaryId;
+  const ownerInterests = context.ownerInterestsByPost?.get(post.id) || [];
+  const conversation = interest?.id ? context.conversationByInterest?.get(interest.id) : null;
+  const manualRecommendation = context.recommendationByPost?.get(post.id) || null;
+  const offerStatus = post.offer_status || 'available';
+  const reservedForMe = post.reserved_beneficiary_id === currentBeneficiaryId || interest?.status === 'reserved';
+  const active = isCommunityPostActive(post);
+  const automaticRecommendation = ownPost ? null : analyzeCommunityEmploymentRecommendation(post, currentBeneficiary);
+  const recommendation = !ownPost && manualRecommendation
+    ? {
+        recommended: true,
+        label: 'Recomendado por el equipo',
+        reasons: ['El equipo de Pan y Esperanza ha revisado esta publicacion y la ha marcado para tu Portal.'],
+        note: 'Recomendacion revisada por el equipo de Pan y Esperanza.'
+      }
+    : automaticRecommendation;
   return {
     id: post.id,
     category: post.category || 'need',
@@ -352,9 +386,16 @@ function sanitizePortalCommunityPost(post = {}, currentBeneficiary = '', interes
     requirements: post.requirements || '',
     deadline_at: post.deadline_at || null,
     expires_at: post.expires_at || null,
-    contact_method: post.contact_method || 'Gestionado por Pan y Esperanza',
+    contact_method: post.contact_method || 'Chat privado dentro del Portal Beneficiario',
     status: post.status || 'pending_review',
     resolution_status: post.resolution_status || 'active',
+    offer_status: offerStatus,
+    reserved_interest_id: post.reserved_interest_id || null,
+    reserved_beneficiary_id: post.reserved_beneficiary_id || null,
+    reserved_at: post.reserved_at || null,
+    delivered_interest_id: post.delivered_interest_id || null,
+    delivered_beneficiary_id: post.delivered_beneficiary_id || null,
+    delivered_at: post.delivered_at || null,
     rejection_reason: ownPost ? post.rejection_reason || '' : '',
     blocked_reason: ownPost ? post.blocked_reason || '' : '',
     created_at: post.created_at || null,
@@ -362,14 +403,99 @@ function sanitizePortalCommunityPost(post = {}, currentBeneficiary = '', interes
     reviewed_at: post.reviewed_at || null,
     withdrawn_at: post.withdrawn_at || null,
     ownPost,
-    active: isCommunityPostActive(post),
+    active,
+    available_for_interest: !ownPost && active && !interestIsActive(interest) && isCommunityPostAvailableForInterest(post),
+    reserved_for_me: reservedForMe,
     interested: interestIsActive(interest),
     interest_id: interest?.id || null,
     interest_status: interest?.status || '',
     interest_status_label: statusLabelForCommunityInterest(interest?.status),
+    interest_count: ownerInterests.filter(interestIsActive).length,
+    interests: ownPost ? ownerInterests.map((item) => sanitizeCommunityInterestForPortal(item, context)) : [],
+    conversation: conversation ? sanitizeCommunityConversationForPortal(conversation, context) : null,
     reported: Boolean(report && report.status !== 'dismissed'),
-    recommendation: ownPost ? null : analyzeCommunityEmploymentRecommendation(post, currentBeneficiary)
+    manual_recommendation: Boolean(manualRecommendation),
+    recommendation
   };
+}
+
+function sanitizeCommunityInterestForPortal(interest = {}, context = {}) {
+  const beneficiary = context.beneficiaryById?.get(interest.beneficiary_id) || {};
+  const conversation = context.conversationByInterest?.get(interest.id) || null;
+  return {
+    id: interest.id,
+    post_id: interest.post_id,
+    beneficiary_id: interest.beneficiary_id,
+    beneficiary_name: beneficiary.full_name || 'Beneficiario',
+    beneficiary_code: beneficiary.code || '',
+    status: interest.status || 'new',
+    status_label: statusLabelForCommunityInterest(interest.status),
+    message: interest.message || '',
+    status_notes: interest.status_notes || '',
+    created_at: interest.created_at || null,
+    updated_at: interest.updated_at || null,
+    conversation: conversation ? sanitizeCommunityConversationForPortal(conversation, context) : null
+  };
+}
+
+function sanitizeCommunityConversationForPortal(conversation = {}, context = {}) {
+  const currentId = context.currentBeneficiaryId;
+  const messages = context.messagesByConversation?.get(conversation.id) || [];
+  const participantId = conversation.author_beneficiary_id === currentId
+    ? conversation.interested_beneficiary_id
+    : conversation.author_beneficiary_id;
+  const participant = context.beneficiaryById?.get(participantId) || {};
+  return {
+    id: conversation.id,
+    post_id: conversation.post_id,
+    interest_id: conversation.interest_id,
+    status: conversation.status || 'open',
+    blocked_by_me: conversation.blocked_by_beneficiary_id === currentId,
+    reported_by_me: conversation.reported_by_beneficiary_id === currentId,
+    participant_name: participant.full_name || 'Beneficiario',
+    participant_code: participant.code || '',
+    last_message_at: conversation.last_message_at || null,
+    unread_count: messages.filter((message) => message.sender_beneficiary_id !== currentId && !message.read_at).length,
+    messages: messages.map((message) => ({
+      id: message.id,
+      conversation_id: message.conversation_id,
+      sender: message.sender_beneficiary_id === currentId ? 'me' : 'other',
+      message: message.message || '',
+      read_at: message.read_at || null,
+      created_at: message.created_at || null
+    }))
+  };
+}
+
+function latestByPost(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    const current = map.get(item.post_id);
+    if (!current || String(item.updated_at || item.created_at || '') > String(current.updated_at || current.created_at || '')) {
+      map.set(item.post_id, item);
+    }
+  });
+  return map;
+}
+
+function groupByPost(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.post_id) || [];
+    list.push(item);
+    map.set(item.post_id, list);
+  });
+  return map;
+}
+
+function groupByConversation(items = []) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.conversation_id) || [];
+    list.push(item);
+    map.set(item.conversation_id, list);
+  });
+  return map;
 }
 
 function normalizeAccessIdentifier(value) {
@@ -456,6 +582,9 @@ export class BeneficiarioPortalService {
     communityPosts = [],
     communityInterests = [],
     communityReports = [],
+    communityConversations = [],
+    communityMessages = [],
+    communityPostRecommendations = [],
     notifications = [],
     organizationSettings = {},
     audit = async () => {},
@@ -476,6 +605,9 @@ export class BeneficiarioPortalService {
     this.communityPosts = communityPosts;
     this.communityInterests = communityInterests;
     this.communityReports = communityReports;
+    this.communityConversations = communityConversations;
+    this.communityMessages = communityMessages;
+    this.communityPostRecommendations = communityPostRecommendations;
     this.notifications = notifications;
     this.organizationSettings = organizationSettings;
     this.audit = audit;
@@ -842,7 +974,7 @@ export class BeneficiarioPortalService {
     const beneficiary = await this.requireBeneficiaryFromSession(session);
     const posts = await this.readCommunityPosts();
     const post = posts.find((item) => item.id === postId);
-    if (!post || !isCommunityPostActive(post)) throw new Error('La publicacion ya no esta disponible.');
+    if (!post || !isCommunityPostAvailableForInterest(post)) throw new Error('La publicacion ya no esta disponible.');
     if (post.beneficiary_id === beneficiary.id) throw new Error('No puedes marcar interes en tu propia publicacion.');
     const interests = await this.readCommunityInterests();
     const current = interests.find((item) => item.post_id === postId && item.beneficiary_id === beneficiary.id);
@@ -856,6 +988,16 @@ export class BeneficiarioPortalService {
     const interest = current
       ? await this.repository.updateCommunityInterest(current.id, interestPayload)
       : await this.repository.createCommunityInterest({ ...interestPayload, created_at: new Date().toISOString() });
+    await this.ensureCommunityConversation(post, interest);
+    await this.repository.createNotice({
+      beneficiary_id: post.beneficiary_id,
+      title: 'Alguien esta interesado en tu publicacion',
+      message: `A ${beneficiary.code || 'un beneficiario'} le interesa tu publicacion "${post.title}". Puedes verlo y contactar desde Comunidad.`,
+      notice_type: 'community_interest',
+      status: 'unread',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     await this.audit(`Portal beneficiario: interes registrado en comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
     return interest;
   }
@@ -865,8 +1007,8 @@ export class BeneficiarioPortalService {
     const interests = await this.readCommunityInterests();
     const interest = interests.find((item) => item.id === interestId && item.beneficiary_id === beneficiary.id);
     if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
-    if (['delivery_pending', 'delivered', 'not_completed', 'closed'].includes(interest.status)) {
-      throw new Error('Este interes ya esta en gestion y no puede retirarse desde el portal.');
+    if (['reserved', 'completed', 'not_selected', 'delivery_pending', 'delivered', 'not_completed', 'closed'].includes(interest.status)) {
+      throw new Error('Este interes ya no puede retirarse desde el portal.');
     }
     const updated = await this.repository.updateCommunityInterest(interest.id, {
       status: 'withdrawn',
@@ -877,50 +1019,249 @@ export class BeneficiarioPortalService {
   }
 
   async resolveCommunityInterest(session, interestId, outcome) {
-    const beneficiary = await this.requireBeneficiaryFromSession(session);
-    const normalizedOutcome = cleanText(outcome).toLowerCase();
-    if (!['delivered', 'not_completed'].includes(normalizedOutcome)) {
-      throw new Error('Resultado de interes no valido.');
-    }
-    const interests = await this.readCommunityInterests();
-    const interest = interests.find((item) => item.id === interestId && item.beneficiary_id === beneficiary.id);
-    if (!interest) throw new Error('El interes no existe o no pertenece a tu portal.');
-    if (interest.status !== 'delivery_pending') throw new Error('Este interes no esta pendiente de entrega.');
-    const posts = await this.readCommunityPosts();
-    const post = posts.find((item) => item.id === interest.post_id);
-    if (!post || post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
+    await this.requireBeneficiaryFromSession(session);
+    throw new Error('El propietario de la publicacion gestiona la reserva y la entrega desde su Portal.');
+  }
 
+  async ensureCommunityConversation(post, interest) {
+    const conversations = await this.readCommunityConversations();
+    const current = conversations.find((item) => item.interest_id === interest.id)
+      || conversations.find((item) => item.post_id === post.id && item.interested_beneficiary_id === interest.beneficiary_id);
+    if (current) {
+      if (current.status !== 'open') {
+        return this.repository.updateCommunityConversation(current.id, {
+          status: 'open',
+          closed_at: null,
+          updated_at: new Date().toISOString()
+        });
+      }
+      return current;
+    }
+    return this.repository.createCommunityConversation({
+      post_id: post.id,
+      interest_id: interest.id,
+      author_beneficiary_id: post.beneficiary_id,
+      interested_beneficiary_id: interest.beneficiary_id,
+      status: 'open',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+  }
+
+  async sendCommunityMessage(session, conversationId, message) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const conversation = await this.requireCommunityConversationParticipant(conversationId, beneficiary.id);
+    if (['blocked', 'closed', 'completed'].includes(conversation.status)) {
+      throw new Error('Esta conversacion ya no admite nuevos mensajes.');
+    }
+    const cleanMessage = cleanText(message);
+    if (!cleanMessage) throw new Error('Escribe un mensaje.');
+    if (cleanMessage.length > 1200) throw new Error('El mensaje no puede superar 1200 caracteres.');
     const now = new Date().toISOString();
-    const updated = await this.repository.updateCommunityInterest(interest.id, {
-      status: normalizedOutcome,
-      status_notes: normalizedOutcome === 'delivered'
-        ? 'Articulo confirmado como recibido por el beneficiario interesado.'
-        : 'El beneficiario interesado indico que la entrega no se realizo.',
+    const created = await this.repository.createCommunityMessage({
+      conversation_id: conversation.id,
+      sender_beneficiary_id: beneficiary.id,
+      message: cleanMessage,
+      created_at: now,
+      updated_at: now
+    });
+    await this.repository.updateCommunityConversation(conversation.id, {
+      last_message_at: now,
+      updated_at: now
+    });
+    const recipientId = conversation.author_beneficiary_id === beneficiary.id
+      ? conversation.interested_beneficiary_id
+      : conversation.author_beneficiary_id;
+    await this.repository.createNotice({
+      beneficiary_id: recipientId,
+      title: 'Nuevo mensaje en Comunidad',
+      message: `${beneficiary.code || 'Un beneficiario'} te ha enviado un mensaje sobre una publicacion.`,
+      notice_type: 'community_message',
+      status: 'unread',
+      created_at: now,
+      updated_at: now
+    });
+    await this.audit(`Portal beneficiario: mensaje de comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
+    return created;
+  }
+
+  async markCommunityConversationRead(session, conversationId) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const conversation = await this.requireCommunityConversationParticipant(conversationId, beneficiary.id);
+    const messages = await this.readCommunityMessages();
+    await Promise.all(messages
+      .filter((item) => item.conversation_id === conversation.id && item.sender_beneficiary_id !== beneficiary.id && !item.read_at)
+      .map((item) => this.repository.updateCommunityMessage(item.id, { read_at: new Date().toISOString(), updated_at: new Date().toISOString() })));
+    return { read: true };
+  }
+
+  async updateCommunityOfferStatus(session, postId, payload = {}) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const posts = await this.readCommunityPosts();
+    const post = posts.find((item) => item.id === postId && item.beneficiary_id === beneficiary.id);
+    if (!post) throw new Error('La publicacion no existe o no pertenece a tu portal.');
+    if (post.category !== 'offer') throw new Error('Esta accion solo esta disponible para publicaciones de Ofrezco.');
+    const status = cleanText(payload.status || payload.offer_status);
+    if (status === 'reserved') return this.reserveCommunityOffer(post, payload.interestId || payload.interest_id);
+    if (status === 'available') return this.makeCommunityOfferAvailableAgain(post);
+    if (status === 'delivered') return this.markCommunityOfferDelivered(post);
+    throw new Error('Estado de articulo no valido.');
+  }
+
+  async reserveCommunityOffer(post, interestId) {
+    if (!isCommunityPostAvailableForInterest(post)) throw new Error('El articulo no esta disponible para reservar.');
+    const interests = await this.readCommunityInterests();
+    const interest = interests.find((item) => item.id === interestId && item.post_id === post.id);
+    if (!interest || !interestIsActive(interest)) throw new Error('El interes seleccionado no esta disponible.');
+    const now = new Date().toISOString();
+    const updated = await this.repository.updateCommunityPost(post.id, {
+      offer_status: 'reserved',
+      reserved_interest_id: interest.id,
+      reserved_beneficiary_id: interest.beneficiary_id,
+      reserved_at: now,
+      updated_at: now
+    });
+    await this.repository.updateCommunityInterest(interest.id, {
+      status: 'reserved',
+      status_notes: 'El propietario ha reservado este articulo para esta persona.',
+      updated_at: now
+    });
+    await this.repository.createNotice({
+      beneficiary_id: interest.beneficiary_id,
+      title: 'Articulo reservado para ti',
+      message: `La publicacion "${post.title}" ha sido reservada para ti. Puedes contactar con la persona autora desde Comunidad.`,
+      notice_type: 'community_offer_reserved',
+      status: 'unread',
+      created_at: now,
+      updated_at: now
+    });
+    return updated;
+  }
+
+  async makeCommunityOfferAvailableAgain(post) {
+    if ((post.offer_status || 'available') !== 'reserved') throw new Error('El articulo no esta reservado.');
+    const now = new Date().toISOString();
+    const reservedInterestId = post.reserved_interest_id;
+    const reservedBeneficiaryId = post.reserved_beneficiary_id;
+    const updated = await this.repository.updateCommunityPost(post.id, {
+      offer_status: 'available',
+      reserved_interest_id: null,
+      reserved_beneficiary_id: null,
+      reserved_at: null,
+      updated_at: now
+    });
+    if (reservedInterestId) {
+      await this.repository.updateCommunityInterest(reservedInterestId, {
+        status: 'new',
+        status_notes: 'El propietario cancelo la reserva. La publicacion vuelve a estar disponible.',
+        updated_at: now
+      });
+    }
+    if (reservedBeneficiaryId) {
+      await this.repository.createNotice({
+        beneficiary_id: reservedBeneficiaryId,
+        title: 'Reserva cancelada',
+        message: `La reserva de "${post.title}" se ha cancelado. La publicacion vuelve a estar disponible.`,
+        notice_type: 'community_offer_available',
+        status: 'unread',
+        created_at: now,
+        updated_at: now
+      });
+    }
+    return updated;
+  }
+
+  async markCommunityOfferDelivered(post) {
+    if ((post.offer_status || 'available') !== 'reserved' || !post.reserved_interest_id || !post.reserved_beneficiary_id) {
+      throw new Error('Antes de marcar como entregado debes reservar el articulo para una persona.');
+    }
+    const now = new Date().toISOString();
+    const updated = await this.repository.updateCommunityPost(post.id, {
+      offer_status: 'delivered',
+      resolution_status: 'item_delivered',
+      resolution_notes: 'Articulo marcado como entregado por el propietario desde el Portal Beneficiario.',
+      delivered_interest_id: post.reserved_interest_id,
+      delivered_beneficiary_id: post.reserved_beneficiary_id,
+      delivered_at: now,
+      updated_at: now
+    });
+    await this.repository.updateCommunityInterest(post.reserved_interest_id, {
+      status: 'completed',
+      status_notes: 'Articulo entregado por el propietario.',
       closed_at: now,
       updated_at: now
     });
-
-    if (normalizedOutcome === 'delivered') {
-      await this.repository.updateCommunityPost(post.id, {
-        status: 'withdrawn',
-        resolution_status: 'item_delivered',
-        resolution_notes: 'Articulo confirmado como recibido por el beneficiario interesado.',
-        withdrawn_at: now,
-        updated_at: now
-      });
-      const pendingStatuses = new Set(['registered', 'new', 'reviewed', 'contacted', 'referred', 'delivery_pending']);
-      await Promise.all(interests
-        .filter((item) => item.post_id === post.id && item.id !== interest.id && pendingStatuses.has(item.status))
-        .map((item) => this.repository.updateCommunityInterest(item.id, {
-          status: 'closed',
-          status_notes: 'Publicacion cerrada porque el articulo fue entregado.',
+    const interests = await this.readCommunityInterests();
+    await Promise.all(interests
+      .filter((item) => item.post_id === post.id && item.id !== post.reserved_interest_id && interestIsActive(item))
+      .map(async (item) => {
+        await this.repository.updateCommunityInterest(item.id, {
+          status: 'not_selected',
+          status_notes: 'Este articulo ya ha sido entregado.',
           closed_at: now,
           updated_at: now
-        })));
-    }
-
-    await this.audit(`Portal beneficiario: resultado de interes ${normalizedOutcome} en comunidad para ${beneficiary.full_name || beneficiary.id}`.trim());
+        });
+        await this.repository.createNotice({
+          beneficiary_id: item.beneficiary_id,
+          title: 'Articulo ya entregado',
+          message: `La publicacion "${post.title}" ya ha sido entregada.`,
+          notice_type: 'community_offer_unavailable',
+          status: 'unread',
+          created_at: now,
+          updated_at: now
+        });
+      }));
+    await this.repository.createNotice({
+      beneficiary_id: post.reserved_beneficiary_id,
+      title: 'Articulo entregado',
+      message: `La publicacion "${post.title}" ha sido marcada como entregada por su autor.`,
+      notice_type: 'community_offer_delivered',
+      status: 'unread',
+      created_at: now,
+      updated_at: now
+    });
+    const conversations = await this.readCommunityConversations();
+    await Promise.all(conversations
+      .filter((item) => item.post_id === post.id)
+      .map((item) => this.repository.updateCommunityConversation(item.id, { status: 'completed', closed_at: now, updated_at: now })));
     return updated;
+  }
+
+  async blockCommunityConversation(session, conversationId, payload = {}) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const conversation = await this.requireCommunityConversationParticipant(conversationId, beneficiary.id);
+    return this.repository.updateCommunityConversation(conversation.id, {
+      status: 'blocked',
+      blocked_by_beneficiary_id: beneficiary.id,
+      blocked_reason: cleanText(payload.reason || 'Bloqueada por el beneficiario'),
+      closed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+  }
+
+  async reportCommunityConversation(session, conversationId, payload = {}) {
+    const beneficiary = await this.requireBeneficiaryFromSession(session);
+    const reason = cleanText(payload.reason);
+    if (reason.length < 3) throw new Error('Indica brevemente el motivo del reporte.');
+    const conversation = await this.requireCommunityConversationParticipant(conversationId, beneficiary.id);
+    const updated = await this.repository.updateCommunityConversation(conversation.id, {
+      status: 'reported',
+      reported_by_beneficiary_id: beneficiary.id,
+      report_reason: reason,
+      reported_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    await this.notificacionService?.notifyBeneficiaryPortalChanged?.({ type: 'community_conversation_reported', payload: updated });
+    return updated;
+  }
+
+  async requireCommunityConversationParticipant(conversationId, beneficiaryId) {
+    const conversations = await this.readCommunityConversations();
+    const conversation = conversations.find((item) => item.id === conversationId);
+    if (!conversation || (conversation.author_beneficiary_id !== beneficiaryId && conversation.interested_beneficiary_id !== beneficiaryId)) {
+      throw new Error('La conversacion no existe o no pertenece a tu portal.');
+    }
+    return conversation;
   }
 
   async reportCommunityPost(session, postId, payload = {}) {
@@ -1126,26 +1467,41 @@ export class BeneficiarioPortalService {
 
   async getCommunityOverview(beneficiaryId) {
     const beneficiary = await this.requireBeneficiary(beneficiaryId);
-    const [posts, interests, reports] = await Promise.all([
+    const [posts, interests, reports, conversations, messages, recommendations, beneficiaries] = await Promise.all([
       this.readCommunityPosts(),
       this.readCommunityInterests(),
-      this.readCommunityReports()
+      this.readCommunityReports(),
+      this.readCommunityConversations(),
+      this.readCommunityMessages(),
+      this.readCommunityPostRecommendations(),
+      this.readBeneficiaries()
     ]);
-    const interestByPost = new Map(interests
-      .filter((item) => item.beneficiary_id === beneficiaryId && interestIsActive(item))
-      .map((item) => [item.post_id, item]));
+    const currentInterests = interests.filter((item) => item.beneficiary_id === beneficiaryId);
+    const interestByPost = latestByPost(currentInterests.filter(interestIsActive));
     const reportByPost = new Map(reports
       .filter((item) => item.beneficiary_id === beneficiaryId && item.status !== 'dismissed')
       .map((item) => [item.post_id, item]));
+    const ownPostIds = posts.filter((post) => post.beneficiary_id === beneficiaryId).map((post) => post.id);
+    const participantConversations = conversations.filter((conversation) =>
+      conversation.author_beneficiary_id === beneficiaryId || conversation.interested_beneficiary_id === beneficiaryId
+    );
+    const context = {
+      currentBeneficiaryId: beneficiaryId,
+      ownerInterestsByPost: groupByPost(interests.filter((item) => ownPostIds.includes(item.post_id))),
+      recommendationByPost: latestByPost(recommendations.filter((item) => item.beneficiary_id === beneficiaryId && item.status === 'active')),
+      conversationByInterest: new Map(participantConversations.map((item) => [item.interest_id, item])),
+      messagesByConversation: groupByConversation(messages.filter((item) => participantConversations.some((conversation) => conversation.id === item.conversation_id))),
+      beneficiaryById: new Map(beneficiaries.map((item) => [item.id, item]))
+    };
     const visible = posts
-      .filter((post) => post.beneficiary_id === beneficiaryId || isCommunityPostActive(post))
-      .map((post) => sanitizePortalCommunityPost(post, beneficiary, interestByPost.get(post.id), reportByPost.get(post.id)))
+      .filter((post) => isCommunityPostVisibleToBeneficiary(post, beneficiaryId, interestByPost.get(post.id)))
+      .map((post) => sanitizePortalCommunityPost(post, beneficiary, interestByPost.get(post.id), reportByPost.get(post.id), context))
       .sort((a, b) => sortByDateDesc(a, b, 'created_at'));
 
     return {
-      posts: visible.filter((post) => post.status === 'approved' && post.active),
+      posts: visible.filter((post) => !post.ownPost && post.status === 'approved' && (post.active || post.reserved_for_me)),
       myPosts: visible.filter((post) => post.ownPost),
-      interests: interests.filter((item) => item.beneficiary_id === beneficiaryId && interestIsActive(item))
+      interests: currentInterests.filter(interestIsActive)
     };
   }
 
@@ -1264,6 +1620,21 @@ export class BeneficiarioPortalService {
   async readCommunityReports() {
     if (this.communityReports.length) return this.communityReports;
     return this.repository.listCommunityReports();
+  }
+
+  async readCommunityConversations() {
+    if (this.communityConversations.length) return this.communityConversations;
+    return this.repository.listCommunityConversations();
+  }
+
+  async readCommunityMessages() {
+    if (this.communityMessages.length) return this.communityMessages;
+    return this.repository.listCommunityMessages();
+  }
+
+  async readCommunityPostRecommendations() {
+    if (this.communityPostRecommendations.length) return this.communityPostRecommendations;
+    return this.repository.listCommunityPostRecommendations();
   }
 
   resourceMatchesBeneficiary(resource, profileSignals) {

@@ -75,6 +75,9 @@ const COMMUNITY_INTEREST_STATUS_LABELS = {
   delivery_pending: 'Entrega pendiente',
   delivered: 'Entregado / Cerrado',
   not_completed: 'No realizado',
+  reserved: 'Reservado',
+  completed: 'Entregado / Cerrado',
+  not_selected: 'Cerrado',
   referred: 'Derivado',
   closed: 'Cerrado',
   cancelled: 'Cancelado',
@@ -1511,6 +1514,11 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
   const [optimisticInterestByPost, setOptimisticInterestByPost] = useState({});
   const [reportOpenByPost, setReportOpenByPost] = useState({});
   const [reportReasonByPost, setReportReasonByPost] = useState({});
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatReason, setChatReason] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [offerActionByPost, setOfferActionByPost] = useState({});
   const [photoPreview, setPhotoPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -1527,7 +1535,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     requirements: '',
     deadline_at: '',
     expires_at: '',
-    contact_method: 'Gestionado por Pan y Esperanza'
+    contact_method: 'Chat privado dentro del Portal Beneficiario'
   });
   const posts = community.posts || [];
   const myPosts = community.myPosts || [];
@@ -1579,7 +1587,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
         requirements: '',
         deadline_at: '',
         expires_at: '',
-        contact_method: 'Gestionado por Pan y Esperanza'
+        contact_method: 'Chat privado dentro del Portal Beneficiario'
       });
       setPhotoPreview('');
       setSuccess('Publicacion enviada. Aparecera cuando el equipo la revise y apruebe.');
@@ -1609,7 +1617,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
         }
       }));
       setInterestMessageByPost((current) => ({ ...current, [post.id]: '' }));
-      setSuccess('Hemos registrado tu interés. El equipo de Pan y Esperanza revisará la solicitud.');
+      setSuccess('Hemos registrado tu interés. La persona autora recibirá un aviso y podréis contactar desde Comunidad.');
       try {
         await onRefresh();
       } catch (refreshError) {
@@ -1662,43 +1670,96 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     }
   }
 
-  async function resolveInterest(post, outcome) {
+  async function updateOfferStatus(post, status, interestId = '') {
     setError('');
     setSuccess('');
-    setInterestSubmittingByPost((current) => ({ ...current, [post.id]: true }));
+    setOfferActionByPost((current) => ({ ...current, [post.id]: true }));
     try {
-      const interest = await service.resolveCommunityInterest(session, post.interest_id, outcome);
-      const delivered = outcome === 'delivered';
-      setOptimisticInterestByPost((current) => ({
-        ...current,
-        [post.id]: delivered
-          ? {
-              interested: true,
-              interest_id: interest?.id || post.interest_id,
-              interest_status: 'delivered',
-              interest_status_label: 'Entregado / Cerrado',
-              active: false,
-              resolution_status: 'item_delivered'
-            }
-          : {
-              interested: false,
-              interest_id: null,
-              interest_status: '',
-              interest_status_label: ''
-            }
-      }));
-      setSuccess(delivered
-        ? 'Gracias. Hemos registrado que has recibido el articulo.'
-        : 'Hemos registrado que la entrega no se realizo. La publicacion seguira disponible si el articulo continua disponible.');
-      try {
-        await onRefresh();
-      } catch (refreshError) {
-        console.warn('[Portal Beneficiario] Resultado de interes registrado, pero no se pudo refrescar Comunidad.', refreshError);
-      }
-    } catch (resolveError) {
-      setError(resolveError.message || 'No se pudo actualizar el interes.');
+      await service.updateCommunityOfferStatus(session, post.id, { status, interestId });
+      const messages = {
+        reserved: 'Artículo reservado para la persona seleccionada.',
+        available: 'La reserva se ha cancelado. La publicación vuelve a estar disponible.',
+        delivered: 'Artículo marcado como entregado. La publicación se retira de Comunidad.'
+      };
+      setSuccess(messages[status] || 'Publicación actualizada.');
+      await onRefresh();
+    } catch (offerError) {
+      setError(offerError.message || 'No se pudo actualizar el estado del artículo.');
     } finally {
-      setInterestSubmittingByPost((current) => ({ ...current, [post.id]: false }));
+      setOfferActionByPost((current) => ({ ...current, [post.id]: false }));
+    }
+  }
+
+  async function openConversation(conversation) {
+    if (!conversation?.id) return;
+    setActiveConversation(conversation);
+    setChatMessage('');
+    setChatReason('');
+    try {
+      await service.markCommunityConversationRead(session, conversation.id);
+      await onRefresh();
+    } catch (readError) {
+      console.warn('[Portal Beneficiario] No se pudo marcar la conversacion como leida.', readError);
+    }
+  }
+
+  async function sendMessage() {
+    if (!activeConversation?.id) return;
+    setError('');
+    setSuccess('');
+    setChatSending(true);
+    try {
+      const created = await service.sendCommunityMessage(session, activeConversation.id, chatMessage);
+      setActiveConversation((current) => current?.id === activeConversation.id
+        ? {
+            ...current,
+            messages: [
+              ...(current.messages || []),
+              {
+                id: created?.id || `${Date.now()}`,
+                sender: 'me',
+                message: created?.message || chatMessage,
+                created_at: created?.created_at || new Date().toISOString(),
+                read_at: created?.read_at || null
+              }
+            ]
+          }
+        : current);
+      setChatMessage('');
+      setSuccess('Mensaje enviado.');
+      await onRefresh();
+    } catch (messageError) {
+      setError(messageError.message || 'No se pudo enviar el mensaje.');
+    } finally {
+      setChatSending(false);
+    }
+  }
+
+  async function blockConversation() {
+    if (!activeConversation?.id) return;
+    setError('');
+    setSuccess('');
+    try {
+      await service.blockCommunityConversation(session, activeConversation.id, { reason: chatReason || 'Bloqueada desde el Portal' });
+      setActiveConversation(null);
+      setSuccess('Conversación bloqueada.');
+      await onRefresh();
+    } catch (blockError) {
+      setError(blockError.message || 'No se pudo bloquear la conversación.');
+    }
+  }
+
+  async function reportConversation() {
+    if (!activeConversation?.id) return;
+    setError('');
+    setSuccess('');
+    try {
+      await service.reportCommunityConversation(session, activeConversation.id, { reason: chatReason });
+      setActiveConversation(null);
+      setSuccess('Reporte enviado al equipo de Pan y Esperanza.');
+      await onRefresh();
+    } catch (reportError) {
+      setError(reportError.message || 'No se pudo reportar la conversación.');
     }
   }
 
@@ -1753,8 +1814,12 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                   onInterestMessageChange={(value) => setInterestMessageByPost((current) => ({ ...current, [post.id]: value }))}
                   onInterest={() => registerInterest(post)}
                   onWithdrawInterest={() => withdrawInterest(post)}
-                  onResolveInterest={(outcome) => resolveInterest(post, outcome)}
+                  onOpenConversation={openConversation}
+                  onReserveOffer={(interest) => updateOfferStatus(post, 'reserved', interest.id)}
+                  onMarkDelivered={() => updateOfferStatus(post, 'delivered')}
+                  onMakeAvailable={() => updateOfferStatus(post, 'available')}
                   interestSubmitting={interestSubmittingByPost[post.id] === true}
+                  offerSubmitting={offerActionByPost[post.id] === true}
                   reportOpen={reportOpenByPost[post.id] === true}
                   reportReason={reportReasonByPost[post.id] || ''}
                   onToggleReport={() => setReportOpenByPost((current) => ({ ...current, [post.id]: !current[post.id] }))}
@@ -1843,12 +1908,35 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                       <Trash2 size={15} /> Retirar publicacion
                     </Button>
                   )}
+                  <OwnerCommunityControls
+                    post={post}
+                    onOpenConversation={openConversation}
+                    onReserveOffer={(interest) => updateOfferStatus(post, 'reserved', interest.id)}
+                    onMarkDelivered={() => updateOfferStatus(post, 'delivered')}
+                    onMakeAvailable={() => updateOfferStatus(post, 'available')}
+                    submitting={offerActionByPost[post.id] === true}
+                    onWithdrawPost={null}
+                  />
                 </article>
               ))}
             </div>
           )}
         </Panel>
       </div>
+      {activeConversation && (
+        <CommunityChatModal
+          conversation={activeConversation}
+          message={chatMessage}
+          reason={chatReason}
+          sending={chatSending}
+          onMessageChange={setChatMessage}
+          onReasonChange={setChatReason}
+          onSend={sendMessage}
+          onBlock={blockConversation}
+          onReport={reportConversation}
+          onClose={() => setActiveConversation(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1871,19 +1959,25 @@ function CommunityPortalCard({
   onInterestMessageChange,
   onInterest,
   onWithdrawInterest,
-  onResolveInterest,
+  onOpenConversation,
+  onReserveOffer,
+  onMarkDelivered,
+  onMakeAvailable,
   interestSubmitting = false,
+  offerSubmitting = false,
   reportOpen,
   reportReason,
   onToggleReport,
   onReportReasonChange,
-  onReport
+  onReport,
+  onWithdrawPost
 }) {
   const CategoryIcon = COMMUNITY_CATEGORIES.find((item) => item.id === post.category)?.icon || HandHeart;
   const interestStatus = post.interest_status || '';
-  const isOfferDeliveryPending = post.category === 'offer' && interestStatus === 'delivery_pending';
-  const terminalInterestStatuses = new Set(['closed', 'withdrawn', 'cancelled', 'delivered', 'not_completed']);
-  const canWithdrawInterest = post.interested && !isOfferDeliveryPending && !terminalInterestStatuses.has(interestStatus);
+  const terminalInterestStatuses = new Set(['closed', 'withdrawn', 'cancelled', 'delivered', 'not_completed', 'completed', 'not_selected', 'reserved']);
+  const canWithdrawInterest = post.interested && !terminalInterestStatuses.has(interestStatus);
+  const isReserved = post.category === 'offer' && post.offer_status === 'reserved';
+  const isDelivered = post.category === 'offer' && post.offer_status === 'delivered';
   return (
     <article className="overflow-hidden rounded-md border border-slate-100 bg-slate-50">
       {post.photo_url ? (
@@ -1898,6 +1992,11 @@ function CommunityPortalCard({
           <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-black text-brand-700">
             <CategoryIcon size={14} /> {communityCategoryLabel(post.category)}
           </span>
+          {post.category === 'offer' && (
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black ${communityOfferStatusClass(post.offer_status)}`}>
+              {communityOfferStatusLabel(post.offer_status)}
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
             <MapPin size={14} /> {post.zone}
           </span>
@@ -1910,7 +2009,7 @@ function CommunityPortalCard({
         )}
         {post.recommendation?.recommended && (
           <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
-            <p className="flex items-center gap-2 font-black"><Star size={16} /> Puede interesarte</p>
+            <p className="flex items-center gap-2 font-black"><Star size={16} /> {post.recommendation.label || 'Puede interesarte'}</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
               {(post.recommendation.reasons || []).map((reason) => <li key={reason}>{reason}</li>)}
             </ul>
@@ -1922,22 +2021,26 @@ function CommunityPortalCard({
         {post.deadline_at && <p className="mt-2 text-sm text-slate-600"><strong>Fecha limite:</strong> {formatDate(post.deadline_at)}</p>}
         <div className="mt-4 rounded-md border border-brand-100 bg-white p-3">
           {post.ownPost ? (
-            <p className="text-sm font-bold text-slate-600">Esta es tu publicacion.</p>
+            <OwnerCommunityControls
+              post={post}
+              onOpenConversation={onOpenConversation}
+              onReserveOffer={onReserveOffer}
+              onMarkDelivered={onMarkDelivered}
+              onMakeAvailable={onMakeAvailable}
+              submitting={offerSubmitting}
+              onWithdrawPost={onWithdrawPost}
+            />
           ) : post.interested ? (
             <div className="space-y-2">
               <Button variant="subtle" disabled className="w-full justify-center">
                 ✓ Interés enviado
               </Button>
               <p className="text-sm font-bold text-brand-700">Estado: {COMMUNITY_INTEREST_STATUS_LABELS[post.interest_status] || post.interest_status_label || 'Nuevo'}.</p>
-              {isOfferDeliveryPending && (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Button onClick={() => onResolveInterest('delivered')} disabled={interestSubmitting}>
-                    {interestSubmitting ? 'Confirmando...' : 'Confirmar que lo he recibido'}
-                  </Button>
-                  <Button variant="secondary" onClick={() => onResolveInterest('not_completed')} disabled={interestSubmitting}>
-                    No se realizó la entrega
-                  </Button>
-                </div>
+              {post.reserved_for_me && <p className="rounded-md bg-amber-50 p-3 text-sm font-black text-amber-800">Reservado para ti.</p>}
+              {post.conversation?.id && (
+                <Button onClick={() => onOpenConversation(post.conversation)} className="w-full justify-center">
+                  <MessageSquare size={16} /> Contactar
+                </Button>
               )}
               {canWithdrawInterest && (
                 <Button variant="secondary" onClick={onWithdrawInterest} disabled={interestSubmitting}>
@@ -1945,13 +2048,17 @@ function CommunityPortalCard({
                 </Button>
               )}
             </div>
+          ) : isReserved ? (
+            <p className="rounded-md bg-amber-50 p-3 text-sm font-black text-amber-800">RESERVADO. No admite nuevos intereses.</p>
+          ) : isDelivered || !post.available_for_interest ? (
+            <p className="rounded-md bg-slate-50 p-3 text-sm font-bold text-slate-600">Esta publicación ya no está disponible.</p>
           ) : (
             <div className="space-y-3">
               <textarea
                 className={`${inputClass} min-h-20`}
                 value={interestMessage}
                 onChange={(event) => onInterestMessageChange(event.target.value)}
-                placeholder="Mensaje opcional para el equipo de Pan y Esperanza"
+                placeholder="Mensaje opcional para la persona autora"
               />
               <Button onClick={onInterest} disabled={interestSubmitting}>
                 <MessageSquare size={16} /> {interestSubmitting ? 'Enviando interés...' : 'Me interesa'}
@@ -1987,6 +2094,169 @@ function CommunityPortalCard({
     </article>
   );
 }
+
+function OwnerCommunityControls({
+  post,
+  onOpenConversation,
+  onReserveOffer,
+  onMarkDelivered,
+  onMakeAvailable,
+  submitting = false,
+  onWithdrawPost
+}) {
+  const interests = post.interests || [];
+  const activeInterests = interests.filter((interest) => !['withdrawn', 'cancelled', 'closed', 'completed', 'not_selected', 'delivered', 'not_completed'].includes(interest.status));
+  const reservedInterest = interests.find((interest) => interest.id === post.reserved_interest_id);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-slate-600">Esta es tu publicación.</p>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-black ${post.category === 'offer' ? communityOfferStatusClass(post.offer_status) : 'bg-slate-100 text-slate-700'}`}>
+          {post.category === 'offer' ? communityOfferStatusLabel(post.offer_status) : communityStatusLabel(post.status)}
+        </span>
+      </div>
+      {post.rejection_reason && <p className="rounded-md bg-red-50 p-3 text-sm font-bold text-red-700">Motivo: {post.rejection_reason}</p>}
+      {post.category === 'offer' && post.offer_status === 'delivered' && (
+        <p className="rounded-md bg-slate-50 p-3 text-sm font-bold text-slate-700">Artículo entregado. Ya no aparece como disponible en Comunidad.</p>
+      )}
+      {post.category === 'offer' && post.offer_status === 'reserved' && reservedInterest && (
+        <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
+          <p className="text-sm font-black text-amber-900">Reservado para {reservedInterest.beneficiary_code || 'beneficiario'}.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {reservedInterest.conversation?.id && (
+              <Button variant="secondary" onClick={() => onOpenConversation(reservedInterest.conversation)}>
+                <MessageSquare size={16} /> Contactar
+              </Button>
+            )}
+            <Button onClick={onMarkDelivered} disabled={submitting}>
+              <CheckCircle2 size={16} /> Marcar como entregado
+            </Button>
+            <Button variant="secondary" onClick={onMakeAvailable} disabled={submitting}>
+              Volver a disponible
+            </Button>
+          </div>
+        </div>
+      )}
+      <div className="rounded-md border border-slate-100 bg-white p-3">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-500">{activeInterests.length} personas interesadas</p>
+        {!activeInterests.length ? (
+          <p className="mt-2 text-sm text-slate-500">Todavía no hay intereses activos.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {activeInterests.map((interest) => (
+              <div key={interest.id} className="rounded-md border border-slate-100 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-black text-ink">{interest.beneficiary_code || 'Beneficiario'}</p>
+                    <p className="text-sm text-slate-600">{interest.message || 'Interés registrado.'}</p>
+                    <p className="text-xs font-bold text-slate-500">{formatDate(interest.created_at)} · {COMMUNITY_INTEREST_STATUS_LABELS[interest.status] || interest.status_label || 'Nuevo'}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {interest.conversation?.id && (
+                      <Button variant="secondary" onClick={() => onOpenConversation(interest.conversation)}>
+                        <MessageSquare size={15} /> Contactar
+                      </Button>
+                    )}
+                    {post.category === 'offer' && post.offer_status === 'available' && (
+                      <Button onClick={() => onReserveOffer(interest)} disabled={submitting}>
+                        Reservar para esta persona
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {post.status !== 'withdrawn' && onWithdrawPost && (
+        <Button variant="secondary" onClick={onWithdrawPost}>
+          <Trash2 size={15} /> Retirar publicación
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CommunityChatModal({
+  conversation,
+  message,
+  reason,
+  sending,
+  onMessageChange,
+  onReasonChange,
+  onSend,
+  onBlock,
+  onReport,
+  onClose
+}) {
+  const closed = ['blocked', 'closed', 'completed'].includes(conversation.status);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center">
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Chat privado de Comunidad</p>
+            <h3 className="text-lg font-black text-ink">{conversation.participant_code || 'Beneficiario'}</h3>
+            <p className="text-sm text-slate-600">No se comparten teléfono, email ni dirección personal.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="max-h-[52vh] space-y-3 overflow-y-auto bg-slate-50 p-4">
+          {!(conversation.messages || []).length ? (
+            <p className="rounded-md bg-white p-4 text-center text-sm font-semibold text-slate-500">Todavía no hay mensajes.</p>
+          ) : (conversation.messages || []).map((item) => (
+            <div key={item.id} className={`flex ${item.sender === 'me' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[82%] rounded-lg px-3 py-2 text-sm ${item.sender === 'me' ? 'bg-brand-600 text-white' : 'bg-white text-slate-700'}`}>
+                <p>{item.message}</p>
+                <p className={`mt-1 text-[11px] font-semibold ${item.sender === 'me' ? 'text-brand-50' : 'text-slate-400'}`}>{formatDate(item.created_at)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3 border-t border-slate-100 p-4">
+          {closed ? (
+            <p className="rounded-md bg-slate-50 p-3 text-sm font-bold text-slate-600">Esta conversación está cerrada.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <textarea
+                className={`${inputClass} min-h-20`}
+                value={message}
+                onChange={(event) => onMessageChange(event.target.value)}
+                placeholder="Escribe un mensaje sin datos personales sensibles."
+              />
+              <Button onClick={onSend} disabled={sending}>{sending ? 'Enviando...' : 'Enviar'}</Button>
+            </div>
+          )}
+          <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+            <FormField label="Motivo si bloqueas o reportas">
+              <input className={inputClass} value={reason} onChange={(event) => onReasonChange(event.target.value)} placeholder="Opcional para bloquear, obligatorio para reportar" />
+            </FormField>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={onBlock} disabled={closed}>Bloquear conversación</Button>
+              <Button variant="danger" onClick={onReport}><Flag size={16} /> Reportar</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function communityOfferStatusLabel(status = '') {
+  if (status === 'reserved') return 'RESERVADO';
+  if (status === 'delivered') return 'ENTREGADO';
+  return 'DISPONIBLE';
+}
+
+function communityOfferStatusClass(status = '') {
+  if (status === 'reserved') return 'bg-amber-50 text-amber-800';
+  if (status === 'delivered') return 'bg-slate-100 text-slate-700';
+  return 'bg-emerald-50 text-emerald-700';
+}
+
 function communityCategoryLabel(category) {
   return COMMUNITY_CATEGORIES.find((item) => item.id === category)?.label || 'Comunidad';
 }

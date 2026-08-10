@@ -9,6 +9,9 @@ export const BENEFICIARIO_PORTAL_TABLES = Object.freeze({
   communityPosts: 'community_posts',
   communityInterests: 'community_interests',
   communityReports: 'community_post_reports',
+  communityConversations: 'community_conversations',
+  communityMessages: 'community_messages',
+  communityPostRecommendations: 'community_post_recommendations',
   sessions: 'portal_sessions'
 });
 
@@ -143,5 +146,33 @@ export class BeneficiarioPortalRepository {
 
   async updateCommunityReport(id, payload) {
     return this.repository.update(BENEFICIARIO_PORTAL_TABLES.communityReports, id, payload);
+  }
+
+  async listCommunityConversations() {
+    return this.repository.list(BENEFICIARIO_PORTAL_TABLES.communityConversations);
+  }
+
+  async createCommunityConversation(payload) {
+    return this.repository.create(BENEFICIARIO_PORTAL_TABLES.communityConversations, payload);
+  }
+
+  async updateCommunityConversation(id, payload) {
+    return this.repository.update(BENEFICIARIO_PORTAL_TABLES.communityConversations, id, payload);
+  }
+
+  async listCommunityMessages() {
+    return this.repository.list(BENEFICIARIO_PORTAL_TABLES.communityMessages);
+  }
+
+  async createCommunityMessage(payload) {
+    return this.repository.create(BENEFICIARIO_PORTAL_TABLES.communityMessages, payload);
+  }
+
+  async updateCommunityMessage(id, payload) {
+    return this.repository.update(BENEFICIARIO_PORTAL_TABLES.communityMessages, id, payload);
+  }
+
+  async listCommunityPostRecommendations() {
+    return this.repository.list(BENEFICIARIO_PORTAL_TABLES.communityPostRecommendations);
   }
 }

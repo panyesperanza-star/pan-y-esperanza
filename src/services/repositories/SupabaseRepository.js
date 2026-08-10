@@ -127,6 +127,9 @@ const OPTIONAL_TABLES = new Set([
   'community_posts',
   'community_interests',
   'community_post_reports',
+  'community_conversations',
+  'community_messages',
+  'community_post_recommendations',
   'platform_maintenance_logs',
   'official_credential_registry',
   'official_credential_events'
@@ -142,7 +145,10 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'social_resource_detections',
   'community_posts',
   'community_interests',
-  'community_post_reports'
+  'community_post_reports',
+  'community_conversations',
+  'community_messages',
+  'community_post_recommendations'
 ]);
 
 const SECURITY_TABLES = new Set([
