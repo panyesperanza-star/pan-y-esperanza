@@ -127,8 +127,9 @@ export function BeneficiaryPortal({ data, actions }) {
     };
   }, [portalService]);
 
-  async function loadOverview(activeSession) {
-    setLoading(true);
+  async function loadOverview(activeSession, options = {}) {
+    const showLoading = options.showLoading !== false;
+    if (showLoading) setLoading(true);
     setError('');
     try {
       const nextOverview = await withTimeout(portalService.getPortalOverview(activeSession));
@@ -137,7 +138,7 @@ export function BeneficiaryPortal({ data, actions }) {
       setError(loadError.message || 'No se pudo cargar el portal.');
       clearSession();
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -280,7 +281,7 @@ export function BeneficiaryPortal({ data, actions }) {
   }
 
   async function refreshPortal() {
-    if (session?.token) await loadOverview(session);
+    if (session?.token) await loadOverview(session, { showLoading: false });
   }
 
   if (!portalService) {
