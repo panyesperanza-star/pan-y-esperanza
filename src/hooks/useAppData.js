@@ -113,6 +113,7 @@ const EMPTY_APP_DATA = Object.freeze({
   social_resource_detections: EMPTY_TABLE,
   community_posts: EMPTY_TABLE,
   community_interests: EMPTY_TABLE,
+  community_post_reports: EMPTY_TABLE,
   roles: EMPTY_TABLE,
   audit_logs: EMPTY_TABLE,
   platform_maintenance_logs: EMPTY_TABLE,
@@ -501,6 +502,7 @@ export function useAppData(enabled = true, currentUser = null) {
       portalAudience: appData.social_resource_portal_beneficiaries || [],
       communityPosts: appData.community_posts || [],
       communityInterests: appData.community_interests || [],
+      communityReports: appData.community_post_reports || [],
       notifications: appData.notificaciones || [],
       organizationSettings: appData.organization_settings?.[0] || {},
       audit,
@@ -2598,6 +2600,59 @@ export function useAppData(enabled = true, currentUser = null) {
         reviewed_by_name: currentUserName()
       });
       await audit(`Comunidad: retiro publicacion ${updated.title || updated.id}`.trim());
+      await reload();
+      return updated;
+    },
+    blockCommunityPost: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      const reason = String(payload.reason || payload.blocked_reason || '').trim();
+      if (reason.length < 3) throw new Error('Indica el motivo del bloqueo.');
+      const updated = await repositoryUpdate('community_posts', id, {
+        status: 'blocked',
+        blocked_reason: reason,
+        blocked_at: new Date().toISOString(),
+        blocked_by: currentUser?.id || null,
+        blocked_by_name: currentUserName(),
+        reviewed_by: currentUser?.id || null,
+        reviewed_by_name: currentUserName()
+      });
+      await audit(`Comunidad: bloqueo publicacion ${updated.title || updated.id}`.trim());
+      await reload();
+      return updated;
+    },
+    updateCommunityInterestStatus: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const allowed = new Set(['new', 'reviewed', 'contacted', 'referred', 'closed']);
+      const status = String(payload.status || '').trim();
+      if (!allowed.has(status)) throw new Error('Estado de interes no valido.');
+      const interest = (appData.community_interests || []).find((item) => item.id === id);
+      if (!interest) throw new Error('El interes de comunidad no existe.');
+      const updated = await repositoryUpdate('community_interests', id, {
+        status,
+        status_notes: String(payload.status_notes || payload.notes || '').trim(),
+        reviewed_by: currentUser?.id || null,
+        reviewed_by_name: currentUserName(),
+        reviewed_at: new Date().toISOString(),
+        closed_at: status === 'closed' ? new Date().toISOString() : null
+      });
+      await audit(`Comunidad: actualizo interes ${updated.id} a ${status}`.trim());
+      await reload();
+      return updated;
+    },
+    updateCommunityPostResolution: async (id, payload = {}) => {
+      assertPermission('community-moderation', 'edit');
+      const allowed = new Set(['active', 'employment_filled', 'item_delivered', 'need_resolved', 'expired']);
+      const resolutionStatus = String(payload.resolution_status || payload.status || '').trim();
+      if (!allowed.has(resolutionStatus)) throw new Error('Estado de vigencia no valido.');
+      const post = (appData.community_posts || []).find((item) => item.id === id);
+      if (!post) throw new Error('La publicacion de comunidad no existe.');
+      const updated = await repositoryUpdate('community_posts', id, {
+        resolution_status: resolutionStatus,
+        resolution_notes: String(payload.resolution_notes || payload.notes || '').trim()
+      });
+      await audit(`Comunidad: actualizo vigencia de publicacion ${updated.title || updated.id} a ${resolutionStatus}`.trim());
       await reload();
       return updated;
     },

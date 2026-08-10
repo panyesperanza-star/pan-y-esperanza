@@ -8,6 +8,7 @@ export const BENEFICIARIO_PORTAL_TABLES = Object.freeze({
   profileUpdates: 'beneficiary_portal_profile_updates',
   communityPosts: 'community_posts',
   communityInterests: 'community_interests',
+  communityReports: 'community_post_reports',
   sessions: 'portal_sessions'
 });
 
@@ -130,5 +131,17 @@ export class BeneficiarioPortalRepository {
 
   async updateCommunityInterest(id, payload) {
     return this.repository.update(BENEFICIARIO_PORTAL_TABLES.communityInterests, id, payload);
+  }
+
+  async listCommunityReports() {
+    return this.repository.list(BENEFICIARIO_PORTAL_TABLES.communityReports);
+  }
+
+  async createCommunityReport(payload) {
+    return this.repository.create(BENEFICIARIO_PORTAL_TABLES.communityReports, payload);
+  }
+
+  async updateCommunityReport(id, payload) {
+    return this.repository.update(BENEFICIARIO_PORTAL_TABLES.communityReports, id, payload);
   }
 }

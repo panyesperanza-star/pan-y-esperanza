@@ -133,6 +133,26 @@ export class BeneficiaryPortalApiService extends BasePortalApiService {
     return response.result;
   }
 
+  async withdrawCommunityInterest(session, interestId) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'withdraw-community-interest',
+      payload: { interestId }
+    });
+    return response.result;
+  }
+
+  async reportCommunityPost(session, postId, payload = {}) {
+    const response = await callPortalApi('portal-action', {
+      portal: this.portal,
+      session,
+      portalAction: 'report-community-post',
+      payload: { ...payload, postId }
+    });
+    return response.result;
+  }
+
   async changePin(session, payload = {}) {
     console.info('[beneficiary-access] PortalApiService changePin payload', {
       keys: Object.keys(payload || {}),

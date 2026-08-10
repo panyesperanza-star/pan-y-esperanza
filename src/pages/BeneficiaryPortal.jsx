@@ -9,6 +9,7 @@ import {
   CircleHelp,
   Clock3,
   FileText,
+  Flag,
   Gift,
   HandHeart,
   History,
@@ -23,6 +24,7 @@ import {
   Plus,
   Send,
   ShieldCheck,
+  Star,
   Trash2,
   UserRound,
   UsersRound,
@@ -61,7 +63,18 @@ const COMMUNITY_STATUS_LABELS = {
   pending_review: 'Pendiente de revision',
   approved: 'Aprobada',
   rejected: 'Rechazada',
-  withdrawn: 'Retirada'
+  withdrawn: 'Retirada',
+  blocked: 'Bloqueada'
+};
+
+const COMMUNITY_INTEREST_STATUS_LABELS = {
+  registered: 'Nuevo',
+  new: 'Nuevo',
+  reviewed: 'Revisado',
+  contacted: 'Contactado',
+  referred: 'Derivado',
+  closed: 'Cerrado',
+  withdrawn: 'Retirado'
 };
 
 export function BeneficiaryPortal({ data, actions }) {
@@ -224,7 +237,7 @@ export function BeneficiaryPortal({ data, actions }) {
         return;
       }
       if (rejectionReason === 'CONFIRM_PIN_RULE_FAILED') {
-        setError('La confirmación del PIN debe tener entre 6 y 12 números.');
+        setError('La confirmaciÃ³n del PIN debe tener entre 6 y 12 nÃºmeros.');
         return;
       }
       setError('El nuevo PIN debe tener entre 6 y 12 numeros.');
@@ -369,7 +382,7 @@ export function BeneficiaryPortal({ data, actions }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {success && <StatusBlock type="success" title="Operación realizada" text={success} className="mb-5" />}
+        {success && <StatusBlock type="success" title="OperaciÃ³n realizada" text={success} className="mb-5" />}
         {error && <StatusBlock type="error" title="Atencion" text={error} className="mb-5" />}
 
         <section className="rounded-md border border-brand-700 bg-brand-700 p-5 text-white shadow-panel">
@@ -585,7 +598,7 @@ const ASSISTANT_QUICK_ACTIONS = [
   { intent: 'documents', label: 'Me falta algun documento?' },
   { intent: 'notices', label: 'Ver mis avisos' },
   { intent: 'create_request', label: 'Enviar una solicitud' },
-  { intent: 'contact', label: 'Contactar con la asociación' }
+  { intent: 'contact', label: 'Contactar con la asociaciÃ³n' }
 ];
 
 function BeneficiaryAssistantPanel({ service, session, open, onOpenChange, setActiveTab, onRefresh, setError, setSuccess }) {
@@ -870,7 +883,7 @@ function NextDeliveryCard({ delivery, onOpen }) {
               <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Proxima entrega</p>
               <h3 className="mt-2 text-2xl font-bold text-ink">Aun no hay una entrega programada.</h3>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-                Cuando el equipo registre una nueva entrega, aparecerá aquí con la fecha, hora, lugar y estado.
+                Cuando el equipo registre una nueva entrega, aparecerÃ¡ aquÃ­ con la fecha, hora, lugar y estado.
               </p>
             </div>
           </div>
@@ -984,7 +997,7 @@ function NoticeSummary({ notices, unreadCount, onOpen }) {
       {!notices.length ? (
         <div className="mt-4 rounded-md bg-slate-50 p-4">
           <h4 className="font-bold text-ink">No tienes avisos pendientes.</h4>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">Cuando el equipo publique un aviso importante, aparecerá aquí.</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">Cuando el equipo publique un aviso importante, aparecerÃ¡ aquÃ­.</p>
         </div>
       ) : (
         <div className="mt-4 space-y-3">
@@ -1102,7 +1115,7 @@ function DeliveriesSection({ deliveries, service, session, onRefresh, setError, 
 
   return (
     <Panel title="Proxima entrega" icon={CalendarDays}>
-      {!safeDeliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecerá aquí." /> : (
+      {!safeDeliveries.length ? <EmptyState title="No hay entregas programadas." text="Cuando exista una entrega confirmada aparecerÃ¡ aquÃ­." /> : (
         <div className="grid gap-3">
           {safeDeliveries.map((delivery, index) => (
             <article key={delivery.id || `delivery-${index}`} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -1240,7 +1253,7 @@ function DeliveryAttendanceControls({ delivery, service, session, onRefresh, set
 function HistorySection({ history }) {
   return (
     <Panel title="Historial de entregas" icon={History}>
-      {!history.length ? <EmptyState title="No hay historial disponible." text="Las entregas y comunicaciones registradas aparecerán aquí." /> : (
+      {!history.length ? <EmptyState title="No hay historial disponible." text="Las entregas y comunicaciones registradas aparecerÃ¡n aquÃ­." /> : (
         <div className="space-y-3">
           {history.map((item) => (
             <InfoCard key={`${item.source}-${item.id}`} title={item.source === 'delivery' ? 'Entrega' : item.title || 'Historial social'} meta={formatDate(item.timeline_at)} text={item.help_type || item.notes || item.status || 'Registro del expediente'} />
@@ -1267,7 +1280,7 @@ function NoticesSection({ notices, service, session, onRefresh, setError, setSuc
 
   return (
     <Panel title="Avisos" icon={Bell}>
-      {!orderedNotices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes aparecerán en esta sección." /> : (
+      {!orderedNotices.length ? <EmptyState title="Sin avisos." text="Los avisos importantes aparecerÃ¡n en esta secciÃ³n." /> : (
         <div className="grid gap-3">
           {orderedNotices.map((notice) => {
             const unread = normalize(notice.status) !== 'read';
@@ -1304,7 +1317,7 @@ function DocumentsSection({ documents }) {
 
   return (
     <Panel title="Documentos" icon={FileText}>
-      {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentación solicitada aparecerá aquí." /> : (
+      {!documents.length ? <EmptyState title="No hay documentos registrados." text="La documentaciÃ³n solicitada aparecerÃ¡ aquÃ­." /> : (
         <div className="space-y-4">
           <div className="rounded-md border border-slate-100 bg-slate-50 p-4">
             <h3 className="font-bold text-ink">Estado documental</h3>
@@ -1354,7 +1367,7 @@ function DocumentStatusBadge({ status }) {
 function LegacyResourcesSection({ resources }) {
   return (
     <Panel title="Centro de Recursos personalizado" icon={BookOpen}>
-      {!resources.length ? <EmptyState title="No hay recursos personalizados." text="Cuando haya recursos publicados para tu perfil aparecerán aquí." /> : (
+      {!resources.length ? <EmptyState title="No hay recursos personalizados." text="Cuando haya recursos publicados para tu perfil aparecerÃ¡n aquÃ­." /> : (
         <div className="grid gap-3 md:grid-cols-2">
           {resources.map((resource) => (
             <article key={resource.id || resource.slug || resource.titulo} className="rounded-md border border-slate-100 bg-slate-50 p-4">
@@ -1434,7 +1447,7 @@ function PortalResourceCard({ resource }) {
   return (
     <article className="rounded-md border border-slate-100 bg-slate-50 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        {resource.isRecommended && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">⭐ Recomendado para ti</span>}
+        {resource.isRecommended && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">â­ Recomendado para ti</span>}
         {resource.isNew && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Nuevo</span>}
         {resource.isClosingSoon && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Proximo a cerrar</span>}
         {resource.assigned_status && <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700">{portalResourceTrackingLabel(resource.assigned_status)}</span>}
@@ -1490,6 +1503,8 @@ function toCompatibilityResource(resource = {}) {
 function CommunitySection({ community, service, session, onRefresh, setError, setSuccess }) {
   const [filter, setFilter] = useState('');
   const [interestMessageByPost, setInterestMessageByPost] = useState({});
+  const [reportOpenByPost, setReportOpenByPost] = useState({});
+  const [reportReasonByPost, setReportReasonByPost] = useState({});
   const [photoPreview, setPhotoPreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -1505,6 +1520,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     schedule: '',
     requirements: '',
     deadline_at: '',
+    expires_at: '',
     contact_method: 'Gestionado por Pan y Esperanza'
   });
   const posts = community.posts || [];
@@ -1554,6 +1570,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
         schedule: '',
         requirements: '',
         deadline_at: '',
+        expires_at: '',
         contact_method: 'Gestionado por Pan y Esperanza'
       });
       setPhotoPreview('');
@@ -1592,6 +1609,34 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
     }
   }
 
+  async function withdrawInterest(post) {
+    setError('');
+    setSuccess('');
+    try {
+      await service.withdrawCommunityInterest(session, post.interest_id);
+      setSuccess('Interes retirado.');
+      await onRefresh();
+    } catch (withdrawError) {
+      setError(withdrawError.message || 'No se pudo retirar el interes.');
+    }
+  }
+
+  async function reportPost(post) {
+    setError('');
+    setSuccess('');
+    try {
+      await service.reportCommunityPost(session, post.id, {
+        reason: reportReasonByPost[post.id] || ''
+      });
+      setReportOpenByPost((current) => ({ ...current, [post.id]: false }));
+      setReportReasonByPost((current) => ({ ...current, [post.id]: '' }));
+      setSuccess('Reporte enviado al equipo de Pan y Esperanza.');
+      await onRefresh();
+    } catch (reportError) {
+      setError(reportError.message || 'No se pudo reportar la publicacion.');
+    }
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_0.88fr]">
       <Panel title="Comunidad" icon={UsersRound}>
@@ -1626,6 +1671,12 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                   interestMessage={interestMessageByPost[post.id] || ''}
                   onInterestMessageChange={(value) => setInterestMessageByPost((current) => ({ ...current, [post.id]: value }))}
                   onInterest={() => registerInterest(post)}
+                  onWithdrawInterest={() => withdrawInterest(post)}
+                  reportOpen={reportOpenByPost[post.id] === true}
+                  reportReason={reportReasonByPost[post.id] || ''}
+                  onToggleReport={() => setReportOpenByPost((current) => ({ ...current, [post.id]: !current[post.id] }))}
+                  onReportReasonChange={(value) => setReportReasonByPost((current) => ({ ...current, [post.id]: value }))}
+                  onReport={() => reportPost(post)}
                 />
               ))}
             </div>
@@ -1676,6 +1727,9 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
             <FormField label="Forma de contacto controlada">
               <input className={inputClass} value={form.contact_method} onChange={(event) => updateForm('contact_method', event.target.value)} />
             </FormField>
+            <FormField label="Visible hasta">
+              <input className={inputClass} type="date" value={form.expires_at} onChange={(event) => updateForm('expires_at', event.target.value)} />
+            </FormField>
             <FormField label="Fotografia opcional">
               <input className={inputClass} type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} />
             </FormField>
@@ -1696,7 +1750,7 @@ function CommunitySection({ community, service, session, onRefresh, setError, se
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-ink">{post.title}</h3>
-                      <p className="mt-1 text-sm text-slate-600">{communityCategoryLabel(post.category)} · {post.zone}</p>
+                      <p className="mt-1 text-sm text-slate-600">{communityCategoryLabel(post.category)} Â· {post.zone}</p>
                       {post.rejection_reason && <p className="mt-2 text-sm text-red-700">Motivo: {post.rejection_reason}</p>}
                     </div>
                     <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-slate-700">{communityStatusLabel(post.status)}</span>
@@ -1728,7 +1782,18 @@ function CategoryButton({ active, children, onClick }) {
   );
 }
 
-function CommunityPortalCard({ post, interestMessage, onInterestMessageChange, onInterest }) {
+function CommunityPortalCard({
+  post,
+  interestMessage,
+  onInterestMessageChange,
+  onInterest,
+  onWithdrawInterest,
+  reportOpen,
+  reportReason,
+  onToggleReport,
+  onReportReasonChange,
+  onReport
+}) {
   const CategoryIcon = COMMUNITY_CATEGORIES.find((item) => item.id === post.category)?.icon || HandHeart;
   return (
     <article className="overflow-hidden rounded-md border border-slate-100 bg-slate-50">
@@ -1748,10 +1813,20 @@ function CommunityPortalCard({ post, interestMessage, onInterestMessageChange, o
             <MapPin size={14} /> {post.zone}
           </span>
           <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-600">{formatDate(post.created_at)}</span>
+          {post.expires_at && <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-600">Hasta {formatDate(post.expires_at)}</span>}
         </div>
         <h3 className="mt-3 text-lg font-bold text-ink">{post.title}</h3>
         {post.category === 'employment' && (
           <p className="mt-1 text-sm font-semibold text-brand-700">{[post.company_name, post.workday, post.schedule].filter(Boolean).join(' · ')}</p>
+        )}
+        {post.recommendation?.recommended && (
+          <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="flex items-center gap-2 font-black"><Star size={16} /> Puede interesarte</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {(post.recommendation.reasons || []).map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+            <p className="mt-2 text-xs font-semibold">{post.recommendation.note}</p>
+          </div>
         )}
         <p className="mt-2 text-sm leading-relaxed text-slate-600">{post.description}</p>
         {post.requirements && <p className="mt-2 text-sm text-slate-600"><strong>Requisitos:</strong> {post.requirements}</p>}
@@ -1760,7 +1835,10 @@ function CommunityPortalCard({ post, interestMessage, onInterestMessageChange, o
           {post.ownPost ? (
             <p className="text-sm font-bold text-slate-600">Esta es tu publicacion.</p>
           ) : post.interested ? (
-            <p className="text-sm font-bold text-brand-700">Interes registrado. El equipo lo gestionara de forma segura.</p>
+            <div className="space-y-2">
+              <p className="text-sm font-bold text-brand-700">Interes registrado. Estado: {COMMUNITY_INTEREST_STATUS_LABELS[post.interest_status] || post.interest_status_label || 'Nuevo'}.</p>
+              <Button variant="secondary" onClick={onWithdrawInterest}>Retirar interes</Button>
+            </div>
           ) : (
             <div className="space-y-3">
               <textarea
@@ -1773,11 +1851,34 @@ function CommunityPortalCard({ post, interestMessage, onInterestMessageChange, o
             </div>
           )}
         </div>
+        {!post.ownPost && (
+          <div className="mt-3 rounded-md border border-slate-100 bg-white p-3">
+            {post.reported ? (
+              <p className="text-sm font-bold text-slate-600">Reporte enviado al equipo.</p>
+            ) : reportOpen ? (
+              <div className="space-y-3">
+                <textarea
+                  className={`${inputClass} min-h-20`}
+                  value={reportReason}
+                  onChange={(event) => onReportReasonChange(event.target.value)}
+                  placeholder="Indica brevemente el motivo del reporte"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={onToggleReport}>Cancelar</Button>
+                  <Button variant="danger" onClick={onReport}><Flag size={16} /> Enviar reporte</Button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={onToggleReport} className="text-sm font-bold text-slate-500 hover:text-red-700">
+                Reportar publicacion
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );
 }
-
 function communityCategoryLabel(category) {
   return COMMUNITY_CATEGORIES.find((item) => item.id === category)?.label || 'Comunidad';
 }
@@ -1843,7 +1944,7 @@ function RequestsSection({ service, beneficiary, session, requests, onRefresh, s
         </form>
       </Panel>
       <Panel title="Solicitudes enviadas" icon={History}>
-        {!requests.length ? <EmptyState title="Sin solicitudes." text="Las solicitudes enviadas aparecerán aquí." /> : (
+        {!requests.length ? <EmptyState title="Sin solicitudes." text="Las solicitudes enviadas aparecerÃ¡n aquÃ­." /> : (
           <div className="space-y-3">
             {requests.map((request) => (
               <InfoCard key={request.id} title={request.requested_changes?.request_type || 'Solicitud'} meta={request.status || 'Pendiente'} text={request.notes || request.requested_changes?.message || 'Solicitud registrada'} />

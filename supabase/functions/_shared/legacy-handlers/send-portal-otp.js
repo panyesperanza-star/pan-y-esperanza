@@ -106,14 +106,14 @@ export default async function handler(request, response) {
       return sendJson(response, 200, { ok: true, result: await executePortalAction(supabase, portal, subject, body) });
     }
 
-    return sendJson(response, 400, { ok: false, code: 'INVALID_OPERATION', error: 'Operación no válida.' });
+    return sendJson(response, 400, { ok: false, code: 'INVALID_OPERATION', error: 'OperaciÃ³n no vÃ¡lida.' });
   } catch (error) {
     const status = error.status || 500;
     logPortalDebug(requestPortal, 'respuesta final', { ok: false, status, code: error.code || 'PORTAL_AUTH_FAILED' });
     return sendJson(response, status, {
       ok: false,
       code: error.code || 'PORTAL_AUTH_FAILED',
-      error: error.message || 'No se pudo completar la operación del portal.'
+      error: error.message || 'No se pudo completar la operaciÃ³n del portal.'
     });
   }
 }
@@ -721,6 +721,12 @@ async function executePortalAction(supabase, portal, subject, body) {
     if (action === 'withdraw-community-post') {
       return withdrawCommunityPostFromPortal(supabase, subject, payload);
     }
+    if (action === 'withdraw-community-interest') {
+      return withdrawCommunityInterestFromPortal(supabase, subject, payload);
+    }
+    if (action === 'report-community-post') {
+      return reportCommunityPostFromPortal(supabase, subject, payload);
+    }
     if (action === 'create-request' || action === 'request-profile-update') {
       const changes = action === 'create-request' ? { request_type: payload.request_type, message: payload.message, preferred_contact: payload.preferred_contact } : payload.changes || payload;
       const { data, error } = await supabase.from('beneficiary_portal_profile_updates').insert({
@@ -1227,36 +1233,47 @@ async function listPublishedResources(supabase, beneficiary) {
 }
 
 async function listCommunityOverview(supabase, beneficiary) {
-  const [postsResult, interestsResult] = await Promise.all([
+  const [postsResult, interestsResult, reportsResult] = await Promise.all([
     supabase
       .from('community_posts')
-      .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,contact_method,status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
+      .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,blocked_reason,reviewed_at,withdrawn_at,created_at,updated_at')
       .or(`status.eq.approved,beneficiary_id.eq.${beneficiary.id}`)
       .order('created_at', { ascending: false }),
     supabase
       .from('community_interests')
-      .select('id,post_id,beneficiary_id,status,message,created_at,updated_at')
+      .select('id,post_id,beneficiary_id,status,message,status_notes,created_at,updated_at')
       .eq('beneficiary_id', beneficiary.id)
-      .neq('status', 'cancelled')
+      .not('status', 'in', '(cancelled,withdrawn)')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('community_post_reports')
+      .select('id,post_id,beneficiary_id,status,reason,created_at,updated_at')
+      .eq('beneficiary_id', beneficiary.id)
+      .neq('status', 'dismissed')
       .order('created_at', { ascending: false })
   ]);
   if (postsResult.error) throw postsResult.error;
   if (interestsResult.error) throw interestsResult.error;
+  if (reportsResult.error) throw reportsResult.error;
 
   const interests = interestsResult.data || [];
+  const reports = reportsResult.data || [];
   const interestByPost = new Map(interests.map((item) => [item.post_id, item]));
-  const posts = await Promise.all((postsResult.data || []).map((post) =>
-    sanitizePortalCommunityPost(supabase, post, beneficiary.id, interestByPost.get(post.id))
-  ));
+  const reportByPost = new Map(reports.map((item) => [item.post_id, item]));
+  const posts = await Promise.all((postsResult.data || [])
+    .filter((post) => post.beneficiary_id === beneficiary.id || isCommunityPostActive(post))
+    .map((post) => sanitizePortalCommunityPost(supabase, post, beneficiary, interestByPost.get(post.id), reportByPost.get(post.id)))
+  );
 
   return {
-    posts: posts.filter((post) => post.status === 'approved'),
+    posts: posts.filter((post) => post.status === 'approved' && post.active),
     myPosts: posts.filter((post) => post.ownPost),
     interests
   };
 }
 
-async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficiaryId = '', interest = null) {
+async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficiary = '', interest = null, report = null) {
+  const currentBeneficiaryId = typeof currentBeneficiary === 'string' ? currentBeneficiary : currentBeneficiary?.id;
   const ownPost = post.beneficiary_id === currentBeneficiaryId;
   return {
     id: post.id,
@@ -1271,16 +1288,24 @@ async function sanitizePortalCommunityPost(supabase, post = {}, currentBeneficia
     schedule: post.schedule || '',
     requirements: post.requirements || '',
     deadline_at: post.deadline_at || null,
+    expires_at: post.expires_at || null,
     contact_method: post.contact_method || 'Gestionado por Pan y Esperanza',
     status: post.status || 'pending_review',
+    resolution_status: post.resolution_status || 'active',
     rejection_reason: ownPost ? post.rejection_reason || '' : '',
+    blocked_reason: ownPost ? post.blocked_reason || '' : '',
     created_at: post.created_at || null,
     updated_at: post.updated_at || null,
     reviewed_at: post.reviewed_at || null,
     withdrawn_at: post.withdrawn_at || null,
     ownPost,
-    interested: Boolean(interest && interest.status !== 'cancelled'),
-    interest_id: interest?.id || null
+    active: isCommunityPostActive(post),
+    interested: Boolean(interest && !['cancelled', 'withdrawn'].includes(interest.status)),
+    interest_id: interest?.id || null,
+    interest_status: interest?.status || '',
+    interest_status_label: statusLabelForCommunityInterest(interest?.status),
+    reported: Boolean(report && report.status !== 'dismissed'),
+    recommendation: ownPost ? null : analyzeCommunityEmploymentRecommendation(post, currentBeneficiary)
   };
 }
 
@@ -1301,6 +1326,7 @@ function sanitizeCommunityPostPayload(beneficiary, payload = {}) {
   const title = cleanText(payload.title || payload.job_position || payload.position);
   const zone = cleanText(payload.zone || payload.neighborhood || payload.barrio);
   const description = cleanText(payload.description);
+  const expiresAt = cleanText(payload.expires_at || payload.valid_until || payload.deadline_at) || defaultCommunityExpiresAt();
   if (!['employment', 'offer', 'need'].includes(category)) throw new Error('Categoria de comunidad no valida.');
   if (title.length < 3) throw new Error('Indica un titulo para la publicacion.');
   if (zone.length < 2) throw new Error('Indica una zona o barrio, sin direccion privada.');
@@ -1317,16 +1343,89 @@ function sanitizeCommunityPostPayload(beneficiary, payload = {}) {
     workday: cleanText(payload.workday),
     schedule: cleanText(payload.schedule),
     requirements: cleanText(payload.requirements),
-    deadline_at: cleanText(payload.deadline_at) || null,
+    deadline_at: payload.deadline_at || null,
+    expires_at: expiresAt,
     contact_method: cleanText(payload.contact_method || 'Gestionado por Pan y Esperanza'),
     status: 'pending_review',
+    resolution_status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 }
 
+function defaultCommunityExpiresAt() {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  return date.toISOString().slice(0, 10);
+}
+
+function isCommunityPostActive(post = {}) {
+  if (post.status !== 'approved') return false;
+  if ((post.resolution_status || 'active') !== 'active') return false;
+  if (post.expires_at && String(post.expires_at).slice(0, 10) < new Date().toISOString().slice(0, 10)) return false;
+  return true;
+}
+
+function statusLabelForCommunityInterest(status = '') {
+  const labels = {
+    registered: 'Nuevo',
+    new: 'Nuevo',
+    reviewed: 'Revisado',
+    contacted: 'Contactado',
+    referred: 'Derivado',
+    closed: 'Cerrado',
+    withdrawn: 'Retirado'
+  };
+  return labels[status] || 'Nuevo';
+}
+
+function textSignalsFrom(value) {
+  return normalizeText(value)
+    .split(/[^a-z0-9]+/i)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 4);
+}
+
+function containsAnySignal(source, signals) {
+  const normalizedSource = normalizeText(source);
+  return signals.some((signal) => signal && normalizedSource.includes(signal));
+}
+
+function analyzeCommunityEmploymentRecommendation(post = {}, beneficiary = {}) {
+  if (post.category !== 'employment') return null;
+  const reasons = [];
+  const jobText = [post.title, post.job_position, post.company_name, post.workday, post.schedule, post.requirements, post.description].filter(Boolean).join(' ');
+  const laborProfile = [beneficiary.job_sector, beneficiary.desired_sector, beneficiary.work_interests, beneficiary.employment_interests, beneficiary.professional_interests, beneficiary.profession, beneficiary.skills].filter(Boolean).join(' ');
+  const availability = [beneficiary.availability, beneficiary.work_availability, beneficiary.desired_workday, beneficiary.preferred_workday].filter(Boolean).join(' ');
+  const experience = [beneficiary.experience, beneficiary.work_experience, beneficiary.training, beneficiary.education].filter(Boolean).join(' ');
+  const zone = [beneficiary.zone, beneficiary.neighborhood, beneficiary.barrio, beneficiary.municipality, beneficiary.city].filter(Boolean).join(' ');
+
+  if (post.zone && zone && containsAnySignal(post.zone, textSignalsFrom(zone))) reasons.push('Coincide con tu zona o municipio registrado.');
+  if (laborProfile && containsAnySignal(jobText, textSignalsFrom(laborProfile))) reasons.push('Relacionada con tus intereses laborales registrados.');
+  if (availability && containsAnySignal(`${post.workday} ${post.schedule}`, textSignalsFrom(availability))) reasons.push('Encaja con tu disponibilidad o jornada buscada.');
+  if (experience && containsAnySignal(`${post.requirements} ${post.description}`, textSignalsFrom(experience))) reasons.push('Puede encajar con tu experiencia o formacion registrada.');
+
+  if (!reasons.length) return null;
+  return {
+    recommended: true,
+    label: 'Puede interesarte',
+    reasons: reasons.slice(0, 3),
+    note: 'Recomendacion basada solo en datos laborales disponibles del expediente.'
+  };
+}
+
 async function createCommunityPostFromPortal(supabase, beneficiary, payload = {}) {
   const now = new Date().toISOString();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count, error: countError } = await supabase
+    .from('community_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('beneficiary_id', beneficiary.id)
+    .gte('created_at', since)
+    .not('status', 'in', '(withdrawn,rejected,blocked)');
+  if (countError) throw countError;
+  if (Number(count || 0) >= 3) throw new Error('Has alcanzado el limite diario de publicaciones. El equipo revisara las pendientes.');
+
   const insertPayload = sanitizeCommunityPostPayload(beneficiary, payload);
   const photo = payload.photoDataUrl
     ? await uploadCommunityPhotoFromDataUrl(supabase, beneficiary, payload.photoDataUrl, payload.photoFileName)
@@ -1342,13 +1441,13 @@ async function createCommunityPostFromPortal(supabase, beneficiary, payload = {}
   const { data, error } = await supabase
     .from('community_posts')
     .insert(insertPayload)
-    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,contact_method,status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
+    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
     .single();
   if (error) throw error;
 
   await notifyCommunityModeration(supabase, beneficiary, data, now);
   await audit(supabase, `Portal del Beneficiario: publicacion de comunidad pendiente ${data.id}`);
-  return sanitizePortalCommunityPost(supabase, data, beneficiary.id, null);
+  return sanitizePortalCommunityPost(supabase, data, beneficiary, null);
 }
 
 async function registerCommunityInterestFromPortal(supabase, beneficiary, payload = {}) {
@@ -1357,12 +1456,11 @@ async function registerCommunityInterestFromPortal(supabase, beneficiary, payloa
 
   const { data: post, error: postError } = await supabase
     .from('community_posts')
-    .select('id,beneficiary_id,title,status')
+    .select('id,beneficiary_id,title,status,resolution_status,expires_at')
     .eq('id', postId)
-    .eq('status', 'approved')
     .maybeSingle();
   if (postError) throw postError;
-  if (!post) throw new Error('La publicacion ya no esta disponible.');
+  if (!post || !isCommunityPostActive(post)) throw new Error('La publicacion ya no esta disponible.');
   if (post.beneficiary_id === beneficiary.id) throw new Error('No puedes marcar interes en tu propia publicacion.');
 
   const now = new Date().toISOString();
@@ -1377,7 +1475,7 @@ async function registerCommunityInterestFromPortal(supabase, beneficiary, payloa
   const interestPayload = {
     post_id: postId,
     beneficiary_id: beneficiary.id,
-    status: 'registered',
+    status: 'new',
     message: cleanText(payload.message),
     updated_at: now
   };
@@ -1401,13 +1499,91 @@ async function withdrawCommunityPostFromPortal(supabase, beneficiary, payload = 
     .update({ status: 'withdrawn', withdrawn_at: now, updated_at: now })
     .eq('id', postId)
     .eq('beneficiary_id', beneficiary.id)
-    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,contact_method,status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
+    .select('id,beneficiary_id,category,title,zone,description,photo_storage_bucket,photo_storage_path,photo_file_name,photo_mime_type,job_position,company_name,workday,schedule,requirements,deadline_at,expires_at,contact_method,status,resolution_status,rejection_reason,reviewed_at,withdrawn_at,created_at,updated_at')
     .single();
   if (error) throw error;
   await audit(supabase, `Portal del Beneficiario: publicacion de comunidad retirada ${postId}`);
-  return sanitizePortalCommunityPost(supabase, data, beneficiary.id, null);
+  return sanitizePortalCommunityPost(supabase, data, beneficiary, null);
 }
 
+async function withdrawCommunityInterestFromPortal(supabase, beneficiary, payload = {}) {
+  const interestId = cleanText(payload.interestId || payload.interest_id);
+  if (!interestId) throw new Error('No se ha indicado el interes.');
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('community_interests')
+    .update({ status: 'withdrawn', updated_at: now })
+    .eq('id', interestId)
+    .eq('beneficiary_id', beneficiary.id)
+    .select('id,post_id,beneficiary_id,status,message,created_at,updated_at')
+    .single();
+  if (error) throw error;
+  await audit(supabase, `Portal del Beneficiario: interes retirado en comunidad ${interestId}`);
+  return data;
+}
+
+async function reportCommunityPostFromPortal(supabase, beneficiary, payload = {}) {
+  const postId = cleanText(payload.postId || payload.post_id);
+  const reason = cleanText(payload.reason);
+  if (!postId) throw new Error('No se ha indicado la publicacion.');
+  if (reason.length < 3) throw new Error('Indica brevemente el motivo del reporte.');
+
+  const { data: post, error: postError } = await supabase
+    .from('community_posts')
+    .select('id,beneficiary_id,title,status,resolution_status,expires_at')
+    .eq('id', postId)
+    .maybeSingle();
+  if (postError) throw postError;
+  if (!post || !isCommunityPostActive(post)) throw new Error('La publicacion ya no esta disponible.');
+  if (post.beneficiary_id === beneficiary.id) throw new Error('No puedes reportar tu propia publicacion.');
+
+  const now = new Date().toISOString();
+  const { data: current, error: currentError } = await supabase
+    .from('community_post_reports')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('beneficiary_id', beneficiary.id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+
+  const reportPayload = {
+    post_id: postId,
+    beneficiary_id: beneficiary.id,
+    reason,
+    status: 'new',
+    updated_at: now
+  };
+  const query = current
+    ? supabase.from('community_post_reports').update(reportPayload).eq('id', current.id)
+    : supabase.from('community_post_reports').insert({ ...reportPayload, created_at: now });
+  const { data: report, error } = await query.select('id,post_id,beneficiary_id,status,reason,created_at,updated_at').single();
+  if (error) throw error;
+
+  await notifyCommunityReport(supabase, beneficiary, post, now);
+  await audit(supabase, `Portal del Beneficiario: reporte de comunidad ${postId}`);
+  return report;
+}
+
+async function notifyCommunityReport(supabase, beneficiary, post, now) {
+  const { error } = await supabase.from('notificaciones').insert({
+    tipo: 'warning',
+    prioridad: 'warning',
+    modulo: 'community-moderation',
+    origen: 'Portal del Beneficiario',
+    titulo: 'Reporte en Comunidad',
+    mensaje: `${beneficiary.full_name || beneficiary.code || 'Beneficiario'} ha reportado: ${post.title}.`,
+    estado: 'Pendiente',
+    leida: false,
+    entity_type: 'community_post',
+    entity_id: post.id,
+    action_url: '/community-moderation',
+    dedupe_key: `community-report-${post.id}-${beneficiary.id}-${now}`,
+    metadata: { beneficiary_id: beneficiary.id, post_id: post.id },
+    created_at: now,
+    updated_at: now
+  });
+  if (error) console.warn('[send-portal-otp] No se pudo registrar notificacion de reporte de comunidad', { message: error.message });
+}
 async function notifyCommunityModeration(supabase, beneficiary, post, now) {
   const { error } = await supabase.from('notificaciones').insert({
     tipo: 'info',

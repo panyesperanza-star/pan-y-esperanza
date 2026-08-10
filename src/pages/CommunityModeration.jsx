@@ -3,12 +3,14 @@ import {
   Briefcase,
   CheckCircle2,
   Clock3,
+  Flag,
   Gift,
   HandHeart,
   Image as ImageIcon,
   MapPin,
   MessageCircle,
   Search,
+  ShieldAlert,
   Trash2,
   UserRound,
   XCircle
@@ -34,41 +36,54 @@ const statusMeta = {
   pending_review: { label: 'Pendiente de revision', tone: 'bg-amber-50 text-amber-800 border-amber-100' },
   approved: { label: 'Aprobada', tone: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
   rejected: { label: 'Rechazada', tone: 'bg-red-50 text-red-700 border-red-100' },
-  withdrawn: { label: 'Retirada', tone: 'bg-slate-100 text-slate-700 border-slate-200' }
+  withdrawn: { label: 'Retirada', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+  blocked: { label: 'Bloqueada', tone: 'bg-red-100 text-red-800 border-red-200' }
+};
+
+const interestStatusOptions = [
+  { value: 'new', label: 'Nuevo' },
+  { value: 'reviewed', label: 'Revisado' },
+  { value: 'contacted', label: 'Contactado' },
+  { value: 'referred', label: 'Derivado' },
+  { value: 'closed', label: 'Cerrado' }
+];
+
+const resolutionLabels = {
+  active: 'Vigente',
+  employment_filled: 'Empleo cubierto',
+  item_delivered: 'Articulo entregado',
+  need_resolved: 'Necesidad resuelta',
+  expired: 'Caducada'
 };
 
 export function CommunityModeration({ data, actions, currentUser }) {
   const posts = data.community_posts || [];
   const interests = data.community_interests || [];
+  const reports = data.community_post_reports || [];
   const beneficiaries = data.beneficiaries || [];
   const canEdit = canDo(currentUser, 'community-moderation', 'edit');
   const [filters, setFilters] = useState({ search: '', status: 'pending_review', category: '' });
   const [reviewing, setReviewing] = useState(null);
+  const [blocking, setBlocking] = useState(null);
   const [reviewNotes, setReviewNotes] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  const [blockReason, setBlockReason] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const photoUrls = useCommunityPhotoUrls(posts);
 
   const beneficiaryById = useMemo(() => new Map(beneficiaries.map((item) => [item.id, item])), [beneficiaries]);
-  const interestsByPost = useMemo(() => {
-    const map = new Map();
-    interests.forEach((interest) => {
-      if (interest.status === 'cancelled') return;
-      const list = map.get(interest.post_id) || [];
-      list.push(interest);
-      map.set(interest.post_id, list);
-    });
-    return map;
-  }, [interests]);
-  const counters = useMemo(() => {
-    return posts.reduce((acc, post) => {
-      const key = post.status || 'pending_review';
-      acc[key] = (acc[key] || 0) + 1;
-      acc.total += 1;
-      return acc;
-    }, { total: 0, pending_review: 0, approved: 0, rejected: 0, withdrawn: 0 });
-  }, [posts]);
+  const interestsByPost = useMemo(() => groupByPost(interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status))), [interests]);
+  const reportsByPost = useMemo(() => groupByPost(reports.filter((item) => item.status !== 'dismissed')), [reports]);
+  const matchesByPost = useMemo(() => buildCommunityMatches(posts), [posts]);
+  const counters = useMemo(() => posts.reduce((acc, post) => {
+    const key = post.status || 'pending_review';
+    acc[key] = (acc[key] || 0) + 1;
+    acc.total += 1;
+    if (isPostExpired(post)) acc.expired += 1;
+    return acc;
+  }, { total: 0, pending_review: 0, approved: 0, rejected: 0, withdrawn: 0, blocked: 0, expired: 0 }), [posts]);
+
   const filteredPosts = useMemo(() => {
     const query = normalize(filters.search);
     return posts.filter((post) => {
@@ -95,7 +110,7 @@ export function CommunityModeration({ data, actions, currentUser }) {
       await actions.approveCommunityPost(post.id, { moderation_notes: reviewNotes });
       setReviewing(null);
       setReviewNotes('');
-      setNotice('Publicacion aprobada. Ya puede verse en el Portal Beneficiario.');
+      setNotice('Publicacion aprobada. Ya puede verse en el Portal Beneficiario si sigue vigente.');
     } catch (approvalError) {
       setError(approvalError.message || 'No se pudo aprobar la publicacion.');
     }
@@ -122,6 +137,23 @@ export function CommunityModeration({ data, actions, currentUser }) {
     }
   }
 
+  async function blockPost(post) {
+    setError('');
+    setNotice('');
+    if (blockReason.trim().length < 3) {
+      setError('Indica el motivo del bloqueo.');
+      return;
+    }
+    try {
+      await actions.blockCommunityPost(post.id, { reason: blockReason });
+      setBlocking(null);
+      setBlockReason('');
+      setNotice('Publicacion bloqueada y registrada en auditoria.');
+    } catch (blockError) {
+      setError(blockError.message || 'No se pudo bloquear la publicacion.');
+    }
+  }
+
   async function withdrawPost(post) {
     setError('');
     setNotice('');
@@ -133,21 +165,44 @@ export function CommunityModeration({ data, actions, currentUser }) {
     }
   }
 
+  async function updateInterest(interest, payload) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.updateCommunityInterestStatus(interest.id, payload);
+      setNotice('Interes actualizado.');
+    } catch (interestError) {
+      setError(interestError.message || 'No se pudo actualizar el interes.');
+    }
+  }
+
+  async function updateResolution(post, payload) {
+    setError('');
+    setNotice('');
+    try {
+      await actions.updateCommunityPostResolution(post.id, payload);
+      setNotice('Estado de vigencia actualizado.');
+    } catch (resolutionError) {
+      setError(resolutionError.message || 'No se pudo actualizar la vigencia.');
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Moderacion de Comunidad"
-        description="Revisa publicaciones del Portal Beneficiario antes de hacerlas visibles. No se publican datos personales automaticamente."
+        description="Revisa publicaciones, intereses, reportes y posibles coincidencias antes de facilitar cualquier contacto."
       />
 
       {notice && <div className="mb-4 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
       {error && <div className="mb-4 rounded-md border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-5">
         <SummaryCard label="Pendientes" value={counters.pending_review} tone="amber" icon={Clock3} />
         <SummaryCard label="Aprobadas" value={counters.approved} tone="emerald" icon={CheckCircle2} />
-        <SummaryCard label="Rechazadas" value={counters.rejected} tone="red" icon={XCircle} />
-        <SummaryCard label="Intereses" value={interests.filter((item) => item.status !== 'cancelled').length} tone="brand" icon={MessageCircle} />
+        <SummaryCard label="Reportes" value={reports.filter((item) => item.status !== 'dismissed').length} tone="red" icon={Flag} />
+        <SummaryCard label="Intereses" value={interests.filter((item) => !['cancelled', 'withdrawn'].includes(item.status)).length} tone="brand" icon={MessageCircle} />
+        <SummaryCard label="Caducadas" value={counters.expired} tone="slate" icon={AlertTriangle} />
       </section>
 
       <section className="mt-5 rounded-md border border-slate-200 bg-white p-4 shadow-panel">
@@ -167,6 +222,7 @@ export function CommunityModeration({ data, actions, currentUser }) {
             <option value="approved">Aprobadas</option>
             <option value="rejected">Rechazadas</option>
             <option value="withdrawn">Retiradas</option>
+            <option value="blocked">Bloqueadas</option>
           </select>
           <select className={inputClass} value={filters.category} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}>
             <option value="">Todas las categorias</option>
@@ -190,6 +246,9 @@ export function CommunityModeration({ data, actions, currentUser }) {
               post={post}
               beneficiary={beneficiary}
               interests={interestsByPost.get(post.id) || []}
+              reports={reportsByPost.get(post.id) || []}
+              matches={matchesByPost.get(post.id) || []}
+              beneficiaryById={beneficiaryById}
               photoUrl={photoUrls[post.id]}
               canEdit={canEdit}
               onReview={() => {
@@ -197,7 +256,13 @@ export function CommunityModeration({ data, actions, currentUser }) {
                 setReviewNotes(post.moderation_notes || '');
                 setRejectReason(post.rejection_reason || '');
               }}
+              onBlock={() => {
+                setBlocking(post);
+                setBlockReason(post.blocked_reason || '');
+              }}
               onWithdraw={() => withdrawPost(post)}
+              onUpdateInterest={updateInterest}
+              onUpdateResolution={updateResolution}
             />
           );
         })}
@@ -225,6 +290,24 @@ export function CommunityModeration({ data, actions, currentUser }) {
           </div>
         </Modal>
       )}
+
+      {blocking && (
+        <Modal title="Bloquear publicacion" onClose={() => setBlocking(null)}>
+          <div className="space-y-4">
+            <div className="rounded-md border border-red-100 bg-red-50 p-4 text-sm text-red-800">
+              <p className="font-black">Esta accion retira la publicacion del Portal y queda registrada para moderacion.</p>
+              <p className="mt-1">{blocking.title}</p>
+            </div>
+            <FormField label="Motivo del bloqueo" required>
+              <textarea className={`${inputClass} min-h-24`} value={blockReason} onChange={(event) => setBlockReason(event.target.value)} />
+            </FormField>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={() => setBlocking(null)}>Cancelar</Button>
+              <Button variant="danger" disabled={!canEdit} onClick={() => blockPost(blocking)}><ShieldAlert size={16} /> Bloquear</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -234,7 +317,8 @@ function SummaryCard({ label, value, tone, icon: Icon }) {
     amber: 'border-amber-100 bg-amber-50 text-amber-800',
     emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
     red: 'border-red-100 bg-red-50 text-red-700',
-    brand: 'border-brand-100 bg-brand-50 text-brand-700'
+    brand: 'border-brand-100 bg-brand-50 text-brand-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700'
   };
   return (
     <article className={`rounded-md border p-4 ${tones[tone] || tones.brand}`}>
@@ -249,10 +333,17 @@ function SummaryCard({ label, value, tone, icon: Icon }) {
   );
 }
 
-function CommunityPostCard({ post, beneficiary, interests, photoUrl, canEdit, onReview, onWithdraw }) {
+function CommunityPostCard({ post, beneficiary, interests, reports, matches, beneficiaryById, photoUrl, canEdit, onReview, onWithdraw, onBlock, onUpdateInterest, onUpdateResolution }) {
   const category = categoryMeta[post.category] || categoryMeta.need;
   const status = statusMeta[post.status] || statusMeta.pending_review;
   const CategoryIcon = category.icon;
+  const expired = isPostExpired(post);
+  const [resolutionStatus, setResolutionStatus] = useState(post.resolution_status || 'active');
+  const [resolutionNotes, setResolutionNotes] = useState(post.resolution_notes || '');
+  useEffect(() => {
+    setResolutionStatus(post.resolution_status || 'active');
+    setResolutionNotes(post.resolution_notes || '');
+  }, [post.resolution_notes, post.resolution_status]);
   return (
     <article className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-panel">
       {photoUrl ? (
@@ -266,7 +357,11 @@ function CommunityPostCard({ post, beneficiary, interests, photoUrl, canEdit, on
         <div className="flex flex-wrap items-center gap-2">
           <Badge className={category.tone}><CategoryIcon size={14} /> {category.label}</Badge>
           <Badge className={status.tone}>{status.label}</Badge>
+          {expired && <Badge className="border-red-100 bg-red-50 text-red-700">Caducada</Badge>}
+          {post.resolution_status && post.resolution_status !== 'active' && <Badge className="border-slate-200 bg-slate-50 text-slate-700">{resolutionLabels[post.resolution_status] || post.resolution_status}</Badge>}
           <Badge className="border-slate-100 bg-slate-50 text-slate-600"><MessageCircle size={14} /> {interests.length} intereses</Badge>
+          {reports.length > 0 && <Badge className="border-red-100 bg-red-50 text-red-700"><Flag size={14} /> {reports.length} reportes</Badge>}
+          {matches.length > 0 && <Badge className="border-amber-100 bg-amber-50 text-amber-800"><AlertTriangle size={14} /> Posible coincidencia</Badge>}
         </div>
         <div>
           <h3 className="text-xl font-bold text-ink">{post.title}</h3>
@@ -278,29 +373,95 @@ function CommunityPostCard({ post, beneficiary, interests, photoUrl, canEdit, on
           {post.category === 'employment' && <InfoLine icon={Briefcase} label="Puesto" value={post.job_position || post.title} />}
           {post.company_name && <InfoLine icon={Briefcase} label="Entidad" value={post.company_name} />}
           {post.deadline_at && <InfoLine icon={Clock3} label="Fecha limite" value={formatDate(post.deadline_at)} />}
+          {post.expires_at && <InfoLine icon={Clock3} label="Visible hasta" value={formatDate(post.expires_at)} />}
         </div>
-        {interests.length > 0 && (
-          <div className="rounded-md border border-brand-100 bg-brand-50/60 p-3">
-            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Personas interesadas</p>
-            <div className="mt-2 space-y-1 text-sm text-brand-900">
-              {interests.slice(0, 4).map((interest) => (
-                <p key={interest.id}>{formatDate(interest.created_at)} · {interest.message || 'Interes registrado'}</p>
+        {matches.length > 0 && (
+          <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
+            <p className="text-xs font-black uppercase tracking-wide text-amber-800">Posibles coincidencias Ofrezco / Necesito</p>
+            <div className="mt-2 space-y-1 text-sm text-amber-900">
+              {matches.slice(0, 3).map((match) => (
+                <p key={match.id}>Existe una posible coincidencia con "{match.title}". Revisar antes de facilitar contacto.</p>
               ))}
-              {interests.length > 4 && <p className="font-semibold">+{interests.length - 4} intereses mas</p>}
             </div>
           </div>
         )}
+        {reports.length > 0 && (
+          <div className="rounded-md border border-red-100 bg-red-50 p-3">
+            <p className="text-xs font-black uppercase tracking-wide text-red-700">Reportes pendientes</p>
+            <div className="mt-2 space-y-1 text-sm text-red-800">
+              {reports.slice(0, 3).map((report) => (
+                <p key={report.id}>{formatDate(report.created_at)} - {report.reason || 'Reporte sin detalle'}</p>
+              ))}
+            </div>
+          </div>
+        )}
+        {interests.length > 0 && (
+          <div className="rounded-md border border-brand-100 bg-brand-50/60 p-3">
+            <p className="text-xs font-black uppercase tracking-wide text-brand-700">Gestion del interes</p>
+            <div className="mt-3 space-y-3">
+              {interests.map((interest) => (
+                <InterestWorkflowRow
+                  key={interest.id}
+                  interest={interest}
+                  beneficiary={beneficiaryById.get(interest.beneficiary_id)}
+                  canEdit={canEdit}
+                  onUpdate={onUpdateInterest}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-600">Vigencia de la publicacion</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-[190px_1fr_auto]">
+            <select className={inputClass} value={resolutionStatus} onChange={(event) => setResolutionStatus(event.target.value)} disabled={!canEdit}>
+              {Object.entries(resolutionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <input className={inputClass} value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit} />
+            <Button variant="secondary" disabled={!canEdit} onClick={() => onUpdateResolution(post, { resolution_status: resolutionStatus, resolution_notes: resolutionNotes })}>Guardar</Button>
+          </div>
+        </div>
         {post.rejection_reason && post.status === 'rejected' && (
           <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-700">
             <strong>Motivo del rechazo:</strong> {post.rejection_reason}
           </div>
         )}
+        {post.blocked_reason && post.status === 'blocked' && (
+          <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+            <strong>Motivo del bloqueo:</strong> {post.blocked_reason}
+          </div>
+        )}
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
           <Button variant="secondary" disabled={!canEdit} onClick={onReview}>Revisar</Button>
+          {!['withdrawn', 'blocked'].includes(post.status) && <Button variant="danger" disabled={!canEdit} onClick={onBlock}><ShieldAlert size={16} /> Bloquear</Button>}
           {post.status !== 'withdrawn' && <Button variant="danger" disabled={!canEdit} onClick={onWithdraw}><Trash2 size={16} /> Retirar</Button>}
         </div>
       </div>
     </article>
+  );
+}
+
+function InterestWorkflowRow({ interest, beneficiary, canEdit, onUpdate }) {
+  const [status, setStatus] = useState(interest.status === 'registered' ? 'new' : interest.status || 'new');
+  const [notes, setNotes] = useState(interest.status_notes || '');
+
+  return (
+    <div className="rounded-md border border-white/70 bg-white p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-brand-900">{beneficiary?.full_name || 'Beneficiario'}{beneficiary?.code ? ` - ${beneficiary.code}` : ''}</p>
+          <p className="mt-1 text-sm text-brand-800">{formatDate(interest.created_at)} - {interest.message || 'Interes registrado'}</p>
+        </div>
+        <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-black text-brand-700">{interestStatusOptions.find((item) => item.value === status)?.label || 'Nuevo'}</span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_auto]">
+        <select className={inputClass} value={status} onChange={(event) => setStatus(event.target.value)} disabled={!canEdit}>
+          {interestStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <input className={inputClass} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observaciones internas" disabled={!canEdit} />
+        <Button variant="secondary" disabled={!canEdit} onClick={() => onUpdate(interest, { status, status_notes: notes })}>Actualizar</Button>
+      </div>
+    </div>
   );
 }
 
@@ -316,6 +477,48 @@ function InfoLine({ icon: Icon, label, value }) {
       <p><span className="font-bold text-slate-700">{label}:</span> {value}</p>
     </div>
   );
+}
+
+function groupByPost(items) {
+  const map = new Map();
+  items.forEach((item) => {
+    const list = map.get(item.post_id) || [];
+    list.push(item);
+    map.set(item.post_id, list);
+  });
+  return map;
+}
+
+function isPostExpired(post = {}) {
+  return Boolean(post.expires_at && String(post.expires_at).slice(0, 10) < new Date().toISOString().slice(0, 10));
+}
+
+function isPostMatchable(post = {}) {
+  return post.status === 'approved' && (post.resolution_status || 'active') === 'active' && !isPostExpired(post);
+}
+
+function matchTokens(post = {}) {
+  return normalize([post.title, post.description, post.zone].filter(Boolean).join(' '))
+    .split(/[^a-z0-9]+/i)
+    .filter((token) => token.length >= 4);
+}
+
+function buildCommunityMatches(posts = []) {
+  const active = posts.filter(isPostMatchable).filter((post) => ['offer', 'need'].includes(post.category));
+  const map = new Map();
+  active.forEach((post) => {
+    const ownTokens = matchTokens(post);
+    if (!ownTokens.length) return;
+    const matches = active
+      .filter((candidate) => candidate.id !== post.id && candidate.category !== post.category)
+      .filter((candidate) => {
+        const candidateTokens = matchTokens(candidate);
+        return ownTokens.some((token) => candidateTokens.includes(token));
+      })
+      .slice(0, 5);
+    if (matches.length) map.set(post.id, matches);
+  });
+  return map;
 }
 
 function useCommunityPhotoUrls(posts) {
