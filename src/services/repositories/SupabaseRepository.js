@@ -72,6 +72,9 @@ const DATE_FIELDS = new Set([
   'signature_signed_at',
   'responsible_signature_signed_at',
   'attendance_confirmed_at',
+  'check_in_at',
+  'check_out_at',
+  'corrected_at',
   'last_checked_at',
   'detected_at',
   'created_at',
@@ -136,7 +139,9 @@ const OPTIONAL_TABLES = new Set([
   'person_identities',
   'person_identity_link_audit',
   'volunteer_documents',
-  'volunteer_training'
+  'volunteer_training',
+  'volunteer_time_entries',
+  'volunteer_time_entry_corrections'
 ]);
 
 const NEW_MODULE_OPTIONAL_TABLES = new Set([
@@ -156,7 +161,9 @@ const NEW_MODULE_OPTIONAL_TABLES = new Set([
   'person_identities',
   'person_identity_link_audit',
   'volunteer_documents',
-  'volunteer_training'
+  'volunteer_training',
+  'volunteer_time_entries',
+  'volunteer_time_entry_corrections'
 ]);
 
 const SECURITY_TABLES = new Set([

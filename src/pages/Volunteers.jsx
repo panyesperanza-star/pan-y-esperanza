@@ -2,6 +2,7 @@ import {
   Archive,
   BadgeCheck,
   CalendarDays,
+  Clock,
   ClipboardList,
   Download,
   Edit3,
@@ -21,6 +22,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
+import {
+  VolunteerAttendanceControl,
+  VolunteerAttendanceProfilePanel,
+  formatAttendanceDuration,
+  isOpenAttendanceEntry,
+  volunteerAttendancePresence,
+  volunteerAttendanceStats,
+  volunteerAttendanceTimelineRows,
+  volunteerTimeEntriesFor
+} from '../components/VolunteerAttendanceControl';
 import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import officialLogoUrl from '../assets/logo-pan-y-esperanza.png';
@@ -40,6 +51,7 @@ const PROFILE_TABS = [
   { id: 'summary', label: 'Resumen', icon: BadgeCheck },
   { id: 'personal', label: 'Datos personales', icon: UserRoundCheck },
   { id: 'participations', label: 'Participaciones', icon: ClipboardList },
+  { id: 'attendance', label: 'Asistencia', icon: Clock },
   { id: 'training', label: 'Formación', icon: GraduationCap },
   { id: 'documents', label: 'Documentación', icon: FileText },
   { id: 'communications', label: 'Comunicaciones', icon: Mail },
@@ -52,6 +64,7 @@ export function Volunteers({ data, actions, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('code');
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
+  const attendanceEntries = data.volunteer_time_entries || [];
   const appUsers = data.app_users || [];
   const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
@@ -104,6 +117,15 @@ export function Volunteers({ data, actions, currentUser }) {
         actions={canManage && <Button onClick={() => setModal({ type: 'create' })}><Plus size={18} /> Nuevo voluntario</Button>}
       />
 
+      <VolunteerAttendanceControl
+        data={data}
+        volunteers={volunteers}
+        entries={attendanceEntries}
+        actions={actions}
+        currentUser={currentUser}
+        canManage={canManage}
+      />
+
       <section className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-white p-4 shadow-panel md:grid-cols-[1fr_220px]">
         <FormField label="Buscar voluntario">
           <input
@@ -128,7 +150,8 @@ export function Volunteers({ data, actions, currentUser }) {
           <VolunteerCard
             key={volunteer.id}
             volunteer={volunteer}
-            stats={volunteerStats(volunteer, data.volunteer_history || [])}
+            stats={volunteerStats(volunteer, data.volunteer_history || [], attendanceEntries)}
+            presence={volunteerAttendancePresence(attendanceEntries, volunteer.id)}
             canManage={canManage}
             canDelete={canDelete}
             linkedUser={linkedUserForVolunteer(volunteer, appUsers)}
@@ -322,7 +345,7 @@ function linkedUserForVolunteer(volunteer = {}, users = []) {
   if (!volunteer.person_identity_id) return null;
   return users.find((user) => user.person_identity_id === volunteer.person_identity_id) || null;
 }
-function VolunteerCard({ volunteer, stats, canManage, canDelete, linkedUser, canManageUserAccess, onManageErpAccess, onOpen, onEdit, onArchive, onDelete }) {
+function VolunteerCard({ volunteer, stats, presence, canManage, canDelete, linkedUser, canManageUserAccess, onManageErpAccess, onOpen, onEdit, onArchive, onDelete }) {
   const archived = volunteer.status === 'Archivado';
   return (
     <article className={`rounded-md border p-4 shadow-panel ${archived ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}>
@@ -332,6 +355,7 @@ function VolunteerCard({ volunteer, stats, canManage, canDelete, linkedUser, can
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate font-bold text-ink">{volunteer.full_name}</h3>
             <StatusBadge status={volunteer.status} />
+            <span className={`rounded-full px-2 py-1 text-xs font-bold ${presence ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-600'}`}>{presence ? 'Presente ahora' : 'No presente'}</span>
           </div>
           <p className="mt-1 text-sm font-semibold text-brand-700">{volunteer.code}</p>
           <p className="mt-1 text-sm text-slate-600">Alta: {formatDate(volunteer.joined_at)}</p>
@@ -361,8 +385,10 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
   const history = volunteerHistoryFor(data, volunteer.id);
   const documents = volunteerDocumentsFor(data, volunteer.id);
   const trainingRecords = volunteerTrainingFor(data, volunteer.id);
-  const timeline = volunteerTimelineFor(volunteer, history, documents, trainingRecords);
-  const stats = volunteerStats(volunteer, history);
+  const timeEntries = volunteerTimeEntriesFor(data, volunteer.id);
+  const corrections = (data.volunteer_time_entry_corrections || []).filter((item) => item.volunteer_id === volunteer.id);
+  const timeline = volunteerTimelineFor(volunteer, history, documents, trainingRecords, timeEntries);
+  const stats = volunteerStats(volunteer, history, timeEntries);
   const communications = volunteerCommunications(data.email_logs || [], volunteer);
   const actor = currentUserName(currentUser);
 
@@ -384,7 +410,7 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
           </div>
           <div className="flex flex-wrap gap-2">
             {canGenerateCredential && <OfficialCredentialButton kind="volunteer" subject={volunteer} organization={data.organization_settings?.[0]} actions={actions} />}
-            <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0], documents, trainingRecords)}><FileText size={16} /> Expediente PDF</Button>
+            <Button type="button" variant="secondary" onClick={() => printVolunteerProfilePdf(volunteer, history, communications, data.organization_settings?.[0], documents, trainingRecords, timeEntries)}><FileText size={16} /> Expediente PDF</Button>
             <Button type="button" variant="secondary" onClick={() => downloadVolunteerCertificate(volunteer, history, data.organization_settings?.[0])}><Download size={16} /> Certificado</Button>
             {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
@@ -410,6 +436,7 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
         {tab === 'summary' && <VolunteerSummary volunteer={volunteer} history={history} documents={documents} trainingRecords={trainingRecords} stats={stats} />}
         {tab === 'personal' && <PersonalDetails volunteer={volunteer} />}
         {tab === 'participations' && <ParticipationPanel history={history} canManage={canManage} onAdd={onAddHistory} />}
+        {tab === 'attendance' && <VolunteerAttendanceProfilePanel volunteer={volunteer} entries={timeEntries} corrections={corrections} canManage={canManage} actions={actions} />}
         {tab === 'training' && <TrainingPanel records={trainingRecords} volunteer={volunteer} canManage={canManage} actor={actor} onAdd={(payload) => actions.createVolunteerTraining({ ...payload, volunteer_id: volunteer.id })} onUpdate={(id, payload) => actions.updateVolunteerTraining(id, { ...payload, volunteer_id: volunteer.id })} onDelete={(id) => actions.deleteVolunteerTraining(id)} />}
         {tab === 'documents' && <DocumentsPanel documents={documents} canManage={canManage} actor={actor} onAdd={(payload) => actions.createVolunteerDocument({ ...payload, volunteer_id: volunteer.id })} onUpdate={(id, payload) => actions.updateVolunteerDocument(id, { ...payload, volunteer_id: volunteer.id })} onDelete={(id) => actions.deleteVolunteerDocument(id)} />}
         {tab === 'communications' && <CommunicationsPanel communications={communications} />}
@@ -428,6 +455,7 @@ function VolunteerSummary({ volunteer, history, documents = [], trainingRecords 
       <section className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Participaciones" value={stats.total} detail="Colaboraciones registradas" />
         <MetricCard label="Días colaborados" value={stats.days} detail="Fechas distintas" />
+        <MetricCard label="Horas reales" value={formatAttendanceDuration(stats.attendanceMinutes || 0)} detail={stats.openAttendance ? 'Actualmente presente' : 'Control horario'} />
         <MetricCard label="Última actividad" value={stats.last ? formatDate(stats.last) : '-'} detail={stats.lastActivity || 'Sin actividad'} />
         <InfoCard title="Disponibilidad" value={volunteer.availability || '-'} />
         <InfoCard title="Funciones" value={volunteer.functions || volunteer.tasks || '-'} />
@@ -1105,7 +1133,7 @@ function documentEffectiveStatus(item = {}) {
   return item.status || 'Pendiente';
 }
 
-function volunteerTimelineFor(volunteer, history = [], documents = [], trainingRecords = []) {
+function volunteerTimelineFor(volunteer, history = [], documents = [], trainingRecords = [], timeEntries = []) {
   const rows = [
     {
       id: `${volunteer.id}-alta`,
@@ -1126,7 +1154,8 @@ function volunteerTimelineFor(volunteer, history = [], documents = [], trainingR
       activity: `Formación: ${item.course_name}`,
       hours: item.hours,
       notes: item.entity || item.notes || ''
-    }))
+    })),
+    ...volunteerAttendanceTimelineRows(timeEntries, history)
   ];
 
   if (volunteer.left_at) {
@@ -1157,15 +1186,19 @@ function observationRows(history) {
   return history.filter((item) => normalize(item.activity).includes('observacion'));
 }
 
-function volunteerStats(volunteer, history) {
+function volunteerStats(volunteer, history, timeEntries = []) {
   const participations = participationRows(history);
-  const days = new Set(participations.map((item) => item.date).filter(Boolean)).size;
-  const last = participations[0]?.date || '';
+  const volunteerEntries = volunteerTimeEntriesFor(timeEntries, volunteer.id);
+  const attendance = volunteerAttendanceStats(volunteerEntries);
+  const days = new Set([...participations.map((item) => item.date), ...volunteerEntries.map((entry) => String(entry.check_in_at || '').slice(0, 10))].filter(Boolean)).size;
+  const last = participations[0]?.date || volunteerEntries[0]?.check_in_at || '';
   return {
-    total: participations.length,
+    total: participations.length + volunteerEntries.filter((entry) => !isOpenAttendanceEntry(entry)).length,
     days,
     last,
-    lastActivity: participations[0]?.activity || '',
+    lastActivity: participations[0]?.activity || volunteerEntries[0]?.activity_label || '',
+    attendanceMinutes: attendance.totalMinutes,
+    openAttendance: attendance.open,
     archived: volunteer.status === 'Archivado'
   };
 }

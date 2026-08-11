@@ -4,6 +4,8 @@ const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
 const VOLUNTEER_META_END = '[/PYE_VOLUNTEER_META]';
 const VOLUNTEER_STATUSES = new Set(['Activo', 'Inactivo', 'Archivado', 'Baja']);
 const DOCUMENT_STATUSES = new Set(['Vigente', 'Pendiente', 'Caducado', 'No requerido']);
+const TIME_ENTRY_STATUSES = new Set(['open', 'closed', 'incident', 'corrected', 'voided']);
+const TIME_ENTRY_METHODS = new Set(['qr', 'usb', 'manual']);
 
 function cleanText(value) {
   return String(value || '').trim();
@@ -37,6 +39,13 @@ function volunteerStatus(volunteer = {}) {
 function cleanDate(value) {
   const text = cleanText(value);
   return text || null;
+}
+
+function cleanTimestamp(value) {
+  const text = cleanText(value);
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text : date.toISOString();
 }
 
 function cleanNumber(value) {
@@ -139,6 +148,61 @@ export function sanitizeVolunteerTrainingPayload(payload = {}, volunteers = []) 
   };
 }
 
+export function sanitizeVolunteerTimeEntryPayload(payload = {}, volunteers = []) {
+  const volunteerId = cleanText(payload.volunteer_id);
+  if (!volunteerId) throw new Error('Selecciona un voluntario.');
+  if (volunteers.length && !volunteers.some((volunteer) => volunteer.id === volunteerId)) {
+    throw new Error('El voluntario seleccionado no existe.');
+  }
+
+  const checkInAt = cleanTimestamp(payload.check_in_at) || new Date().toISOString();
+  const checkOutAt = cleanTimestamp(payload.check_out_at);
+  const totalMinutes = cleanNumber(payload.total_minutes);
+  if (totalMinutes !== null && totalMinutes < 0) throw new Error('Las horas totales no pueden ser negativas.');
+
+  return {
+    volunteer_id: volunteerId,
+    person_identity_id: cleanText(payload.person_identity_id) || null,
+    activity_type: cleanText(payload.activity_type) || 'General',
+    activity_label: cleanText(payload.activity_label) || cleanText(payload.activity_type) || 'Voluntariado',
+    linked_entity_type: cleanText(payload.linked_entity_type),
+    linked_entity_id: cleanText(payload.linked_entity_id) || null,
+    check_in_at: checkInAt,
+    check_out_at: checkOutAt,
+    total_minutes: totalMinutes,
+    method: cleanStatus(payload.method, TIME_ENTRY_METHODS, 'manual'),
+    credential_uid: cleanText(payload.credential_uid),
+    device_info: cleanText(payload.device_info),
+    registered_by_user_id: cleanText(payload.registered_by_user_id) || null,
+    registered_by_name: cleanText(payload.registered_by_name),
+    status: cleanStatus(payload.status, TIME_ENTRY_STATUSES, checkOutAt ? 'closed' : 'open'),
+    incident_type: cleanText(payload.incident_type),
+    notes: String(payload.notes || '').trim()
+  };
+}
+
+export function sanitizeVolunteerTimeEntryCorrectionPayload(payload = {}, timeEntries = []) {
+  const timeEntryId = cleanText(payload.time_entry_id);
+  const volunteerId = cleanText(payload.volunteer_id);
+  if (!timeEntryId) throw new Error('No se ha indicado el fichaje corregido.');
+  if (!volunteerId) throw new Error('No se ha indicado el voluntario corregido.');
+  if (timeEntries.length && !timeEntries.some((entry) => entry.id === timeEntryId)) {
+    throw new Error('El fichaje corregido no existe.');
+  }
+  const reason = cleanText(payload.reason);
+  if (!reason) throw new Error('Indica el motivo de la correccion.');
+
+  return {
+    time_entry_id: timeEntryId,
+    volunteer_id: volunteerId,
+    previous_values: payload.previous_values && typeof payload.previous_values === 'object' ? payload.previous_values : {},
+    next_values: payload.next_values && typeof payload.next_values === 'object' ? payload.next_values : {},
+    reason,
+    corrected_by_user_id: cleanText(payload.corrected_by_user_id) || null,
+    corrected_by_name: cleanText(payload.corrected_by_name),
+    corrected_at: cleanTimestamp(payload.corrected_at) || new Date().toISOString()
+  };
+}
 export function sanitizeVolunteerHistoryPayload(payload = {}, volunteers = []) {
   const volunteerId = cleanText(payload.volunteer_id);
   if (!volunteerId) throw new Error('Selecciona un voluntario.');
@@ -178,6 +242,7 @@ export class VoluntarioService {
   constructor({
     repository,
     volunteers = [],
+    timeEntries = [],
     audit = async () => {},
     assertCanDelete = () => {},
     usuarioService = null,
@@ -188,6 +253,7 @@ export class VoluntarioService {
     if (!repository) throw new Error('VoluntarioService necesita un repository.');
     this.repository = repository;
     this.volunteers = volunteers;
+    this.timeEntries = timeEntries;
     this.audit = audit;
     this.assertCanDelete = assertCanDelete;
     this.usuarioService = usuarioService;
@@ -291,6 +357,29 @@ export class VoluntarioService {
     return true;
   }
 
+  async createTimeEntry(payload) {
+    const entry = sanitizeVolunteerTimeEntryPayload(payload, this.volunteers);
+    const created = await this.repository.createTimeEntry(entry);
+    await this.audit(`Voluntarios: fichaje entrada ${entry.activity_label || entry.activity_type}`.trim());
+    await this.notifyVolunteerChanged('time_entry_created', created);
+    return created;
+  }
+
+  async updateTimeEntry(id, payload) {
+    const entry = sanitizeVolunteerTimeEntryPayload(payload, this.volunteers);
+    const updated = await this.repository.updateTimeEntry(id, entry);
+    await this.audit(`Voluntarios: fichaje actualizado ${entry.activity_label || entry.activity_type}`.trim());
+    await this.notifyVolunteerChanged('time_entry_updated', updated);
+    return updated;
+  }
+
+  async createTimeEntryCorrection(payload) {
+    const correction = sanitizeVolunteerTimeEntryCorrectionPayload(payload, this.timeEntries);
+    const created = await this.repository.createTimeEntryCorrection(correction);
+    await this.audit(`Voluntarios: correccion de fichaje ${correction.reason}`.trim());
+    await this.notifyVolunteerChanged('time_entry_corrected', created);
+    return created;
+  }
   async assignShift(payload) {
     return this.createHistory({ ...payload, activity: payload.activity || 'Turno asignado' });
   }

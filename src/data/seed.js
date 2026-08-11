@@ -302,6 +302,8 @@ export const seedData = {
   volunteer_history: [],
   volunteer_documents: [],
   volunteer_training: [],
+  volunteer_time_entries: [],
+  volunteer_time_entry_corrections: [],
   campanas: [
     {
       id: demoCampaignId,

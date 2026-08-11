@@ -103,6 +103,8 @@ const EMPTY_APP_DATA = Object.freeze({
   volunteer_history: EMPTY_TABLE,
   volunteer_documents: EMPTY_TABLE,
   volunteer_training: EMPTY_TABLE,
+  volunteer_time_entries: EMPTY_TABLE,
+  volunteer_time_entry_corrections: EMPTY_TABLE,
   person_identities: EMPTY_TABLE,
   person_identity_link_audit: EMPTY_TABLE,
   notificaciones: EMPTY_TABLE,
@@ -525,6 +527,7 @@ export function useAppData(enabled = true, currentUser = null) {
     return new VoluntarioService({
       repository: new VoluntarioRepository({ dataStore, supabase, hasSupabaseConfig, repository: repositoryAdapter }),
       volunteers: appData.volunteers || [],
+      timeEntries: appData.volunteer_time_entries || [],
       audit,
       assertCanDelete: () => {
         if (currentUser?.role !== 'Superadministrador') {
@@ -3221,6 +3224,94 @@ export function useAppData(enabled = true, currentUser = null) {
       await voluntarioService.removeTraining(id);
       await reload();
     },
+    toggleVolunteerAttendance: async (payload = {}) => {
+      assertPermission('volunteers', 'edit');
+      const volunteerId = String(payload.volunteer_id || payload.volunteerId || '').trim();
+      const volunteer = (appData.volunteers || []).find((item) => item.id === volunteerId);
+      if (!volunteer) throw new Error('No se ha localizado el voluntario para fichar.');
+      const openEntry = (appData.volunteer_time_entries || [])
+        .filter((entry) => entry.volunteer_id === volunteer.id && entry.status === 'open' && !entry.check_out_at)
+        .sort((left, right) => new Date(right.check_in_at || 0) - new Date(left.check_in_at || 0))[0];
+      const now = new Date().toISOString();
+      const actorName = currentUserName();
+      const actorId = currentUser?.id || null;
+
+      if (openEntry) {
+        const totalMinutes = minutesBetween(openEntry.check_in_at, now);
+        const incidentType = totalMinutes > 720 ? 'Fichaje excesivamente largo' : '';
+        const updated = await voluntarioService.updateTimeEntry(openEntry.id, {
+          ...openEntry,
+          check_out_at: now,
+          total_minutes: totalMinutes,
+          status: incidentType ? 'incident' : 'closed',
+          incident_type: incidentType,
+          registered_by_user_id: actorId,
+          registered_by_name: actorName,
+          notes: [openEntry.notes, incidentType].filter(Boolean).join(' | ')
+        });
+        await voluntarioService.createHistory({
+          volunteer_id: volunteer.id,
+          date: now.slice(0, 10),
+          activity: `Participo en ${updated.activity_label || updated.activity_type || 'voluntariado'} · ${formatVolunteerMinutes(totalMinutes)}`,
+          hours: Math.round((totalMinutes / 60) * 100) / 100,
+          notes: JSON.stringify({
+            source: 'volunteer_time_entries',
+            time_entry_id: updated.id,
+            method: updated.method,
+            check_in_at: updated.check_in_at,
+            check_out_at: updated.check_out_at,
+            registered_by_name: updated.registered_by_name
+          })
+        });
+        await reload();
+        return { type: 'exit', volunteer, entry: updated, message: 'SALIDA registrada' };
+      }
+
+      const created = await voluntarioService.createTimeEntry({
+        volunteer_id: volunteer.id,
+        person_identity_id: volunteer.person_identity_id || payload.person_identity_id || null,
+        activity_type: payload.activity_type || 'General',
+        activity_label: payload.activity_label || payload.activity_type || 'Voluntariado',
+        linked_entity_type: payload.linked_entity_type || '',
+        linked_entity_id: payload.linked_entity_id || null,
+        check_in_at: now,
+        method: payload.method || 'manual',
+        credential_uid: payload.credential_uid || '',
+        device_info: payload.device_info || '',
+        registered_by_user_id: actorId,
+        registered_by_name: actorName,
+        status: 'open'
+      });
+      await reload();
+      return { type: 'entry', volunteer, entry: created, message: 'ENTRADA registrada' };
+    },
+    correctVolunteerAttendance: async (id, payload = {}) => {
+      assertPermission('volunteers', 'edit');
+      const currentEntry = (appData.volunteer_time_entries || []).find((entry) => entry.id === id);
+      if (!currentEntry) throw new Error('No se ha localizado el fichaje que quieres corregir.');
+      const reason = String(payload.reason || '').trim();
+      if (!reason) throw new Error('Indica el motivo de la correccion.');
+      const nextValues = {
+        ...currentEntry,
+        ...payload,
+        total_minutes: payload.check_in_at && payload.check_out_at ? minutesBetween(payload.check_in_at, payload.check_out_at) : currentEntry.total_minutes,
+        status: payload.status || (payload.check_out_at ? 'corrected' : currentEntry.status),
+        incident_type: payload.incident_type || ''
+      };
+      delete nextValues.reason;
+      const updated = await voluntarioService.updateTimeEntry(id, nextValues);
+      await voluntarioService.createTimeEntryCorrection({
+        time_entry_id: id,
+        volunteer_id: currentEntry.volunteer_id,
+        previous_values: currentEntry,
+        next_values: updated,
+        reason,
+        corrected_by_user_id: currentUser?.id || null,
+        corrected_by_name: currentUserName()
+      });
+      await reload();
+      return updated;
+    },
     updateOrganizationSettings: async (payload) => {
       await configuracionService.saveSettings(payload);
       await reload();
@@ -3459,6 +3550,20 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
   );
 }
 
+function minutesBetween(start, end) {
+  const startDate = new Date(start || 0);
+  const endDate = new Date(end || 0);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate) return 0;
+  return Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
+}
+
+function formatVolunteerMinutes(minutes = 0) {
+  const safe = Math.max(0, Number(minutes) || 0);
+  const hours = Math.floor(safe / 60);
+  const mins = safe % 60;
+  if (!hours) return `${mins} min`;
+  return `${hours} h ${String(mins).padStart(2, '0')} min`;
+}
 function enrichPersonIdentityData(data = {}) {
   const identities = data.person_identities || [];
   if (!identities.length) return data;

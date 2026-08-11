@@ -60,4 +60,16 @@ export class VoluntarioRepository {
   async removeTraining(id) {
     return this.repository.remove('volunteer_training', id);
   }
+
+  async createTimeEntry(payload) {
+    return this.repository.create('volunteer_time_entries', payload);
+  }
+
+  async updateTimeEntry(id, payload) {
+    return this.repository.update('volunteer_time_entries', id, payload);
+  }
+
+  async createTimeEntryCorrection(payload) {
+    return this.repository.create('volunteer_time_entry_corrections', payload);
+  }
 }

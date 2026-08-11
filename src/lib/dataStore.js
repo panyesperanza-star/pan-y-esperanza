@@ -51,6 +51,8 @@ const TABLES = [
   'volunteer_history',
   'volunteer_documents',
   'volunteer_training',
+  'volunteer_time_entries',
+  'volunteer_time_entry_corrections',
   'notificaciones',
   'agenda_operativa',
   'campanas',
@@ -139,7 +141,9 @@ const OPTIONAL_TABLES = new Set([
   'person_identities',
   'person_identity_link_audit',
   'volunteer_documents',
-  'volunteer_training'
+  'volunteer_training',
+  'volunteer_time_entries',
+  'volunteer_time_entry_corrections'
 ]);
 const STORAGE_KEY = 'pan-y-esperanza-real-data';
 const FAMILY_ARCHIVE_MARKER = '[FAMILIA_ARCHIVADA]';
@@ -220,6 +224,9 @@ const DATE_FIELDS = new Set([
   'logged_out_at',
   'signature_signed_at',
   'responsible_signature_signed_at',
+  'check_in_at',
+  'check_out_at',
+  'corrected_at',
   'created_at',
   'updated_at'
 ]);
