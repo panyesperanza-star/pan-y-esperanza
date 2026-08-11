@@ -3390,7 +3390,13 @@ export function useAppData(enabled = true, currentUser = null) {
           : personIdentityPayloadFromUser(userPayload);
         await updatePersonIdentity(identityId, basePayload);
       }
-      const createdUser = await usuarioService.create({ ...userPayload, person_identity_id: identityId });
+      const shouldParticipateAsVolunteer = Boolean(userPayload.participates_as_volunteer);
+      const createdUser = await usuarioService.create({
+        ...userPayload,
+        participates_as_volunteer: shouldParticipateAsVolunteer ? false : userPayload.participates_as_volunteer,
+        person_identity_id: identityId
+      });
+      let finalUser = createdUser;
       if (createdUser?.id) {
         await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id: createdUser.id }));
         if (linkedVolunteerId) {
@@ -3412,12 +3418,13 @@ export function useAppData(enabled = true, currentUser = null) {
             next_values: { app_user_id: createdUser.id }
           });
         }
-        if (userPayload.participates_as_volunteer) {
+        if (shouldParticipateAsVolunteer) {
           await ensureUserVolunteerParticipation(createdUser.id, { ...userPayload, id: createdUser.id }, identityId, linkedVolunteerId);
+          finalUser = await usuarioService.update(createdUser.id, { ...userPayload, person_identity_id: identityId, participates_as_volunteer: true });
         }
       }
       await reload();
-      return createdUser;
+      return finalUser;
     },
     sendUserWelcomeEmail: async (user, organization, logoUrl) => {
       await usuarioService.sendWelcomeEmail(user, organization, logoUrl);
@@ -3428,10 +3435,10 @@ export function useAppData(enabled = true, currentUser = null) {
         ? await linkVolunteerUserIdentityRecords(linkedVolunteerId, id, identityLinkDecision || 'Vinculado al editar usuario ERP', userPayload.person_identity_id || '')
         : (userPayload.person_identity_id || await ensureUserPersonIdentity(id, userPayload));
       await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id }));
-      const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
       if (userPayload.participates_as_volunteer) {
         await ensureUserVolunteerParticipation(id, { ...userPayload, id }, identityId, linkedVolunteerId);
       }
+      const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
       await reload();
       return updated;
     },
