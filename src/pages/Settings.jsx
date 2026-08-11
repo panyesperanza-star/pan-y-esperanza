@@ -7,7 +7,7 @@ import { OfficialCredentialButton } from '../components/OfficialCredentialV2';
 import { PageHeader } from '../components/PageHeader';
 import { isRoleActionAllowed, PERMISSION_ACTIONS, PERMISSION_MODULES, ROLE_PERMISSION_MATRIX, ROLE_PERMISSIONS, ROLES } from '../lib/constants';
 import { formatDateTime } from '../lib/formatters';
-import { buildVolunteerUserIdentityCandidates, findVolunteerMatchesForUser, splitPersonName, userFullName } from '../lib/personIdentity';
+import { buildVolunteerUserIdentityCandidates, findVolunteerMatchesForUser, hasStrongVolunteerUserMatch, splitPersonName, userFullName } from '../lib/personIdentity';
 import { canAccess, canDo, getUserStatus } from '../lib/auth';
 import {
   buildUsersViewModel,
@@ -479,7 +479,8 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
   const volunteerMatches = useMemo(() => (
     shouldCheckVolunteerMatches && !linkedVolunteer ? findVolunteerMatchesForUser(form, volunteers).slice(0, 4) : []
   ), [shouldCheckVolunteerMatches, linkedVolunteer, volunteers, form.document_id, form.email, form.phone, form.first_name, form.last_name]);
-  const mustResolveVolunteerMatch = creating && volunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked';
+  const strongVolunteerMatches = useMemo(() => volunteerMatches.filter(hasStrongVolunteerUserMatch), [volunteerMatches]);
+  const mustResolveVolunteerMatch = strongVolunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked';
   function chooseVolunteerLink(volunteer) {
     const names = splitPersonName(volunteer.full_name || '');
     setForm((state) => ({
@@ -499,6 +500,13 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
   function updateRole(role) {
     setForm((state) => ({ ...state, role, position: state.position || role, permissions: ROLE_PERMISSIONS[role] || [], permission_matrix: ROLE_PERMISSION_MATRIX[role] || {} }));
   }
+  function continueWithoutLink() {
+    setForm((state) => ({
+      ...state,
+      linked_volunteer_id: '',
+      identity_link_decision: 'continue-unlinked'
+    }));
+  }
   function updatePhoto(file) {
     if (!file) return;
     const reader = new FileReader();
@@ -513,7 +521,7 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
         setError('Esta persona ya existe como voluntaria. Vincula el usuario con el voluntario existente o confirma que deseas continuar sin vincular.');
         return;
       }
-      if (form.participates_as_volunteer && volunteerMatches.length > 0 && !form.linked_volunteer_id) {
+      if (form.participates_as_volunteer && strongVolunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked') {
         setError('Para activar la participacion como voluntario debes vincular este usuario con el expediente de voluntario existente.');
         return;
       }
@@ -527,7 +535,11 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       {volunteerMatches.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:col-span-2">
           <p className="font-bold">Esta persona ya existe como voluntaria.</p>
-          <p className="mt-1">Revisa la coincidencia antes de guardar el usuario ERP. No se vincula automaticamente.</p>
+          <p className="mt-1">
+            {strongVolunteerMatches.length > 0
+              ? 'Hay una coincidencia fuerte por documento o email. Revisa antes de guardar el usuario ERP; no se vincula automaticamente.'
+              : 'Hay advertencias por telefono o nombre similar. No obligan a vincular si son personas distintas.'}
+          </p>
           <div className="mt-3 space-y-2">
             {volunteerMatches.map(({ volunteer, reasons }) => (
               <div key={volunteer.id} className="rounded-md border border-amber-200 bg-white p-3">
@@ -542,7 +554,7 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => update('identity_link_decision', 'continue-unlinked')}>Continuar sin vincular</Button>
+            <Button type="button" variant="secondary" onClick={continueWithoutLink}>Continuar sin vincular</Button>
             {form.linked_volunteer_id && <span className="rounded-md bg-brand-100 px-3 py-2 text-xs font-bold text-brand-800">Voluntario seleccionado para vincular.</span>}
             {form.identity_link_decision === 'continue-unlinked' && !form.linked_volunteer_id && <span className="rounded-md bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">Se creara como usuario ERP independiente.</span>}
           </div>

@@ -143,6 +143,11 @@ export function findVolunteerMatchesForUser(user = {}, volunteers = []) {
     .filter((candidate) => !candidate.alreadyLinked);
 }
 
+export function hasStrongVolunteerUserMatch(candidateOrReasons = []) {
+  const reasons = Array.isArray(candidateOrReasons) ? candidateOrReasons : candidateOrReasons.reasons || [];
+  return reasons.includes('Documento coincidente') || reasons.includes('Email coincidente');
+}
+
 export function identityMatchReasons(volunteer = {}, user = {}) {
   const reasons = [];
   const volunteerDocument = normalizePersonDocument(volunteer.document_id);

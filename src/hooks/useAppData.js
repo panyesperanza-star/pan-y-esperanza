@@ -10,6 +10,7 @@ import {
   applyPersonIdentityToUser,
   applyPersonIdentityToVolunteer,
   findVolunteerMatchesForUser,
+  hasStrongVolunteerUserMatch,
   mergePersonIdentityPayloads,
   personIdentityPayloadFromUser,
   personIdentityPayloadFromVolunteer,
@@ -427,7 +428,7 @@ export function useAppData(enabled = true, currentUser = null) {
     await audit(`Identidad unica: desvinculo voluntario ${volunteer.full_name || volunteerId} de usuario ${user.email || userId}`.trim());
   }
 
-  async function ensureUserVolunteerParticipation(userId, payload = {}, identityId = '', preferredVolunteerId = '') {
+  async function ensureUserVolunteerParticipation(userId, payload = {}, identityId = '', preferredVolunteerId = '', identityLinkDecision = '') {
     assertPermission('users', 'edit');
     const current = (appData.app_users || []).find((item) => item.id === userId) || {};
     const source = {
@@ -446,8 +447,25 @@ export function useAppData(enabled = true, currentUser = null) {
     if (linkedVolunteer) return linkedVolunteer;
 
     const matches = findVolunteerMatchesForUser({ ...source, person_identity_id: resolvedIdentityId }, appData.volunteers || []);
-    if (matches.length > 0) {
+    const strongMatches = matches.filter(hasStrongVolunteerUserMatch);
+    const continuesUnlinked = identityLinkDecision === 'continue-unlinked';
+    if (strongMatches.length > 0 && !continuesUnlinked) {
       throw new Error('Ya existe un expediente de voluntario compatible. Vincule la identidad antes de activar la participacion como voluntario.');
+    }
+    if (matches.length > 0 && continuesUnlinked) {
+      await writePersonIdentityAudit('updated', {
+        person_identity_id: resolvedIdentityId,
+        app_user_id: userId,
+        reason: 'Coincidencia descartada manualmente - personas diferentes',
+        previous_values: {
+          matched_volunteers: matches.map(({ volunteer, reasons }) => ({
+            volunteer_id: volunteer.id,
+            volunteer_code: volunteer.code || null,
+            reasons
+          }))
+        },
+        next_values: { person_identity_id: resolvedIdentityId, participates_as_volunteer: true }
+      });
     }
 
     const fullName = userFullName(source) || source.email || 'Usuario ERP';
@@ -3419,7 +3437,7 @@ export function useAppData(enabled = true, currentUser = null) {
           });
         }
         if (shouldParticipateAsVolunteer) {
-          await ensureUserVolunteerParticipation(createdUser.id, { ...userPayload, id: createdUser.id }, identityId, linkedVolunteerId);
+          await ensureUserVolunteerParticipation(createdUser.id, { ...userPayload, id: createdUser.id }, identityId, linkedVolunteerId, identityLinkDecision);
           finalUser = await usuarioService.update(createdUser.id, { ...userPayload, person_identity_id: identityId, participates_as_volunteer: true });
         }
       }
@@ -3436,7 +3454,7 @@ export function useAppData(enabled = true, currentUser = null) {
         : (userPayload.person_identity_id || await ensureUserPersonIdentity(id, userPayload));
       await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id }));
       if (userPayload.participates_as_volunteer) {
-        await ensureUserVolunteerParticipation(id, { ...userPayload, id }, identityId, linkedVolunteerId);
+        await ensureUserVolunteerParticipation(id, { ...userPayload, id }, identityId, linkedVolunteerId, identityLinkDecision);
       }
       const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
       await reload();
