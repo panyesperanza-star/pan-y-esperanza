@@ -9,9 +9,11 @@ import { hasSupabaseConfig, supabase } from '../lib/supabase';
 import {
   applyPersonIdentityToUser,
   applyPersonIdentityToVolunteer,
+  findVolunteerMatchesForUser,
   mergePersonIdentityPayloads,
   personIdentityPayloadFromUser,
-  personIdentityPayloadFromVolunteer
+  personIdentityPayloadFromVolunteer,
+  userFullName
 } from '../lib/personIdentity';
 import { AgendaOperativaRepository } from '../services/agenda/AgendaOperativaRepository';
 import { AgendaOperativaService } from '../services/agenda/AgendaOperativaService';
@@ -423,6 +425,61 @@ export function useAppData(enabled = true, currentUser = null) {
       next_values: { volunteer_person_identity_id: null, user_person_identity_id: null }
     });
     await audit(`Identidad unica: desvinculo voluntario ${volunteer.full_name || volunteerId} de usuario ${user.email || userId}`.trim());
+  }
+
+  async function ensureUserVolunteerParticipation(userId, payload = {}, identityId = '', preferredVolunteerId = '') {
+    assertPermission('users', 'edit');
+    const current = (appData.app_users || []).find((item) => item.id === userId) || {};
+    const source = {
+      ...current,
+      ...payload,
+      id: userId,
+      person_identity_id: identityId || payload.person_identity_id || current.person_identity_id || ''
+    };
+    const resolvedIdentityId = source.person_identity_id || await ensureUserPersonIdentity(userId, source);
+    const preferredVolunteer = preferredVolunteerId
+      ? (appData.volunteers || []).find((volunteer) => volunteer.id === preferredVolunteerId)
+      : null;
+    if (preferredVolunteer) return preferredVolunteer;
+
+    const linkedVolunteer = (appData.volunteers || []).find((volunteer) => volunteer.person_identity_id && volunteer.person_identity_id === resolvedIdentityId);
+    if (linkedVolunteer) return linkedVolunteer;
+
+    const matches = findVolunteerMatchesForUser({ ...source, person_identity_id: resolvedIdentityId }, appData.volunteers || []);
+    if (matches.length > 0) {
+      throw new Error('Ya existe un expediente de voluntario compatible. Vincule la identidad antes de activar la participacion como voluntario.');
+    }
+
+    const fullName = userFullName(source) || source.email || 'Usuario ERP';
+    const today = new Date().toISOString().slice(0, 10);
+    const createdVolunteer = await createVoluntarioService().create({
+      code: nextVolunteerCodeForUserParticipation(appData.volunteers || []),
+      full_name: fullName,
+      document_id: source.document_id || '',
+      phone: source.phone || '',
+      email: source.email || '',
+      status: 'Activo',
+      joined_at: today,
+      functions: source.position || source.role || 'Usuario ERP',
+      availability: '',
+      documentation: '',
+      training: '',
+      photo_data_url: '',
+      person_identity_id: resolvedIdentityId,
+      notes: 'Participacion como voluntario activada desde Usuario ERP.',
+      created_at: `${today}T00:00:00`
+    });
+
+    await writePersonIdentityAudit('linked', {
+      person_identity_id: resolvedIdentityId,
+      volunteer_id: createdVolunteer?.id || null,
+      app_user_id: userId,
+      reason: 'Participa como voluntario desde Usuario ERP',
+      previous_values: { app_user_id: userId, volunteer_id: null },
+      next_values: { person_identity_id: resolvedIdentityId, volunteer_id: createdVolunteer?.id || null, participates_as_volunteer: true }
+    });
+    await audit(`Usuario ERP participa como voluntario: ${fullName}`.trim());
+    return createdVolunteer;
   }
   function createInventarioService(repositoryAdapter = createRepository(), notificacionService = null) {
     return new InventarioService({
@@ -3355,6 +3412,9 @@ export function useAppData(enabled = true, currentUser = null) {
             next_values: { app_user_id: createdUser.id }
           });
         }
+        if (userPayload.participates_as_volunteer) {
+          await ensureUserVolunteerParticipation(createdUser.id, { ...userPayload, id: createdUser.id }, identityId, linkedVolunteerId);
+        }
       }
       await reload();
       return createdUser;
@@ -3369,6 +3429,9 @@ export function useAppData(enabled = true, currentUser = null) {
         : (userPayload.person_identity_id || await ensureUserPersonIdentity(id, userPayload));
       await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id }));
       const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
+      if (userPayload.participates_as_volunteer) {
+        await ensureUserVolunteerParticipation(id, { ...userPayload, id }, identityId, linkedVolunteerId);
+      }
       await reload();
       return updated;
     },
@@ -3548,6 +3611,26 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
     || (reference.document_id && metadata.document_id === reference.document_id)
     || (reference.document_id && notification.entity_type === 'beneficiary_document' && notification.entity_id === reference.document_id)
   );
+}
+
+function nextVolunteerCodeForUserParticipation(volunteers = []) {
+  const year = String(new Date().getFullYear());
+  const usedCodes = new Set(
+    volunteers
+      .map((volunteer) => String(volunteer.code || '').trim().toUpperCase())
+      .filter(Boolean)
+  );
+  const highest = Array.from(usedCodes).reduce((max, code) => {
+    const match = code.match(new RegExp(`^VOL-${year}-(\\d{4})$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  let next = highest + 1;
+  let candidate = `VOL-${year}-${String(next).padStart(4, '0')}`;
+  while (usedCodes.has(candidate)) {
+    next += 1;
+    candidate = `VOL-${year}-${String(next).padStart(4, '0')}`;
+  }
+  return candidate;
 }
 
 function minutesBetween(start, end) {

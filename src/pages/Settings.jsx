@@ -328,7 +328,7 @@ function UsersTable({ users, volunteers = [], actions, currentUser, setEditing, 
               return (
                 <tr key={user.id}>
                   <td className="px-4 py-3"><div className="flex min-w-0 items-center gap-3">{user.profile_photo && <img src={user.profile_photo} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />}<span className="truncate font-semibold">{user.first_name} {user.last_name}</span></div></td>
-                  <td className="pr-3 text-xs">{linkedVolunteer ? <span className="rounded-md bg-brand-50 px-2 py-1 font-bold text-brand-700">Voluntario vinculado</span> : <span className="rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-600">Solo ERP</span>}{linkedVolunteer && <p className="mt-1 truncate text-slate-500">{linkedVolunteer.code || linkedVolunteer.full_name}</p>}</td>
+                  <td className="pr-3 text-xs">{linkedVolunteer ? <span className="rounded-md bg-brand-50 px-2 py-1 font-bold text-brand-700">Voluntario vinculado</span> : <span className="rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-600">Solo ERP</span>}{linkedVolunteer && <p className="mt-1 truncate text-slate-500">{linkedVolunteer.code || linkedVolunteer.full_name}</p>}{user.participates_as_volunteer && <p className="mt-1 font-bold text-brand-700">Participa como voluntario</p>}</td>
                   <td className="break-words pr-3">{user.email}</td>
                   <td className="break-words pr-3">{user.phone || '-'}</td>
                   <td className="break-words pr-3">{user.position || user.role}</td>
@@ -490,7 +490,8 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       document_id: state.document_id || volunteer.document_id || '',
       email: state.email || volunteer.email || '',
       phone: state.phone || volunteer.phone || '',
-      profile_photo: state.profile_photo || volunteer.photo_data_url || volunteer.profile_photo || ''
+      profile_photo: state.profile_photo || volunteer.photo_data_url || volunteer.profile_photo || '',
+      participates_as_volunteer: true
     }));
   }
   function updateRole(role) {
@@ -508,6 +509,10 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       setError('');
       if (mustResolveVolunteerMatch) {
         setError('Esta persona ya existe como voluntaria. Vincula el usuario con el voluntario existente o confirma que deseas continuar sin vincular.');
+        return;
+      }
+      if (creating && form.participates_as_volunteer && volunteerMatches.length > 0 && !form.linked_volunteer_id) {
+        setError('Para activar la participacion como voluntario debes vincular este usuario con el expediente de voluntario existente.');
         return;
       }
       try {
@@ -555,6 +560,20 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       <FormField label="Contraseña temporal"><input className={inputClass} type="password" value={form.password || ''} onChange={(event) => update('password', event.target.value)} /></FormField>
       <FormField label="Rol"><select className={inputClass} value={form.role || 'Voluntario'} onChange={(event) => updateRole(event.target.value)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField>
       <FormField label="Estado"><select className={inputClass} value={form.status || (form.is_active ? 'Activo' : 'Inactivo')} onChange={(event) => { update('status', event.target.value); update('is_active', event.target.value === 'Activo'); }}><option>Activo</option><option>Inactivo</option><option>Bloqueado</option></select></FormField>
+      <label className="rounded-md border border-brand-100 bg-brand-50 p-3 text-sm sm:col-span-2">
+        <span className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={Boolean(form.participates_as_volunteer)}
+            onChange={(event) => update('participates_as_volunteer', event.target.checked)}
+          />
+          <span>
+            <span className="block font-bold text-ink">Participa como voluntario</span>
+            <span className="mt-1 block text-slate-600">Permite fichar entrada y salida con su credencial de Usuario ERP sin cambiar cargo, rol ni permisos.</span>
+          </span>
+        </span>
+      </label>
       <FormField label="Foto de perfil opcional"><input className={inputClass} type="file" accept="image/*" onChange={(event) => updatePhoto(event.target.files?.[0])} /></FormField>
       <FormField label="Creado por"><input className={inputClass} value={form.created_by || ''} onChange={(event) => update('created_by', event.target.value)} /></FormField>
       {form.profile_photo && <div className="sm:col-span-2"><img src={form.profile_photo} alt="" className="h-16 w-16 rounded-full object-cover" /></div>}

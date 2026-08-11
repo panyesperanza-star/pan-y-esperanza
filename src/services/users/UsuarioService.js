@@ -9,6 +9,7 @@ export function sanitizeUserPayload(payload) {
   const status = payload.status || (payload.is_active === false ? 'Inactivo' : 'Activo');
   return {
     ...payload,
+    participates_as_volunteer: Boolean(payload.participates_as_volunteer),
     permission_matrix: constrainRolePermissionMatrix(payload.role, payload.permission_matrix || {}),
     status,
     is_active: status === 'Activo'
@@ -42,6 +43,7 @@ export function createEmptyUser(currentUser) {
     permission_matrix: ROLE_PERMISSION_MATRIX.Voluntario,
     profile_photo: '',
     person_identity_id: '',
+    participates_as_volunteer: false,
     linked_volunteer_id: '',
     identity_link_decision: '',
     last_access_at: '',

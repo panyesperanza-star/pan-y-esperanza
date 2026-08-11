@@ -437,8 +437,14 @@ function resolveVolunteerFromCredential(data, volunteers, rawValue) {
   const registryEntry = (data.official_credential_registry || []).find((entry) => normalizeCredentialIdentifier(entry.credential_uid) === credentialId);
   if (registryEntry) {
     if (registryEntry.status && registryEntry.status !== 'active') return { error: 'Credencial anulada o no activa.' };
+    if (registryEntry.subject_type === 'user') {
+      const user = (data.app_users || []).find((item) => item.id === registryEntry.subject_id) || null;
+      if (!user?.participates_as_volunteer) {
+        return { error: 'Esta credencial de Usuario ERP no tiene activada la participacion como voluntario.' };
+      }
+    }
     const volunteer = volunteerFromCredentialRegistry(registryEntry, data, volunteers);
-    if (!volunteer) return { error: 'La credencial no pertenece a un voluntario vinculado.' };
+    if (!volunteer) return { error: registryEntry.subject_type === 'user' ? 'El usuario ERP participa como voluntario, pero no tiene expediente de voluntariado vinculado.' : 'La credencial no pertenece a un voluntario vinculado.' };
     return { volunteer, credentialId: registryEntry.credential_uid || credentialId };
   }
 
