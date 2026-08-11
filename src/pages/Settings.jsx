@@ -474,6 +474,7 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
   const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
   const creating = !form.id;
+  const closingVolunteerParticipation = Boolean(initial?.participates_as_volunteer) && !Boolean(form.participates_as_volunteer);
   const linkedVolunteer = linkedVolunteerForUser(form, volunteers);
   const shouldCheckVolunteerMatches = creating || Boolean(form.participates_as_volunteer);
   const volunteerMatches = useMemo(() => (
@@ -523,6 +524,10 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       }
       if (form.participates_as_volunteer && strongVolunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked') {
         setError('Para activar la participacion como voluntario debes vincular este usuario con el expediente de voluntario existente.');
+        return;
+      }
+      if (closingVolunteerParticipation && !String(form.volunteer_participation_close_reason || '').trim()) {
+        setError('Indica el motivo del cierre de la participacion voluntaria.');
         return;
       }
       try {
@@ -580,7 +585,11 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
             type="checkbox"
             className="mt-1"
             checked={Boolean(form.participates_as_volunteer)}
-            onChange={(event) => update('participates_as_volunteer', event.target.checked)}
+            onChange={(event) => setForm((state) => ({
+              ...state,
+              participates_as_volunteer: event.target.checked,
+              volunteer_participation_close_reason: event.target.checked ? '' : state.volunteer_participation_close_reason
+            }))}
           />
           <span>
             <span className="block font-bold text-ink">Participa como voluntario</span>
@@ -588,6 +597,17 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
           </span>
         </span>
       </label>
+      {closingVolunteerParticipation && (
+        <FormField label="Motivo del cierre de participacion voluntaria">
+          <input
+            className={inputClass}
+            required
+            value={form.volunteer_participation_close_reason || ''}
+            onChange={(event) => update('volunteer_participation_close_reason', event.target.value)}
+            placeholder="Ej. Fin de colaboracion, pausa temporal, decision de la persona..."
+          />
+        </FormField>
+      )}
       <FormField label="Foto de perfil opcional"><input className={inputClass} type="file" accept="image/*" onChange={(event) => updatePhoto(event.target.files?.[0])} /></FormField>
       <FormField label="Creado por"><input className={inputClass} value={form.created_by || ''} onChange={(event) => update('created_by', event.target.value)} /></FormField>
       {form.profile_photo && <div className="sm:col-span-2"><img src={form.profile_photo} alt="" className="h-16 w-16 rounded-full object-cover" /></div>}

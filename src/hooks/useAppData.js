@@ -441,10 +441,10 @@ export function useAppData(enabled = true, currentUser = null) {
     const preferredVolunteer = preferredVolunteerId
       ? (appData.volunteers || []).find((volunteer) => volunteer.id === preferredVolunteerId)
       : null;
-    if (preferredVolunteer) return preferredVolunteer;
+    if (preferredVolunteer) return reactivateVolunteerParticipation(preferredVolunteer, userId, resolvedIdentityId, 'Participacion voluntaria reactivada desde Usuario ERP');
 
     const linkedVolunteer = (appData.volunteers || []).find((volunteer) => volunteer.person_identity_id && volunteer.person_identity_id === resolvedIdentityId);
-    if (linkedVolunteer) return linkedVolunteer;
+    if (linkedVolunteer) return reactivateVolunteerParticipation(linkedVolunteer, userId, resolvedIdentityId, 'Participacion voluntaria reactivada desde Usuario ERP');
 
     const matches = findVolunteerMatchesForUser({ ...source, person_identity_id: resolvedIdentityId }, appData.volunteers || []);
     const strongMatches = matches.filter(hasStrongVolunteerUserMatch);
@@ -498,6 +498,90 @@ export function useAppData(enabled = true, currentUser = null) {
     });
     await audit(`Usuario ERP participa como voluntario: ${fullName}`.trim());
     return createdVolunteer;
+  }
+
+  async function reactivateVolunteerParticipation(volunteer, userId, identityId, reason) {
+    if (!volunteer) return null;
+    const isClosed = Boolean(volunteer.left_at) || ['baja', 'inactivo', 'archivado'].includes(normalize(volunteer.status));
+    if (!isClosed) return volunteer;
+    const now = new Date().toISOString();
+    const updated = await createVoluntarioService().update(volunteer.id, {
+      ...volunteer,
+      status: 'Activo',
+      left_at: null,
+      leave_reason: ''
+    });
+    await createVoluntarioService().createHistory({
+      volunteer_id: volunteer.id,
+      date: now.slice(0, 10),
+      activity: 'Participacion voluntaria reactivada',
+      notes: JSON.stringify({
+        reason,
+        app_user_id: userId,
+        person_identity_id: identityId,
+        actor_id: currentUser?.id || null,
+        actor_name: currentUserName(),
+        reactivated_at: now
+      })
+    });
+    await writePersonIdentityAudit('updated', {
+      person_identity_id: identityId,
+      volunteer_id: volunteer.id,
+      app_user_id: userId,
+      reason,
+      previous_values: { status: volunteer.status || null, left_at: volunteer.left_at || null, leave_reason: volunteer.leave_reason || null },
+      next_values: { status: 'Activo', left_at: null, leave_reason: null, participates_as_volunteer: true }
+    });
+    await audit(`Voluntariado reactivado desde Usuario ERP: ${updated.full_name || volunteer.full_name || userId}`.trim());
+    return updated;
+  }
+
+  async function closeUserVolunteerParticipation(userId, payload = {}, identityId = '', reason = '') {
+    assertPermission('users', 'edit');
+    const closeReason = String(reason || '').trim() || 'Participacion voluntaria cerrada desde Usuario ERP';
+    const volunteer = (appData.volunteers || []).find((item) => item.person_identity_id && item.person_identity_id === identityId) || null;
+    const now = new Date().toISOString();
+    if (!volunteer) {
+      await writePersonIdentityAudit('updated', {
+        person_identity_id: identityId || payload.person_identity_id || null,
+        app_user_id: userId,
+        reason: closeReason,
+        previous_values: { participates_as_volunteer: true },
+        next_values: { participates_as_volunteer: false, volunteer_id: null }
+      });
+      await audit(`Usuario ERP dejo de participar como voluntario: ${payload.email || userId}`.trim());
+      return null;
+    }
+
+    const updated = await createVoluntarioService().update(volunteer.id, {
+      ...volunteer,
+      status: 'Baja',
+      left_at: now,
+      leave_reason: closeReason
+    });
+    await createVoluntarioService().createHistory({
+      volunteer_id: volunteer.id,
+      date: now.slice(0, 10),
+      activity: 'Participacion voluntaria cerrada',
+      notes: JSON.stringify({
+        reason: closeReason,
+        app_user_id: userId,
+        person_identity_id: identityId,
+        actor_id: currentUser?.id || null,
+        actor_name: currentUserName(),
+        closed_at: now
+      })
+    });
+    await writePersonIdentityAudit('updated', {
+      person_identity_id: identityId,
+      volunteer_id: volunteer.id,
+      app_user_id: userId,
+      reason: closeReason,
+      previous_values: { status: volunteer.status || null, left_at: volunteer.left_at || null, leave_reason: volunteer.leave_reason || null, participates_as_volunteer: true },
+      next_values: { status: 'Baja', left_at: now, leave_reason: closeReason, participates_as_volunteer: false }
+    });
+    await audit(`Voluntariado cerrado desde Usuario ERP: ${updated.full_name || volunteer.full_name || userId}`.trim());
+    return updated;
   }
   function createInventarioService(repositoryAdapter = createRepository(), notificacionService = null) {
     return new InventarioService({
@@ -3342,6 +3426,10 @@ export function useAppData(enabled = true, currentUser = null) {
         return { type: 'exit', volunteer, entry: updated, message: 'SALIDA registrada' };
       }
 
+      if (!isVolunteerAttendanceAllowed(volunteer, appData.app_users || [])) {
+        throw new Error('La participacion voluntaria esta cerrada. No se pueden registrar nuevos fichajes.');
+      }
+
       const created = await voluntarioService.createTimeEntry({
         volunteer_id: volunteer.id,
         person_identity_id: volunteer.person_identity_id || payload.person_identity_id || null,
@@ -3392,7 +3480,12 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createUser: async (payload) => {
-      const { linked_volunteer_id: linkedVolunteerId, identity_link_decision: identityLinkDecision, ...userPayload } = payload || {};
+      const {
+        linked_volunteer_id: linkedVolunteerId,
+        identity_link_decision: identityLinkDecision,
+        volunteer_participation_close_reason: _volunteerParticipationCloseReason,
+        ...userPayload
+      } = payload || {};
       let identityId = userPayload.person_identity_id || '';
       let linkedVolunteer = null;
       if (linkedVolunteerId) {
@@ -3448,15 +3541,25 @@ export function useAppData(enabled = true, currentUser = null) {
       await usuarioService.sendWelcomeEmail(user, organization, logoUrl);
     },
     updateUser: async (id, payload) => {
-      const { linked_volunteer_id: linkedVolunteerId, identity_link_decision: identityLinkDecision, ...userPayload } = payload || {};
+      const {
+        linked_volunteer_id: linkedVolunteerId,
+        identity_link_decision: identityLinkDecision,
+        volunteer_participation_close_reason: volunteerParticipationCloseReason,
+        ...userPayload
+      } = payload || {};
+      const currentUserProfile = (appData.app_users || []).find((item) => item.id === id) || {};
+      const wasParticipatingAsVolunteer = Boolean(currentUserProfile.participates_as_volunteer);
+      const willParticipateAsVolunteer = Boolean(userPayload.participates_as_volunteer);
       const identityId = linkedVolunteerId
         ? await linkVolunteerUserIdentityRecords(linkedVolunteerId, id, identityLinkDecision || 'Vinculado al editar usuario ERP', userPayload.person_identity_id || '')
         : (userPayload.person_identity_id || await ensureUserPersonIdentity(id, userPayload));
       await updatePersonIdentity(identityId, personIdentityPayloadFromUser({ ...userPayload, id }));
-      if (userPayload.participates_as_volunteer) {
+      if (willParticipateAsVolunteer) {
         await ensureUserVolunteerParticipation(id, { ...userPayload, id }, identityId, linkedVolunteerId, identityLinkDecision);
+      } else if (wasParticipatingAsVolunteer) {
+        await closeUserVolunteerParticipation(id, { ...userPayload, id }, identityId, volunteerParticipationCloseReason);
       }
-      const updated = await usuarioService.update(id, { ...userPayload, person_identity_id: identityId });
+      const updated = await usuarioService.update(id, { ...userPayload, participates_as_volunteer: willParticipateAsVolunteer, person_identity_id: identityId });
       await reload();
       return updated;
     },
@@ -3636,6 +3739,16 @@ function isRelatedSocialCareNotification(notification, reference = {}) {
     || (reference.document_id && metadata.document_id === reference.document_id)
     || (reference.document_id && notification.entity_type === 'beneficiary_document' && notification.entity_id === reference.document_id)
   );
+}
+
+function isVolunteerAttendanceAllowed(volunteer = {}, users = []) {
+  if (!volunteer?.id) return false;
+  if (volunteer.left_at) return false;
+  const status = normalize(volunteer.status);
+  if (status.includes('baja') || status.includes('inactiv') || status.includes('archivad')) return false;
+  const linkedUser = users.find((user) => user.person_identity_id && volunteer.person_identity_id && user.person_identity_id === volunteer.person_identity_id);
+  if (linkedUser && !linkedUser.participates_as_volunteer) return false;
+  return true;
 }
 
 function nextVolunteerCodeForUserParticipation(volunteers = []) {
