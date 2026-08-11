@@ -474,9 +474,11 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
   const [error, setError] = useState('');
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
   const creating = !form.id;
+  const linkedVolunteer = linkedVolunteerForUser(form, volunteers);
+  const shouldCheckVolunteerMatches = creating || Boolean(form.participates_as_volunteer);
   const volunteerMatches = useMemo(() => (
-    creating ? findVolunteerMatchesForUser(form, volunteers).slice(0, 4) : []
-  ), [creating, volunteers, form.document_id, form.email, form.phone, form.first_name, form.last_name]);
+    shouldCheckVolunteerMatches && !linkedVolunteer ? findVolunteerMatchesForUser(form, volunteers).slice(0, 4) : []
+  ), [shouldCheckVolunteerMatches, linkedVolunteer, volunteers, form.document_id, form.email, form.phone, form.first_name, form.last_name]);
   const mustResolveVolunteerMatch = creating && volunteerMatches.length > 0 && !form.linked_volunteer_id && form.identity_link_decision !== 'continue-unlinked';
   function chooseVolunteerLink(volunteer) {
     const names = splitPersonName(volunteer.full_name || '');
@@ -511,7 +513,7 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
         setError('Esta persona ya existe como voluntaria. Vincula el usuario con el voluntario existente o confirma que deseas continuar sin vincular.');
         return;
       }
-      if (creating && form.participates_as_volunteer && volunteerMatches.length > 0 && !form.linked_volunteer_id) {
+      if (form.participates_as_volunteer && volunteerMatches.length > 0 && !form.linked_volunteer_id) {
         setError('Para activar la participacion como voluntario debes vincular este usuario con el expediente de voluntario existente.');
         return;
       }
@@ -522,10 +524,10 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       }
     }}>
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
-      {creating && volunteerMatches.length > 0 && (
+      {volunteerMatches.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:col-span-2">
           <p className="font-bold">Esta persona ya existe como voluntaria.</p>
-          <p className="mt-1">Revisa la coincidencia antes de crear el usuario ERP. No se vincula automaticamente.</p>
+          <p className="mt-1">Revisa la coincidencia antes de guardar el usuario ERP. No se vincula automaticamente.</p>
           <div className="mt-3 space-y-2">
             {volunteerMatches.map(({ volunteer, reasons }) => (
               <div key={volunteer.id} className="rounded-md border border-amber-200 bg-white p-3">

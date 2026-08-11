@@ -170,6 +170,7 @@ function sanitizeProfile(user) {
     'permission_matrix',
     'profile_photo',
     'person_identity_id',
+    'participates_as_volunteer',
     'last_access_at',
     'created_by',
     'created_at'
