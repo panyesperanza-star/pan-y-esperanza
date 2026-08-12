@@ -1159,13 +1159,14 @@ function PreparedBatchCard({ batch, customization, onCustomize }) {
   );
 }
 
-function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel, onReset, onSave }) {
+function CustomizeDeliveryModalLegacy({ summary, customization, currentUser, onCancel, onReset, onSave }) {
   const recommendedItems = recommendedItemsForSummary(summary);
   const defaultDeliveredItems = deliveredItemsForSummary(summary);
   const [items, setItems] = useState(() => (customization?.items?.length ? customization.items : defaultDeliveredItems).map(cloneDeliveryItem));
   const [reason, setReason] = useState(customization?.reason || '');
   const [error, setError] = useState('');
   const changed = hasDeliveryItemChanges(defaultDeliveredItems, items);
+  const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
   function updateQuantity(itemId, nextQuantity) {
     setItems((current) => current.map((item) => item.id === itemId ? { ...item, quantity: sanitizeDeliveryQuantity(nextQuantity, item.availableStock) } : item));
@@ -1196,20 +1197,40 @@ function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel,
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4">
-      <div className="w-full max-w-2xl rounded-[2rem] bg-white p-5 shadow-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-brand-700">Smart Deliveries</p>
-            <h2 className="mt-1 text-2xl font-black text-ink">Personalizar entrega</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-600">Ajusta solo lo necesario. Si no cambias nada, se usara el lote recomendado.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-3 py-4">
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-brand-700">Smart Deliveries</p>
+              <h2 className="mt-0.5 text-xl font-black text-ink sm:text-2xl">Personalizar entrega</h2>
+              <p className="mt-1 text-xs font-semibold text-slate-600 sm:text-sm">
+                Resumen del lote: {items.length} productos · {totalUnits} unidades seleccionadas.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button type="button" variant="secondary" onClick={onReset} className="h-9 px-3 text-xs">
+                Restablecer cantidades
+              </Button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+                aria-label="Cerrar personalizacion"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
           </div>
-          <Button type="button" variant="secondary" onClick={onCancel} className="h-10 px-3 text-xs">
-            Cancelar
-          </Button>
         </div>
 
-        <div className="mt-5 grid gap-3">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 px-3 py-3">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_8.5rem_11rem] items-center gap-3 border-b border-slate-200 bg-slate-100 px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500 md:grid">
+              <span>Producto</span>
+              <span>Stock disponible</span>
+              <span className="text-right">Cantidad</span>
+            </div>
           {items.map((item) => {
             const recommended = recommendedItems.find((entry) => entry.id === item.id);
             return (
@@ -1260,6 +1281,139 @@ function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel,
           <Button type="button" onClick={saveCustomization}>
             Guardar personalizacion
           </Button>
+        </div>
+      </div>
+    </div>
+    </div>
+  );
+}
+
+function CustomizeDeliveryModal({ summary, customization, currentUser, onCancel, onReset, onSave }) {
+  const recommendedItems = recommendedItemsForSummary(summary);
+  const defaultDeliveredItems = deliveredItemsForSummary(summary);
+  const [items, setItems] = useState(() => (customization?.items?.length ? customization.items : defaultDeliveredItems).map(cloneDeliveryItem));
+  const [reason, setReason] = useState(customization?.reason || '');
+  const [error, setError] = useState('');
+  const changed = hasDeliveryItemChanges(defaultDeliveredItems, items);
+  const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+  function updateQuantity(itemId, nextQuantity) {
+    setItems((current) => current.map((item) => item.id === itemId ? { ...item, quantity: sanitizeDeliveryQuantity(nextQuantity, item.availableStock) } : item));
+  }
+
+  function saveCustomization() {
+    setError('');
+    if (!items.some((item) => Number(item.quantity || 0) > 0)) {
+      setError('Debe entregarse al menos un producto.');
+      return;
+    }
+    if (changed && !String(reason || '').trim()) {
+      setError('Indica el motivo del cambio.');
+      return;
+    }
+    if (!changed) {
+      onReset();
+      return;
+    }
+    onSave({
+      beneficiaryId: summary.beneficiary.id,
+      recommendedItems: recommendedItems.map(cloneDeliveryItem),
+      items: items.map(cloneDeliveryItem),
+      reason: String(reason || '').trim(),
+      modifiedBy: currentUserName(currentUser),
+      modifiedAt: new Date().toISOString()
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-3 py-4">
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-brand-700">Smart Deliveries</p>
+              <h2 className="mt-0.5 text-xl font-black text-ink sm:text-2xl">Personalizar entrega</h2>
+              <p className="mt-1 text-xs font-semibold text-slate-600 sm:text-sm">
+                Resumen del lote: {items.length} productos - {totalUnits} unidades seleccionadas.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button type="button" variant="secondary" onClick={onReset} className="h-9 px-3 text-xs">
+                Restablecer cantidades
+              </Button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+                aria-label="Cerrar personalizacion"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 px-3 py-3">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_8.5rem_11rem] items-center gap-3 border-b border-slate-200 bg-slate-100 px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.14em] text-slate-500 md:grid">
+              <span>Producto</span>
+              <span>Stock disponible</span>
+              <span className="text-right">Cantidad</span>
+            </div>
+            {items.map((item) => {
+              const recommended = recommendedItems.find((entry) => entry.id === item.id);
+              return (
+                <div key={item.id} className="border-b border-slate-100 px-3 py-2 last:border-b-0">
+                  <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_8.5rem_11rem] md:items-center md:gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black uppercase text-ink">{item.name}</p>
+                      <p className="text-[0.72rem] font-semibold text-slate-500">Recomendado: {formatDeliveryItemQuantity(recommended)}</p>
+                    </div>
+                    <p className="text-xs font-bold text-slate-600 md:text-sm">Disponible: {formatBatchStock(item)}</p>
+                    <div className="flex items-center justify-between gap-2 md:justify-end">
+                      <Button type="button" variant="secondary" onClick={() => updateQuantity(item.id, Number(item.quantity || 0) - 1)} className="h-8 w-8 px-0 text-base font-black">
+                        -
+                      </Button>
+                      <input
+                        type="number"
+                        min="0"
+                        max={Number.isFinite(Number(item.availableStock)) ? item.availableStock : undefined}
+                        step="1"
+                        value={item.quantity}
+                        onChange={(event) => updateQuantity(item.id, event.target.value)}
+                        className="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm font-black outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                      />
+                      <Button type="button" variant="secondary" onClick={() => updateQuantity(item.id, Number(item.quantity || 0) + 1)} className="h-8 w-8 px-0 text-base font-black">
+                        +
+                      </Button>
+                    </div>
+                  </div>
+                  {item.shortageMessage && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[0.72rem] font-bold text-amber-700">{item.shortageMessage}</p>}
+                </div>
+              );
+            })}
+          </div>
+
+          <label className="mt-3 block text-xs font-bold text-slate-700">
+            Motivo del cambio
+            <textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Ejemplo: unidad familiar mayor, falta de producto, ajuste indicado por coordinacion..."
+              className="mt-1 min-h-16 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+            />
+          </label>
+
+          {error && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-sm font-bold text-red-700">{error}</p>}
+        </div>
+
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+            <Button type="button" onClick={saveCustomization}>
+              <CheckCircle2 size={17} /> Aplicar cambios
+            </Button>
+          </div>
         </div>
       </div>
     </div>
