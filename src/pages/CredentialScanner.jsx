@@ -3,6 +3,7 @@ import { AlertTriangle, BriefcaseBusiness, Camera, CheckCircle2, Heart, IdCard, 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
+import { formatAttendanceDuration } from '../components/VolunteerAttendanceControl';
 import { canDo, isPlatformOwner, isSystemSuperadmin } from '../lib/auth';
 import { resolveBeneficiaryPhotoUrl } from '../lib/beneficiaryPhotos';
 import { buildCredentialSecureIdentifier, parseOfficialCredentialQr } from '../lib/credentials';
@@ -16,7 +17,7 @@ const KIND_META = {
   user: { label: 'Usuario del ERP', icon: ShieldCheck, tone: 'brand' }
 };
 
-export function CredentialScanner({ data, currentUser, onNavigate }) {
+export function CredentialScanner({ data, actions, currentUser, onNavigate }) {
   const scannerRegionId = useRef(`credential-qr-reader-${Math.random().toString(36).slice(2)}`).current;
   const scannerRef = useRef(null);
   const scanLockedRef = useRef(false);
@@ -32,6 +33,7 @@ export function CredentialScanner({ data, currentUser, onNavigate }) {
   const canScan = canDo(currentUser, 'credential-scanner', 'scan');
   const canManualIdentify = canDo(currentUser, 'credential-scanner', 'manual-identify');
   const canRegisterDelivery = canDo(currentUser, 'credential-scanner', 'register-delivery');
+  const canRegisterVolunteerAttendance = canDo(currentUser, 'volunteers', 'edit');
 
   useEffect(() => () => stopCamera(), []);
 
@@ -128,9 +130,62 @@ export function CredentialScanner({ data, currentUser, onNavigate }) {
       onNavigate?.({ moduleId: 'smart-deliveries', profileId: match.record.id });
       return;
     }
+    const volunteerAttendance = resolveVolunteerAttendanceCandidate(match, data || {});
+    if (volunteerAttendance.eligible) {
+      registerVolunteerAttendanceFromScan(volunteerAttendance);
+      return;
+    }
     setResult(match);
     setScanError('');
     setScanStatus('Credencial identificada correctamente.');
+  }
+
+  async function registerVolunteerAttendanceFromScan(candidate) {
+    console.info('[CredentialScanner] Diagnostico fichaje voluntariado', candidate.diagnostic);
+    if (!candidate.volunteer) {
+      setResult(candidate.match);
+      setScanError(candidate.error || 'No se ha podido localizar el expediente de voluntariado vinculado.');
+      setScanStatus('Fichaje no registrado.');
+      return;
+    }
+    if (!canRegisterVolunteerAttendance || !actions?.toggleVolunteerAttendance) {
+      setResult(candidate.match);
+      setScanError('Tu usuario no tiene permiso para registrar fichajes de voluntariado.');
+      setScanStatus('Fichaje no autorizado.');
+      return;
+    }
+    try {
+      setResult(null);
+      setScanError('');
+      setScanStatus('Registrando fichaje de voluntariado...');
+      const attendance = await actions.toggleVolunteerAttendance({
+        volunteer_id: candidate.volunteer.id,
+        person_identity_id: candidate.volunteer.person_identity_id || candidate.appUser?.person_identity_id || null,
+        method: 'qr',
+        credential_uid: candidate.credentialUid,
+        activity_type: 'General',
+        activity_label: 'Voluntariado',
+        device_info: browserDeviceLabel()
+      });
+      setResult({
+        kind: 'volunteer-attendance',
+        record: candidate.volunteer,
+        name: candidate.volunteer.full_name || candidate.volunteer.name || candidate.appUser?.full_name || 'Voluntario',
+        code: candidate.volunteer.code || candidate.volunteer.volunteer_code || candidate.match.code || '',
+        credentialId: candidate.credentialUid,
+        attendance,
+        diagnostic: {
+          ...candidate.diagnostic,
+          router_result: attendance?.type === 'exit' ? 'SALIDA registrada' : 'ENTRADA registrada'
+        }
+      });
+      setScanStatus(attendance?.message || 'Fichaje registrado.');
+    } catch (error) {
+      console.error('[CredentialScanner] No se pudo registrar el fichaje de voluntariado', error);
+      setResult(candidate.match);
+      setScanError(error.message || 'No se pudo registrar el fichaje de voluntariado.');
+      setScanStatus('Fichaje no registrado.');
+    }
   }
 
   function identifyManualCode(event) {
@@ -259,6 +314,7 @@ function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
   }
 
   if (result.invalidCredential) return <InvalidScanResult result={result} />;
+  if (result.kind === 'volunteer-attendance') return <VolunteerAttendanceScanResult result={result} />;
   if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />;
   if (result.kind === 'volunteer') return <VolunteerScanResult result={result} data={data} />;
   if (result.kind === 'collaborator') return <CollaboratorScanResult result={result} data={data} />;
@@ -334,6 +390,31 @@ function VolunteerScanResult({ result }) {
           <InfoRow label="Ultimo acceso" value={volunteer.last_access_at || volunteer.last_login_at ? formatDateTime(volunteer.last_access_at || volunteer.last_login_at) : '-'} />
           <Button variant="secondary" className="w-full sm:w-auto" disabled><UserRoundCheck size={16} /> Registrar entrada</Button>
           <p className="text-xs font-semibold text-slate-500">Preparado para control de voluntariado en una fase posterior.</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function VolunteerAttendanceScanResult({ result }) {
+  const volunteer = result.record;
+  const attendance = result.attendance || {};
+  const entry = attendance.entry || {};
+  const isExit = attendance.type === 'exit';
+  return (
+    <article className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+      <ResultHeader result={{ ...result, kind: 'volunteer' }} status={isExit ? 'Jornada finalizada' : 'Jornada iniciada'} />
+      <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
+        <CredentialPersonPhoto kind="volunteer" record={volunteer} />
+        <div className="grid gap-3">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-emerald-700">{isExit ? 'SALIDA registrada' : 'ENTRADA registrada'}</p>
+            <p className="mt-1 text-2xl font-black text-emerald-900">{volunteer.full_name || volunteer.name || 'Voluntario'}</p>
+          </div>
+          <InfoRow label="Credencial utilizada" value={result.credentialId || '-'} />
+          <InfoRow label="Entrada" value={entry.check_in_at ? formatDateTime(entry.check_in_at) : '-'} />
+          {isExit && <InfoRow label="Salida" value={entry.check_out_at ? formatDateTime(entry.check_out_at) : '-'} />}
+          {isExit && <InfoRow label="Duracion" value={formatAttendanceDuration(entry.total_minutes || 0)} />}
         </div>
       </div>
     </article>
@@ -596,6 +677,78 @@ function findManualCredentialMatch(value, directory = []) {
   return match;
 }
 
+function resolveVolunteerAttendanceCandidate(match = {}, data = {}) {
+  if (!match || match.invalidCredential || !match.record) return { eligible: false };
+  const volunteers = data.volunteers || [];
+  const users = data.app_users || [];
+  let appUser = null;
+  let volunteer = null;
+
+  if (match.kind === 'user') {
+    appUser = match.record;
+    if (!appUser?.participates_as_volunteer) return { eligible: false };
+    volunteer = volunteers.find((item) => item.person_identity_id && item.person_identity_id === appUser.person_identity_id) || null;
+  } else if (match.kind === 'volunteer') {
+    volunteer = match.record;
+    appUser = users.find((item) => item.person_identity_id && volunteer?.person_identity_id && item.person_identity_id === volunteer.person_identity_id) || null;
+  } else {
+    return { eligible: false };
+  }
+
+  const diagnostic = volunteerAttendanceDiagnostic(match, appUser, volunteer, 'Preparado para fichaje por identidad unica');
+  if (!volunteer) {
+    return {
+      eligible: true,
+      match,
+      appUser,
+      volunteer: null,
+      credentialUid: match.credentialId || '',
+      diagnostic,
+      error: match.kind === 'user'
+        ? 'El usuario ERP participa como voluntario, pero no tiene expediente de voluntariado vinculado a la misma identidad.'
+        : 'La credencial no pertenece a un expediente de voluntariado vinculado.'
+    };
+  }
+  if (!isVolunteerRecordActive(volunteer)) {
+    return {
+      eligible: true,
+      match,
+      appUser,
+      volunteer: null,
+      credentialUid: match.credentialId || '',
+      diagnostic,
+      error: 'El expediente de voluntariado vinculado no esta activo.'
+    };
+  }
+  return {
+    eligible: true,
+    match,
+    appUser,
+    volunteer,
+    credentialUid: match.credentialId || volunteer.credential_uid || volunteer.official_credential_id || '',
+    diagnostic
+  };
+}
+
+function volunteerAttendanceDiagnostic(match = {}, appUser = null, volunteer = null, routerResult = '') {
+  return {
+    credential_uid: match.credentialId || '',
+    app_user_id: appUser?.id || null,
+    user_person_identity_id: appUser?.person_identity_id || null,
+    participates_as_volunteer: Boolean(appUser?.participates_as_volunteer),
+    volunteer_id: volunteer?.id || null,
+    volunteer_person_identity_id: volunteer?.person_identity_id || null,
+    volunteer_status: volunteer?.status || null,
+    router_result: routerResult
+  };
+}
+
+function isVolunteerRecordActive(volunteer = {}) {
+  if (!volunteer?.id || volunteer.left_at) return false;
+  const status = normalize(volunteer.status || '');
+  return !status.includes('baja') && !status.includes('inactiv') && !status.includes('archivad');
+}
+
 function invalidCredentialMessage(status, reason = '') {
   const normalizedStatus = String(status || '').trim().toLowerCase();
   if (normalizedStatus === 'revoked') return 'CREDENCIAL ANULADA';
@@ -675,6 +828,11 @@ function cameraErrorMessage(error) {
     return 'El navegador solo permite usar la camara en HTTPS.';
   }
   return error?.message || 'No se ha podido iniciar la camara. Revisa permisos y vuelve a intentarlo.';
+}
+
+function browserDeviceLabel() {
+  if (typeof navigator === 'undefined') return '';
+  return [navigator.platform, navigator.userAgent].filter(Boolean).join(' | ').slice(0, 500);
 }
 
 function latestByDate(items = [], field) {
