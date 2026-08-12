@@ -282,7 +282,14 @@ export function CredentialScanner({ data, actions, currentUser, onNavigate }) {
           </form>
         </article>
 
-        <CredentialResult result={result} data={data || {}} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />
+        <CredentialResult
+          result={result}
+          data={data || {}}
+          canRegisterDelivery={canRegisterDelivery}
+          canRegisterVolunteerAttendance={canRegisterVolunteerAttendance}
+          onRegisterVolunteerAttendance={registerVolunteerAttendanceFromScan}
+          onNavigate={onNavigate}
+        />
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -300,7 +307,7 @@ export function CredentialScanner({ data, actions, currentUser, onNavigate }) {
   );
 }
 
-function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
+function CredentialResult({ result, data, canRegisterDelivery, canRegisterVolunteerAttendance, onRegisterVolunteerAttendance, onNavigate }) {
   if (!result) {
     return (
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -316,8 +323,29 @@ function CredentialResult({ result, data, canRegisterDelivery, onNavigate }) {
   if (result.invalidCredential) return <InvalidScanResult result={result} />;
   if (result.kind === 'volunteer-attendance') return <VolunteerAttendanceScanResult result={result} />;
   if (result.kind === 'beneficiary') return <BeneficiaryScanResult result={result} data={data} canRegisterDelivery={canRegisterDelivery} onNavigate={onNavigate} />;
-  if (result.kind === 'volunteer') return <VolunteerScanResult result={result} data={data} />;
+  if (result.kind === 'volunteer') return <VolunteerAttendanceReadyScanResult result={result} data={data} canRegisterAttendance={canRegisterVolunteerAttendance} onRegisterAttendance={onRegisterVolunteerAttendance} />;
   if (result.kind === 'collaborator') return <CollaboratorScanResult result={result} data={data} />;
+  if (result.kind === 'user') {
+    const attendanceCandidate = resolveVolunteerAttendanceCandidate(result, data);
+    if (attendanceCandidate.eligible && attendanceCandidate.volunteer) {
+      const targetResult = {
+        ...result,
+        kind: 'volunteer',
+        record: attendanceCandidate.volunteer,
+        name: attendanceCandidate.volunteer.full_name || attendanceCandidate.volunteer.name || result.name,
+        code: attendanceCandidate.volunteer.code || attendanceCandidate.volunteer.volunteer_code || result.code
+      };
+      return (
+        <VolunteerAttendanceReadyScanResult
+          result={targetResult}
+          data={data}
+          canRegisterAttendance={canRegisterVolunteerAttendance}
+          onRegisterAttendance={onRegisterVolunteerAttendance}
+          attendanceCandidate={attendanceCandidate}
+        />
+      );
+    }
+  }
   if (result.kind === 'user') return <UserScanResult result={result} />;
   return <DonorScanResult result={result} data={data} />;
 }
@@ -377,6 +405,66 @@ function BeneficiaryScanResult({ result, data, canRegisterDelivery, onNavigate }
   );
 }
 
+function VolunteerAttendanceReadyScanResult({ result, data = {}, canRegisterAttendance, onRegisterAttendance, attendanceCandidate = null }) {
+  const volunteer = result.record;
+  const [now, setNow] = useState(() => new Date());
+  const openEntry = findOpenVolunteerAttendance(data.volunteer_time_entries || [], volunteer?.id);
+  const canUseButton = Boolean(canRegisterAttendance && volunteer?.id && isVolunteerRecordActive(volunteer) && onRegisterAttendance);
+  const functions = [volunteer.role, volunteer.position, volunteer.availability, volunteer.notes].filter(Boolean).join(' · ') || 'Funciones pendientes de registrar';
+
+  useEffect(() => {
+    if (!openEntry) return undefined;
+    const interval = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(interval);
+  }, [openEntry?.id]);
+
+  const candidate = attendanceCandidate || resolveVolunteerAttendanceCandidate(result, data);
+  const handleAttendance = () => {
+    if (!canUseButton) return;
+    onRegisterAttendance({
+      ...candidate,
+      eligible: true,
+      match: candidate.match || result,
+      volunteer,
+      credentialUid: candidate.credentialUid || result.credentialId || volunteer.credential_uid || volunteer.official_credential_id || '',
+      diagnostic: candidate.diagnostic || volunteerAttendanceDiagnostic(result, null, volunteer, 'Fichaje iniciado desde boton')
+    });
+  };
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <ResultHeader result={result} status={volunteer.status || (volunteer.is_active === false ? 'Inactivo' : 'Activo')} />
+      <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
+        <CredentialPersonPhoto kind="volunteer" record={volunteer} />
+        <div className="grid gap-3">
+          <InfoRow label="Funciones" value={functions} />
+          <InfoRow label="Ultimo acceso" value={volunteer.last_access_at || volunteer.last_login_at ? formatDateTime(volunteer.last_access_at || volunteer.last_login_at) : '-'} />
+          {openEntry ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-700">Presente ahora</p>
+              <p className="mt-1 text-sm font-semibold">Entrada: {formatTime(openEntry.check_in_at)}</p>
+              <p className="text-sm font-semibold">Tiempo transcurrido: {formatAttendanceDuration(minutesBetween(openEntry.check_in_at, now))}</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+              Sin jornada abierta en este momento.
+            </div>
+          )}
+          <Button
+            variant={openEntry ? 'danger' : 'secondary'}
+            className="w-full sm:w-auto"
+            disabled={!canUseButton}
+            onClick={handleAttendance}
+          >
+            {openEntry ? <XCircle size={16} /> : <UserRoundCheck size={16} />} {openEntry ? 'Registrar salida' : 'Registrar entrada'}
+          </Button>
+          {!canRegisterAttendance && <p className="text-xs font-semibold text-amber-700">Tu usuario no tiene permiso para registrar fichajes de voluntariado.</p>}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function VolunteerScanResult({ result }) {
   const volunteer = result.record;
   const functions = [volunteer.role, volunteer.position, volunteer.availability, volunteer.notes].filter(Boolean).join(' · ') || 'Funciones pendientes de registrar';
@@ -388,8 +476,7 @@ function VolunteerScanResult({ result }) {
         <div className="grid gap-3">
           <InfoRow label="Funciones" value={functions} />
           <InfoRow label="Ultimo acceso" value={volunteer.last_access_at || volunteer.last_login_at ? formatDateTime(volunteer.last_access_at || volunteer.last_login_at) : '-'} />
-          <Button variant="secondary" className="w-full sm:w-auto" disabled><UserRoundCheck size={16} /> Registrar entrada</Button>
-          <p className="text-xs font-semibold text-slate-500">Preparado para control de voluntariado en una fase posterior.</p>
+          <p className="text-xs font-semibold text-slate-500">Control horario disponible desde el resultado operativo de voluntariado.</p>
         </div>
       </div>
     </article>
@@ -749,6 +836,12 @@ function isVolunteerRecordActive(volunteer = {}) {
   return !status.includes('baja') && !status.includes('inactiv') && !status.includes('archivad');
 }
 
+function findOpenVolunteerAttendance(entries = [], volunteerId = '') {
+  return entries
+    .filter((entry) => entry.volunteer_id === volunteerId && entry.status === 'open' && !entry.check_out_at)
+    .sort((left, right) => new Date(right.check_in_at || 0) - new Date(left.check_in_at || 0))[0] || null;
+}
+
 function invalidCredentialMessage(status, reason = '') {
   const normalizedStatus = String(status || '').trim().toLowerCase();
   if (normalizedStatus === 'revoked') return 'CREDENCIAL ANULADA';
@@ -847,6 +940,19 @@ function sameDay(value, date) {
   return target.getFullYear() === date.getFullYear()
     && target.getMonth() === date.getMonth()
     && target.getDate() === date.getDate();
+}
+
+function minutesBetween(start, end = new Date()) {
+  const startDate = new Date(start || 0);
+  const endDate = new Date(end || 0);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+  return Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
+}
+
+function formatTime(value) {
+  const date = new Date(value || 0);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 }
 
 function isActiveDelivery(delivery = {}) {
