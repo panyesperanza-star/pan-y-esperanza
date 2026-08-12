@@ -858,6 +858,12 @@ export function SmartDeliveries({ data, actions, currentUser, navigationTarget, 
                 repartoClosed={repartoClosed}
                 onCustomize={() => setCustomizeTarget(summary)}
                 onRegister={() => beginSignatureFlow(summary)}
+                onClose={() => {
+                  setResult(null);
+                  setRegisterError('');
+                  setDeliveryCustomization(null);
+                  setScanStatus('Listo para escanear.');
+                }}
               />
                 )}
               </>
@@ -1026,69 +1032,82 @@ function RepartoBatchPanel({ batch, onRuleChange }) {
   );
 }
 
-function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, repartoClosed = false, onCustomize, onRegister }) {
+function BeneficiaryFastPanel({ summary, canRegister, registering, error, customization, repartoClosed = false, onCustomize, onRegister, onClose }) {
   const disabled = registering || summary.receivedToday || summary.blocked || !canRegister || repartoClosed;
+  const statusLabel = summary.blocked ? summary.status : 'Activa';
   return (
-    <article className="grid h-full min-h-[34rem] gap-5 lg:grid-cols-[16rem_1fr]">
-      <div className="rounded-[1.5rem] bg-slate-50 p-4">
-        <BeneficiaryPhoto beneficiary={summary.beneficiary} />
-        <div className="mt-4 rounded-2xl bg-white p-4">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Estado</p>
-          <p className={`mt-1 text-2xl font-black ${summary.blocked ? 'text-red-700' : 'text-emerald-700'}`}>{summary.status}</p>
-        </div>
-      </div>
+    <article className="flex min-h-[26rem] flex-col rounded-[1.4rem] border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <h2 className="text-lg font-black text-ink">Entrega inteligente</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Cerrar entrega inteligente"
+        >
+          <XCircle size={19} />
+        </button>
+      </header>
 
-      <div className="flex min-w-0 flex-col">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-brand-700">Beneficiario identificado</p>
-          <h2 className="mt-1 break-words text-4xl font-black tracking-tight text-ink sm:text-5xl">{summary.beneficiary.full_name}</h2>
-          <p className="mt-2 text-lg font-black text-slate-500">{summary.beneficiary.code || 'Sin codigo PYE'}</p>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-3">
+          <BeneficiaryPhoto beneficiary={summary.beneficiary} className="h-16 w-16 shrink-0 rounded-2xl bg-white object-cover shadow-sm" fallbackClassName="h-16 w-16 shrink-0 rounded-2xl bg-brand-50 text-brand-700 shadow-inner" iconSize={28} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xl font-black leading-tight text-ink">{summary.beneficiary.full_name}</p>
+            <p className="mt-0.5 text-sm font-black text-slate-500">{summary.beneficiary.code || 'Sin codigo PYE'}</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black uppercase ${summary.blocked ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+            {statusLabel}
+          </span>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
           <Metric icon={UsersRound} label="Unidad familiar" value={summary.familyLabel} />
           <Metric icon={UserRound} label="Adultos" value={summary.adults} />
           <Metric icon={Baby} label="Menores" value={summary.minors} />
-          <Metric icon={Clock} label="Ultima entrega" value={summary.lastDeliveryLabel} />
+          <Metric icon={Clock} label="Última entrega" value={summary.lastDeliveryLabel} />
           <Metric icon={PackageCheck} label="Ha recibido hoy" value={summary.receivedToday ? 'SI' : 'NO'} tone={summary.receivedToday ? 'red' : 'green'} />
-          <Metric icon={IdCard} label="Identificacion" value={summary.sourceLabel} />
+          <Metric icon={IdCard} label="Identificación" value={summary.sourceLabel} />
         </div>
 
         <PreparedBatchCard batch={summary.preparedBatch} customization={customization} onCustomize={onCustomize} />
 
         {summary.receivedToday && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800">
-            <p className="text-2xl font-black">Ya recibio ayuda hoy</p>
+            <p className="text-lg font-black">Ya recibio ayuda hoy</p>
             <p className="mt-1 font-semibold">Entrega ya registrada. No se permite registrar otra entrega desde este modo.</p>
           </div>
         )}
 
         {summary.blocked && !summary.receivedToday && (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800">
-            <p className="text-2xl font-black">Expediente no activo</p>
+            <p className="text-lg font-black">Expediente no activo</p>
             <p className="mt-1 font-semibold">El estado actual impide registrar una entrega rapida.</p>
           </div>
         )}
 
         {repartoClosed && (
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-            <p className="text-2xl font-black">Reparto cerrado</p>
+            <p className="text-lg font-black">Reparto cerrado</p>
             <p className="mt-1 font-semibold">El acta ya esta cerrada. No se pueden registrar nuevas entregas salvo reapertura autorizada.</p>
           </div>
         )}
 
-        {error && <p className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 font-semibold text-red-700">{error}</p>}
+        {error && <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
 
-        <div className="mt-auto pt-6">
+        <div className="mt-auto flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <Button type="button" variant="secondary" onClick={onClose} className="h-12 px-5 text-base sm:w-44">
+            Cancelar
+          </Button>
           <Button
-            className="h-20 w-full rounded-2xl text-2xl font-black tracking-wide"
+            className="h-14 rounded-2xl px-8 text-lg font-black tracking-wide sm:min-w-[18rem]"
             disabled={disabled}
             onClick={onRegister}
           >
-            {registering ? <Loader2 className="animate-spin" size={30} /> : <CheckCircle2 size={32} />}
-            {registering ? 'REGISTRANDO...' : 'REGISTRAR ENTREGA'}
+            {registering ? <Loader2 className="animate-spin" size={22} /> : <CheckCircle2 size={24} />}
+            {registering ? 'REGISTRANDO...' : 'Confirmar entrega'}
           </Button>
-          {!canRegister && <p className="mt-3 text-center text-sm font-bold text-red-700">Tu usuario no tiene permiso para registrar entregas.</p>}
+          {!canRegister && <p className="text-center text-sm font-bold text-red-700 sm:text-left">Tu usuario no tiene permiso para registrar entregas.</p>}
         </div>
       </div>
     </article>
@@ -1099,37 +1118,43 @@ function PreparedBatchCard({ batch, customization, onCustomize }) {
   const plan = buildDeliveryPlan({ preparedBatch: batch, beneficiary: { id: customization?.beneficiaryId || '' } }, customization);
   const hasCustomization = Boolean(customization);
   return (
-    <div className={`mt-5 rounded-2xl border p-4 ${batch ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-      <div className="flex items-start justify-between gap-3">
-        <PackageCheck className={batch ? 'text-brand-700' : 'text-slate-400'} size={24} />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-black uppercase tracking-[0.18em]">{batch ? 'Lote preparado' : 'Lote preparado'}</p>
-          <p className="mt-1 text-lg font-black text-ink">{batch?.label || 'Sin lote preparado'}</p>
-          <p className="mt-1 text-sm font-semibold">{batch?.detail || 'La entrega se registrara como ayuda general si no existe un lote planificado.'}</p>
+    <div className={`rounded-2xl border p-3 ${batch ? 'border-brand-200 bg-brand-50 text-brand-900' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${batch ? 'bg-white text-brand-700' : 'bg-white text-slate-400'}`}>
+            <PackageCheck size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.18em]">{batch ? 'Lote preparado' : 'Lote preparado'}</p>
+            <p className="mt-0.5 break-words text-sm font-black text-ink">{plan.deliveredLabel || batch?.label || 'Sin lote preparado'}</p>
+            <p className="mt-0.5 text-xs font-semibold">{batch?.detail || 'La entrega se registrara como ayuda general si no existe un lote planificado.'}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
           {plan.estimatedValue > 0 && (
-            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-sm font-black text-brand-800">
+            <p className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-black text-brand-800">
               <Euro size={15} /> Valor aproximado del lote: {formatCurrency(plan.estimatedValue)}
             </p>
           )}
+          <Button type="button" variant="secondary" onClick={onCustomize} className="h-9 shrink-0 px-3 text-xs">
+            <Pencil size={14} /> Personalizar entrega
+          </Button>
+        </div>
+      </div>
           {hasCustomization && (
-            <div className="mt-3 rounded-xl bg-white/80 p-3 text-sm font-bold text-brand-900">
+            <div className="mt-2 rounded-xl bg-white/80 p-2 text-xs font-bold text-brand-900">
               <p>Entrega personalizada: {plan.deliveredLabel}</p>
               <p className="mt-1 text-xs font-semibold text-slate-600">Motivo: {customization.reason}</p>
             </div>
           )}
           {batch?.shortages?.length > 0 && (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-bold text-amber-900">
               <p className="text-xs font-black uppercase tracking-wide">Producto agotado o insuficiente</p>
               {batch.shortages.slice(0, 3).map((item) => (
                 <p key={item.product} className="mt-1">{item.message}</p>
               ))}
             </div>
           )}
-        </div>
-        <Button type="button" variant="secondary" onClick={onCustomize} className="h-10 shrink-0 px-3 text-xs">
-          <Pencil size={15} /> Personalizar entrega
-        </Button>
-      </div>
     </div>
   );
 }
@@ -1689,12 +1714,12 @@ function SessionMetric({ label, value }) {
 function Metric({ icon: Icon, label, value, tone = 'slate' }) {
   const toneClass = tone === 'red' ? 'text-red-700 bg-red-50' : tone === 'green' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-700 bg-slate-50';
   return (
-    <div className={`rounded-2xl border border-slate-200 p-4 ${toneClass}`}>
-      <div className="flex items-center gap-2">
-        <Icon size={20} />
-        <p className="text-xs font-black uppercase tracking-wide">{label}</p>
+    <div className={`min-w-0 rounded-xl border border-slate-200 p-2.5 ${toneClass}`}>
+      <div className="flex items-center gap-1.5">
+        <Icon size={15} className="shrink-0" />
+        <p className="line-clamp-2 min-w-0 text-[0.62rem] font-black uppercase leading-[0.78rem] tracking-wide">{label}</p>
       </div>
-      <p className="mt-2 text-2xl font-black text-ink">{value || '-'}</p>
+      <p className="mt-1 truncate text-sm font-black leading-tight text-ink" title={String(value || '-')}>{value || '-'}</p>
     </div>
   );
 }
@@ -1708,7 +1733,7 @@ function InfoLine({ label, value }) {
   );
 }
 
-function BeneficiaryPhoto({ beneficiary }) {
+function BeneficiaryPhoto({ beneficiary, className = 'h-80 w-full rounded-[1.4rem] bg-white object-cover shadow-lg', fallbackClassName = 'flex h-80 w-full items-center justify-center rounded-[1.4rem] bg-brand-50 text-brand-700 shadow-inner', iconSize = 74 }) {
   const [src, setSrc] = useState('');
   useEffect(() => {
     let cancelled = false;
@@ -1726,11 +1751,11 @@ function BeneficiaryPhoto({ beneficiary }) {
   }, [beneficiary]);
 
   if (src) {
-    return <img src={src} alt={beneficiary.full_name || 'Beneficiario'} className="h-80 w-full rounded-[1.4rem] bg-white object-cover shadow-lg" />;
+    return <img src={src} alt={beneficiary.full_name || 'Beneficiario'} className={className} />;
   }
   return (
-    <div className="flex h-80 w-full items-center justify-center rounded-[1.4rem] bg-brand-50 text-brand-700 shadow-inner">
-      <UserRound size={74} />
+    <div className={`flex items-center justify-center ${fallbackClassName}`}>
+      <UserRound size={iconSize} />
     </div>
   );
 }
