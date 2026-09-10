@@ -214,7 +214,12 @@ export class SupabaseRepository {
     console.log(
       'VOLUNTARIOS RECIBIDOS DE SUPABASE:',
       data?.length,
-      data?.map(v => ({ nombre: v.full_name, codigo: v.code, estado: v.status }))
+      data?.map(v => ({
+  id: v.id,
+  nombre: v.full_name,
+  codigo: v.code,
+  estado: v.status
+}))
     );
   }
   return data || [];
