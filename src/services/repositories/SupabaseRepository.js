@@ -172,9 +172,6 @@ const SECURITY_TABLES = new Set([
   'donor_portal_otps',
   'portal_sessions'
 ]);
-const TABLE_LIST_RPC = {
-  volunteers: 'list_visible_volunteers'
-};
 const SUPABASE_QUERY_TIMEOUT_MS = 12000;
 
 function sanitizePayload(payload) {
@@ -194,14 +191,6 @@ function isMissingTableError(error) {
     || (message.includes('relation') && message.includes('does not exist'));
 }
 
-function isMissingFunctionError(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return error?.code === '42883'
-    || error?.code === 'PGRST202'
-    || message.includes('could not find the function')
-    || (message.includes('function') && message.includes('does not exist'));
-}
-
 export class SupabaseRepository {
   constructor({ supabase, fallbackStore = null, allowMissingOptionalTables = false } = {}) {
     if (!supabase) throw new Error('SupabaseRepository necesita cliente Supabase.');
@@ -212,12 +201,6 @@ export class SupabaseRepository {
   }
 
   async list(table) {
-    const rpcName = TABLE_LIST_RPC[table];
-    if (rpcName) {
-      const rpcData = await this.listUsingRpc(table, rpcName);
-      if (rpcData) return rpcData;
-    }
-
     const { data, error } = await withSupabaseQueryTimeout(
       this.supabase
         .from(table)
@@ -226,43 +209,12 @@ export class SupabaseRepository {
       table,
       'list'
     );
-    if (!error) {
-  if (table === 'volunteers') {
-    console.log(
-      'VOLUNTARIOS RECIBIDOS DE SUPABASE:',
-      data?.length,
-      data?.map(v => ({
-  id: v.id,
-  nombre: v.full_name,
-  codigo: v.code,
-  estado: v.status
-}))
-    );
-  }
-  return data || [];
-}
+    if (!error) return data || [];
     if (SECURITY_TABLES.has(table)) {
       registerSupabaseRepositoryError('list', table, error);
       throw error;
     }
     if (canIgnoreMissingTable(table, error, this.allowMissingOptionalTables)) return [];
-    if (this.fallbackStore) return this.fallbackStore.list(table);
-    registerSupabaseRepositoryError('list', table, error);
-    throw error;
-  }
-
-  async listUsingRpc(table, functionName) {
-    const { data, error } = await withSupabaseQueryTimeout(
-      this.supabase.rpc(functionName),
-      table,
-      `list:${functionName}`
-    );
-    if (!error) return data || [];
-    if (isMissingFunctionError(error)) return null;
-    if (SECURITY_TABLES.has(table)) {
-      registerSupabaseRepositoryError('list', table, error);
-      throw error;
-    }
     if (this.fallbackStore) return this.fallbackStore.list(table);
     registerSupabaseRepositoryError('list', table, error);
     throw error;
