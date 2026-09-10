@@ -209,7 +209,16 @@ export class SupabaseRepository {
       table,
       'list'
     );
-    if (!error) return data || [];
+    if (!error) {
+  if (table === 'volunteers') {
+    console.log(
+      'VOLUNTARIOS RECIBIDOS DE SUPABASE:',
+      data?.length,
+      data?.map(v => ({ nombre: v.full_name, codigo: v.code, estado: v.status }))
+    );
+  }
+  return data || [];
+}
     if (SECURITY_TABLES.has(table)) {
       registerSupabaseRepositoryError('list', table, error);
       throw error;
