@@ -18,7 +18,7 @@ import {
   UserRoundCheck
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { FormField, inputClass } from '../components/FormField';
 import { Modal } from '../components/Modal';
@@ -63,6 +63,8 @@ export function Volunteers({ data, actions, currentUser }) {
   const [modal, setModal] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('code');
+  const [savingVolunteer, setSavingVolunteer] = useState(false);
+  const savingVolunteerRef = useRef(false);
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
   const attendanceEntries = data.volunteer_time_entries || [];
   const appUsers = data.app_users || [];
@@ -73,10 +75,20 @@ export function Volunteers({ data, actions, currentUser }) {
   const canManageUserAccess = canDo(currentUser, 'users', 'create') || canDo(currentUser, 'users', 'edit');
 
   async function saveVolunteer(form, current = null) {
+    if (savingVolunteerRef.current) return null;
+    savingVolunteerRef.current = true;
+    setSavingVolunteer(true);
     const payload = volunteerPayloadFromForm(form, volunteers, current);
-    if (current) await actions.updateVolunteer(current.id, payload);
-    else await actions.createVolunteer(payload);
-    setModal(null);
+    try {
+      const result = current
+        ? await actions.updateVolunteer(current.id, payload)
+        : await actions.createVolunteer(payload);
+      setModal(null);
+      return result;
+    } finally {
+      savingVolunteerRef.current = false;
+      setSavingVolunteer(false);
+    }
   }
 
   async function archiveVolunteer(volunteer) {
@@ -145,6 +157,10 @@ export function Volunteers({ data, actions, currentUser }) {
         </FormField>
       </section>
 
+      <p className="mb-3 text-sm font-semibold text-slate-600">
+        Mostrando {visibleVolunteers.length} de {volunteers.length} voluntarios
+      </p>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleVolunteers.map((volunteer) => (
           <VolunteerCard
@@ -172,13 +188,13 @@ export function Volunteers({ data, actions, currentUser }) {
 
       {modal?.type === 'create' && (
         <Modal title="Nuevo voluntario" onClose={() => setModal(null)} wide>
-          <VolunteerForm volunteers={volunteers} onSubmit={(payload) => saveVolunteer(payload)} />
+          <VolunteerForm volunteers={volunteers} submitting={savingVolunteer} onSubmit={(payload) => saveVolunteer(payload)} />
         </Modal>
       )}
 
       {modal?.type === 'edit' && (
         <Modal title="Editar voluntario" onClose={() => setModal(null)} wide>
-          <VolunteerForm volunteers={volunteers} initial={modal.volunteer} onSubmit={(payload) => saveVolunteer(payload, modal.volunteer)} />
+          <VolunteerForm volunteers={volunteers} initial={modal.volunteer} submitting={savingVolunteer} onSubmit={(payload) => saveVolunteer(payload, modal.volunteer)} />
         </Modal>
       )}
 
@@ -644,8 +660,12 @@ function HistoryPanel({ timeline = [] }) {
   );
 }
 
-function VolunteerForm({ volunteers, initial, onSubmit }) {
+function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
   const parsed = initial || {};
+  const submitRef = useRef(false);
+  const mountedRef = useRef(true);
+  const [localSubmitting, setLocalSubmitting] = useState(false);
+  const isSubmitting = submitting || localSubmitting;
   const [form, setForm] = useState(() => ({
     full_name: parsed.full_name || '',
     document_id: parsed.document_id || '',
@@ -669,6 +689,23 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
   }));
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (submitRef.current || submitting) return;
+    submitRef.current = true;
+    setLocalSubmitting(true);
+    try {
+      await onSubmit(form);
+    } finally {
+      submitRef.current = false;
+      if (mountedRef.current) setLocalSubmitting(false);
+    }
+  }
+
   async function loadPhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -677,34 +714,36 @@ function VolunteerForm({ volunteers, initial, onSubmit }) {
   }
 
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
-      <FormField label="Nombre completo" required><input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} /></FormField>
-      <FormField label="Código de voluntario" required>
-        <input className={`${inputClass} bg-slate-50 font-semibold text-slate-600`} required readOnly value={form.code} />
-        <p className="mt-1 text-xs text-slate-500">Código generado automáticamente y no editable.</p>
-      </FormField>
-      <FormField label="DNI"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
-      <FormField label="Fecha de alta"><input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} /></FormField>
-      <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{VOLUNTEER_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-      {form.status !== 'Activo' && (
-        <>
-          <FormField label="Fecha de baja"><input className={inputClass} type="date" value={form.left_at} onChange={(event) => update('left_at', event.target.value)} /></FormField>
-          <FormField label="Motivo de baja"><input className={inputClass} value={form.leave_reason} onChange={(event) => update('leave_reason', event.target.value)} /></FormField>
-        </>
-      )}
-      <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
-      <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
-      <FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField>
-      <FormField label="Contacto de emergencia"><input className={inputClass} value={form.emergency_contact} onChange={(event) => update('emergency_contact', event.target.value)} /></FormField>
-      <FormField label="Teléfono de emergencia"><input className={inputClass} value={form.emergency_phone} onChange={(event) => update('emergency_phone', event.target.value)} /></FormField>
-      <FormField label="Disponibilidad"><input className={inputClass} value={form.availability} onChange={(event) => update('availability', event.target.value)} /></FormField>
-      <FormField label="Funciones"><input className={inputClass} value={form.functions} onChange={(event) => update('functions', event.target.value)} /></FormField>
-      <FormField label="Formación"><input className={inputClass} value={form.training} onChange={(event) => update('training', event.target.value)} /></FormField>
-      <FormField label="Documentación"><input className={inputClass} value={form.documentation} onChange={(event) => update('documentation', event.target.value)} /></FormField>
-      <FormField label="Foto"><input className={inputClass} type="file" accept="image/png,image/jpeg" onChange={loadPhoto} /></FormField>
-      <div className="flex items-center gap-3">{form.photo_data_url && <img src={form.photo_data_url} alt="Foto del voluntario" className="h-16 w-16 rounded-md object-cover" />}<span className="text-sm text-slate-500">La foto se utilizará en el expediente del voluntario.</span></div>
-      <div className="sm:col-span-2"><FormField label="Observaciones generales"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
-      <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar voluntario</Button></div>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      <fieldset className="contents" disabled={isSubmitting}>
+        <FormField label="Nombre completo" required><input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} /></FormField>
+        <FormField label="Código de voluntario" required>
+          <input className={`${inputClass} bg-slate-50 font-semibold text-slate-600`} required readOnly value={form.code} />
+          <p className="mt-1 text-xs text-slate-500">Código generado automáticamente y no editable.</p>
+        </FormField>
+        <FormField label="DNI"><input className={inputClass} value={form.document_id} onChange={(event) => update('document_id', event.target.value)} /></FormField>
+        <FormField label="Fecha de alta"><input className={inputClass} type="date" value={form.joined_at} onChange={(event) => update('joined_at', event.target.value)} /></FormField>
+        <FormField label="Estado"><select className={inputClass} value={form.status} onChange={(event) => update('status', event.target.value)}>{VOLUNTEER_STATUS_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+        {form.status !== 'Activo' && (
+          <>
+            <FormField label="Fecha de baja"><input className={inputClass} type="date" value={form.left_at} onChange={(event) => update('left_at', event.target.value)} /></FormField>
+            <FormField label="Motivo de baja"><input className={inputClass} value={form.leave_reason} onChange={(event) => update('leave_reason', event.target.value)} /></FormField>
+          </>
+        )}
+        <FormField label="Teléfono"><input className={inputClass} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+        <FormField label="Email"><input className={inputClass} type="email" value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
+        <FormField label="Dirección"><input className={inputClass} value={form.address} onChange={(event) => update('address', event.target.value)} /></FormField>
+        <FormField label="Contacto de emergencia"><input className={inputClass} value={form.emergency_contact} onChange={(event) => update('emergency_contact', event.target.value)} /></FormField>
+        <FormField label="Teléfono de emergencia"><input className={inputClass} value={form.emergency_phone} onChange={(event) => update('emergency_phone', event.target.value)} /></FormField>
+        <FormField label="Disponibilidad"><input className={inputClass} value={form.availability} onChange={(event) => update('availability', event.target.value)} /></FormField>
+        <FormField label="Funciones"><input className={inputClass} value={form.functions} onChange={(event) => update('functions', event.target.value)} /></FormField>
+        <FormField label="Formación"><input className={inputClass} value={form.training} onChange={(event) => update('training', event.target.value)} /></FormField>
+        <FormField label="Documentación"><input className={inputClass} value={form.documentation} onChange={(event) => update('documentation', event.target.value)} /></FormField>
+        <FormField label="Foto"><input className={inputClass} type="file" accept="image/png,image/jpeg" onChange={loadPhoto} /></FormField>
+        <div className="flex items-center gap-3">{form.photo_data_url && <img src={form.photo_data_url} alt="Foto del voluntario" className="h-16 w-16 rounded-md object-cover" />}<span className="text-sm text-slate-500">La foto se utilizará en el expediente del voluntario.</span></div>
+        <div className="sm:col-span-2"><FormField label="Observaciones generales"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
+        <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Guardando...' : 'Guardar voluntario'}</Button></div>
+      </fieldset>
     </form>
   );
 }
@@ -934,7 +973,7 @@ function EmptyText({ text }) {
 function enrichVolunteers(volunteers = []) {
   return volunteers
     .map((volunteer, index) => parseVolunteer(volunteer, index))
-    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+    .sort((a, b) => compareVolunteerRows(a, b, 'code'));
 }
 
 function filterAndSortVolunteers(volunteers = [], searchTerm = '', sortBy = 'code') {
@@ -944,10 +983,7 @@ function filterAndSortVolunteers(volunteers = [], searchTerm = '', sortBy = 'cod
     : volunteers;
 
   return [...filtered].sort((a, b) => {
-    if (sortBy === 'name') return compareVolunteerValues(a.full_name, b.full_name) || compareVolunteerValues(a.code, b.code);
-    if (sortBy === 'joined_at') return compareVolunteerValues(a.joined_at, b.joined_at) || compareVolunteerValues(a.code, b.code);
-    if (sortBy === 'status') return compareVolunteerValues(a.status, b.status) || compareVolunteerValues(a.code, b.code);
-    return compareVolunteerValues(a.code, b.code);
+    return compareVolunteerRows(a, b, sortBy);
   });
 }
 
@@ -963,6 +999,27 @@ function volunteerSearchText(volunteer) {
 
 function compareVolunteerValues(a, b) {
   return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
+}
+
+function compareVolunteerRows(a, b, sortBy = 'code') {
+  if (sortBy === 'name') {
+    return compareVolunteerValues(a.full_name, b.full_name)
+      || compareVolunteerValues(a.code, b.code)
+      || compareVolunteerValues(a.id, b.id);
+  }
+  if (sortBy === 'joined_at') {
+    return compareVolunteerValues(a.joined_at, b.joined_at)
+      || compareVolunteerValues(a.code, b.code)
+      || compareVolunteerValues(a.id, b.id);
+  }
+  if (sortBy === 'status') {
+    return compareVolunteerValues(a.status, b.status)
+      || compareVolunteerValues(a.code, b.code)
+      || compareVolunteerValues(a.id, b.id);
+  }
+  return compareVolunteerValues(a.code, b.code)
+    || compareVolunteerValues(a.full_name, b.full_name)
+    || compareVolunteerValues(a.id, b.id);
 }
 
 function parseVolunteer(volunteer, index = 0) {
@@ -1012,7 +1069,7 @@ function volunteerPayloadFromForm(form, volunteers, current = null) {
   const code = current
     ? nextAvailableVolunteerCode(volunteers, current.code || form.code, current.id)
     : nextAvailableVolunteerCode(volunteers, form.code);
-  return {
+  const payload = {
     code,
     full_name: form.full_name,
     document_id: form.document_id,
@@ -1030,10 +1087,11 @@ function volunteerPayloadFromForm(form, volunteers, current = null) {
     training: form.training,
     availability: form.availability,
     documentation: form.documentation,
-    created_at: form.joined_at ? `${form.joined_at}T00:00:00` : current?.created_at,
     person_identity_id: form.person_identity_id || current?.person_identity_id || null,
     notes: String(form.notes || '').trim()
   };
+  if (current?.created_at) payload.created_at = current.created_at;
+  return payload;
 }
 
 function volunteerPayloadFromParsed(volunteer, updates = {}) {
