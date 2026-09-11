@@ -254,28 +254,7 @@ export class SupabaseRepository {
 
   return Object.fromEntries(entries);
 }
-        } catch (error) {
-          if (
-            canIgnoreMissingTable(
-              table,
-              error,
-              this.allowMissingOptionalTables
-            )
-          ) {
-            return [table, []];
-          }
-
-          error.table = table;
-          throw error;
-        }
-      })
-    );
-
-    entries.push(...batchEntries);
-  }
-
-  return Object.fromEntries(entries);
-}
+     
 
   async create(table, payload) {
     const cleanPayload = sanitizePayload(payload);
