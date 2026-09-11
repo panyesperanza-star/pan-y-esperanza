@@ -53,6 +53,10 @@ const PARTICIPATION_TYPES = ['Reparto', 'Recogida', 'Clasificación', 'Evento', 
 const DOCUMENT_TYPES = ['Acuerdo de voluntariado', 'Protección de datos', 'Confidencialidad', 'Autorización de imagen', 'Certificados/formación', 'Otros documentos'];
 const DOCUMENT_STATUS_OPTIONS = ['Vigente', 'Pendiente', 'Caducado', 'No requerido'];
 const VOLUNTEER_STATUS_OPTIONS = ['Activo', 'Inactivo', 'Archivado', 'Baja'];
+const VOLUNTEER_RENDER_DIAGNOSTIC_IDS = [
+  '062a0fc5-5f33-4038-bcd7-5faabafae42f',
+  '4f1b98f1-b0cd-4149-b057-262e6e12f8d5'
+];
 const PROFILE_TABS = [
   { id: 'summary', label: 'Resumen', icon: BadgeCheck },
   { id: 'personal', label: 'Datos personales', icon: UserRoundCheck },
@@ -70,17 +74,44 @@ export function Volunteers({ data, actions, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('code');
   const [savingVolunteer, setSavingVolunteer] = useState(false);
+  const [renderDiagnostic, setRenderDiagnostic] = useState({ ids: {}, checkedAt: '' });
   const savingVolunteerRef = useRef(false);
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
   const attendanceEntries = data.volunteer_time_entries || [];
   const appUsers = data.app_users || [];
   const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
-  console.log('VOLUNTARIOS DATA:', data.volunteers?.length, data.volunteers);
-console.log('VOLUNTARIOS FINAL:', volunteers.length, volunteers);
   const canDelete = currentUser?.role === 'Superadministrador';
   const canGenerateCredential = canDo(currentUser, 'volunteers', 'generate-credential');
   const canManageUserAccess = canDo(currentUser, 'users', 'create') || canDo(currentUser, 'users', 'edit');
+  const showRenderDiagnostic = currentUser?.role === 'Superadministrador';
+  const diagnosticRows = VOLUNTEER_RENDER_DIAGNOSTIC_IDS.map((id) => {
+    const finalVolunteer = visibleVolunteers.find((volunteer) => volunteer.id === id) || null;
+    const sourceVolunteer = volunteers.find((volunteer) => volunteer.id === id) || null;
+    return {
+      id,
+      inSource: Boolean(sourceVolunteer),
+      inFinal: Boolean(finalVolunteer),
+      dom: Boolean(renderDiagnostic.ids[id]),
+      code: finalVolunteer?.code || sourceVolunteer?.code || '',
+      name: finalVolunteer?.full_name || sourceVolunteer?.full_name || '',
+      status: finalVolunteer?.status || sourceVolunteer?.status || ''
+    };
+  });
+
+  useEffect(() => {
+    if (!showRenderDiagnostic) return;
+    const frame = window.requestAnimationFrame(() => {
+      setRenderDiagnostic({
+        checkedAt: new Date().toLocaleTimeString('es-ES'),
+        ids: Object.fromEntries(VOLUNTEER_RENDER_DIAGNOSTIC_IDS.map((id) => [
+          id,
+          Boolean(document.querySelector(`[data-volunteer-id="${id}"]`))
+        ]))
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [showRenderDiagnostic, visibleVolunteers]);
 
   async function saveVolunteer(form, current = null) {
     if (savingVolunteerRef.current) return null;
@@ -168,6 +199,24 @@ console.log('VOLUNTARIOS FINAL:', volunteers.length, volunteers);
       <p className="mb-3 text-sm font-semibold text-slate-600">
         Mostrando {visibleVolunteers.length} de {volunteers.length} voluntarios
       </p>
+
+      {showRenderDiagnostic && (
+        <section className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-volunteer-render-diagnostic>
+          <p className="font-bold">Diagnóstico temporal Voluntarios</p>
+          <p className="mt-1">
+            finalVolunteers.length: <strong>{visibleVolunteers.length}</strong> · source: <strong>{volunteers.length}</strong> · busqueda: <strong>{searchTerm || '-'}</strong> · orden: <strong>{sortBy}</strong> · DOM: <strong>{renderDiagnostic.checkedAt || 'pendiente'}</strong>
+          </p>
+          <div className="mt-2 grid gap-2">
+            {diagnosticRows.map((row) => (
+              <div key={row.id} className="rounded border border-amber-200 bg-white/70 p-2" data-volunteer-diagnostic-row={row.id}>
+                <p className="font-mono text-xs">{row.id}</p>
+                <p>source: <strong>{row.inSource ? 'si' : 'no'}</strong> · final: <strong>{row.inFinal ? 'si' : 'no'}</strong> · DOM: <strong>{row.dom ? 'si' : 'no'}</strong></p>
+                <p>{row.code || '-'} · {row.name || '-'} · {row.status || '-'}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleVolunteers.map((volunteer) => (
@@ -372,7 +421,12 @@ function linkedUserForVolunteer(volunteer = {}, users = []) {
 function VolunteerCard({ volunteer, stats, presence, canManage, canDelete, linkedUser, canManageUserAccess, onManageErpAccess, onOpen, onEdit, onArchive, onDelete }) {
   const archived = volunteer.status === 'Archivado';
   return (
-    <article className={`rounded-md border p-4 shadow-panel ${archived ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+    <article
+      className={`rounded-md border p-4 shadow-panel ${archived ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}
+      data-volunteer-id={volunteer.id}
+      data-volunteer-code={volunteer.code || ''}
+      data-volunteer-name={volunteer.full_name || ''}
+    >
       <div className="flex items-start gap-3">
         <VolunteerPhoto volunteer={volunteer} size="lg" />
         <div className="min-w-0 flex-1">
