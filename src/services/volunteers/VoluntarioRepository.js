@@ -10,6 +10,9 @@ export class VoluntarioRepository {
   }
 
   async createVolunteer(payload) {
+    if (this.repository.mode === 'supabase') {
+      return this.repository.rpc('create_volunteer_with_identity', { p_payload: payload });
+    }
     return this.repository.create('volunteers', payload);
   }
 

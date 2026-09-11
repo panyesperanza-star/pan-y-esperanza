@@ -1,4 +1,4 @@
-import { normalize } from '../../lib/formatters';
+import { normalize } from '../../lib/formatters.js';
 
 const VOLUNTEER_META_START = '[PYE_VOLUNTEER_META]';
 const VOLUNTEER_META_END = '[/PYE_VOLUNTEER_META]';
@@ -6,6 +6,7 @@ const VOLUNTEER_STATUSES = new Set(['Activo', 'Inactivo', 'Archivado', 'Baja']);
 const DOCUMENT_STATUSES = new Set(['Vigente', 'Pendiente', 'Caducado', 'No requerido']);
 const TIME_ENTRY_STATUSES = new Set(['open', 'closed', 'incident', 'corrected', 'voided']);
 const TIME_ENTRY_METHODS = new Set(['qr', 'usb', 'manual']);
+const OPEN_ATTENDANCE_ERROR = 'Este voluntario ya tiene una entrada abierta. Registra la salida antes de abrir otra entrada.';
 
 function cleanText(value) {
   return String(value || '').trim();
@@ -203,6 +204,33 @@ export function sanitizeVolunteerTimeEntryCorrectionPayload(payload = {}, timeEn
     corrected_at: cleanTimestamp(payload.corrected_at) || new Date().toISOString()
   };
 }
+
+function isOpenTimeEntry(entry = {}) {
+  return entry.status === 'open' && !entry.check_out_at;
+}
+
+function isDuplicateOpenAttendanceError(error) {
+  const text = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return text.includes('volunteer_time_entries_one_open_per_volunteer_idx')
+    || (text.includes('duplicate key') && text.includes('volunteer_time_entries'))
+    || text.includes('entrada abierta');
+}
+
+function friendlyVolunteerCreateError(error) {
+  const text = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  if (text.includes('ya existe') || text.includes('volunteers_code_unique_runtime')) {
+    return new Error(error.message || 'Ya existe una ficha de voluntario con los mismos datos principales.');
+  }
+  if (text.includes('duplicate key') && text.includes('volunteers')) {
+    return new Error('Ya existe una ficha de voluntario con ese codigo o identificador. Recarga el listado antes de intentarlo de nuevo.');
+  }
+  return error;
+}
+
+function friendlyOpenAttendanceError(error) {
+  return isDuplicateOpenAttendanceError(error) ? new Error(OPEN_ATTENDANCE_ERROR) : error;
+}
+
 export function sanitizeVolunteerHistoryPayload(payload = {}, volunteers = []) {
   const volunteerId = cleanText(payload.volunteer_id);
   if (!volunteerId) throw new Error('Selecciona un voluntario.');
@@ -268,7 +296,12 @@ export class VoluntarioService {
 
   async create(payload) {
     const volunteer = sanitizeVolunteerPayload(payload);
-    const created = await this.repository.createVolunteer(volunteer);
+    let created;
+    try {
+      created = await this.repository.createVolunteer(volunteer);
+    } catch (error) {
+      throw friendlyVolunteerCreateError(error);
+    }
     await this.audit(`Creo voluntario ${created.full_name || volunteer.full_name}`.trim());
     await this.notifyVolunteerChanged('created', created);
     return created;
@@ -359,7 +392,15 @@ export class VoluntarioService {
 
   async createTimeEntry(payload) {
     const entry = sanitizeVolunteerTimeEntryPayload(payload, this.volunteers);
-    const created = await this.repository.createTimeEntry(entry);
+    if (isOpenTimeEntry(entry) && this.timeEntries.some((current) => current.volunteer_id === entry.volunteer_id && isOpenTimeEntry(current))) {
+      throw new Error(OPEN_ATTENDANCE_ERROR);
+    }
+    let created;
+    try {
+      created = await this.repository.createTimeEntry(entry);
+    } catch (error) {
+      throw friendlyOpenAttendanceError(error);
+    }
     await this.audit(`Voluntarios: fichaje entrada ${entry.activity_label || entry.activity_type}`.trim());
     await this.notifyVolunteerChanged('time_entry_created', created);
     return created;

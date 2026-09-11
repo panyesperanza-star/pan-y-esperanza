@@ -3281,6 +3281,19 @@ export function useAppData(enabled = true, currentUser = null) {
       await reload();
     },
     createVolunteer: async (payload) => {
+      if (hasSupabaseConfig && supabase) {
+        const created = await voluntarioService.create(payload);
+        if (created?.id && created?.person_identity_id) {
+          await writePersonIdentityAudit('created', {
+            person_identity_id: created.person_identity_id,
+            volunteer_id: created.id,
+            reason: 'Identidad creada al dar de alta voluntario',
+            next_values: { volunteer_id: created.id }
+          });
+        }
+        await reload();
+        return created;
+      }
       const identity = await createPersonIdentity(personIdentityPayloadFromVolunteer(payload));
       const created = await voluntarioService.create({ ...payload, person_identity_id: identity.id });
       if (created?.id) {
