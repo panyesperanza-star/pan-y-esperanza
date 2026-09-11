@@ -221,17 +221,39 @@ export class SupabaseRepository {
   }
 
   async loadAll(tables = []) {
-    const entries = await Promise.all((tables || []).map(async (table) => {
-      try {
-        return [table, await this.list(table)];
-      } catch (error) {
-        if (canIgnoreMissingTable(table, error, this.allowMissingOptionalTables)) return [table, []];
-        error.table = table;
-        throw error;
-      }
-    }));
-    return Object.fromEntries(entries);
+  const tableList = tables || [];
+  const entries = [];
+  const BATCH_SIZE = 4;
+
+  for (let i = 0; i < tableList.length; i += BATCH_SIZE) {
+    const batch = tableList.slice(i, i + BATCH_SIZE);
+
+    const batchEntries = await Promise.all(
+      batch.map(async (table) => {
+        try {
+          return [table, await this.list(table)];
+        } catch (error) {
+          if (
+            canIgnoreMissingTable(
+              table,
+              error,
+              this.allowMissingOptionalTables
+            )
+          ) {
+            return [table, []];
+          }
+
+          error.table = table;
+          throw error;
+        }
+      })
+    );
+
+    entries.push(...batchEntries);
   }
+
+  return Object.fromEntries(entries);
+}
 
   async create(table, payload) {
     const cleanPayload = sanitizePayload(payload);
