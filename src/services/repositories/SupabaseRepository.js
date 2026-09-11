@@ -220,8 +220,11 @@ export class SupabaseRepository {
     throw error;
   }
 
- async loadAll(tables = []) {
-  const tableList = tables || [];
+async loadAll(tables = []) {
+  const originalTableList = tables || [];
+  const tableList = originalTableList.includes('volunteers')
+    ? ['volunteers', ...originalTableList.filter((table) => table !== 'volunteers')]
+    : originalTableList;
   const entries = [];
   const BATCH_SIZE = 4;
 
