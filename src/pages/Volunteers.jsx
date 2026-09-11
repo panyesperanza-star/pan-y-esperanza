@@ -76,6 +76,8 @@ export function Volunteers({ data, actions, currentUser }) {
   const appUsers = data.app_users || [];
   const visibleVolunteers = useMemo(() => filterAndSortVolunteers(volunteers, searchTerm, sortBy), [volunteers, searchTerm, sortBy]);
   const canManage = canManageVolunteers(currentUser);
+  console.log('VOLUNTARIOS DATA:', data.volunteers?.length, data.volunteers);
+console.log('VOLUNTARIOS FINAL:', volunteers.length, volunteers);
   const canDelete = currentUser?.role === 'Superadministrador';
   const canGenerateCredential = canDo(currentUser, 'volunteers', 'generate-credential');
   const canManageUserAccess = canDo(currentUser, 'users', 'create') || canDo(currentUser, 'users', 'edit');
