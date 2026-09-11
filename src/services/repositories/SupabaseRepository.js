@@ -220,7 +220,7 @@ export class SupabaseRepository {
     throw error;
   }
 
-  async loadAll(tables = []) {
+ async loadAll(tables = []) {
   const tableList = tables || [];
   const entries = [];
   const BATCH_SIZE = 4;
@@ -232,6 +232,28 @@ export class SupabaseRepository {
       batch.map(async (table) => {
         try {
           return [table, await this.list(table)];
+        } catch (error) {
+          if (
+            canIgnoreMissingTable(
+              table,
+              error,
+              this.allowMissingOptionalTables
+            )
+          ) {
+            return [table, []];
+          }
+
+          error.table = table;
+          throw error;
+        }
+      })
+    );
+
+    entries.push(...batchEntries);
+  }
+
+  return Object.fromEntries(entries);
+}
         } catch (error) {
           if (
             canIgnoreMissingTable(
