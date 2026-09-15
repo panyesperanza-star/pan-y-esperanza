@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { applyPersonIdentityToUser } from '../src/lib/personIdentity.js';
 import {
   enrichVolunteers,
   filterAndSortVolunteers,
@@ -174,4 +176,57 @@ test('un alta con duplicado de voluntario devuelve mensaje funcional', async () 
     }),
     /Ya existe una ficha de voluntario/i
   );
+});
+
+test('la identidad compartida no suplanta los datos ni permisos del usuario ERP', () => {
+  const user = {
+    id: 'admin-user',
+    first_name: 'Eliza',
+    last_name: 'Admin',
+    email: 'admin@example.test',
+    phone: '600111222',
+    role: 'Superadministrador',
+    permissions: ['*'],
+    permission_matrix: { volunteers: { view: true, edit: true } },
+    profile_photo: 'data:image/png;base64,APPUSER',
+    person_identity_id: 'shared-identity'
+  };
+  const identity = {
+    id: 'shared-identity',
+    full_name: 'UBER',
+    email: 'uber@example.test',
+    phone: '600999888',
+    photo_data_url: 'data:image/png;base64,VOLUNTEER'
+  };
+
+  const enriched = applyPersonIdentityToUser(user, identity);
+
+  assert.equal(enriched.first_name, 'Eliza');
+  assert.equal(enriched.last_name, 'Admin');
+  assert.equal(enriched.email, 'admin@example.test');
+  assert.equal(enriched.phone, '600111222');
+  assert.equal(enriched.role, 'Superadministrador');
+  assert.deepEqual(enriched.permissions, ['*']);
+  assert.equal(enriched.profile_photo, 'data:image/png;base64,APPUSER');
+  assert.equal(enriched.identity_full_name, 'UBER');
+});
+
+test('la migracion de alta de voluntario reutiliza person_identity_id existente', () => {
+  const migration = readFileSync(
+    new URL('../supabase/migrations/20260915102000_fix_volunteer_identity_participation.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(migration, /v_payload_identity_id uuid := nullif\(p_payload->>'person_identity_id'/);
+  assert.match(migration, /where identity_row\.id = v_payload_identity_id/);
+  assert.match(migration, /where existing_volunteer\.person_identity_id = v_identity_id/);
+  assert.match(migration, /values \([\s\S]*v_identity_id[\s\S]*\)/);
+});
+
+test('el diagnostico temporal de render no queda en Volunteers.jsx', () => {
+  const source = readFileSync(new URL('../src/pages/Volunteers.jsx', import.meta.url), 'utf8');
+
+  assert.equal(source.includes('Diagnóstico temporal Voluntarios'), false);
+  assert.equal(source.includes('VOLUNTEER_RENDER_DIAGNOSTIC_IDS'), false);
+  assert.equal(source.includes('data-volunteer-render-diagnostic'), false);
 });

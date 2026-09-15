@@ -3364,8 +3364,29 @@ export function useAppData(enabled = true, currentUser = null) {
     sendDonationThankYouEmail: async (donationId) => {
       return sendDonationThankYouEmail(donationId);
     },
-    deleteVolunteer: async (id) => {
-      await voluntarioService.remove(id);
+    deleteVolunteer: async (id, options = {}) => {
+      assertPermission('volunteers', 'delete');
+      const volunteer = (appData.volunteers || []).find((item) => item.id === id);
+      if (!volunteer) throw new Error('No se ha localizado el expediente de voluntario.');
+      const now = new Date().toISOString();
+      const reason = String(options.reason || '').trim() || 'Baja administrativa';
+      await voluntarioService.update(id, {
+        ...volunteer,
+        status: 'Baja',
+        left_at: now,
+        leave_reason: reason
+      });
+      await voluntarioService.createHistory({
+        volunteer_id: id,
+        date: now.slice(0, 10),
+        activity: 'Baja del voluntario',
+        notes: JSON.stringify({
+          reason,
+          actor_id: currentUser?.id || null,
+          actor_name: currentUserName(),
+          closed_at: now
+        })
+      });
       await reload();
     },
     createVolunteerHistory: async (payload) => {

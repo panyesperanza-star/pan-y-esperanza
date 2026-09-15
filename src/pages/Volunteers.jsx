@@ -53,10 +53,7 @@ const PARTICIPATION_TYPES = ['Reparto', 'Recogida', 'Clasificación', 'Evento', 
 const DOCUMENT_TYPES = ['Acuerdo de voluntariado', 'Protección de datos', 'Confidencialidad', 'Autorización de imagen', 'Certificados/formación', 'Otros documentos'];
 const DOCUMENT_STATUS_OPTIONS = ['Vigente', 'Pendiente', 'Caducado', 'No requerido'];
 const VOLUNTEER_STATUS_OPTIONS = ['Activo', 'Inactivo', 'Archivado', 'Baja'];
-const VOLUNTEER_RENDER_DIAGNOSTIC_IDS = [
-  '062a0fc5-5f33-4038-bcd7-5faabafae42f',
-  '4f1b98f1-b0cd-4149-b057-262e6e12f8d5'
-];
+const MAX_VOLUNTEER_PHOTO_SIZE = 512;
 const PROFILE_TABS = [
   { id: 'summary', label: 'Resumen', icon: BadgeCheck },
   { id: 'personal', label: 'Datos personales', icon: UserRoundCheck },
@@ -74,7 +71,6 @@ export function Volunteers({ data, actions, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('code');
   const [savingVolunteer, setSavingVolunteer] = useState(false);
-  const [renderDiagnostic, setRenderDiagnostic] = useState({ ids: {}, checkedAt: '' });
   const savingVolunteerRef = useRef(false);
   const volunteers = useMemo(() => enrichVolunteers(data.volunteers || []), [data.volunteers]);
   const attendanceEntries = data.volunteer_time_entries || [];
@@ -84,34 +80,6 @@ export function Volunteers({ data, actions, currentUser }) {
   const canDelete = currentUser?.role === 'Superadministrador';
   const canGenerateCredential = canDo(currentUser, 'volunteers', 'generate-credential');
   const canManageUserAccess = canDo(currentUser, 'users', 'create') || canDo(currentUser, 'users', 'edit');
-  const showRenderDiagnostic = currentUser?.role === 'Superadministrador';
-  const diagnosticRows = VOLUNTEER_RENDER_DIAGNOSTIC_IDS.map((id) => {
-    const finalVolunteer = visibleVolunteers.find((volunteer) => volunteer.id === id) || null;
-    const sourceVolunteer = volunteers.find((volunteer) => volunteer.id === id) || null;
-    return {
-      id,
-      inSource: Boolean(sourceVolunteer),
-      inFinal: Boolean(finalVolunteer),
-      dom: Boolean(renderDiagnostic.ids[id]),
-      code: finalVolunteer?.code || sourceVolunteer?.code || '',
-      name: finalVolunteer?.full_name || sourceVolunteer?.full_name || '',
-      status: finalVolunteer?.status || sourceVolunteer?.status || ''
-    };
-  });
-
-  useEffect(() => {
-    if (!showRenderDiagnostic) return;
-    const frame = window.requestAnimationFrame(() => {
-      setRenderDiagnostic({
-        checkedAt: new Date().toLocaleTimeString('es-ES'),
-        ids: Object.fromEntries(VOLUNTEER_RENDER_DIAGNOSTIC_IDS.map((id) => [
-          id,
-          Boolean(document.querySelector(`[data-volunteer-id="${id}"]`))
-        ]))
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [showRenderDiagnostic, visibleVolunteers]);
 
   async function saveVolunteer(form, current = null) {
     if (savingVolunteerRef.current) return null;
@@ -143,9 +111,10 @@ export function Volunteers({ data, actions, currentUser }) {
 
   async function deleteVolunteer(volunteer) {
     if (!canDelete) return;
-    const confirmed = window.confirm(`Eliminar definitivamente el expediente de ${volunteer.full_name}?\n\nEsta acción no se puede deshacer.`);
+    const confirmed = window.confirm(`Dar de baja el expediente de ${volunteer.full_name}?\n\nSe conserva el historial, fichajes, credenciales y documentos.`);
     if (!confirmed) return;
-    await actions.deleteVolunteer(volunteer.id);
+    const reason = window.prompt('Motivo de la baja', volunteer.leave_reason || 'Baja administrativa') || 'Baja administrativa';
+    await actions.deleteVolunteer(volunteer.id, { reason });
     if (modal?.volunteer?.id === volunteer.id) setModal(null);
   }
 
@@ -199,24 +168,6 @@ export function Volunteers({ data, actions, currentUser }) {
       <p className="mb-3 text-sm font-semibold text-slate-600">
         Mostrando {visibleVolunteers.length} de {volunteers.length} voluntarios
       </p>
-
-      {showRenderDiagnostic && (
-        <section className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-volunteer-render-diagnostic>
-          <p className="font-bold">Diagnóstico temporal Voluntarios</p>
-          <p className="mt-1">
-            finalVolunteers.length: <strong>{visibleVolunteers.length}</strong> · source: <strong>{volunteers.length}</strong> · busqueda: <strong>{searchTerm || '-'}</strong> · orden: <strong>{sortBy}</strong> · DOM: <strong>{renderDiagnostic.checkedAt || 'pendiente'}</strong>
-          </p>
-          <div className="mt-2 grid gap-2">
-            {diagnosticRows.map((row) => (
-              <div key={row.id} className="rounded border border-amber-200 bg-white/70 p-2" data-volunteer-diagnostic-row={row.id}>
-                <p className="font-mono text-xs">{row.id}</p>
-                <p>source: <strong>{row.inSource ? 'si' : 'no'}</strong> · final: <strong>{row.inFinal ? 'si' : 'no'}</strong> · DOM: <strong>{row.dom ? 'si' : 'no'}</strong></p>
-                <p>{row.code || '-'} · {row.name || '-'} · {row.status || '-'}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleVolunteers.map((volunteer) => (
@@ -452,7 +403,7 @@ function VolunteerCard({ volunteer, stats, presence, canManage, canDelete, linke
         {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {archived ? 'Reactivar' : 'Archivar'}</Button>}
-        {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Eliminar</Button>}
+        {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Dar de baja</Button>}
       </div>
     </article>
   );
@@ -493,7 +444,7 @@ function VolunteerProfile({ volunteer, data, actions, currentUser, canManage, ca
             {canManageUserAccess && <Button type="button" variant="secondary" onClick={onManageErpAccess}>Crear/Vincular usuario ERP</Button>}
         {canManage && <Button type="button" variant="secondary" onClick={onEdit}><Edit3 size={16} /> Editar</Button>}
             {canManage && <Button type="button" variant="secondary" onClick={onArchive}><Archive size={16} /> {volunteer.status === 'Archivado' ? 'Reactivar' : 'Archivar'}</Button>}
-            {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Eliminar</Button>}
+            {canDelete && <Button type="button" variant="danger" onClick={onDelete}><Trash2 size={16} /> Dar de baja</Button>}
           </div>
         </div>
       </header>
@@ -771,7 +722,7 @@ function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
   async function loadPhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await imageFileToBoundedDataUrl(file, MAX_VOLUNTEER_PHOTO_SIZE);
     update('photo_data_url', dataUrl);
   }
 
@@ -1178,6 +1129,32 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+async function imageFileToBoundedDataUrl(file, maxSize = 512) {
+  if (!file?.type?.startsWith('image/')) return fileToDataUrl(file);
+  const dataUrl = await fileToDataUrl(file);
+  const image = await dataUrlToImage(dataUrl);
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
+  if (scale >= 1 && dataUrl.length <= 700_000) return dataUrl;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || maxSize) * scale));
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || maxSize) * scale));
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+function dataUrlToImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
   });
 }
 

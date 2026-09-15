@@ -105,18 +105,24 @@ export function applyPersonIdentityToVolunteer(volunteer = {}, identity = null) 
 
 export function applyPersonIdentityToUser(user = {}, identity = null) {
   if (!identity) return user;
-  const { first_name, last_name } = splitPersonName(identity.full_name || userFullName(user));
+  const ownFullName = userFullName(user);
+  const { first_name, last_name } = splitPersonName(identity.full_name || ownFullName);
   return {
     ...user,
     person_identity: identity,
-    first_name: first_name || user.first_name,
-    last_name: last_name || user.last_name,
-    full_name: identity.full_name || userFullName(user),
-    document_id: identity.document_id || user.document_id,
-    email: identity.email || user.email,
-    phone: identity.phone || user.phone,
-    profile_photo: identity.photo_data_url || user.profile_photo,
-    photo_data_url: identity.photo_data_url || user.photo_data_url
+    identity_full_name: identity.full_name || '',
+    identity_document_id: identity.document_id || '',
+    identity_email: identity.email || '',
+    identity_phone: identity.phone || '',
+    identity_photo_data_url: identity.photo_data_url || '',
+    first_name: user.first_name || first_name,
+    last_name: user.last_name || last_name,
+    full_name: ownFullName || identity.full_name || '',
+    document_id: user.document_id || identity.document_id,
+    email: user.email || identity.email,
+    phone: user.phone || identity.phone,
+    profile_photo: user.profile_photo || identity.photo_data_url,
+    photo_data_url: user.photo_data_url || user.profile_photo || identity.photo_data_url
   };
 }
 

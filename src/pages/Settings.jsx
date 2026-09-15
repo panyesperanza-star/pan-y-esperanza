@@ -472,6 +472,7 @@ function MiniStat({ label, value }) {
 function UserForm({ initial, users = [], volunteers = [], organization, actions, canGenerateCredential = false, onSubmit }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const update = (field, value) => setForm((state) => ({ ...state, [field]: value }));
   const creating = !form.id;
   const closingVolunteerParticipation = Boolean(initial?.participates_as_volunteer) && !Boolean(form.participates_as_volunteer);
@@ -517,6 +518,7 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
   return (
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
       event.preventDefault();
+      if (submitting) return;
       setError('');
       if (mustResolveVolunteerMatch) {
         setError('Esta persona ya existe como voluntaria. Vincula el usuario con el voluntario existente o confirma que deseas continuar sin vincular.');
@@ -531,12 +533,16 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
         return;
       }
       try {
+        setSubmitting(true);
         await onSubmit({ ...form, permissions: viewPermissionsFromMatrix(form.permission_matrix, form.role) });
       } catch (err) {
         setError(normalizeUserError(err));
+      } finally {
+        setSubmitting(false);
       }
     }}>
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{error}</p>}
+      <fieldset className="contents" disabled={submitting}>
       {volunteerMatches.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:col-span-2">
           <p className="font-bold">Esta persona ya existe como voluntaria.</p>
@@ -612,7 +618,8 @@ function UserForm({ initial, users = [], volunteers = [], organization, actions,
       <FormField label="Creado por"><input className={inputClass} value={form.created_by || ''} onChange={(event) => update('created_by', event.target.value)} /></FormField>
       {form.profile_photo && <div className="sm:col-span-2"><img src={form.profile_photo} alt="" className="h-16 w-16 rounded-full object-cover" /></div>}
       <div className="sm:col-span-2"><PermissionEditor value={form.permission_matrix || ROLE_PERMISSION_MATRIX[form.role] || {}} role={form.role} onChange={(matrix) => update('permission_matrix', matrix)} /></div>
-      <div className="flex justify-end sm:col-span-2"><Button type="submit">Guardar usuario</Button></div>
+      <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={submitting}>{submitting ? 'Guardando...' : 'Guardar usuario'}</Button></div>
+      </fieldset>
     </form>
   );
 }
