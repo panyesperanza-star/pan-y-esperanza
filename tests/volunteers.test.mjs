@@ -11,6 +11,7 @@ import {
   volunteerPayloadFromForm
 } from '../src/services/volunteers/volunteerListUtils.js';
 import { VoluntarioService } from '../src/services/volunteers/VoluntarioService.js';
+import { SupabaseRepository } from '../src/services/repositories/SupabaseRepository.js';
 
 const AGUSTINE_PRIMARY_ID = '062a0fc5-5f33-4038-bcd7-5faabafae42f';
 const AGUSTINE_SECONDARY_ID = '4f1b98f1-b0cd-4149-b057-262e6e12f8d5';
@@ -240,6 +241,25 @@ test('el service worker no vuelve a cachear respuestas autenticadas del ERP', ()
   assert.match(serviceWorker, /url\.origin !== self\.location\.origin/);
   assert.match(serviceWorker, /STATIC_ASSETS\.includes\(url\.pathname\)/);
   assert.doesNotMatch(serviceWorker, /return cached \|\| networkFetch/);
+});
+
+test('la carga parcial conserva tablas sanas cuando otra tabla falla', async () => {
+  const repository = new SupabaseRepository({ supabase: {} });
+  repository.list = async (table) => {
+    if (table === 'slow_table') {
+      const error = new Error('La consulta Supabase list de slow_table ha superado el tiempo de espera.');
+      error.code = 'SUPABASE_QUERY_TIMEOUT';
+      throw error;
+    }
+    return [{ id: `${table}-row` }];
+  };
+
+  const result = await repository.loadPartial(['healthy_table', 'slow_table']);
+
+  assert.deepEqual(result.data.healthy_table, [{ id: 'healthy_table-row' }]);
+  assert.deepEqual(result.data.slow_table, []);
+  assert.equal(result.diagnostics.find((item) => item.table === 'healthy_table').status, 'success');
+  assert.equal(result.diagnostics.find((item) => item.table === 'slow_table').status, 'timeout');
 });
 
 test('la migracion de alta de voluntario reutiliza person_identity_id existente', () => {

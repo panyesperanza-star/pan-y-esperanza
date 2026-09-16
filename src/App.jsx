@@ -63,7 +63,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(true);
   const portalActions = useMemo(() => createPortalApiActions(), []);
   const isPlatformOwnerUser = isPlatformOwner(currentUser);
-  const { data, loading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isPasswordResetRoute && !isCredentialVerificationRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser);
+  const { data, loading, moduleLoading, error, actions } = useAppData(!isPortalRoute && !isLoginRoute && !isPasswordResetRoute && !isCredentialVerificationRoute && !isPlatformOwnerUser && (Boolean(currentUser) || !hasSupabaseConfig), currentUser, active);
 
   useEffect(() => {
     const handleHistoryChange = () => {
@@ -300,7 +300,9 @@ export default function App() {
   };
 
   const selectedPage = active && canAccess(currentUser, active) ? active : firstAccessibleModule;
-  const pageContent = isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
+  const pageContent = moduleLoading
+    ? <div className="flex min-h-64 items-center justify-center">Cargando datos del módulo...</div>
+    : isDebugAdminRoute && currentUser?.role === 'Superadministrador' ? <DebugAdmin currentUser={currentUser} /> : pages[selectedPage];
 
   const showDemoControls = import.meta.env.DEV && !isSystemSuperadmin(currentUser);
   const notificationCount = (sorted.notificaciones || []).filter(isUnreadNotification).length;

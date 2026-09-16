@@ -18,6 +18,23 @@ export class LocalStorageRepository {
     return this.dataStore.loadAll();
   }
 
+  async loadPartial(tables = []) {
+    const startedAt = Date.now();
+    const allData = await this.dataStore.loadAll();
+    const data = Object.fromEntries((tables || []).map((table) => [table, allData[table] || []]));
+    return {
+      data,
+      diagnostics: Object.entries(data).map(([table, rows]) => ({
+        table,
+        started_at: new Date(startedAt).toISOString(),
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        status: 'success',
+        row_count: rows.length
+      }))
+    };
+  }
+
   async create(table, payload) {
     return this.dataStore.create(table, payload);
   }

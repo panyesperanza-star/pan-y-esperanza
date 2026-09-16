@@ -241,43 +241,67 @@ export class SupabaseRepository {
     throw error;
   }
 
-async loadAll(tables = []) {
-  const originalTableList = tables || [];
-  const tableList = originalTableList.includes('volunteers')
-    ? ['volunteers', ...originalTableList.filter((table) => table !== 'volunteers')]
-    : originalTableList;
-  const entries = [];
-  const BATCH_SIZE = 4;
+  async loadPartial(tables = []) {
+    const tableList = [...new Set(tables || [])];
+    const data = {};
+    const diagnostics = [];
+    const BATCH_SIZE = 4;
 
-  for (let i = 0; i < tableList.length; i += BATCH_SIZE) {
-    const batch = tableList.slice(i, i + BATCH_SIZE);
-
-    const batchEntries = await Promise.all(
-      batch.map(async (table) => {
+    for (let index = 0; index < tableList.length; index += BATCH_SIZE) {
+      const batch = tableList.slice(index, index + BATCH_SIZE);
+      const results = await Promise.all(batch.map(async (table) => {
+        const startedAt = Date.now();
         try {
-          return [table, await this.list(table)];
-        } catch (error) {
-          if (
-            canIgnoreMissingTable(
+          const rows = await this.list(table);
+          return {
+            table,
+            rows,
+            diagnostic: {
               table,
-              error,
-              this.allowMissingOptionalTables
-            )
-          ) {
-            return [table, []];
-          }
-
-          error.table = table;
-          throw error;
+              started_at: new Date(startedAt).toISOString(),
+              finished_at: new Date().toISOString(),
+              duration_ms: Date.now() - startedAt,
+              status: 'success',
+              row_count: rows.length
+            }
+          };
+        } catch (error) {
+          return {
+            table,
+            rows: [],
+            diagnostic: {
+              table,
+              started_at: new Date(startedAt).toISOString(),
+              finished_at: new Date().toISOString(),
+              duration_ms: Date.now() - startedAt,
+              status: error?.code === 'SUPABASE_QUERY_TIMEOUT' ? 'timeout' : 'error',
+              row_count: 0,
+              error: error?.message || 'No se pudo cargar la tabla.'
+            }
+          };
         }
-      })
-    );
+      }));
 
-    entries.push(...batchEntries);
+      results.forEach(({ table, rows, diagnostic }) => {
+        data[table] = rows;
+        diagnostics.push(diagnostic);
+      });
+    }
+
+    return { data, diagnostics };
   }
 
-  return Object.fromEntries(entries);
-}
+  async loadAll(tables = []) {
+    const { data, diagnostics } = await this.loadPartial(tables);
+    const failed = diagnostics.find((item) => item.status !== 'success');
+    if (failed) {
+      const error = new Error(`No se pudo cargar ${failed.table}: ${failed.error}`);
+      error.table = failed.table;
+      error.diagnostics = diagnostics;
+      throw error;
+    }
+    return data;
+  }
      
 
   async create(table, payload) {

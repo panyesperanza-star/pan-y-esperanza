@@ -41,6 +41,10 @@ class SupabaseRepositoryRequired {
     throw new Error('Supabase no esta configurado para produccion.');
   }
 
+  async loadPartial() {
+    throw new Error('Supabase no esta configurado para produccion.');
+  }
+
   async create() {
     throw new Error('Supabase no esta configurado para produccion.');
   }

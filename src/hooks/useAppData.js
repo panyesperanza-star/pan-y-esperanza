@@ -58,7 +58,6 @@ import { VoluntarioRepository } from '../services/volunteers/VoluntarioRepositor
 import { VoluntarioService } from '../services/volunteers/VoluntarioService';
 
 const EMPTY_TABLE = Object.freeze([]);
-const APP_DATA_LOAD_TIMEOUT_MS = 15000;
 const EMPTY_APP_DATA = Object.freeze({
   organization_settings: EMPTY_TABLE,
   families: EMPTY_TABLE,
@@ -142,39 +141,102 @@ const EMPTY_APP_DATA = Object.freeze({
 });
 const PLATFORM_OWNER_TABLES = new Set(['platform_maintenance_logs']);
 
+const SHELL_TABLES = Object.freeze([
+  'organization_settings',
+  'app_users',
+  'roles',
+  'notificaciones'
+]);
+
+const MODULE_TABLES = Object.freeze({
+  dashboard: ['families', 'beneficiaries', 'deliveries', 'inventory_items', 'inventory_movements', 'donations', 'email_logs'],
+  notifications: ['notificaciones'],
+  'social-care': ['families', 'beneficiaries', 'social_history', 'beneficiary_documents', 'deliveries', 'inventory_items', 'notificaciones'],
+  'social-resources': ['social_resources', 'beneficiary_social_resources', 'social_resource_portal_beneficiaries', 'social_resource_followups', 'social_resource_history', 'social_resource_sources', 'social_resource_detections', 'beneficiaries'],
+  'community-moderation': ['community_posts', 'community_interests', 'community_post_reports', 'community_conversations', 'community_messages', 'community_post_recommendations', 'beneficiaries'],
+  agenda: ['agenda_operativa', 'beneficiaries', 'deliveries', 'inventory_items', 'volunteers', 'donations', 'campanas'],
+  beneficiaries: ['families', 'beneficiaries', 'social_history', 'beneficiary_documents', 'beneficiary_portal_accounts', 'beneficiary_portal_notices', 'beneficiary_portal_renewals', 'beneficiary_portal_profile_updates', 'deliveries', 'inventory_items', 'notificaciones', 'official_credential_registry', 'official_credential_events'],
+  communications: ['families', 'beneficiaries', 'beneficiary_documents', 'collaborators', 'donors', 'volunteers', 'email_logs', 'accounting_contacts'],
+  families: ['families', 'beneficiaries', 'social_history', 'beneficiary_documents', 'deliveries', 'inventory_items'],
+  deliveries: ['deliveries', 'beneficiaries', 'families', 'inventory_items', 'inventory_movements', 'social_value_events', 'email_logs', 'organization_settings'],
+  'smart-deliveries': ['deliveries', 'beneficiaries', 'families', 'inventory_items', 'inventory_movements', 'campanas', 'campana_beneficiarios', 'campana_productos', 'campana_voluntarios', 'campana_entregas', 'campana_agenda_eventos', 'agenda_operativa', 'notificaciones'],
+  'credential-scanner': ['beneficiaries', 'volunteers', 'collaborators', 'donors', 'app_users', 'deliveries', 'volunteer_time_entries', 'official_credential_registry', 'official_credential_events'],
+  receipts: ['deliveries', 'beneficiaries', 'families', 'email_logs', 'organization_settings'],
+  inventory: ['inventory_items', 'inventory_movements', 'donations', 'donation_products', 'deliveries', 'campanas', 'campana_productos', 'agenda_operativa'],
+  donations: ['donations', 'donation_products', 'donors', 'collaborators', 'beneficiaries', 'inventory_items', 'deliveries', 'accounting_events', 'accounting_contacts', 'treasury_incomes', 'organization_settings'],
+  donors: ['donors', 'donations', 'donation_products', 'deliveries', 'beneficiaries', 'families', 'inventory_items', 'email_logs', 'donor_portal_otps', 'donor_portal_profile_updates', 'donor_certificates', 'portal_sessions', 'organization_settings', 'official_credential_registry', 'official_credential_events'],
+  accounting: ['accounting_events', 'financial_accounts', 'cash_bank_movements', 'accounting_contacts', 'accounting_documents', 'loan_records', 'loan_movements', 'debt_records', 'debt_movements', 'social_value_events', 'treasury_incomes', 'treasury_expenses', 'treasury_loans', 'treasury_accounts', 'donations', 'deliveries', 'beneficiaries', 'collaborators', 'donors'],
+  volunteers: ['volunteers', 'person_identities', 'person_identity_link_audit', 'volunteer_history', 'volunteer_documents', 'volunteer_training', 'volunteer_time_entries', 'volunteer_time_entry_corrections', 'official_credential_registry', 'official_credential_events', 'app_users'],
+  collaborators: ['collaborators', 'collaborator_portal_otps', 'collaborator_portal_profile_updates', 'collaborator_portal_requests', 'collaborator_certificates', 'donations', 'deliveries', 'beneficiaries', 'inventory_items', 'official_credential_registry', 'official_credential_events'],
+  reports: ['families', 'beneficiaries', 'social_history', 'deliveries', 'inventory_items', 'inventory_movements', 'donations', 'donors', 'collaborators', 'volunteers', 'volunteer_time_entries', 'accounting_events', 'social_value_events'],
+  users: ['app_users', 'roles', 'volunteers', 'person_identities', 'person_identity_link_audit', 'audit_logs'],
+  settings: ['organization_settings', 'app_users', 'roles', 'volunteers', 'person_identities', 'person_identity_link_audit', 'audit_logs'],
+  backup: ['audit_logs'],
+  provider: ['deletion_requests'],
+  'platform-tools': ['platform_maintenance_logs']
+});
+
 function appDataTablesForUser(user) {
-  const tables = Object.keys(EMPTY_APP_DATA);
-  if (isPlatformOwner(user)) return tables;
-  return tables.filter((table) => !PLATFORM_OWNER_TABLES.has(table));
+  if (isPlatformOwner(user)) return [...SHELL_TABLES, ...PLATFORM_OWNER_TABLES];
+  return SHELL_TABLES;
 }
 
-export function useAppData(enabled = true, currentUser = null) {
+function appDataTablesForModule(user, moduleId) {
+  const tables = MODULE_TABLES[moduleId] || [];
+  return isPlatformOwner(user) ? tables : tables.filter((table) => !PLATFORM_OWNER_TABLES.has(table));
+}
+
+export function useAppData(enabled = true, currentUser = null, activeModule = null) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [moduleLoading, setModuleLoading] = useState(false);
   const reloadGeneration = useRef(0);
   const activeReload = useRef(null);
+  const loadedTables = useRef(new Set());
+  const latestData = useRef(null);
+  const activeModuleRef = useRef(activeModule);
   const appData = data || EMPTY_APP_DATA;
 
-  const reload = useCallback(async ({ force = false } = {}) => {
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
+
+  useEffect(() => {
+    activeModuleRef.current = activeModule;
+  }, [activeModule]);
+
+  const reload = useCallback(async ({ force = false, tables = null, boot = false } = {}) => {
     if (!force && activeReload.current) return activeReload.current;
 
     const generation = reloadGeneration.current + 1;
     reloadGeneration.current = generation;
-    setLoading(true);
+    const targetTables = [...new Set(tables || [
+      ...appDataTablesForUser(currentUser),
+      ...appDataTablesForModule(currentUser, activeModuleRef.current)
+    ])];
+    if (boot || !latestData.current) setLoading(true);
+    else setModuleLoading(true);
     setError('');
     const request = (async () => {
       try {
         const repository = createRepository();
-        const loadedData = await withAppDataTimeout(
-          repository.loadAll(appDataTablesForUser(currentUser)),
-          APP_DATA_LOAD_TIMEOUT_MS
-        );
+        const loadResult = await repository.loadPartial(targetTables);
         if (generation !== reloadGeneration.current) return;
-        setData(enrichOfficialCredentialData(enrichPersonIdentityData({
-          ...EMPTY_APP_DATA,
-          ...loadedData
-        })));
+        const failed = loadResult.diagnostics.filter((item) => item.status !== 'success');
+        if (failed.length) {
+          setError(`No se pudieron cargar algunos datos: ${failed.map((item) => item.table).join(', ')}.`);
+        }
+        loadedTables.current = new Set([...loadedTables.current, ...targetTables]);
+        setData((current) => {
+          const next = enrichOfficialCredentialData(enrichPersonIdentityData({
+            ...EMPTY_APP_DATA,
+            ...(current || {}),
+            ...loadResult.data
+          }));
+          latestData.current = next;
+          return next;
+        });
       } catch (err) {
         if (generation !== reloadGeneration.current) return;
         setData((current) => current || EMPTY_APP_DATA);
@@ -182,6 +244,7 @@ export function useAppData(enabled = true, currentUser = null) {
       } finally {
         if (generation === reloadGeneration.current) {
           setLoading(false);
+          setModuleLoading(false);
           activeReload.current = null;
         }
       }
@@ -191,9 +254,16 @@ export function useAppData(enabled = true, currentUser = null) {
   }, [currentUser]);
 
   useEffect(() => {
-    if (enabled) reload();
+    if (enabled) reload({ tables: appDataTablesForUser(currentUser), boot: true });
     else setLoading(false);
   }, [enabled, reload]);
+
+  useEffect(() => {
+    if (!enabled || !activeModule) return;
+    const tables = appDataTablesForModule(currentUser, activeModule)
+      .filter((table) => !loadedTables.current.has(table));
+    if (tables.length) reload({ tables });
+  }, [activeModule, currentUser, data, enabled, reload]);
 
   async function audit(action) {
     try {
@@ -3803,22 +3873,7 @@ export function useAppData(enabled = true, currentUser = null) {
     });
   }, [data, reload, currentUser]);
 
-  return { data, loading, error, actions };
-}
-
-function withAppDataTimeout(promise, timeoutMs) {
-  let timeoutId;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = globalThis.setTimeout(() => {
-      const error = new Error('La carga inicial del ERP ha superado el tiempo de espera. Intenta recargar la pagina.');
-      error.code = 'APP_DATA_LOAD_TIMEOUT';
-      reject(error);
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    globalThis.clearTimeout(timeoutId);
-  });
+  return { data, loading, moduleLoading, error, actions };
 }
 
 function isRelatedSocialCareNotification(notification, reference = {}) {
