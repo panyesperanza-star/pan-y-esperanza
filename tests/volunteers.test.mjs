@@ -223,6 +223,19 @@ test('la migracion de alta de voluntario reutiliza person_identity_id existente'
   assert.match(migration, /values \([\s\S]*v_identity_id[\s\S]*\)/);
 });
 
+test('la edicion de voluntarios se realiza de forma atomica y conserva la foto si no se envia otra', () => {
+  const migration = readFileSync(
+    new URL('../supabase/migrations/20260916113000_make_volunteer_updates_atomic.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(migration, /create or replace function public\.update_volunteer_with_identity/);
+  assert.match(migration, /security definer/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /photo_data_url = coalesce\(nullif\(v_photo_data_url, ''\), photo_data_url\)/);
+  assert.match(migration, /grant execute on function public\.update_volunteer_with_identity\(uuid, jsonb\) to authenticated/);
+});
+
 test('el diagnostico temporal de render no queda en Volunteers.jsx', () => {
   const source = readFileSync(new URL('../src/pages/Volunteers.jsx', import.meta.url), 'utf8');
 

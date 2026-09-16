@@ -17,6 +17,12 @@ export class VoluntarioRepository {
   }
 
   async updateVolunteer(id, payload) {
+    if (this.repository.mode === 'supabase') {
+      return this.repository.rpc('update_volunteer_with_identity', {
+        p_volunteer_id: id,
+        p_payload: payload
+      });
+    }
     return this.repository.update('volunteers', id, payload);
   }
 

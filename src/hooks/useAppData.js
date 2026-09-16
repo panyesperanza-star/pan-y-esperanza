@@ -3309,6 +3309,13 @@ export function useAppData(enabled = true, currentUser = null) {
       return created;
     },
     updateVolunteer: async (id, payload) => {
+      if (hasSupabaseConfig && supabase) {
+        const current = (appData.volunteers || []).find((item) => item.id === id);
+        const identityId = payload.person_identity_id || current?.person_identity_id || null;
+        const updated = await voluntarioService.update(id, { ...payload, person_identity_id: identityId });
+        await reload();
+        return updated;
+      }
       const identityId = payload.person_identity_id || await ensureVolunteerPersonIdentity(id, payload);
       await updatePersonIdentity(identityId, personIdentityPayloadFromVolunteer({ ...payload, id }));
       const updated = await voluntarioService.update(id, { ...payload, person_identity_id: identityId });

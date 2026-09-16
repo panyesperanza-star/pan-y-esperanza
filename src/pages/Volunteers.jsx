@@ -678,6 +678,7 @@ function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
   const submitRef = useRef(false);
   const mountedRef = useRef(true);
   const [localSubmitting, setLocalSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const isSubmitting = submitting || localSubmitting;
   const [form, setForm] = useState(() => ({
     full_name: parsed.full_name || '',
@@ -711,8 +712,11 @@ function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
     if (submitRef.current || submitting) return;
     submitRef.current = true;
     setLocalSubmitting(true);
+    setError('');
     try {
       await onSubmit(form);
+    } catch (err) {
+      setError(err?.message || 'No se ha podido guardar el voluntario.');
     } finally {
       submitRef.current = false;
       if (mountedRef.current) setLocalSubmitting(false);
@@ -722,13 +726,20 @@ function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
   async function loadPhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const dataUrl = await imageFileToBoundedDataUrl(file, MAX_VOLUNTEER_PHOTO_SIZE);
-    update('photo_data_url', dataUrl);
+    try {
+      setError('');
+      const dataUrl = await imageFileToBoundedDataUrl(file, MAX_VOLUNTEER_PHOTO_SIZE);
+      update('photo_data_url', dataUrl);
+    } catch (err) {
+      event.target.value = '';
+      setError(err?.message || 'No se ha podido procesar la foto seleccionada.');
+    }
   }
 
   return (
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
       <fieldset className="contents" disabled={isSubmitting}>
+        {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2" role="alert">{error}</p>}
         <FormField label="Nombre completo" required><input className={inputClass} required value={form.full_name} onChange={(event) => update('full_name', event.target.value)} /></FormField>
         <FormField label="Código de voluntario" required>
           <input className={`${inputClass} bg-slate-50 font-semibold text-slate-600`} required readOnly value={form.code} />
@@ -752,7 +763,7 @@ function VolunteerForm({ volunteers, initial, submitting = false, onSubmit }) {
         <FormField label="Funciones"><input className={inputClass} value={form.functions} onChange={(event) => update('functions', event.target.value)} /></FormField>
         <FormField label="Formación"><input className={inputClass} value={form.training} onChange={(event) => update('training', event.target.value)} /></FormField>
         <FormField label="Documentación"><input className={inputClass} value={form.documentation} onChange={(event) => update('documentation', event.target.value)} /></FormField>
-        <FormField label="Foto"><input className={inputClass} type="file" accept="image/png,image/jpeg" onChange={loadPhoto} /></FormField>
+        <FormField label="Foto"><input className={inputClass} type="file" accept="image/*" onChange={loadPhoto} /></FormField>
         <div className="flex items-center gap-3">{form.photo_data_url && <img src={form.photo_data_url} alt="Foto del voluntario" className="h-16 w-16 rounded-md object-cover" />}<span className="text-sm text-slate-500">La foto se utilizará en el expediente del voluntario.</span></div>
         <div className="sm:col-span-2"><FormField label="Observaciones generales"><textarea className={inputClass} rows="3" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField></div>
         <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Guardando...' : 'Guardar voluntario'}</Button></div>
@@ -1133,7 +1144,7 @@ function fileToDataUrl(file) {
 }
 
 async function imageFileToBoundedDataUrl(file, maxSize = 512) {
-  if (!file?.type?.startsWith('image/')) return fileToDataUrl(file);
+  if (!file?.type?.startsWith('image/')) throw new Error('Selecciona una imagen válida.');
   const dataUrl = await fileToDataUrl(file);
   const image = await dataUrlToImage(dataUrl);
   const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
@@ -1143,6 +1154,7 @@ async function imageFileToBoundedDataUrl(file, maxSize = 512) {
   canvas.width = Math.max(1, Math.round((image.naturalWidth || maxSize) * scale));
   canvas.height = Math.max(1, Math.round((image.naturalHeight || maxSize) * scale));
   const context = canvas.getContext('2d');
+  if (!context) throw new Error('El navegador no ha podido preparar la foto.');
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);

@@ -261,11 +261,15 @@ async loadAll(tables = []) {
 
   async create(table, payload) {
     const cleanPayload = sanitizePayload(payload);
-    const { data, error } = await this.supabase
-      .from(table)
-      .insert(cleanPayload)
-      .select()
-      .single();
+    const { data, error } = await withSupabaseQueryTimeout(
+      this.supabase
+        .from(table)
+        .insert(cleanPayload)
+        .select()
+        .single(),
+      table,
+      'create'
+    );
     if (!error) return data;
     if (SECURITY_TABLES.has(table)) {
       registerSupabaseRepositoryError('create', table, error);
@@ -278,12 +282,16 @@ async loadAll(tables = []) {
 
   async update(table, id, payload) {
     const cleanPayload = sanitizePayload(payload);
-    const { data, error } = await this.supabase
-      .from(table)
-      .update(cleanPayload)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await withSupabaseQueryTimeout(
+      this.supabase
+        .from(table)
+        .update(cleanPayload)
+        .eq('id', id)
+        .select()
+        .single(),
+      table,
+      'update'
+    );
     if (!error) return data;
     if (SECURITY_TABLES.has(table)) {
       registerSupabaseRepositoryError('update', table, error);
@@ -310,7 +318,11 @@ async loadAll(tables = []) {
   }
 
   async rpc(functionName, params = {}) {
-    const { data, error } = await this.supabase.rpc(functionName, params);
+    const { data, error } = await withSupabaseQueryTimeout(
+      this.supabase.rpc(functionName, params),
+      functionName,
+      'rpc'
+    );
     if (error) throw error;
     return data;
   }
