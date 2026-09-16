@@ -6,6 +6,7 @@ const VOLUNTEER_STATUSES = new Set(['Activo', 'Inactivo', 'Archivado', 'Baja']);
 const DOCUMENT_STATUSES = new Set(['Vigente', 'Pendiente', 'Caducado', 'No requerido']);
 const TIME_ENTRY_STATUSES = new Set(['open', 'closed', 'incident', 'corrected', 'voided']);
 const TIME_ENTRY_METHODS = new Set(['qr', 'usb', 'manual']);
+const TIME_ENTRY_INCIDENT_REVIEW_STATUSES = new Set(['pending', 'reviewed', 'resolved', 'dismissed']);
 const OPEN_ATTENDANCE_ERROR = 'Este voluntario ya tiene una entrada abierta. Registra la salida antes de abrir otra entrada.';
 
 function cleanText(value) {
@@ -178,6 +179,11 @@ export function sanitizeVolunteerTimeEntryPayload(payload = {}, volunteers = [])
     registered_by_name: cleanText(payload.registered_by_name),
     status: cleanStatus(payload.status, TIME_ENTRY_STATUSES, checkOutAt ? 'closed' : 'open'),
     incident_type: cleanText(payload.incident_type),
+    incident_review_status: cleanStatus(payload.incident_review_status, TIME_ENTRY_INCIDENT_REVIEW_STATUSES, 'pending'),
+    incident_reviewed_at: cleanTimestamp(payload.incident_reviewed_at),
+    incident_reviewed_by: cleanText(payload.incident_reviewed_by) || null,
+    incident_reviewed_by_name: cleanText(payload.incident_reviewed_by_name),
+    incident_review_notes: cleanText(payload.incident_review_notes),
     notes: String(payload.notes || '').trim()
   };
 }

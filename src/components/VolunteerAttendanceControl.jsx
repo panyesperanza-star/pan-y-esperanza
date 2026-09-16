@@ -6,9 +6,9 @@ import { FormField, inputClass } from './FormField';
 import { parseOfficialCredentialQr } from '../lib/credentials';
 import { formatDate, formatDateTime, normalize } from '../lib/formatters';
 import { userFullName } from '../lib/personIdentity';
+import { attendanceIncidentRequiresReview, attendanceIncidentReviewStatus, attendanceIncidentType } from '../services/volunteers/attendanceIncidentUtils';
 
 const ACTIVITY_TYPES = ['General', 'Reparto', 'Campaña', 'Evento', 'Agenda', 'Formación', 'Otro'];
-const EXCESSIVE_SHIFT_MINUTES = 12 * 60;
 
 export function VolunteerAttendanceControl({ data = {}, volunteers = [], entries = [], actions, currentUser, canManage }) {
   const [activityType, setActivityType] = useState('General');
@@ -149,7 +149,7 @@ export function VolunteerAttendanceControl({ data = {}, volunteers = [], entries
     }
   }
 
-  const incidentEntries = entries.filter((entry) => attendanceIncidentType(entry));
+  const incidentEntries = entries.filter(attendanceIncidentRequiresReview);
 
   return (
     <section className="mb-4 grid gap-4 rounded-md border border-brand-100 bg-white p-4 shadow-panel xl:grid-cols-[1.1fr_0.9fr]">
@@ -257,12 +257,14 @@ export function VolunteerAttendanceProfilePanel({ volunteer, entries = [], corre
         <div className="mt-4 space-y-3">
           {entries.map((entry) => {
             const entryCorrections = corrections.filter((item) => item.time_entry_id === entry.id);
+            const incidentNeedsReview = attendanceIncidentRequiresReview(entry);
             return (
               <article key={entry.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusChip entry={entry} />
+                      {entry.incident_type && <IncidentReviewChip entry={entry} />}
                       <p className="font-bold text-ink">{entry.activity_label || entry.activity_type || 'Voluntariado'}</p>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">Entrada: {formatDateTime(entry.check_in_at)} · Salida: {entry.check_out_at ? formatDateTime(entry.check_out_at) : 'Abierta'}</p>
@@ -270,7 +272,14 @@ export function VolunteerAttendanceProfilePanel({ volunteer, entries = [], corre
                     {entry.incident_type && <p className="mt-1 text-sm font-bold text-amber-700">Incidencia: {entry.incident_type}</p>}
                     {entryCorrections.length > 0 && <p className="mt-1 text-xs font-semibold text-slate-500">{entryCorrections.length} corrección(es) auditadas.</p>}
                   </div>
-                  {canManage && <Button type="button" variant="secondary" onClick={() => setEditing(editing === entry.id ? null : entry.id)}><TimerReset size={16} /> Corregir</Button>}
+                  <div className="flex flex-wrap gap-2">
+                    {canManage && incidentNeedsReview && <Button type="button" variant="secondary" onClick={async () => {
+                      const notes = window.prompt('Notas de la revisión', 'Incidencia revisada administrativamente.');
+                      if (notes === null) return;
+                      await actions.reviewVolunteerAttendanceIncident(entry.id, { notes });
+                    }}><CheckCircle2 size={16} /> Marcar revisada</Button>}
+                    {canManage && <Button type="button" variant="secondary" onClick={() => setEditing(editing === entry.id ? null : entry.id)}><TimerReset size={16} /> Corregir</Button>}
+                  </div>
                 </div>
                 {editing === entry.id && <AttendanceCorrectionForm entry={entry} onCancel={() => setEditing(null)} onSubmit={async (payload) => { await actions.correctVolunteerAttendance(entry.id, payload); setEditing(null); }} />}
               </article>
@@ -377,6 +386,13 @@ function StatusChip({ entry }) {
   return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700"><CheckCircle2 size={12} /> Cerrado</span>;
 }
 
+function IncidentReviewChip({ entry }) {
+  const status = attendanceIncidentReviewStatus(entry);
+  if (status === 'pending') return <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-800">Pendiente de revisión</span>;
+  if (status === 'resolved') return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">Incidencia resuelta</span>;
+  return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">Incidencia revisada</span>;
+}
+
 export function volunteerTimeEntriesFor(dataOrEntries, volunteerId) {
   const source = Array.isArray(dataOrEntries) ? dataOrEntries : dataOrEntries?.volunteer_time_entries || [];
   return source
@@ -421,12 +437,6 @@ export function isOpenAttendanceEntry(entry = {}) {
 
 function openAttendanceEntryFor(entries = [], volunteerId) {
   return entries.find((entry) => entry.volunteer_id === volunteerId && isOpenAttendanceEntry(entry)) || null;
-}
-
-function attendanceIncidentType(entry = {}) {
-  if (entry.incident_type) return entry.incident_type;
-  if (isOpenAttendanceEntry(entry) && elapsedMinutes(entry.check_in_at) > EXCESSIVE_SHIFT_MINUTES) return 'Fichaje excesivamente largo';
-  return '';
 }
 
 function resolveVolunteerFromCredential(data, volunteers, rawValue) {

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { applyPersonIdentityToUser } from '../src/lib/personIdentity.js';
+import { attendanceIncidentRequiresReview } from '../src/services/volunteers/attendanceIncidentUtils.js';
 import {
   enrichVolunteers,
   filterAndSortVolunteers,
@@ -234,6 +235,28 @@ test('la edicion de voluntarios se realiza de forma atomica y conserva la foto s
   assert.match(migration, /for update/);
   assert.match(migration, /photo_data_url = coalesce\(nullif\(v_photo_data_url, ''\), photo_data_url\)/);
   assert.match(migration, /grant execute on function public\.update_volunteer_with_identity\(uuid, jsonb\) to authenticated/);
+});
+
+test('solo las incidencias pendientes entran en el contador de revisión', () => {
+  const pending = { id: 'pending-incident', status: 'incident', incident_type: 'Fichaje excesivamente largo', incident_review_status: 'pending' };
+  const reviewed = { ...pending, id: 'reviewed-incident', incident_review_status: 'reviewed' };
+  const corrected = { ...pending, id: 'corrected-incident', status: 'corrected', incident_review_status: 'resolved' };
+
+  assert.equal(attendanceIncidentRequiresReview(pending), true);
+  assert.equal(attendanceIncidentRequiresReview(reviewed), false);
+  assert.equal(attendanceIncidentRequiresReview(corrected), false);
+});
+
+test('la migración de incidencias conserva el historial y normaliza solo incidencias históricas cerradas', () => {
+  const migration = readFileSync(
+    new URL('../supabase/migrations/20260916133000_track_volunteer_attendance_incident_reviews.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(migration, /add column if not exists incident_review_status/);
+  assert.match(migration, /incident_review_status = 'reviewed'/);
+  assert.match(migration, /status = 'incident'/);
+  assert.match(migration, /check_out_at is not null/);
 });
 
 test('el diagnostico temporal de render no queda en Volunteers.jsx', () => {

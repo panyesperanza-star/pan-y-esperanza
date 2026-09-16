@@ -3445,6 +3445,11 @@ export function useAppData(enabled = true, currentUser = null) {
           total_minutes: totalMinutes,
           status: incidentType ? 'incident' : 'closed',
           incident_type: incidentType,
+          incident_review_status: incidentType ? 'pending' : 'resolved',
+          incident_reviewed_at: incidentType ? null : now,
+          incident_reviewed_by: incidentType ? null : actorId,
+          incident_reviewed_by_name: incidentType ? '' : actorName,
+          incident_review_notes: '',
           registered_by_user_id: actorId,
           registered_by_name: actorName,
           notes: [openEntry.notes, incidentType].filter(Boolean).join(' | ')
@@ -3500,7 +3505,12 @@ export function useAppData(enabled = true, currentUser = null) {
         ...payload,
         total_minutes: payload.check_in_at && payload.check_out_at ? minutesBetween(payload.check_in_at, payload.check_out_at) : currentEntry.total_minutes,
         status: payload.status || (payload.check_out_at ? 'corrected' : currentEntry.status),
-        incident_type: payload.incident_type || ''
+        incident_type: payload.incident_type || '',
+        incident_review_status: currentEntry.incident_type ? 'resolved' : currentEntry.incident_review_status,
+        incident_reviewed_at: currentEntry.incident_type ? new Date().toISOString() : currentEntry.incident_reviewed_at,
+        incident_reviewed_by: currentEntry.incident_type ? currentUser?.id || null : currentEntry.incident_reviewed_by,
+        incident_reviewed_by_name: currentEntry.incident_type ? currentUserName() : currentEntry.incident_reviewed_by_name,
+        incident_review_notes: currentEntry.incident_type ? reason : currentEntry.incident_review_notes
       };
       delete nextValues.reason;
       const updated = await voluntarioService.updateTimeEntry(id, nextValues);
@@ -3510,6 +3520,33 @@ export function useAppData(enabled = true, currentUser = null) {
         previous_values: currentEntry,
         next_values: updated,
         reason,
+        corrected_by_user_id: currentUser?.id || null,
+        corrected_by_name: currentUserName()
+      });
+      await reload();
+      return updated;
+    },
+    reviewVolunteerAttendanceIncident: async (id, payload = {}) => {
+      assertPermission('volunteers', 'edit');
+      const currentEntry = (appData.volunteer_time_entries || []).find((entry) => entry.id === id);
+      if (!currentEntry?.incident_type) throw new Error('El fichaje no tiene una incidencia pendiente de revisión.');
+      const reviewStatus = ['reviewed', 'resolved', 'dismissed'].includes(payload.status) ? payload.status : 'reviewed';
+      const notes = String(payload.notes || '').trim() || 'Incidencia revisada administrativamente.';
+      const now = new Date().toISOString();
+      const updated = await voluntarioService.updateTimeEntry(id, {
+        ...currentEntry,
+        incident_review_status: reviewStatus,
+        incident_reviewed_at: now,
+        incident_reviewed_by: currentUser?.id || null,
+        incident_reviewed_by_name: currentUserName(),
+        incident_review_notes: notes
+      });
+      await voluntarioService.createTimeEntryCorrection({
+        time_entry_id: id,
+        volunteer_id: currentEntry.volunteer_id,
+        previous_values: currentEntry,
+        next_values: updated,
+        reason: notes,
         corrected_by_user_id: currentUser?.id || null,
         corrected_by_name: currentUserName()
       });
