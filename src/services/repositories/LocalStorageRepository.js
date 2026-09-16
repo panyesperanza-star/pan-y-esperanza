@@ -9,6 +9,11 @@ export class LocalStorageRepository {
     return this.dataStore.list(table);
   }
 
+  async get(table, id) {
+    const rows = await this.list(table);
+    return rows.find((row) => row.id === id) || null;
+  }
+
   async loadAll() {
     return this.dataStore.loadAll();
   }

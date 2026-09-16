@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { canDeleteDefinitively, canDo, canRequestDefinitiveDeletion, isPlatformOwner, isSystemSuperadmin, verifyCurrentUserPassword } from '../lib/auth';
 import { dataStore } from '../lib/dataStore';
 import { buildDocumentNotesWithAutomationMeta, readDocumentAutomationMeta } from '../lib/documentAutomation';
@@ -152,27 +152,42 @@ export function useAppData(enabled = true, currentUser = null) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const reloadGeneration = useRef(0);
+  const activeReload = useRef(null);
   const appData = data || EMPTY_APP_DATA;
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({ force = false } = {}) => {
+    if (!force && activeReload.current) return activeReload.current;
+
+    const generation = reloadGeneration.current + 1;
+    reloadGeneration.current = generation;
     setLoading(true);
     setError('');
-    try {
-      const repository = createRepository();
-      const loadedData = await withAppDataTimeout(
-        repository.loadAll(appDataTablesForUser(currentUser)),
-        APP_DATA_LOAD_TIMEOUT_MS
-      );
-      setData(enrichOfficialCredentialData(enrichPersonIdentityData({
-        ...EMPTY_APP_DATA,
-        ...loadedData
-      })));
-    } catch (err) {
-      setData((current) => current || EMPTY_APP_DATA);
-      setError(err.message || 'No se pudieron cargar los datos.');
-    } finally {
-      setLoading(false);
-    }
+    const request = (async () => {
+      try {
+        const repository = createRepository();
+        const loadedData = await withAppDataTimeout(
+          repository.loadAll(appDataTablesForUser(currentUser)),
+          APP_DATA_LOAD_TIMEOUT_MS
+        );
+        if (generation !== reloadGeneration.current) return;
+        setData(enrichOfficialCredentialData(enrichPersonIdentityData({
+          ...EMPTY_APP_DATA,
+          ...loadedData
+        })));
+      } catch (err) {
+        if (generation !== reloadGeneration.current) return;
+        setData((current) => current || EMPTY_APP_DATA);
+        setError(err.message || 'No se pudieron cargar los datos.');
+      } finally {
+        if (generation === reloadGeneration.current) {
+          setLoading(false);
+          activeReload.current = null;
+        }
+      }
+    })();
+    activeReload.current = request;
+    return request;
   }, [currentUser]);
 
   useEffect(() => {
@@ -3291,7 +3306,7 @@ export function useAppData(enabled = true, currentUser = null) {
             next_values: { volunteer_id: created.id }
           });
         }
-        await reload();
+        await reload({ force: true });
         return created;
       }
       const identity = await createPersonIdentity(personIdentityPayloadFromVolunteer(payload));
@@ -3313,7 +3328,7 @@ export function useAppData(enabled = true, currentUser = null) {
         const current = (appData.volunteers || []).find((item) => item.id === id);
         const identityId = payload.person_identity_id || current?.person_identity_id || null;
         const updated = await voluntarioService.update(id, { ...payload, person_identity_id: identityId });
-        await reload();
+        await reload({ force: true });
         return updated;
       }
       const identityId = payload.person_identity_id || await ensureVolunteerPersonIdentity(id, payload);

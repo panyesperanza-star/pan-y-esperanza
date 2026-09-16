@@ -220,6 +220,27 @@ export class SupabaseRepository {
     throw error;
   }
 
+  async get(table, id) {
+    const { data, error } = await withSupabaseQueryTimeout(
+      this.supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle(),
+      table,
+      'get'
+    );
+    if (!error) return data || null;
+    if (SECURITY_TABLES.has(table)) {
+      registerSupabaseRepositoryError('get', table, error);
+      throw error;
+    }
+    if (canIgnoreMissingTable(table, error, this.allowMissingOptionalTables)) return null;
+    if (this.fallbackStore) return this.fallbackStore.get(table, id);
+    registerSupabaseRepositoryError('get', table, error);
+    throw error;
+  }
+
 async loadAll(tables = []) {
   const originalTableList = tables || [];
   const tableList = originalTableList.includes('volunteers')

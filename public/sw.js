@@ -1,4 +1,4 @@
-const CACHE_NAME = "pan-y-esperanza-public-v4";
+const CACHE_NAME = "pan-y-esperanza-public-v5";
 const STATIC_ASSETS = [
   "/assets/brand/logo.png",
   "/assets/photographs/hero.jpg",
@@ -21,7 +21,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith("pan-y-esperanza-public-") && key !== CACHE_NAME)
             .map((key) => caches.delete(key)),
         ),
       )
@@ -31,34 +31,28 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
+  const url = new URL(request.url);
 
-  if (request.method !== "GET") {
-    return;
-  }
-
-  if (request.mode === "navigate") {
-    event.respondWith(fetch(request, { cache: "no-store" }));
-    return;
-  }
-
-  if (new URL(request.url).pathname.startsWith("/assets/")) {
-    event.respondWith(fetch(request, { cache: "no-store" }));
+  // The public site shares this origin with the ERP. Never intercept API,
+  // authenticated, navigational, or dynamically generated requests.
+  if (
+    request.method !== "GET"
+    || request.headers.has("authorization")
+    || url.origin !== self.location.origin
+    || url.search
+    || !STATIC_ASSETS.includes(url.pathname)
+  ) {
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
-          }
-          return response;
-        })
-        .catch(() => cached);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
 
-      return cached || networkFetch;
+      const response = await fetch(request, { cache: "no-store" });
+      if (response.ok) await cache.put(request, response.clone());
+      return response;
     }),
   );
 });

@@ -9,21 +9,34 @@ export class VoluntarioRepository {
     return this.repository.list('volunteers');
   }
 
+  async getVolunteer(id) {
+    return this.repository.get('volunteers', id);
+  }
+
   async createVolunteer(payload) {
     if (this.repository.mode === 'supabase') {
-      return this.repository.rpc('create_volunteer_with_identity', { p_payload: payload });
+      const created = await this.repository.rpc('create_volunteer_with_identity', { p_payload: payload });
+      return this.requirePersistedVolunteer(created?.id, 'alta');
     }
     return this.repository.create('volunteers', payload);
   }
 
   async updateVolunteer(id, payload) {
     if (this.repository.mode === 'supabase') {
-      return this.repository.rpc('update_volunteer_with_identity', {
+      await this.repository.rpc('update_volunteer_with_identity', {
         p_volunteer_id: id,
         p_payload: payload
       });
+      return this.requirePersistedVolunteer(id, 'edicion');
     }
     return this.repository.update('volunteers', id, payload);
+  }
+
+  async requirePersistedVolunteer(id, operation) {
+    if (!id) throw new Error(`La ${operation} del voluntario no devolvio un identificador.`);
+    const volunteer = await this.getVolunteer(id);
+    if (!volunteer) throw new Error(`No se pudo confirmar la ${operation} del voluntario guardado.`);
+    return volunteer;
   }
 
   async removeVolunteer(id) {

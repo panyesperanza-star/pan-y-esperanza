@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { applyPersonIdentityToUser } from '../src/lib/personIdentity.js';
+import { applyPersonIdentityToUser, applyPersonIdentityToVolunteer } from '../src/lib/personIdentity.js';
 import { attendanceIncidentRequiresReview } from '../src/services/volunteers/attendanceIncidentUtils.js';
 import {
   enrichVolunteers,
@@ -210,6 +210,36 @@ test('la identidad compartida no suplanta los datos ni permisos del usuario ERP'
   assert.deepEqual(enriched.permissions, ['*']);
   assert.equal(enriched.profile_photo, 'data:image/png;base64,APPUSER');
   assert.equal(enriched.identity_full_name, 'UBER');
+});
+
+test('la identidad enlazada solo completa campos ausentes del expediente de voluntario', () => {
+  const volunteerRecord = volunteer({
+    full_name: 'Voluntaria Guardada',
+    email: 'voluntaria@example.test',
+    photo_data_url: 'data:image/png;base64,VOLUNTEER'
+  });
+  const identity = {
+    full_name: 'Nombre Antiguo',
+    email: 'antiguo@example.test',
+    phone: '600000000',
+    photo_data_url: 'data:image/png;base64,OLD'
+  };
+
+  const enriched = applyPersonIdentityToVolunteer(volunteerRecord, identity);
+
+  assert.equal(enriched.full_name, volunteerRecord.full_name);
+  assert.equal(enriched.email, volunteerRecord.email);
+  assert.equal(enriched.photo_data_url, volunteerRecord.photo_data_url);
+  assert.equal(enriched.phone, identity.phone);
+});
+
+test('el service worker no vuelve a cachear respuestas autenticadas del ERP', () => {
+  const serviceWorker = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+
+  assert.match(serviceWorker, /request\.headers\.has\("authorization"\)/);
+  assert.match(serviceWorker, /url\.origin !== self\.location\.origin/);
+  assert.match(serviceWorker, /STATIC_ASSETS\.includes\(url\.pathname\)/);
+  assert.doesNotMatch(serviceWorker, /return cached \|\| networkFetch/);
 });
 
 test('la migracion de alta de voluntario reutiliza person_identity_id existente', () => {

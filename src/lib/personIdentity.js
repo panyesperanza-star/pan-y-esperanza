@@ -95,11 +95,14 @@ export function applyPersonIdentityToVolunteer(volunteer = {}, identity = null) 
   return {
     ...volunteer,
     person_identity: identity,
-    full_name: identity.full_name || volunteer.full_name,
-    document_id: identity.document_id || volunteer.document_id,
-    email: identity.email || volunteer.email,
-    phone: identity.phone || volunteer.phone,
-    photo_data_url: identity.photo_data_url || volunteer.photo_data_url
+    // The volunteer record is the editable source for its own dossier. The
+    // linked identity fills only legacy or missing values and must not undo a
+    // freshly saved volunteer name, contact detail, or photo.
+    full_name: volunteer.full_name || identity.full_name,
+    document_id: volunteer.document_id || identity.document_id,
+    email: volunteer.email || identity.email,
+    phone: volunteer.phone || identity.phone,
+    photo_data_url: volunteer.photo_data_url || identity.photo_data_url
   };
 }
 
